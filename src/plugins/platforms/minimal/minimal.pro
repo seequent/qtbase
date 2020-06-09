@@ -1,8 +1,10 @@
 TARGET = qminimal
 
 QT += \
-    core-private gui-private \
-    eventdispatcher_support-private fontdatabase_support-private
+    core-private gui-private
+
+!win32: QT += eventdispatcher_support-private
+!darwin: QT += fontdatabase_support-private
 
 DEFINES += QT_NO_FOREACH
 

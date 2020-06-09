@@ -132,7 +132,7 @@ private:
     // so the following field cannot be used:
     void *unused;
 };
-Q_DECLARE_SHARED_NOT_MOVABLE_UNTIL_QT6(QDBusError)
+Q_DECLARE_SHARED(QDBusError)
 
 #ifndef QT_NO_DEBUG_STREAM
 Q_DBUS_EXPORT QDebug operator<<(QDebug, const QDBusError &);
@@ -141,6 +141,9 @@ Q_DBUS_EXPORT QDebug operator<<(QDebug, const QDBusError &);
 QT_END_NAMESPACE
 
 Q_DECLARE_METATYPE(QDBusError)
-
+#else
+QT_BEGIN_NAMESPACE
+class Q_DBUS_EXPORT QDBusError {}; // dummy class for moc
+QT_END_NAMESPACE
 #endif // QT_NO_DBUS
 #endif

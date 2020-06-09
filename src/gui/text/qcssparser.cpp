@@ -362,7 +362,7 @@ static bool operator<(const QCssKnownValue &prop, const QString &name)
 
 static quint64 findKnownValue(const QString &name, const QCssKnownValue *start, int numValues)
 {
-    const QCssKnownValue *end = &start[numValues - 1];
+    const QCssKnownValue *end = start + numValues - 1;
     const QCssKnownValue *prop = std::lower_bound(start, end, name);
     if ((prop == end) || (name < *prop))
         return 0;
@@ -2189,9 +2189,9 @@ QString Scanner::preprocess(const QString &input, bool *hasEscapeSequences)
 
             hexCount = qMin(hexCount, 6);
             bool ok = false;
-            ushort code = output.midRef(hexStart, hexCount).toUShort(&ok, 16);
+            const char16_t code = output.midRef(hexStart, hexCount).toUShort(&ok, 16);
             if (ok) {
-                output.replace(hexStart - 1, hexCount + 1, QChar(code));
+                output.replace(hexStart - 1, hexCount + 1, code);
                 i = hexStart;
             } else {
                 i = hexStart;

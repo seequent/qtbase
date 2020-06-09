@@ -71,6 +71,8 @@
 #include <QtNetwork/QSslConfiguration>
 #endif
 
+Q_MOC_INCLUDE(<QtNetwork/QAuthenticator>)
+
 QT_REQUIRE_CONFIG(http);
 
 QT_BEGIN_NAMESPACE
@@ -96,7 +98,6 @@ public:
 
     Q_DECLARE_PRIVATE(QNetworkReplyHttpImpl)
     Q_PRIVATE_SLOT(d_func(), void _q_startOperation())
-    Q_PRIVATE_SLOT(d_func(), bool start(const QNetworkRequest &))
     Q_PRIVATE_SLOT(d_func(), void _q_cacheLoadReadyRead())
     Q_PRIVATE_SLOT(d_func(), void _q_bufferOutgoingData())
     Q_PRIVATE_SLOT(d_func(), void _q_bufferOutgoingDataFinished())
@@ -162,7 +163,6 @@ public:
     QNetworkReplyHttpImplPrivate();
     ~QNetworkReplyHttpImplPrivate();
 
-    bool start(const QNetworkRequest &newHttpRequest);
     void _q_startOperation();
 
     void _q_cacheLoadReadyRead();
@@ -229,11 +229,9 @@ public:
 #endif
 
 
-    bool migrateBackend();
     bool canResume() const;
     void setResumeOffset(quint64 offset);
     quint64 resumeOffset;
-    qint64 preMigrationDownloaded;
 
     qint64 bytesDownloaded;
     qint64 bytesBuffered;

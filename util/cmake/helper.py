@@ -77,25 +77,19 @@ class LibraryMapping:
 _qt_library_map = [
     # Qt:
     LibraryMapping(
-        "accessibility_support",
-        "Qt6",
-        "Qt::AccessibilitySupport",
-        extra=["COMPONENTS", "AccessibilitySupport"],
-    ),
-    LibraryMapping(
         "androidextras", "Qt6", "Qt::AndroidExtras", extra=["COMPONENTS", "AndroidExtras"]
     ),
     LibraryMapping("animation", "Qt6", "Qt::3DAnimation", extra=["COMPONENTS", "3DAnimation"]),
     LibraryMapping(
         "application-lib", "Qt6", "Qt::AppManApplication", extra=["COMPONENTS", "AppManApplication"]
     ),
+    LibraryMapping("axbase", "Qt6", "Qt::AxBase", extra=["COMPONENTS", "AxBase"]),
+    LibraryMapping("axcontainer", "Qt6", "Qt::AxContainer", extra=["COMPONENTS", "AxContainer"]),
+    LibraryMapping("axserver", "Qt6", "Qt::AxServer", extra=["COMPONENTS", "AxServer"]),
     LibraryMapping("bluetooth", "Qt6", "Qt::Bluetooth", extra=["COMPONENTS", "Bluetooth"]),
     LibraryMapping("bootstrap", "Qt6", "Qt::Bootstrap", extra=["COMPONENTS", "Bootstrap"]),
     # bootstrap-dbus: Not needed in Qt6!
     LibraryMapping("client", "Qt6", "Qt::WaylandClient", extra=["COMPONENTS", "WaylandClient"]),
-    LibraryMapping(
-        "clipboard_support", "Qt6", "Qt::ClipboardSupport", extra=["COMPONENTS", "ClipboardSupport"]
-    ),
     LibraryMapping("coap", "Qt6", "Qt::Coap", extra=["COMPONENTS", "Coap"]),
     LibraryMapping("common-lib", "Qt6", "Qt::AppManCommon", extra=["COMPONENTS", "AppManCommon"]),
     LibraryMapping(
@@ -171,9 +165,6 @@ _qt_library_map = [
     ),  # manually added special case
     LibraryMapping("glx_support", "Qt6", "Qt::GlxSupport", extra=["COMPONENTS", "GlxSupport"]),
     LibraryMapping(
-        "graphics_support", "Qt6", "Qt::GraphicsSupport", extra=["COMPONENTS", "GraphicsSupport"]
-    ),
-    LibraryMapping(
         "gsttools", "Qt6", "Qt::MultimediaGstTools", extra=["COMPONENTS", "MultimediaGstTools"]
     ),
     LibraryMapping("gui", "Qt6", "Qt::Gui", extra=["COMPONENTS", "Gui"]),
@@ -226,6 +217,8 @@ _qt_library_map = [
     LibraryMapping("networkauth", "Qt6", "Qt::NetworkAuth", extra=["COMPONENTS", "NetworkAuth"]),
     LibraryMapping("nfc", "Qt6", "Qt::Nfc", extra=["COMPONENTS", "Nfc"]),
     LibraryMapping("oauth", "Qt6", "Qt::NetworkAuth", extra=["COMPONENTS", "NetworkAuth"]),
+    LibraryMapping("opcua", "Qt6", "Qt::OpcUa", extra=["COMPONENTS", "OpcUa"]),
+    LibraryMapping("opcua_private", "Qt6", "Qt::OpcUaPrivate", extra=["COMPONENTS", "OpcUaPrivate"]),
     LibraryMapping(
         "openglextensions", "Qt6", "Qt::OpenGLExtensions", extra=["COMPONENTS", "OpenGLExtensions"]
     ),
@@ -241,18 +234,6 @@ _qt_library_map = [
     ),
     LibraryMapping(
         "particles", "Qt6", "Qt::QuickParticles", extra=["COMPONENTS", "QuickParticles"]
-    ),
-    LibraryMapping(
-        "platformcompositor",
-        "Qt6",
-        "Qt::PlatformCompositorSupport",
-        extra=["COMPONENTS", "PlatformCompositorSupport"],
-    ),
-    LibraryMapping(
-        "platformcompositor_support",
-        "Qt6",
-        "Qt::PlatformCompositorSupport",
-        extra=["COMPONENTS", "PlatformCompositorSupport"],
     ),
     LibraryMapping(
         "plugin-interfaces",
@@ -321,6 +302,7 @@ _qt_library_map = [
     LibraryMapping("shadertools", "Qt6", "Qt::ShaderTools", extra=["COMPONENTS", "ShaderTools"]),
     LibraryMapping("sql", "Qt6", "Qt::Sql", extra=["COMPONENTS", "Sql"]),
     LibraryMapping("svg", "Qt6", "Qt::Svg", extra=["COMPONENTS", "Svg"]),
+    LibraryMapping("svgwidgets", "Qt6", "Qt::SvgWidgets", extra=["COMPONENTS", "SvgWidgets"]),
     LibraryMapping("testlib", "Qt6", "Qt::Test", extra=["COMPONENTS", "Test"]),
     LibraryMapping("texttospeech", "Qt6", "Qt::TextToSpeech", extra=["COMPONENTS", "TextToSpeech"]),
     LibraryMapping(
@@ -331,9 +313,6 @@ _qt_library_map = [
     LibraryMapping("uitools", "Qt6", "Qt::UiTools", extra=["COMPONENTS", "UiTools"]),
     LibraryMapping(
         "virtualkeyboard", "Qt6", "Qt::VirtualKeyboard", extra=["COMPONENTS", "VirtualKeyboard"]
-    ),
-    LibraryMapping(
-        "vulkan_support", "Qt6", "Qt::VulkanSupport", extra=["COMPONENTS", "VulkanSupport"]
     ),
     LibraryMapping(
         "waylandclient", "Qt6", "Qt::WaylandClient", extra=["COMPONENTS", "WaylandClient"]
@@ -353,12 +332,6 @@ _qt_library_map = [
     LibraryMapping("webview", "Qt6", "Qt::WebView", extra=["COMPONENTS", "WebView"]),
     LibraryMapping("widgets", "Qt6", "Qt::Widgets", extra=["COMPONENTS", "Widgets"]),
     LibraryMapping("window-lib", "Qt6", "Qt::AppManWindow", extra=["COMPONENTS", "AppManWindow"]),
-    LibraryMapping(
-        "windowsuiautomation_support",
-        "Qt6",
-        "Qt::WindowsUIAutomationSupport",
-        extra=["COMPONENTS", "WindowsUIAutomationSupport"],
-    ),
     LibraryMapping("winextras", "Qt6", "Qt::WinExtras", extra=["COMPONENTS", "WinExtras"]),
     LibraryMapping("x11extras", "Qt6", "Qt::X11Extras", extra=["COMPONENTS", "X11Extras"]),
     LibraryMapping("xcb_qpa_lib", "Qt6", "Qt::XcbQpa", extra=["COMPONENTS", "XcbQpa"]),
@@ -440,21 +413,21 @@ _library_map = [
     ),
     LibraryMapping("journald", "Libsystemd", "PkgConfig::Libsystemd"),
     LibraryMapping("jpeg", "JPEG", "JPEG::JPEG"),  # see also libjpeg
-    LibraryMapping("libatomic", "Atomic", "Atomic"),
+    LibraryMapping("libatomic", "WrapAtomic", "WrapAtomic::WrapAtomic"),
     LibraryMapping("libclang", "WrapLibClang", "WrapLibClang::WrapLibClang"),
     LibraryMapping("libdl", None, "${CMAKE_DL_LIBS}"),
     LibraryMapping("libinput", "Libinput", "Libinput::Libinput"),
     LibraryMapping("libjpeg", "JPEG", "JPEG::JPEG"),  # see also jpeg
     LibraryMapping("libpng", "WrapPNG", "WrapPNG::WrapPNG", is_bundled_with_qt=True),
     LibraryMapping("libproxy", "Libproxy", "PkgConfig::Libproxy"),
-    LibraryMapping("librt", "WrapRt", "WrapRt"),
+    LibraryMapping("librt", "WrapRt", "WrapRt::WrapRt"),
     LibraryMapping("libudev", "Libudev", "PkgConfig::Libudev"),
     LibraryMapping("lttng-ust", "LTTngUST", "LTTng::UST", resultVariable="LTTNGUST"),
     LibraryMapping("mtdev", "Mtdev", "PkgConfig::Mtdev"),
     LibraryMapping("mysql", "MySQL", "MySQL::MySQL"),
     LibraryMapping("odbc", "ODBC", "ODBC::ODBC"),
     LibraryMapping("opengl_es2", "GLESv2", "GLESv2::GLESv2"),
-    LibraryMapping("opengl", "OpenGL", "OpenGL::GL", resultVariable="OpenGL_OpenGL"),
+    LibraryMapping("opengl", "OpenGL", "OpenGL::GL", resultVariable="OpenGL"),
     LibraryMapping(
         "openssl_headers",
         "WrapOpenSSLHeaders",
@@ -701,6 +674,7 @@ platform_mapping = {
     "ios": "IOS",
     "freebsd": "FREEBSD",
     "openbsd": "OPENBSD",
+    "mingw": "MINGW",
     "netbsd": "NETBSD",
     "haiku": "HAIKU",
     "netbsd": "NETBSD",
@@ -774,6 +748,7 @@ def generate_find_package_info(
     indent: int = 0,
     emit_if: str = "",
     use_system_package_name: bool = False,
+    module: str = "",
 ) -> str:
     isRequired = False
 
@@ -797,8 +772,12 @@ def generate_find_package_info(
         package_name = package_name.replace(*replace_args)
         cmake_target_name = cmake_target_name.replace(*replace_args)
 
-    if cmake_target_name and use_qt_find_package:
-        extra += ["PROVIDED_TARGETS", cmake_target_name]
+    if use_qt_find_package:
+        if cmake_target_name:
+            extra += ["PROVIDED_TARGETS", cmake_target_name]
+        if module:
+            extra += ["MODULE_NAME", module]
+            extra += ["QMAKE_LIB", lib.soName]
 
     result = ""
     one_ind = "    "

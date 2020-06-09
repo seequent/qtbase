@@ -171,11 +171,6 @@ public:
     }
     void setUserTristate(bool tristate);
 
-#if QT_DEPRECATED_SINCE(5, 6)
-    QT_DEPRECATED bool isTristate() const { return isAutoTristate(); }
-    QT_DEPRECATED void setTristate(bool tristate);
-#endif
-
 #if QT_CONFIG(draganddrop)
     inline bool isDragEnabled() const {
         return (flags() & Qt::ItemIsDragEnabled) != 0;
@@ -326,6 +321,7 @@ public:
     ~QStandardItemModel();
 
     void setItemRoleNames(const QHash<int,QByteArray> &roleNames);
+    QHash<int, QByteArray> roleNames() const override;
 
     QModelIndex index(int row, int column, const QModelIndex &parent = QModelIndex()) const override;
     QModelIndex parent(const QModelIndex &child) const override;
@@ -333,16 +329,10 @@ public:
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     bool hasChildren(const QModelIndex &parent = QModelIndex()) const override;
-    // Qt 6: Remove
-    QModelIndex sibling(int row, int column, const QModelIndex &idx) const override;
 
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
-    bool clearItemData(const QModelIndex &index)
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    override
-#endif
-    ;
+    bool clearItemData(const QModelIndex &index) override;
 
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role = Qt::DisplayRole) const override;

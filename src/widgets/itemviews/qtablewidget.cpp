@@ -480,7 +480,6 @@ bool QTableModel::setItemData(const QModelIndex &index, const QMap<int, QVariant
     return true;
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 bool QTableModel::clearItemData(const QModelIndex &index)
 {
     if (!checkIndex(index, CheckIndexOption::IndexIsValid))
@@ -496,7 +495,6 @@ bool QTableModel::clearItemData(const QModelIndex &index)
     emit dataChanged(index, index, QVector<int>{});
     return true;
 }
-#endif
 
 Qt::ItemFlags QTableModel::flags(const QModelIndex &index) const
 {
@@ -899,14 +897,6 @@ Qt::DropActions QTableModel::supportedDropActions() const
     \sa QTableWidget
 */
 
-/*!
-    Constructs an table selection range, i.e. a range
-    whose rowCount() and columnCount() are 0.
-*/
-QTableWidgetSelectionRange::QTableWidgetSelectionRange()
-    : top(-1), left(-1), bottom(-2), right(-2)
-{
-}
 
 /*!
     Constructs the table selection range from the given \a top, \a
@@ -914,24 +904,6 @@ QTableWidgetSelectionRange::QTableWidgetSelectionRange()
 
     \sa topRow(), leftColumn(), bottomRow(), rightColumn()
 */
-QTableWidgetSelectionRange::QTableWidgetSelectionRange(int top, int left, int bottom, int right)
-    : top(top), left(left), bottom(bottom), right(right)
-{
-}
-
-/*!
-    Constructs a the table selection range by copying the given \a
-    other table selection range.
-*/
-QTableWidgetSelectionRange::QTableWidgetSelectionRange(const QTableWidgetSelectionRange &) = default;
-QTableWidgetSelectionRange &QTableWidgetSelectionRange::operator=(const QTableWidgetSelectionRange &) = default;
-
-/*!
-    Destroys the table selection range.
-*/
-QTableWidgetSelectionRange::~QTableWidgetSelectionRange()
-{
-}
 
 /*!
     \fn int QTableWidgetSelectionRange::topRow() const
@@ -2355,10 +2327,10 @@ QList<QTableWidgetSelectionRange> QTableWidget::selectedRanges() const
     const int rangesCount = ranges.count();
     result.reserve(rangesCount);
     for (int i = 0; i < rangesCount; ++i)
-        result.append(QTableWidgetSelectionRange(ranges.at(i).top(),
-                                                 ranges.at(i).left(),
-                                                 ranges.at(i).bottom(),
-                                                 ranges.at(i).right()));
+        result.append({ranges.at(i).top(),
+                       ranges.at(i).left(),
+                       ranges.at(i).bottom(),
+                       ranges.at(i).right()});
     return result;
 }
 
@@ -2582,11 +2554,7 @@ QStringList QTableWidget::mimeTypes() const
     If the list of items is empty, \nullptr is returned rather than a
     serialized empty list.
 */
-#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
 QMimeData *QTableWidget::mimeData(const QList<QTableWidgetItem *> &items) const
-#else
-QMimeData *QTableWidget::mimeData(const QList<QTableWidgetItem*> items) const
-#endif
 {
     Q_D(const QTableWidget);
 
@@ -2664,18 +2632,6 @@ QModelIndex QTableWidget::indexFromItem(const QTableWidgetItem *item) const
     Q_D(const QTableWidget);
     return d->tableModel()->index(item);
 }
-
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-/*!
-  \internal
-  \obsolete
-  \overload
-*/
-QModelIndex QTableWidget::indexFromItem(QTableWidgetItem *item) const
-{
-    return indexFromItem(const_cast<const QTableWidgetItem *>(item));
-}
-#endif
 
 /*!
   Returns a pointer to the QTableWidgetItem associated with the given \a index.

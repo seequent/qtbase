@@ -160,8 +160,8 @@ bool ThreadEngineBarrier::releaseUnlessLast()
     }
 }
 
-ThreadEngineBase::ThreadEngineBase()
-:futureInterface(0), threadPool(QThreadPool::globalInstance())
+ThreadEngineBase::ThreadEngineBase(QThreadPool *pool)
+    : futureInterface(0), threadPool(pool)
 {
     setAutoDelete(false);
 }
@@ -217,6 +217,12 @@ void ThreadEngineBase::startThread()
 void ThreadEngineBase::acquireBarrierSemaphore()
 {
     barrier.acquire();
+}
+
+void ThreadEngineBase::reportIfSuspensionDone() const
+{
+    if (futureInterface && futureInterface->isSuspending())
+        futureInterface->reportSuspended();
 }
 
 bool ThreadEngineBase::isCanceled()
@@ -304,8 +310,15 @@ void ThreadEngineBase::run() // implements QRunnable.
             // struct wants to be throttled by making a worker thread exit.
             // Respect that request unless this is the only worker thread left
             // running, in which case it has to keep going.
-            if (threadThrottleExit())
+            if (threadThrottleExit()) {
                 return;
+            } else {
+                // If the last worker thread is throttled and the state is "suspending",
+                // it means that suspension has been requested, and it is already
+                // in effect (because all previous threads have already exited).
+                // Report the "Suspended" state.
+                reportIfSuspensionDone();
+            }
         }
 
 #ifndef QT_NO_EXCEPTIONS

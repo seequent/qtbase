@@ -93,9 +93,6 @@
 #include "qdir_p.h"
 #include "qabstractfileengine_p.h"
 
-#ifdef QT_BOOTSTRAPPED
-#include <QtCore/qregexp.h>
-#endif
 #include <QtCore/qset.h>
 #include <QtCore/qstack.h>
 #include <QtCore/qvariant.h>
@@ -108,6 +105,7 @@
 #include <QtCore/private/qfilesystemmetadata_p.h>
 #include <QtCore/private/qfilesystemengine_p.h>
 #include <QtCore/private/qfileinfo_p.h>
+#include <QtCore/private/qduplicatetracker_p.h>
 
 #include <memory>
 
@@ -143,10 +141,7 @@ public:
     const QDir::Filters filters;
     const QDirIterator::IteratorFlags iteratorFlags;
 
-#if defined(QT_BOOTSTRAPPED)
-    // ### Qt6: Get rid of this once we don't bootstrap qmake anymore
-    QVector<QRegExp> nameRegExps;
-#elif QT_CONFIG(regularexpression)
+#if QT_CONFIG(regularexpression)
     QVector<QRegularExpression> nameRegExps;
 #endif
 
@@ -159,7 +154,7 @@ public:
     QFileInfo nextFileInfo;
 
     // Loop protection
-    QSet<QString> visitedLinks;
+    QDuplicateTracker<QString> visitedLinks;
 };
 
 /*!
@@ -172,20 +167,12 @@ QDirIteratorPrivate::QDirIteratorPrivate(const QFileSystemEntry &entry, const QS
       , filters(QDir::NoFilter == filters ? QDir::AllEntries : filters)
       , iteratorFlags(flags)
 {
-#if defined(QT_BOOTSTRAPPED)
+#if QT_CONFIG(regularexpression)
     nameRegExps.reserve(nameFilters.size());
     for (const auto &filter : nameFilters) {
-        nameRegExps.append(
-            QRegExp(filter,
-                    (filters & QDir::CaseSensitive) ? Qt::CaseSensitive : Qt::CaseInsensitive,
-                    QRegExp::Wildcard));
-    }
-#elif QT_CONFIG(regularexpression)
-    nameRegExps.reserve(nameFilters.size());
-    for (const auto &filter : nameFilters) {
-        QString re = QRegularExpression::wildcardToRegularExpression(filter);
-        nameRegExps.append(
-            QRegularExpression(re, (filters & QDir::CaseSensitive) ? QRegularExpression::NoPatternOption : QRegularExpression::CaseInsensitiveOption));
+        auto re = QRegularExpression::fromWildcard(filter, (filters & QDir::CaseSensitive ?
+                                                            Qt::CaseSensitive : Qt::CaseInsensitive));
+        nameRegExps.append(re);
     }
 #endif
     QFileSystemMetaData metaData;
@@ -210,8 +197,11 @@ void QDirIteratorPrivate::pushDirectory(const QFileInfo &fileInfo)
         path = fileInfo.canonicalFilePath();
 #endif
 
-    if (iteratorFlags & QDirIterator::FollowSymlinks)
-        visitedLinks << fileInfo.canonicalFilePath();
+    if ((iteratorFlags & QDirIterator::FollowSymlinks)) {
+        // Stop link loops
+        if (visitedLinks.hasSeen(fileInfo.canonicalFilePath()))
+            return;
+    }
 
     if (engine) {
         engine->setFileName(path);
@@ -318,11 +308,6 @@ void QDirIteratorPrivate::checkAndPushDirectory(const QFileInfo &fileInfo)
     if (!(filters & QDir::AllDirs) && !(filters & QDir::Hidden) && fileInfo.isHidden())
         return;
 
-    // Stop link loops
-    if (!visitedLinks.isEmpty() &&
-        visitedLinks.contains(fileInfo.canonicalFilePath()))
-        return;
-
     pushDirectory(fileInfo);
 }
 
@@ -353,23 +338,15 @@ bool QDirIteratorPrivate::matchesFilters(const QString &fileName, const QFileInf
         return false;
 
     // name filter
-#if QT_CONFIG(regularexpression) || defined(QT_BOOTSTRAPPED)
+#if QT_CONFIG(regularexpression)
     // Pass all entries through name filters, except dirs if the AllDirs
     if (!nameFilters.isEmpty() && !((filters & QDir::AllDirs) && fi.isDir())) {
         bool matched = false;
         for (const auto &re : nameRegExps) {
-#if defined(QT_BOOTSTRAPPED)
-            QRegExp copy = re;
-            if (copy.exactMatch(fileName)) {
-                matched = true;
-                break;
-            }
-#else
             if (re.match(fileName).hasMatch()) {
                 matched = true;
                 break;
             }
-#endif
         }
         if (!matched)
             return false;

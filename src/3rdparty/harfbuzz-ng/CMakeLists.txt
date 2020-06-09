@@ -5,7 +5,9 @@
 #####################################################################
 
 qt_add_3rdparty_library(BundledHarfbuzz
+    QMAKE_LIB_NAME harfbuzz
     STATIC
+    SKIP_AUTOMOC # special case
     SOURCES
         hb-dummy.cc
         src/hb.h

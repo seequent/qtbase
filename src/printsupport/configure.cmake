@@ -6,7 +6,7 @@
 
 #### Libraries
 
-qt_find_package(Cups PROVIDED_TARGETS Cups::Cups)
+qt_find_package(Cups PROVIDED_TARGETS Cups::Cups MODULE_NAME printsupport QMAKE_LIB cups)
 
 
 #### Tests
@@ -32,7 +32,7 @@ qt_feature("printer" PUBLIC
     SECTION "Painting"
     LABEL "QPrinter"
     PURPOSE "Provides a printer backend of QPainter."
-    CONDITION NOT UIKIT AND NOT WINRT AND QT_FEATURE_picture AND QT_FEATURE_temporaryfile AND QT_FEATURE_pdf
+    CONDITION NOT UIKIT AND QT_FEATURE_picture AND QT_FEATURE_temporaryfile AND QT_FEATURE_pdf
 )
 qt_feature_definition("printer" "QT_NO_PRINTER" NEGATE VALUE "1")
 qt_feature("printpreviewwidget" PUBLIC

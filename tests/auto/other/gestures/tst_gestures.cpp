@@ -1401,13 +1401,13 @@ void tst_Gestures::ungrabGesture() // a method on QWidget
 
         QSet<QGesture*> gestures;
     protected:
-        bool event(QEvent *event)
+        bool event(QEvent *event) override
         {
             if (event->type() == QEvent::Gesture) {
                 QGestureEvent *gestureEvent = static_cast<QGestureEvent*>(event);
-                if (gestureEvent)
-                    foreach (QGesture *g, gestureEvent->gestures())
-                        gestures.insert(g);
+                const auto eventGestures = gestureEvent->gestures();
+                for (QGesture *g : eventGestures)
+                    gestures.insert(g);
             }
             return GestureWidget::event(event);
         }
@@ -2099,7 +2099,7 @@ public:
         switch(event->type()) {
         case QEvent::MouseButtonPress:
             if (me->button() == mouseButton && gesture->state() == Qt::NoGesture) {
-                gesture->setHotSpot(QPointF(me->globalPos()));
+                gesture->setHotSpot(QPointF(me->globalPosition().toPoint()));
                 if (m_type == RmbAndCancelAllType)
                     gesture->setGestureCancelPolicy(QGesture::CancelAllInContext);
                 return QGestureRecognizer::TriggerGesture;

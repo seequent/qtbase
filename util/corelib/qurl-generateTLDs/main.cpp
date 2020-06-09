@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the utils of the Qt Toolkit.
@@ -62,7 +62,7 @@ static QString utf8encode(const QByteArray &array) // turns e.g. tranøy.no to t
 
     Takes the public suffix list (see usage message), a list of DNS domains
     whose child domains should not be presumed to trust one another, and
-    converts it to a form that lets qtbase/src/corelib/io/qtldurl.cpp's query
+    converts it to a form that lets qtbase/src/network/kernel/qtldurl.cpp's query
     functions find entries efficiently.
 
     Each line of the suffix file (aside from comments and blanks) gives a suffix
@@ -97,7 +97,7 @@ int main(int argc, char **argv)
         printf("       wget https://publicsuffix.org/list/public_suffix_list.dat -O public_suffix_list.dat\n");
         printf("       grep -v '^//' public_suffix_list.dat | grep . > public_suffix_list.dat.trimmed\n");
         printf("       ./%s public_suffix_list.dat.trimmed public_suffix_list.cpp\n\n", argv[0]);
-        printf("Now replace the code in qtbase/src/corelib/io/qurltlds_p.h with public_suffix_list.cpp's contents\n\n");
+        printf("Now replace the code in qtbase/src/network/kernel/qurltlds_p.h with public_suffix_list.cpp's contents\n\n");
         return 1;
     }
     QFile file(argv[1]);
@@ -145,8 +145,12 @@ int main(int argc, char **argv)
         entry.append(st);
         entry.append("\\0");
     }
-    outFile.write("static const quint32 tldIndices[] = {\n");
-    outDataBuffer.write("\nstatic const char *tldData[] = {");
+
+    outFile.write("// After the tldCount \"real\" entries in tldIndices, include a final entry\n");
+    outFile.write("// that records the sum of the lengths of all the chunks, i.e. the index\n");
+    outFile.write("// just past the end of tldChunks.\n");
+    outFile.write("static constexpr quint32 tldIndices[tldCount + 1] = {\n");
+    outDataBuffer.write("static const char * const tldData[tldChunkCount] = {");
 
     int totalUtf8Size = 0;
     int chunkSize = 0; // strlen of the current chunk (sizeof is bigger by 1)
@@ -177,17 +181,23 @@ int main(int argc, char **argv)
         }
     }
     chunks.append(QString::number(totalUtf8Size));
+
+    // Write one extra entry, at tldIndices[tldCount], that contains the total size.
     outFile.write(QByteArray::number(totalUtf8Size));
     outFile.write("\n};\n");
 
     outDataBuffer.write("\n};\n");
     outDataBuffer.close();
-    outFile.write(outDataBufferBA);
 
-    // write chunk information
+    // First we have to define tldChunkCount.
     outFile.write("\nstatic const quint16 tldChunkCount = ");
     outFile.write(QByteArray::number(chunks.count()));
-    outFile.write(";\nstatic const quint32 tldChunks[] = {");
+    outFile.write(";\n");
+
+    // Write tldData[tldChunkCount] = {...}.
+    outFile.write(outDataBufferBA);
+
+    outFile.write("static constexpr quint32 tldChunks[tldChunkCount] = {");
     outFile.write(chunks.join(", ").toLatin1());
     outFile.write("};\n");
     outFile.close();

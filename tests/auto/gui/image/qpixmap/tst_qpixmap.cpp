@@ -33,7 +33,6 @@
 #include <qimage.h>
 #include <qimagereader.h>
 #ifndef QT_NO_WIDGETS
-#include <qdesktopwidget.h>
 #include <qsplashscreen.h>
 #endif
 #include <qpaintengine.h>
@@ -103,7 +102,7 @@ private slots:
     void convertFromImageDetach();
     void convertFromImageCacheKey();
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     void toWinHBITMAP_data();
     void toWinHBITMAP();
     void fromWinHBITMAP_data();
@@ -841,7 +840,7 @@ void tst_QPixmap::convertFromImageCacheKey()
     QCOMPARE(copy.cacheKey(), pix.cacheKey());
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 
 QT_BEGIN_NAMESPACE
 Q_GUI_EXPORT HBITMAP qt_createIconMask(const QBitmap &bitmap);
@@ -1057,7 +1056,7 @@ void tst_QPixmap::fromWinHICON()
     QVERIFY(compareImages(imageFromHICON, imageFromFile));
 }
 
-#endif // Q_OS_WIN && !Q_OS_WINRT
+#endif // Q_OS_WIN
 
 void tst_QPixmap::onlyNullPixmapsOutsideGuiThread()
 {

@@ -57,7 +57,6 @@
 #include "qstringlist.h"
 #include "qurl.h"
 #include "qlocale.h"
-#include "qregexp.h"
 #include "quuid.h"
 #if QT_CONFIG(itemmodel)
 #include "qabstractitemmodel.h"
@@ -525,14 +524,14 @@ static bool convert(const QVariant::Private *d, int t, void *result, bool *ok)
         case QMetaType::Short:
         case QMetaType::Long:
         case QMetaType::Float:
-            *c = QChar(ushort(qMetaTypeNumber(d)));
+            *c = QChar::fromUcs2(qMetaTypeNumber(d));
             break;
         case QMetaType::UInt:
         case QMetaType::ULongLong:
         case QMetaType::UChar:
         case QMetaType::UShort:
         case QMetaType::ULong:
-            *c = QChar(ushort(qMetaTypeUNumber(d)));
+            *c = QChar::fromUcs2(qMetaTypeUNumber(d));
             break;
         default:
             return false;
@@ -1391,13 +1390,8 @@ static void streamDebug(QDebug dbg, const QVariant &v)
 
 const QVariant::Handler qt_kernel_variant_handler = {
     isNull,
-#ifndef QT_NO_DATASTREAM
-    nullptr,
-    nullptr,
-#endif
     compare,
     convert,
-    nullptr,
 #if !defined(QT_NO_DEBUG_STREAM)
     streamDebug
 #else
@@ -1413,13 +1407,8 @@ static void dummyStreamDebug(QDebug, const QVariant &) { Q_ASSERT_X(false, "QVar
 #endif
 const QVariant::Handler qt_dummy_variant_handler = {
     dummyIsNull,
-#ifndef QT_NO_DATASTREAM
-    nullptr,
-    nullptr,
-#endif
     dummyCompare,
     dummyConvert,
-    nullptr,
 #if !defined(QT_NO_DEBUG_STREAM)
     dummyStreamDebug
 #else
@@ -1517,13 +1506,8 @@ static void customStreamDebug(QDebug dbg, const QVariant &variant) {
 
 const QVariant::Handler qt_custom_variant_handler = {
     customIsNull,
-#ifndef QT_NO_DATASTREAM
-    nullptr,
-    nullptr,
-#endif
     customCompare,
     customConvert,
-    nullptr,
 #if !defined(QT_NO_DEBUG_STREAM)
     customStreamDebug
 #else
@@ -1681,7 +1665,6 @@ Q_CORE_EXPORT void QVariantPrivate::registerHandler(const int /* Modules::Names 
     \value Quaternion  a QQuaternion
     \value Rect  a QRect
     \value RectF  a QRectF
-    \value RegExp  a QRegExp
     \value RegularExpression  a QRegularExpression
     \value Region  a QRegion
     \value Size  a QSize
@@ -2077,12 +2060,6 @@ QVariant::QVariant(const char *val)
 */
 
 /*!
-  \fn QVariant::QVariant(const QRegExp &regExp)
-
-  Constructs a new variant with the regexp value \a regExp.
-*/
-
-/*!
   \fn QVariant::QVariant(const QRegularExpression &re)
 
   \since 5.0
@@ -2216,11 +2193,6 @@ QVariant::QVariant(const QUrl &u)
 QVariant::QVariant(const QLocale &l)
     : d(Locale)
 { v_construct<QLocale>(&d, l); }
-#ifndef QT_NO_REGEXP
-QVariant::QVariant(const QRegExp &regExp)
-    : d(RegExp)
-{ v_construct<QRegExp>(&d, regExp); }
-#endif // QT_NO_REGEXP
 #if QT_CONFIG(regularexpression)
 QVariant::QVariant(const QRegularExpression &re)
     : d(RegularExpression)
@@ -2262,7 +2234,7 @@ QVariant::QVariant(const QPersistentModelIndex &modelIndex)
     Note that return values in the ranges QVariant::Char through
     QVariant::RegExp and QVariant::Font through QVariant::Transform
     correspond to the values in the ranges QMetaType::QChar through
-    QMetaType::QRegExp and QMetaType::QFont through QMetaType::QQuaternion.
+    QMetaType::QRegularExpression and QMetaType::QFont through QMetaType::QQuaternion.
 
     Pay particular attention when working with char and QChar
     variants.  Note that there is no QVariant constructor specifically
@@ -2493,7 +2465,10 @@ void QVariant::load(QDataStream &s)
     qint8 is_null = false;
     if (s.version() >= QDataStream::Qt_4_2)
         s >> is_null;
-    if (typeId == QVariant::UserType) {
+    if (typeId == 27) {
+        // used to be QRegExp in Qt 4/5
+        typeId = QMetaType::type("QRegExp");
+    } else if (typeId == QVariant::UserType) {
         QByteArray name;
         s >> name;
         typeId = QMetaType::type(name.constData());
@@ -2532,9 +2507,11 @@ void QVariant::load(QDataStream &s)
 void QVariant::save(QDataStream &s) const
 {
     quint32 typeId = d.type().id();
-    if (typeId >= QMetaType::User)
+    bool saveAsUserType = false;
+    if (typeId >= QMetaType::User) {
         typeId = QMetaType::User;
-    bool fakeUserType = false;
+        saveAsUserType = true;
+    }
     if (s.version() < QDataStream::Qt_4_0) {
         int i;
         for (i = 0; i <= MapFromThreeCount - 1; ++i) {
@@ -2550,6 +2527,7 @@ void QVariant::save(QDataStream &s) const
     } else if (s.version() < QDataStream::Qt_5_0) {
         if (typeId == QMetaType::User) {
             typeId = 127; // QVariant::UserType had this value in Qt4
+            saveAsUserType = true;
         } else if (typeId >= 128 - 97 && typeId <= LastCoreType) {
             // In Qt4 id == 128 was FirstExtCoreType. In Qt5 ExtCoreTypes set was merged to CoreTypes
             // by moving all ids down by 97.
@@ -2566,15 +2544,22 @@ void QVariant::save(QDataStream &s) const
         } else if (typeId == QMetaType::QPolygonF || typeId == QMetaType::QUuid) {
             // These existed in Qt 4 only as a custom type
             typeId = 127;
-            fakeUserType = true;
+            saveAsUserType = true;
+        }
+    }
+    const char *typeName = nullptr;
+    if (saveAsUserType) {
+        typeName = QMetaType::typeName(d.type().id());
+        if (!strcmp(typeName, "QRegExp")) {
+            typeId = 27; // QRegExp in Qt 4/5
+            typeName = nullptr;
         }
     }
     s << typeId;
     if (s.version() >= QDataStream::Qt_4_2)
         s << qint8(d.is_null);
-    if (d.type().id() >= int(QVariant::UserType) || fakeUserType) {
+    if (typeName)
         s << QMetaType::typeName(userType());
-    }
 
     if (!isValid()) {
         if (s.version() < QDataStream::Qt_5_0)
@@ -2645,7 +2630,7 @@ QDataStream& operator<<(QDataStream &s, const QVariant::Type p)
 */
 
 template<typename T>
-inline T qVariantToHelper(const QVariant::Private &d, HandlersManager &)
+inline T qVariantToHelper(const QVariant::Private &d)
 {
     QMetaType targetType = QMetaType::fromType<T>();
     if (d.type() == targetType)
@@ -2674,7 +2659,7 @@ inline T qVariantToHelper(const QVariant::Private &d, HandlersManager &)
 */
 QStringList QVariant::toStringList() const
 {
-    return qVariantToHelper<QStringList>(d, handlerManager);
+    return qVariantToHelper<QStringList>(d);
 }
 
 /*!
@@ -2694,7 +2679,7 @@ QStringList QVariant::toStringList() const
 */
 QString QVariant::toString() const
 {
-    return qVariantToHelper<QString>(d, handlerManager);
+    return qVariantToHelper<QString>(d);
 }
 
 /*!
@@ -2705,7 +2690,7 @@ QString QVariant::toString() const
 */
 QVariantMap QVariant::toMap() const
 {
-    return qVariantToHelper<QVariantMap>(d, handlerManager);
+    return qVariantToHelper<QVariantMap>(d);
 }
 
 /*!
@@ -2716,7 +2701,7 @@ QVariantMap QVariant::toMap() const
 */
 QVariantHash QVariant::toHash() const
 {
-    return qVariantToHelper<QVariantHash>(d, handlerManager);
+    return qVariantToHelper<QVariantHash>(d);
 }
 
 /*!
@@ -2733,7 +2718,7 @@ QVariantHash QVariant::toHash() const
 */
 QDate QVariant::toDate() const
 {
-    return qVariantToHelper<QDate>(d, handlerManager);
+    return qVariantToHelper<QDate>(d);
 }
 
 /*!
@@ -2750,7 +2735,7 @@ QDate QVariant::toDate() const
 */
 QTime QVariant::toTime() const
 {
-    return qVariantToHelper<QTime>(d, handlerManager);
+    return qVariantToHelper<QTime>(d);
 }
 
 /*!
@@ -2767,7 +2752,7 @@ QTime QVariant::toTime() const
 */
 QDateTime QVariant::toDateTime() const
 {
-    return qVariantToHelper<QDateTime>(d, handlerManager);
+    return qVariantToHelper<QDateTime>(d);
 }
 
 /*!
@@ -2782,7 +2767,7 @@ QDateTime QVariant::toDateTime() const
 #if QT_CONFIG(easingcurve)
 QEasingCurve QVariant::toEasingCurve() const
 {
-    return qVariantToHelper<QEasingCurve>(d, handlerManager);
+    return qVariantToHelper<QEasingCurve>(d);
 }
 #endif
 
@@ -2797,7 +2782,7 @@ QEasingCurve QVariant::toEasingCurve() const
 */
 QByteArray QVariant::toByteArray() const
 {
-    return qVariantToHelper<QByteArray>(d, handlerManager);
+    return qVariantToHelper<QByteArray>(d);
 }
 
 #ifndef QT_NO_GEOM_VARIANT
@@ -2812,7 +2797,7 @@ QByteArray QVariant::toByteArray() const
 */
 QPoint QVariant::toPoint() const
 {
-    return qVariantToHelper<QPoint>(d, handlerManager);
+    return qVariantToHelper<QPoint>(d);
 }
 
 /*!
@@ -2825,7 +2810,7 @@ QPoint QVariant::toPoint() const
 */
 QRect QVariant::toRect() const
 {
-    return qVariantToHelper<QRect>(d, handlerManager);
+    return qVariantToHelper<QRect>(d);
 }
 
 /*!
@@ -2838,7 +2823,7 @@ QRect QVariant::toRect() const
 */
 QSize QVariant::toSize() const
 {
-    return qVariantToHelper<QSize>(d, handlerManager);
+    return qVariantToHelper<QSize>(d);
 }
 
 /*!
@@ -2851,7 +2836,7 @@ QSize QVariant::toSize() const
 */
 QSizeF QVariant::toSizeF() const
 {
-    return qVariantToHelper<QSizeF>(d, handlerManager);
+    return qVariantToHelper<QSizeF>(d);
 }
 
 /*!
@@ -2865,7 +2850,7 @@ QSizeF QVariant::toSizeF() const
 */
 QRectF QVariant::toRectF() const
 {
-    return qVariantToHelper<QRectF>(d, handlerManager);
+    return qVariantToHelper<QRectF>(d);
 }
 
 /*!
@@ -2878,7 +2863,7 @@ QRectF QVariant::toRectF() const
 */
 QLineF QVariant::toLineF() const
 {
-    return qVariantToHelper<QLineF>(d, handlerManager);
+    return qVariantToHelper<QLineF>(d);
 }
 
 /*!
@@ -2891,7 +2876,7 @@ QLineF QVariant::toLineF() const
 */
 QLine QVariant::toLine() const
 {
-    return qVariantToHelper<QLine>(d, handlerManager);
+    return qVariantToHelper<QLine>(d);
 }
 
 /*!
@@ -2905,7 +2890,7 @@ QLine QVariant::toLine() const
 */
 QPointF QVariant::toPointF() const
 {
-    return qVariantToHelper<QPointF>(d, handlerManager);
+    return qVariantToHelper<QPointF>(d);
 }
 
 #endif // QT_NO_GEOM_VARIANT
@@ -2921,7 +2906,7 @@ QPointF QVariant::toPointF() const
 */
 QUrl QVariant::toUrl() const
 {
-    return qVariantToHelper<QUrl>(d, handlerManager);
+    return qVariantToHelper<QUrl>(d);
 }
 #endif
 
@@ -2935,24 +2920,8 @@ QUrl QVariant::toUrl() const
 */
 QLocale QVariant::toLocale() const
 {
-    return qVariantToHelper<QLocale>(d, handlerManager);
+    return qVariantToHelper<QLocale>(d);
 }
-
-/*!
-    \fn QRegExp QVariant::toRegExp() const
-    \since 4.1
-
-    Returns the variant as a QRegExp if the variant has userType()
-    \l QMetaType::QRegExp; otherwise returns an empty QRegExp.
-
-    \sa canConvert(int targetTypeId), convert()
-*/
-#ifndef QT_NO_REGEXP
-QRegExp QVariant::toRegExp() const
-{
-    return qVariantToHelper<QRegExp>(d, handlerManager);
-}
-#endif
 
 #if QT_CONFIG(regularexpression)
 /*!
@@ -2966,7 +2935,7 @@ QRegExp QVariant::toRegExp() const
 */
 QRegularExpression QVariant::toRegularExpression() const
 {
-    return qVariantToHelper<QRegularExpression>(d, handlerManager);
+    return qVariantToHelper<QRegularExpression>(d);
 }
 #endif // QT_CONFIG(regularexpression)
 
@@ -2981,7 +2950,7 @@ QRegularExpression QVariant::toRegularExpression() const
 */
 QModelIndex QVariant::toModelIndex() const
 {
-    return qVariantToHelper<QModelIndex>(d, handlerManager);
+    return qVariantToHelper<QModelIndex>(d);
 }
 
 /*!
@@ -2994,7 +2963,7 @@ QModelIndex QVariant::toModelIndex() const
 */
 QPersistentModelIndex QVariant::toPersistentModelIndex() const
 {
-    return qVariantToHelper<QPersistentModelIndex>(d, handlerManager);
+    return qVariantToHelper<QPersistentModelIndex>(d);
 }
 #endif // QT_CONFIG(itemmodel)
 
@@ -3009,7 +2978,7 @@ QPersistentModelIndex QVariant::toPersistentModelIndex() const
 */
 QUuid QVariant::toUuid() const
 {
-    return qVariantToHelper<QUuid>(d, handlerManager);
+    return qVariantToHelper<QUuid>(d);
 }
 
 #ifndef QT_BOOTSTRAPPED
@@ -3023,7 +2992,7 @@ QUuid QVariant::toUuid() const
 */
 QJsonValue QVariant::toJsonValue() const
 {
-    return qVariantToHelper<QJsonValue>(d, handlerManager);
+    return qVariantToHelper<QJsonValue>(d);
 }
 
 /*!
@@ -3036,7 +3005,7 @@ QJsonValue QVariant::toJsonValue() const
 */
 QJsonObject QVariant::toJsonObject() const
 {
-    return qVariantToHelper<QJsonObject>(d, handlerManager);
+    return qVariantToHelper<QJsonObject>(d);
 }
 
 /*!
@@ -3049,7 +3018,7 @@ QJsonObject QVariant::toJsonObject() const
 */
 QJsonArray QVariant::toJsonArray() const
 {
-    return qVariantToHelper<QJsonArray>(d, handlerManager);
+    return qVariantToHelper<QJsonArray>(d);
 }
 
 /*!
@@ -3062,7 +3031,7 @@ QJsonArray QVariant::toJsonArray() const
 */
 QJsonDocument QVariant::toJsonDocument() const
 {
-    return qVariantToHelper<QJsonDocument>(d, handlerManager);
+    return qVariantToHelper<QJsonDocument>(d);
 }
 #endif // QT_BOOTSTRAPPED
 
@@ -3077,7 +3046,7 @@ QJsonDocument QVariant::toJsonDocument() const
 */
 QChar QVariant::toChar() const
 {
-    return qVariantToHelper<QChar>(d, handlerManager);
+    return qVariantToHelper<QChar>(d);
 }
 
 /*!
@@ -3088,7 +3057,7 @@ QChar QVariant::toChar() const
 */
 QBitArray QVariant::toBitArray() const
 {
-    return qVariantToHelper<QBitArray>(d, handlerManager);
+    return qVariantToHelper<QBitArray>(d);
 }
 
 template <typename T>
@@ -3277,7 +3246,7 @@ qreal QVariant::toReal(bool *ok) const
 */
 QVariantList QVariant::toList() const
 {
-    return qVariantToHelper<QVariantList>(d, handlerManager);
+    return qVariantToHelper<QVariantList>(d);
 }
 
 
@@ -3356,7 +3325,7 @@ static const quint32 qCanConvertMatrix[QMetaType::LastCoreType + 1] =
 
 /*QPointF*/       1 << QMetaType::QPoint,
 
-/*QRegExp*/       0,
+/*unused, was: QRegExp*/       0,
 
 /*QHash*/         0,
 

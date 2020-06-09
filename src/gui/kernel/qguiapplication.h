@@ -188,10 +188,11 @@ Q_SIGNALS:
     void commitDataRequest(QSessionManager &sessionManager);
     void saveStateRequest(QSessionManager &sessionManager);
 #endif
-    void paletteChanged(const QPalette &pal);
     void applicationDisplayNameChanged();
-    void fontChanged(const QFont &font);
-
+#if QT_DEPRECATED_SINCE(6, 0)
+    QT_DEPRECATED_VERSION_X_6_0("Handle QEvent::ApplicationPaletteChange instead") void paletteChanged(const QPalette &pal);
+    QT_DEPRECATED_VERSION_X_6_0("Handle QEvent::ApplicationFontChange instead")  void fontChanged(const QFont &font);
+#endif
 protected:
     bool event(QEvent *) override;
     bool compressEvent(QEvent *, QObject *receiver, QPostEventList *) override;

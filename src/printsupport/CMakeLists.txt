@@ -53,9 +53,6 @@ qt_extend_target(PrintSupport CONDITION QT_FEATURE_printpreviewwidget
 qt_extend_target(PrintSupport CONDITION WIN32
     SOURCES
         kernel/qprintengine_win.cpp kernel/qprintengine_win_p.h
-)
-
-qt_extend_target(PrintSupport CONDITION WIN32 AND NOT WINRT
     LIBRARIES
         comdlg32
         gdi32
@@ -142,6 +139,19 @@ if(QT_FEATURE_printdialog)
             ${qprintdialog1_resource_files}
     )
 endif()
+
+qt_extend_target(PrintSupport CONDITION MACOS AND TARGET Qt::Widgets
+    SOURCES
+        platform/macos/qpaintengine_mac.mm platform/macos/qpaintengine_mac_p.h
+        platform/macos/qcocoaprintdevice_p.h platform/macos/qcocoaprintdevice.mm
+        platform/macos/qcocoaprintersupport_p.h platform/macos/qcocoaprintersupport.mm
+        platform/macos/qprintengine_mac.mm platform/macos/qprintengine_mac_p.h
+    NO_PCH_SOURCES
+        "platform/macos/qcocoaprintersupport.mm"
+    PUBLIC_LIBRARIES
+        Qt::WidgetsPrivate
+        Cups::Cups
+)
 
 qt_extend_target(PrintSupport CONDITION MACOS AND QT_FEATURE_printdialog
     SOURCES

@@ -37,6 +37,8 @@
 **
 ****************************************************************************/
 
+#include <AppKit/AppKit.h>
+
 #include <qpa/qplatformtheme.h>
 
 #include "qcocoahelpers.h"
@@ -48,10 +50,6 @@
 #include <private/qguiapplication_p.h>
 #include <private/qwindow_p.h>
 #include <QtGui/private/qcoregraphics_p.h>
-
-#ifndef QT_NO_WIDGETS
-#include <QtWidgets/QWidget>
-#endif
 
 #include <algorithm>
 

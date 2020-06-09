@@ -40,7 +40,6 @@
 #include "qsplashscreen.h"
 
 #include "qapplication.h"
-#include "qdesktopwidget.h"
 #include <private/qdesktopwidget_p.h>
 #include "qpainter.h"
 #include "qpixmap.h"
@@ -253,9 +252,7 @@ inline static bool waitForWindowExposed(QWindow *window, int timeout = 1000)
             break;
         QCoreApplication::processEvents(QEventLoop::AllEvents, remaining);
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-#if defined(Q_OS_WINRT)
-        WaitForSingleObjectEx(GetCurrentThread(), TimeOutMs, false);
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
         Sleep(uint(TimeOutMs));
 #else
         struct timespec ts = { TimeOutMs / 1000, (TimeOutMs % 1000) * 1000 * 1000 };
@@ -296,25 +293,14 @@ void QSplashScreen::setPixmap(const QPixmap &pixmap)
 // 3) If a widget with associated QWindow is found, use that
 // 4) When nothing can be found, try to center it over the cursor
 
-#if QT_DEPRECATED_SINCE(5, 15)
-static inline int screenNumberOf(const QDesktopScreenWidget *dsw)
-{
-    auto desktopWidgetPrivate =
-        static_cast<QDesktopWidgetPrivate *>(qt_widget_private(QApplication::desktop()));
-    return desktopWidgetPrivate->screens.indexOf(const_cast<QDesktopScreenWidget *>(dsw));
-}
-#endif
-
 const QScreen *QSplashScreenPrivate::screenFor(const QWidget *w)
 {
     if (w && w->screen())
         return w->screen();
 
     for (const QWidget *p = w; p !=nullptr ; p = p->parentWidget()) {
-#if QT_DEPRECATED_SINCE(5, 15)
         if (auto dsw = qobject_cast<const QDesktopScreenWidget *>(p))
-            return QGuiApplication::screens().value(screenNumberOf(dsw));
-#endif
+            return dsw->screen();
         if (QWindow *window = p->windowHandle())
             return window->screen();
     }

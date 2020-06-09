@@ -47,14 +47,12 @@ QT_BEGIN_NAMESPACE
 
 class Q_CORE_EXPORT QRunnable
 {
-    int ref;
+    int ref; // Qt6: Make this a bool, or make autoDelete() virtual.
 
     friend class QThreadPool;
     friend class QThreadPoolPrivate;
     friend class QThreadPoolThread;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     Q_DISABLE_COPY(QRunnable)
-#endif
 public:
     virtual void run() = 0;
 

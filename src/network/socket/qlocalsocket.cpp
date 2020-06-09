@@ -135,7 +135,7 @@ QT_BEGIN_NAMESPACE
         \l{https://msdn.microsoft.com/en-us/library/windows/desktop/ms740522(v=vs.85).aspx}
         {Winsock 2 Socket Handle}.
 
-        \li With WinRT and on INTEGRITY, the returned value is the
+        \li On INTEGRITY, the returned value is the
         QTcpSocket socket descriptor and the type is defined by
         \l{QTcpSocket::socketDescriptor}{socketDescriptor}.
 
@@ -330,13 +330,6 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn void QLocalSocket::error(QLocalSocket::LocalSocketError socketError)
-    \obsolete
-
-    Use errorOccurred() instead.
-*/
-
-/*!
     \fn void QLocalSocket::errorOccurred(QLocalSocket::LocalSocketError socketError)
     \since 5.15
 
@@ -372,9 +365,6 @@ QLocalSocket::QLocalSocket(QObject * parent)
 {
     Q_D(QLocalSocket);
     d->init();
-
-    // Support the deprecated error() signal:
-    connect(this, &QLocalSocket::errorOccurred, this, QOverload<QLocalSocket::LocalSocketError>::of(&QLocalSocket::error));
 }
 
 /*!

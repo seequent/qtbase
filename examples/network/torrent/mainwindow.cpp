@@ -405,8 +405,8 @@ bool MainWindow::addTorrent(const QString &fileName, const QString &destinationF
     QTreeWidgetItem *item = new QTreeWidgetItem(torrentView);
 
     QString baseFileName = QFileInfo(fileName).fileName();
-    if (baseFileName.toLower().endsWith(".torrent"))
-        baseFileName.remove(baseFileName.size() - 8);
+    if (baseFileName.endsWith(u".torrent", Qt::CaseInsensitive))
+        baseFileName.chop(8);
 
     item->setText(0, baseFileName);
     item->setToolTip(0, tr("Torrent: %1<br>Destination: %2")

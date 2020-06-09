@@ -75,6 +75,7 @@
 #include "cxx-attributes.h"
 
 #include "moc_include.h"
+#include "pointery_to_incomplete.h"
 #include "fwdclass1.h"
 #include "fwdclass2.h"
 #include "fwdclass3.h"
@@ -727,6 +728,7 @@ private slots:
     void qpropertyMembers();
     void observerMetaCall();
     void setQPRopertyBinding();
+    void privateQPropertyShim();
 
 signals:
     void sigWithUnsignedArg(unsigned foo);
@@ -1542,6 +1544,7 @@ class PrivatePropertyTest : public QObject
     Q_PRIVATE_PROPERTY(PrivatePropertyTest::d, QString blub4 MEMBER mBlub NOTIFY blub4Changed)
     Q_PRIVATE_PROPERTY(PrivatePropertyTest::d, QString blub5 MEMBER mBlub NOTIFY blub5Changed)
     Q_PRIVATE_PROPERTY(PrivatePropertyTest::d, QString blub6 MEMBER mConst CONSTANT)
+    Q_PRIVATE_PROPERTY(PrivatePropertyTest::d, QProperty<int> x)
     class MyDPointer {
     public:
         MyDPointer() : mConst("const"), mBar(0), mPlop(0) {}
@@ -1555,6 +1558,7 @@ class PrivatePropertyTest : public QObject
         void setBlub(const QString &value) { mBlub = value; }
         QString mBlub;
         const QString mConst;
+        QProperty<int> x;
     private:
         int mBar;
         int mPlop;
@@ -1590,6 +1594,9 @@ void tst_Moc::qprivateproperties()
     test.setProperty("baz", 4);
     QCOMPARE(test.property("baz"), QVariant::fromValue(4));
 
+    test.setProperty("x", 100);
+    QCOMPARE(test.property("x"), QVariant::fromValue(100));
+    QVERIFY(test.metaObject()->property(test.metaObject()->indexOfProperty("x")).isQProperty());
 }
 
 void tst_Moc::warnOnPropertyWithoutREAD()
@@ -1767,14 +1774,20 @@ public slots:
         QString const returnConstString2( QString const s) { return s; }
 };
 
+
+struct science_constant {};
+struct science_const {};
+struct constconst {};
+struct const_ {};
+
 class QTBUG9354_constInName: public QObject
 { Q_OBJECT
 public slots:
-    void slotChooseScientificConst0(struct science_constant const &) {};
-    void foo(struct science_const const &) {};
-    void foo(struct constconst const &) {};
-    void foo(struct constconst *) {};
-    void foo(struct const_ *) {};
+    void slotChooseScientificConst0(science_constant const &) {};
+    void foo(science_const const &) {};
+    void foo(constconst const &) {};
+    void foo(constconst *) {};
+    void foo(const_ *) {};
 };
 
 
@@ -4205,6 +4218,65 @@ void tst_Moc::setQPRopertyBinding()
 
     QCOMPARE(instance.publicProperty.value(), 42);
     QVERIFY(bindingCalled); // but now it should've been called :)
+}
+
+
+class ClassWithPrivateQPropertyShim :public QObject
+{
+    Q_OBJECT
+public:
+    Q_PRIVATE_QPROPERTY(d_func(), int, testProperty, setTestProperty, NOTIFY testPropertyChanged)
+
+    Q_PRIVATE_QPROPERTIES_BEGIN
+    Q_PRIVATE_QPROPERTY_IMPL(testProperty)
+    Q_PRIVATE_QPROPERTIES_END
+
+signals:
+    void testPropertyChanged();
+public:
+
+    struct Private {
+        Private(ClassWithPrivateQPropertyShim *pub)
+            : q(pub)
+        {}
+
+        ClassWithPrivateQPropertyShim *q = nullptr;
+
+        QProperty<int> testProperty;
+        void onTestPropertyChanged() { q->testPropertyChanged(); }
+        QPropertyMemberChangeHandler<&Private::testProperty, &Private::onTestPropertyChanged> testChangeHandler{this};
+    };
+    Private priv{this};
+
+    Private *d_func() { return &priv; }
+    const Private *d_func() const { return &priv; }
+};
+
+
+void tst_Moc::privateQPropertyShim()
+{
+    ClassWithPrivateQPropertyShim testObject;
+
+    {
+        auto metaObject = &ClassWithPrivateQPropertyShim::staticMetaObject;
+        QMetaProperty prop = metaObject->property(metaObject->indexOfProperty("testProperty"));
+        QVERIFY(prop.isValid());
+        QVERIFY(prop.notifySignal().isValid());
+    }
+
+    testObject.priv.testProperty.setValue(42);
+    QCOMPARE(testObject.property("testProperty").toInt(), 42);
+
+    // Behave like a QProperty
+    QVERIFY(!testObject.testProperty.hasBinding());
+    testObject.testProperty.setBinding([]() { return 100; });
+    QCOMPARE(testObject.testProperty.value(), 100);
+    QVERIFY(testObject.testProperty.hasBinding());
+
+    // Old style setter getters
+    testObject.setTestProperty(400);
+    QVERIFY(!testObject.testProperty.hasBinding());
+    QCOMPARE(testObject.testProperty(), 400);
 }
 
 QTEST_MAIN(tst_Moc)

@@ -1378,6 +1378,9 @@ QStringList qt_make_filter_list(const QString &filter)
 
     \snippet code/src_gui_dialogs_qfiledialog.cpp 6
 
+    \note With Android's native file dialog, the mime type matching the given
+        name filter is used because only mime types are supported.
+
     \sa setMimeTypeFilters(), setNameFilters()
 */
 void QFileDialog::setNameFilter(const QString &filter)
@@ -1829,9 +1832,6 @@ int QFileDialogPrivate::maxNameLength(const QString &path)
 {
 #if defined(Q_OS_UNIX)
     return ::pathconf(QFile::encodeName(path).data(), _PC_NAME_MAX);
-#elif defined(Q_OS_WINRT)
-    Q_UNUSED(path);
-    return MAX_PATH;
 #elif defined(Q_OS_WIN)
     DWORD maxLength;
     const QString drive = path.left(3);
@@ -3340,7 +3340,7 @@ void QFileDialogPrivate::createMenuActions()
     QAction *goToParent =  new QAction(q);
     goToParent->setObjectName(QLatin1String("qt_goto_parent_action"));
 #ifndef QT_NO_SHORTCUT
-    goToParent->setShortcut(Qt::CTRL + Qt::UpArrow);
+    goToParent->setShortcut(Qt::CTRL | Qt::Key_Up);
 #endif
     QObject::connect(goToParent, SIGNAL(triggered()), q, SLOT(_q_navigateToParent()));
     q->addAction(goToParent);

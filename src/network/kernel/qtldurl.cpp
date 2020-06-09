@@ -58,6 +58,8 @@ enum TLDMatchType {
     ExceptionMatch,
 };
 
+// Scan the auto-generated table of TLDs for an entry. For more details
+// see comments in file:  util/corelib/qurl-generateTLDs/main.cpp
 static bool containsTLDEntry(QStringView entry, TLDMatchType match)
 {
     const QStringView matchSymbols[] = {
@@ -66,18 +68,36 @@ static bool containsTLDEntry(QStringView entry, TLDMatchType match)
         u"!",
     };
     const auto symbol = matchSymbols[match];
-    int index = qt_hash(entry, qt_hash(symbol)) % tldCount;
+    const int index = qt_hash(entry, qt_hash(symbol)) % tldCount;
 
     // select the right chunk from the big table
     short chunk = 0;
     uint chunkIndex = tldIndices[index], offset = 0;
-    while (chunk < tldChunkCount && tldIndices[index] >= tldChunks[chunk]) {
+
+    // The offset in the big string, of the group that our entry hashes into.
+    const auto tldGroupOffset = tldIndices[index];
+
+    // It should always be inside all chunks' total size.
+    Q_ASSERT(tldGroupOffset < tldChunks[tldChunkCount - 1]);
+    // All offsets are stored in non-decreasing order.
+    // This check is within bounds as tldIndices has length tldCount+1.
+    Q_ASSERT(tldGroupOffset <= tldIndices[index + 1]);
+    // The last extra entry in tldIndices
+    // should be equal to the total of all chunks' lengths.
+    Q_STATIC_ASSERT(tldIndices[tldCount] == tldChunks[tldChunkCount - 1]);
+
+    // Find which chunk contains the tldGroupOffset
+    while (tldGroupOffset >= tldChunks[chunk]) {
         chunkIndex -= tldChunks[chunk];
         offset += tldChunks[chunk];
         chunk++;
+
+        // We can not go above the number of chunks we have, since all our
+        // indices are less than the total chunks' size (see asserts above).
+        Q_ASSERT(chunk < tldChunkCount);
     }
 
-    // check all the entries from the given index
+    // check all the entries from the given offset
     while (chunkIndex < tldIndices[index+1] - offset) {
         const auto utf8 = tldData[chunk] + chunkIndex;
         if ((symbol.isEmpty() || QLatin1Char(*utf8) == symbol) && entry == QString::fromUtf8(utf8 + symbol.size()))
@@ -90,33 +110,12 @@ static bool containsTLDEntry(QStringView entry, TLDMatchType match)
 /*!
     \internal
 
-    Return the top-level-domain per Qt's copy of the Mozilla public suffix list of
-    \a domain.
-*/
-
-Q_NETWORK_EXPORT QString qTopLevelDomain(const QString &domain)
-{
-    const QString domainLower = domain.toLower();
-    QVector<QStringRef> sections = domainLower.splitRef(QLatin1Char('.'), Qt::SkipEmptyParts);
-    if (sections.isEmpty())
-        return QString();
-
-    QString level, tld;
-    for (int j = sections.count() - 1; j >= 0; --j) {
-        level.prepend(QLatin1Char('.') + sections.at(j));
-        if (qIsEffectiveTLD(level.rightRef(level.size() - 1)))
-            tld = level;
-    }
-    return tld;
-}
-
-/*!
-    \internal
-
     Return true if \a domain is a top-level-domain per Qt's copy of the Mozilla public suffix list.
+
+    The \a domain must be in lower-case format (as per QString::toLower()).
 */
 
-Q_NETWORK_EXPORT bool qIsEffectiveTLD(const QStringRef &domain)
+Q_NETWORK_EXPORT bool qIsEffectiveTLD(QStringView domain)
 {
     // for domain 'foo.bar.com':
     // 1. return if TLD table contains 'foo.bar.com'
@@ -126,7 +125,7 @@ Q_NETWORK_EXPORT bool qIsEffectiveTLD(const QStringRef &domain)
     if (containsTLDEntry(domain, ExactMatch)) // 1
         return true;
 
-    const int dot = domain.indexOf(QLatin1Char('.'));
+    const auto dot = domain.indexOf(QLatin1Char('.'));
     if (dot < 0) // Actual TLD: may be effective if the subject of a wildcard rule:
         return containsTLDEntry(QString(QLatin1Char('.') + domain), SuffixMatch);
     if (containsTLDEntry(domain.mid(dot), SuffixMatch))   // 2

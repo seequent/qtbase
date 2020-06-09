@@ -69,6 +69,7 @@ class QMoveEvent;
 class QResizeEvent;
 class QShowEvent;
 class QHideEvent;
+class QCloseEvent;
 class QKeyEvent;
 class QMouseEvent;
 #if QT_CONFIG(wheelevent)
@@ -158,8 +159,7 @@ public:
 
     WId winId() const;
 
-    QWindow *parent(AncestorMode mode) const;
-    QWindow *parent() const; // ### Qt6: Merge with above
+    QWindow *parent(AncestorMode mode = ExcludeTransients) const;
     void setParent(QWindow *parent);
 
     bool isTopLevel() const;
@@ -350,7 +350,7 @@ protected:
 
     virtual void showEvent(QShowEvent *);
     virtual void hideEvent(QHideEvent *);
-    // TODO Qt 6 - add closeEvent virtual handler
+    virtual void closeEvent(QCloseEvent *);
 
     virtual bool event(QEvent *) override;
     virtual void keyPressEvent(QKeyEvent *);

@@ -368,7 +368,7 @@ QByteArray QShader::serialized() const
     ds << QShaderPrivate::QSB_VERSION;
     ds << int(d->stage);
     d->desc.serialize(&ds);
-    ds << d->shaders.count();
+    ds << int(d->shaders.count());
     for (auto it = d->shaders.cbegin(), itEnd = d->shaders.cend(); it != itEnd; ++it) {
         const QShaderKey &k(it.key());
         writeShaderKey(&ds, k);
@@ -376,12 +376,12 @@ QByteArray QShader::serialized() const
         ds << shader.shader();
         ds << shader.entryPoint();
     }
-    ds << d->bindings.count();
+    ds << int(d->bindings.count());
     for (auto it = d->bindings.cbegin(), itEnd = d->bindings.cend(); it != itEnd; ++it) {
         const QShaderKey &k(it.key());
         writeShaderKey(&ds, k);
         const NativeResourceBindingMap &map(it.value());
-        ds << map.count();
+        ds << int(map.count());
         for (auto mapIt = map.cbegin(), mapItEnd = map.cend(); mapIt != mapItEnd; ++mapIt) {
             ds << mapIt.key();
             ds << mapIt.value().first;
@@ -545,10 +545,12 @@ bool operator==(const QShader &lhs, const QShader &rhs) Q_DECL_NOTHROW
  */
 size_t qHash(const QShader &s, size_t seed) Q_DECL_NOTHROW
 {
-    size_t h = s.stage();
-    for (auto it = s.d->shaders.constBegin(), itEnd = s.d->shaders.constEnd(); it != itEnd; ++it)
-        h += qHash(it.key(), seed) + qHash(it.value().shader(), seed);
-    return h;
+    QtPrivate::QHashCombine hash;
+    seed = hash(seed, s.stage());
+    seed = qHashRange(s.d->shaders.keyValueBegin(),
+                      s.d->shaders.keyValueEnd(),
+                      seed);
+    return seed;
 }
 
 /*!
@@ -598,7 +600,11 @@ bool operator==(const QShaderKey &lhs, const QShaderKey &rhs) Q_DECL_NOTHROW
  */
 size_t qHash(const QShaderKey &k, size_t seed) Q_DECL_NOTHROW
 {
-    return seed + 10 * k.source() + k.sourceVersion().version() + k.sourceVersion().flags() + k.sourceVariant();
+    return qHashMulti(seed,
+                      k.source(),
+                      k.sourceVersion().version(),
+                      k.sourceVersion().flags(),
+                      k.sourceVariant());
 }
 
 /*!
@@ -619,6 +625,16 @@ bool operator==(const QShaderCode &lhs, const QShaderCode &rhs) Q_DECL_NOTHROW
 
     \relates QShaderCode
  */
+
+/*!
+    Returns the hash value for \a k, using \a seed to seed the calculation.
+
+    \relates QShaderCode
+ */
+size_t qHash(const QShaderCode &k, size_t seed) noexcept
+{
+    return qHash(k.shader(), seed);
+}
 
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug dbg, const QShader &bs)

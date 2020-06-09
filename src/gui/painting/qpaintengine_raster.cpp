@@ -62,8 +62,10 @@
 #include <private/qimage_p.h>
 #include <private/qstatictext_p.h>
 #include <private/qcosmeticstroker_p.h>
-#include "qmemrotate_p.h"
-#include "qrgba64_p.h"
+#include <private/qdrawhelper_p.h>
+#include <private/qmemrotate_p.h>
+#include <private/qpixellayout_p.h>
+#include <private/qrgba64_p.h>
 
 #include "qpaintengine_raster_p.h"
 //   #include "qbezier_p.h"
@@ -156,9 +158,6 @@ static const qreal aliasedCoordinateDelta = 0.5 - 0.015625;
 
 static inline bool winClearTypeFontsEnabled()
 {
-#ifdef Q_OS_WINRT
-    return false;
-#else // Q_OS_WINRT
     UINT result = 0;
 #if !defined(SPI_GETFONTSMOOTHINGTYPE) // MinGW
 #    define SPI_GETFONTSMOOTHINGTYPE  0x200A
@@ -166,7 +165,6 @@ static inline bool winClearTypeFontsEnabled()
 #endif
     SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &result, 0);
     return result == FE_FONTSMOOTHINGCLEARTYPE;
-#endif // !Q_OS_WINRT
 }
 
 /*!
@@ -905,13 +903,6 @@ void QRasterPaintEngine::renderHintsChanged()
     bool was_bilinear = s->flags.bilinear;
 
     s->flags.antialiased = bool(s->renderHints & QPainter::Antialiasing);
-#if QT_DEPRECATED_SINCE(5, 14)
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    if (s->renderHints & QPainter::HighQualityAntialiasing)
-        s->flags.antialiased = true;
-QT_WARNING_POP
-#endif
     s->flags.bilinear = bool(s->renderHints & QPainter::SmoothPixmapTransform);
     s->flags.legacy_rounding = !bool(s->renderHints & QPainter::Antialiasing) && bool(s->renderHints & QPainter::Qt4CompatiblePainting);
 
@@ -3161,7 +3152,7 @@ void QRasterPaintEngine::drawTextItem(const QPointF &p, const QTextItem &textIte
 #ifdef QT_DEBUG_DRAW
     Q_D(QRasterPaintEngine);
     fprintf(stderr," - QRasterPaintEngine::drawTextItem(), (%.2f,%.2f), string=%s ct=%d\n",
-           p.x(), p.y(), QString::fromRawData(ti.chars, ti.num_chars).toLatin1().data(),
+           p.x(), p.y(), QStringView(ti.chars, ti.num_chars).toLatin1().data(),
            d->glyphCacheFormat);
 #endif
 

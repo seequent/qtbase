@@ -42,7 +42,7 @@
 #include "qapplication.h"
 #include "qclipboard.h"
 #include "qcursor.h"
-#include "qdesktopwidget.h"
+#include "qdesktopwidget_p.h"
 #include "qdir.h"
 #include "qevent.h"
 #include "qfile.h"
@@ -92,7 +92,9 @@
 #include <private/qthread_p.h>
 
 #include <private/qfont_p.h>
+#if QT_CONFIG(action)
 #include <private/qaction_p.h>
+#endif
 
 #include <stdlib.h>
 
@@ -1211,18 +1213,15 @@ void QApplicationPrivate::handlePaletteChanged(const char *className)
 
     // Setting the global application palette is documented to
     // reset any previously set class specific widget palettes.
-    bool sendPaletteChangeToAllWidgets = false;
-    if (!className && !widgetPalettes.isEmpty()) {
-        sendPaletteChangeToAllWidgets = true;
+    if (!className && !widgetPalettes.isEmpty())
         widgetPalettes.clear();
-    }
 
     QGuiApplicationPrivate::handlePaletteChanged(className);
 
     QEvent event(QEvent::ApplicationPaletteChange);
     const QWidgetList widgets = QApplication::allWidgets();
     for (auto widget : widgets) {
-        if (sendPaletteChangeToAllWidgets || (!className && widget->isWindow()) || (className && widget->inherits(className)))
+        if (!widget->isWindow() && widget->inherits(className))
             QCoreApplication::sendEvent(widget, &event);
     }
 
@@ -1356,26 +1355,20 @@ QFont QApplication::font(const char *className)
 
 void QApplication::setFont(const QFont &font, const char *className)
 {
-    bool all = false;
     FontHash *hash = app_fonts();
     if (!className) {
         QGuiApplication::setFont(font);
-        if (hash && hash->size()) {
-            all = true;
+        if (hash && hash->size())
             hash->clear();
-        }
     } else if (hash) {
         hash->insert(className, font);
     }
     if (QApplicationPrivate::is_app_running && !QApplicationPrivate::is_app_closing) {
-        // Send ApplicationFontChange to qApp itself, and to the widgets.
         QEvent e(QEvent::ApplicationFontChange);
-        QCoreApplication::sendEvent(QApplication::instance(), &e);
-
         QWidgetList wids = QApplication::allWidgets();
         for (QWidgetList::ConstIterator it = wids.constBegin(), cend = wids.constEnd(); it != cend; ++it) {
             QWidget *w = *it;
-            if (all || (!className && w->isWindow()) || w->inherits(className)) // matching class
+            if (!w->isWindow() && w->inherits(className)) // matching class
                 sendEvent(w, &e);
         }
 
@@ -1740,14 +1733,15 @@ bool QApplication::event(QEvent *e)
 #endif
     }
 
-    if(e->type() == QEvent::LanguageChange) {
+    if (e->type() == QEvent::LanguageChange || e->type() == QEvent::ApplicationFontChange ||
+        e->type() == QEvent::ApplicationPaletteChange) {
         // QGuiApplication::event does not account for the cases where
         // there is a top level widget without a window handle. So they
         // need to have the event posted here
         const QWidgetList list = topLevelWidgets();
         for (auto *w : list) {
             if (!w->windowHandle() && (w->windowType() != Qt::Desktop))
-                postEvent(w, new QEvent(QEvent::LanguageChange));
+                postEvent(w, new QEvent(e->type()));
         }
     }
 
@@ -2386,7 +2380,7 @@ bool QApplicationPrivate::sendMouseEvent(QWidget *receiver, QMouseEvent *event,
 
     const bool graphicsWidget = nativeWidget->testAttribute(Qt::WA_DontShowOnScreen);
 
-    bool widgetUnderMouse = QRectF(receiver->rect()).contains(event->localPos());
+    bool widgetUnderMouse = QRectF(receiver->rect()).contains(event->position());
 
     // Clear the obsolete leaveAfterRelease value, if mouse button has been released but
     // leaveAfterRelease has not been updated.
@@ -2412,9 +2406,9 @@ bool QApplicationPrivate::sendMouseEvent(QWidget *receiver, QMouseEvent *event,
             || (isAlien(lastMouseReceiver) && !alienWidget)) {
             if (activePopupWidget) {
                 if (!QWidget::mouseGrabber())
-                    dispatchEnterLeave(alienWidget ? alienWidget : nativeWidget, lastMouseReceiver, event->screenPos());
+                    dispatchEnterLeave(alienWidget ? alienWidget : nativeWidget, lastMouseReceiver, event->globalPosition());
             } else {
-                dispatchEnterLeave(receiver, lastMouseReceiver, event->screenPos());
+                dispatchEnterLeave(receiver, lastMouseReceiver, event->globalPosition());
             }
 
         }
@@ -2422,7 +2416,7 @@ bool QApplicationPrivate::sendMouseEvent(QWidget *receiver, QMouseEvent *event,
 
 #ifdef ALIEN_DEBUG
     qDebug() << "QApplicationPrivate::sendMouseEvent: receiver:" << receiver
-             << "pos:" << event->pos() << "alien" << alienWidget << "button down"
+             << "pos:" << event->position() << "alien" << alienWidget << "button down"
              << *buttonDown << "last" << lastMouseReceiver << "leave after release"
              << leaveAfterRelease;
 #endif
@@ -2451,8 +2445,8 @@ bool QApplicationPrivate::sendMouseEvent(QWidget *receiver, QMouseEvent *event,
         if (nativeGuard)
             enter = alienGuard ? alienWidget : nativeWidget;
         else // The receiver is typically deleted on mouse release with drag'n'drop.
-            enter = QApplication::widgetAt(event->globalPos());
-        dispatchEnterLeave(enter, leaveAfterRelease, event->screenPos());
+            enter = QApplication::widgetAt(event->globalPosition().toPoint());
+        dispatchEnterLeave(enter, leaveAfterRelease, event->globalPosition());
         leaveAfterRelease = nullptr;
         lastMouseReceiver = enter;
     } else if (!wasLeaveAfterRelease) {
@@ -2460,7 +2454,7 @@ bool QApplicationPrivate::sendMouseEvent(QWidget *receiver, QMouseEvent *event,
             if (!QWidget::mouseGrabber())
                 lastMouseReceiver = alienGuard ? alienWidget : (nativeGuard ? nativeWidget : nullptr);
         } else {
-            lastMouseReceiver = receiverGuard ? receiver : QApplication::widgetAt(event->globalPos());
+            lastMouseReceiver = receiverGuard ? receiver : QApplication::widgetAt(event->globalPosition().toPoint());
         }
     }
 
@@ -2525,22 +2519,32 @@ void QApplicationPrivate::sendSyntheticEnterLeave(QWidget *widget)
 }
 
 /*!
-    Returns the desktop widget (also called the root window).
+    \internal
+
+    Returns the desktop widget (also called the root window) for \a screen.
+
+    If \a screen is nullptr, then the widget that represents the entire virtual
+    desktop is returned, and its geometry will be the union of all screens.
+
+    Use the desktop widget for a specific screen as the parent of a new toplevel
+    widget to position the widget on a specific screen.
 
     The desktop may be composed of multiple screens, so it would be incorrect,
     for example, to attempt to \e center some widget in the desktop's geometry.
-    QDesktopWidget has various functions for obtaining useful geometries upon
-    the desktop, such as QDesktopWidget::screenGeometry() and
-    QDesktopWidget::availableGeometry().
+    Use QScreen::geometry() and QScreen::availableGeometry() to get the dimensions
+    of a specific screen instead.
 */
-QDesktopWidget *QApplication::desktop()
+QWidget *QApplication::desktop(QScreen *screen)
 {
     CHECK_QAPP_INSTANCE(nullptr)
     if (!qt_desktopWidget || // not created yet
          !(qt_desktopWidget->windowType() == Qt::Desktop)) { // reparented away
         qt_desktopWidget = new QDesktopWidget();
     }
-    return qt_desktopWidget;
+    if (!screen)
+        return qt_desktopWidget;
+    QDesktopWidgetPrivate *dwp = static_cast<QDesktopWidgetPrivate*>(qt_widget_private(qt_desktopWidget));
+    return dwp->widgetForScreen(screen);
 }
 
 /*
@@ -2908,7 +2912,7 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
             QWidget* w = static_cast<QWidget *>(receiver);
 
             QMouseEvent* mouse = static_cast<QMouseEvent*>(e);
-            QPoint relpos = mouse->pos();
+            QPoint relpos = mouse->position().toPoint();
 
             if (e->spontaneous()) {
                 if (e->type() != QEvent::MouseMove)
@@ -2925,7 +2929,7 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
                     && w->rect().contains(relpos)) { // Outside due to mouse grab?
                     d->toolTipWidget = w;
                     d->toolTipPos = relpos;
-                    d->toolTipGlobalPos = mouse->globalPos();
+                    d->toolTipGlobalPos = mouse->globalPosition().toPoint();
                     QStyle *s = d->toolTipWidget->style();
                     int wakeDelay = s->styleHint(QStyle::SH_ToolTip_WakeUpDelay, nullptr, d->toolTipWidget, nullptr);
                     d->toolTipWakeUp.start(d->toolTipFallAsleep.isActive() ? 20 : wakeDelay, this);
@@ -2936,7 +2940,7 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
 
             QPointer<QWidget> pw = w;
             while (w) {
-                QMouseEvent me(mouse->type(), relpos, mouse->windowPos(), mouse->globalPos(),
+                QMouseEvent me(mouse->type(), relpos, mouse->scenePosition(), mouse->globalPosition().toPoint(),
                                mouse->button(), mouse->buttons(), mouse->modifiers(), mouse->source());
                 me.spont = mouse->spontaneous();
                 me.setTimestamp(mouse->timestamp());
@@ -2968,7 +2972,7 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
                     break;
 
                 w = static_cast<QWidget *>(receiver);
-                relpos = mouse->pos();
+                relpos = mouse->position().toPoint();
                 QPoint diff = relpos - w->mapFromGlobal(d->hoverGlobalPos);
                 while (w) {
                     if (w->testAttribute(Qt::WA_Hover) &&
@@ -2983,7 +2987,7 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
                 }
             }
 
-            d->hoverGlobalPos = mouse->globalPos();
+            d->hoverGlobalPos = mouse->globalPosition().toPoint();
         }
         break;
 #if QT_CONFIG(wheelevent)
@@ -2998,8 +3002,18 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
             }
 
             QWheelEvent* wheel = static_cast<QWheelEvent*>(e);
-            const bool spontaneous = wheel->spontaneous();
+            if (!wheel->spontaneous()) {
+                /*
+                   Synthesized events shouldn't propagate, e.g. QScrollArea passes events from the
+                   viewport on to the scrollbars, which might ignore the event if there is no more
+                   space to scroll. If we would propagate, the event would come back to the viewport.
+                */
+                res = d->notify_helper(w, wheel);
+                break;
+            }
+
             const Qt::ScrollPhase phase = wheel->phase();
+            QPoint relpos = wheel->position().toPoint();
 
             // Ideally, we should lock on a widget when it starts receiving wheel
             // events. This avoids other widgets to start receiving those events
@@ -3016,88 +3030,58 @@ bool QApplication::notify(QObject *receiver, QEvent *e)
             //
             // We assume that, when supported, the phase cycle follows the pattern:
             //
-            //         ScrollBegin (ScrollUpdate* ScrollEnd)+
+            //         ScrollBegin (ScrollUpdate* ScrollMomentum* ScrollEnd)+
             //
             // This means that we can have scrolling sequences (starting with ScrollBegin)
             // or partial sequences (after a ScrollEnd and starting with ScrollUpdate).
-            // If wheel_widget is null because it was deleted, we also take the same
-            // code path as an initial sequence.
-            if (phase == Qt::NoScrollPhase || phase == Qt::ScrollBegin || !QApplicationPrivate::wheel_widget) {
 
-                // A system-generated ScrollBegin event starts a new user scrolling
-                // sequence, so we reset wheel_widget in case no one accepts the event
-                // or if we didn't get (or missed) a ScrollEnd previously.
-                if (spontaneous && phase == Qt::ScrollBegin)
-                    QApplicationPrivate::wheel_widget = nullptr;
-
-                QPoint relpos = wheel->position().toPoint();
-
-                if (spontaneous && (phase == Qt::NoScrollPhase || phase == Qt::ScrollUpdate))
-                    QApplicationPrivate::giveFocusAccordingToFocusPolicy(w, e, relpos);
-
-#if QT_DEPRECATED_SINCE(5, 14)
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-                QWheelEvent we(relpos, wheel->globalPos(), wheel->pixelDelta(), wheel->angleDelta(), wheel->delta(), wheel->orientation(), wheel->buttons(),
-                               wheel->modifiers(), phase, wheel->source(), wheel->inverted());
-QT_WARNING_POP
-#else
-                QWheelEvent we(relpos, wheel->globalPosition(), wheel->pixelDelta(), wheel->angleDelta(), wheel->buttons(),
-                               wheel->modifiers(), phase, wheel->inverted(), wheel->source());
-#endif
-                we.setTimestamp(wheel->timestamp());
-                bool eventAccepted;
-                do {
-                    we.spont = spontaneous && w == receiver;
-                    we.ignore();
-                    res = d->notify_helper(w, &we);
-                    eventAccepted = we.isAccepted();
-                    if (res && eventAccepted) {
-                        // A new scrolling sequence or partial sequence starts and w has accepted
-                        // the event. Therefore, we can set wheel_widget, but only if it's not
-                        // the end of a sequence.
-                        if (spontaneous && (phase == Qt::ScrollBegin || phase == Qt::ScrollUpdate))
-                            QApplicationPrivate::wheel_widget = w;
-                        break;
-                    }
-                    if (w->isWindow() || w->testAttribute(Qt::WA_NoMousePropagation))
-                        break;
-
-                    we.p += w->pos();
-                    w = w->parentWidget();
-                } while (w);
-                wheel->setAccepted(eventAccepted);
-            } else if (!spontaneous) {
-                // wheel_widget may forward the wheel event to a delegate widget,
-                // either directly or indirectly (e.g. QAbstractScrollArea will
-                // forward to its QScrollBars through viewportEvent()). In that
-                // case, the event will not be spontaneous but synthesized, so
-                // we can send it straight to the receiver.
-                d->notify_helper(w, wheel);
-            } else {
-                // The phase is either ScrollUpdate or ScrollEnd, and wheel_widget
-                // is set. Since it accepted the wheel event previously, we continue
-                // sending those events until we get a ScrollEnd, which signifies
-                // the end of the natural scrolling sequence.
-                const QPoint &relpos = QApplicationPrivate::wheel_widget->mapFromGlobal(wheel->globalPosition().toPoint());
-#if QT_DEPRECATED_SINCE(5, 0)
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-                QWheelEvent we(relpos, wheel->globalPos(), wheel->pixelDelta(), wheel->angleDelta(), wheel->delta(), wheel->orientation(), wheel->buttons(),
-                               wheel->modifiers(), wheel->phase(), wheel->source());
-QT_WARNING_POP
-#else
-                QWheelEvent we(relpos, wheel->globalPosition(), wheel->pixelDelta(), wheel->angleDelta(), wheel->buttons(),
-                               wheel->modifiers(), wheel->phase(), wheel->inverted(), wheel->source());
-#endif
-                we.setTimestamp(wheel->timestamp());
-                we.spont = true;
-                we.ignore();
-                d->notify_helper(QApplicationPrivate::wheel_widget, &we);
-                wheel->setAccepted(we.isAccepted());
-                if (phase == Qt::ScrollEnd)
-                    QApplicationPrivate::wheel_widget = nullptr;
+            // a widget has already grabbed the wheel for a sequence
+            if (QApplicationPrivate::wheel_widget) {
+                Q_ASSERT(phase != Qt::NoScrollPhase);
+                w = QApplicationPrivate::wheel_widget;
+                relpos = w->mapFromGlobal(wheel->globalPosition().toPoint());
             }
+            /*
+                Start or finish a scrolling sequence by grabbing/releasing the wheel via
+                wheel_widget. The sequence might be partial (ie. not start with ScrollBegin),
+                e.g. if the previous wheel_widget was destroyed mid-sequence.
+            */
+            switch (phase) {
+            case Qt::ScrollEnd:
+                QApplicationPrivate::wheel_widget = nullptr;
+                break;
+            case Qt::ScrollBegin:
+                QApplicationPrivate::wheel_widget = w;
+                Q_FALLTHROUGH();
+            case Qt::ScrollUpdate:
+            case Qt::ScrollMomentum:
+                if (!QApplicationPrivate::wheel_widget)
+                    QApplicationPrivate::wheel_widget = w;
+                Q_FALLTHROUGH();
+            case Qt::NoScrollPhase:
+                QApplicationPrivate::giveFocusAccordingToFocusPolicy(w, e, relpos);
+                break;
+            // no default: - we want warnings if we don't handle all phases explicitly
+            }
+
+            QWheelEvent we(relpos, wheel->globalPosition(), wheel->pixelDelta(), wheel->angleDelta(), wheel->buttons(),
+                            wheel->modifiers(), phase, wheel->inverted(), wheel->source());
+
+            we.setTimestamp(wheel->timestamp());
+            bool eventAccepted;
+            do {
+                we.spont = wheel->spontaneous() && w == receiver;
+                res = d->notify_helper(w, &we);
+                eventAccepted = we.isAccepted();
+                if (res && eventAccepted)
+                    break;
+                if (w->isWindow() || w->testAttribute(Qt::WA_NoMousePropagation))
+                    break;
+
+                we.p += w->pos();
+                w = w->parentWidget();
+            } while (w);
+            wheel->setAccepted(eventAccepted);
         }
         break;
 #endif
@@ -3133,10 +3117,10 @@ QT_WARNING_POP
         {
             QWidget *w = static_cast<QWidget *>(receiver);
             QTabletEvent *tablet = static_cast<QTabletEvent*>(e);
-            QPointF relpos = tablet->posF();
+            QPointF relpos = tablet->position();
             bool eventAccepted = tablet->isAccepted();
             while (w) {
-                QTabletEvent te(tablet->type(), relpos, tablet->globalPosF(),
+                QTabletEvent te(tablet->type(), relpos, tablet->globalPosition(),
                                 tablet->deviceType(), tablet->pointerType(),
                                 tablet->pressure(), tablet->xTilt(), tablet->yTilt(),
                                 tablet->tangentialPressure(), tablet->rotation(), tablet->z(),
@@ -3270,7 +3254,7 @@ QT_WARNING_POP
         bool acceptTouchEvents = widget->testAttribute(Qt::WA_AcceptTouchEvents);
 
         if (acceptTouchEvents && e->spontaneous()) {
-            const QPoint localPos = touchEvent->touchPoints()[0].pos().toPoint();
+            const QPoint localPos = touchEvent->touchPoints()[0].position().toPoint();
             QApplicationPrivate::giveFocusAccordingToFocusPolicy(widget, e, localPos);
         }
 
@@ -3310,8 +3294,8 @@ QT_WARNING_POP
             touchEvent->setTarget(widget);
             for (int i = 0; i < touchEvent->_touchPoints.size(); ++i) {
                 QTouchEvent::TouchPoint &pt = touchEvent->_touchPoints[i];
-                pt.d->pos = pt.pos() + offset;
-                pt.d->startPos = pt.startPos() + offset;
+                pt.d->pos = pt.position() + offset;
+                pt.d->startPos = pt.pressPosition() + offset;
                 pt.d->lastPos = pt.lastPos() + offset;
             }
         }
@@ -3960,11 +3944,11 @@ bool QApplicationPrivate::updateTouchPointsForWidget(QWidget *widget, QTouchEven
         QTouchEvent::TouchPoint &touchPoint = touchEvent->_touchPoints[i];
 
         // preserve the sub-pixel resolution
-        const QPointF screenPos = touchPoint.screenPos();
+        const QPointF screenPos = touchPoint.globalPosition();
         const QPointF delta = screenPos - screenPos.toPoint();
 
         touchPoint.d->pos = widget->mapFromGlobal(screenPos.toPoint()) + delta;
-        touchPoint.d->startPos = widget->mapFromGlobal(touchPoint.startScreenPos().toPoint()) + delta;
+        touchPoint.d->startPos = widget->mapFromGlobal(touchPoint.globalPressPosition().toPoint()) + delta;
         touchPoint.d->lastPos = widget->mapFromGlobal(touchPoint.lastScreenPos().toPoint()) + delta;
 
         if (touchPoint.state() == Qt::TouchPointPressed)
@@ -3993,7 +3977,7 @@ void QApplicationPrivate::cleanupMultitouch_sys()
 
 QWidget *QApplicationPrivate::findClosestTouchPointTarget(QTouchDevice *device, const QTouchEvent::TouchPoint &touchPoint)
 {
-    const QPointF screenPos = touchPoint.screenPos();
+    const QPointF screenPos = touchPoint.globalPosition();
     int closestTouchPointId = -1;
     QObject *closestTarget = nullptr;
     qreal closestDistance = qreal(0.);
@@ -4002,8 +3986,8 @@ QWidget *QApplicationPrivate::findClosestTouchPointTarget(QTouchDevice *device, 
     while (it != ite) {
         if (it.key().device == device && it.key().touchPointId != touchPoint.id()) {
             const QTouchEvent::TouchPoint &touchPoint = it->touchPoint;
-            qreal dx = screenPos.x() - touchPoint.screenPos().x();
-            qreal dy = screenPos.y() - touchPoint.screenPos().y();
+            qreal dx = screenPos.x() - touchPoint.globalPosition().x();
+            qreal dy = screenPos.y() - touchPoint.globalPosition().y();
             qreal distance = dx * dx + dy * dy;
             if (closestTouchPointId == -1 || distance < closestDistance) {
                 closestTouchPointId = touchPoint.id();
@@ -4058,10 +4042,10 @@ bool QApplicationPrivate::translateRawTouchEvent(QWidget *window,
             if (!target) {
                 // determine which widget this event will go to
                 if (!window)
-                    window = QApplication::topLevelAt(touchPoint.screenPos().toPoint());
+                    window = QApplication::topLevelAt(touchPoint.globalPosition().toPoint());
                 if (!window)
                     continue;
-                target = window->childAt(window->mapFromGlobal(touchPoint.screenPos().toPoint()));
+                target = window->childAt(window->mapFromGlobal(touchPoint.globalPosition().toPoint()));
                 if (!target)
                     target = window;
             }

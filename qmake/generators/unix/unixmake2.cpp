@@ -30,7 +30,7 @@
 #include "unixmake.h"
 #include "option.h"
 #include "meta.h"
-#include <qregexp.h>
+#include <qregularexpression.h>
 #include <qbytearray.h>
 #include <qfile.h>
 #include <qdir.h>
@@ -134,7 +134,7 @@ UnixMakefileGenerator::writeSubTargets(QTextStream &t, QList<MakefileGenerator::
         if (!dist_directory.startsWith(Option::dir_sep))
             dist_directory.prepend(Option::dir_sep);
 
-        QString out_directory_cdin = out_directory.isEmpty() ? "\n\t"
+        QString out_directory_cdin = out_directory.isEmpty() ? QString("\n\t")
                                                              : "\n\tcd " + escapeFilePath(out_directory) + " && ";
         QString makefilein = " -e -f " + escapeFilePath(subtarget->makefile)
                 + " distdir DISTDIR=$(DISTDIR)" + escapeFilePath(dist_directory);
@@ -198,18 +198,13 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
     t << "CXXFLAGS      = " << var("QMAKE_CXXFLAGS") << " $(DEFINES)\n";
     t << "INCPATH       =";
     {
-        QString isystem = var("QMAKE_CFLAGS_ISYSTEM");
         const ProStringList &incs = project->values("INCLUDEPATH");
         for(int i = 0; i < incs.size(); ++i) {
             const ProString &inc = incs.at(i);
             if (inc.isEmpty())
                 continue;
 
-            if (!isystem.isEmpty() && isSystemInclude(inc.toQString()))
-                t << ' ' << isystem << ' ';
-            else
-                t << " -I";
-            t << escapeFilePath(inc);
+            t << " -I" << escapeFilePath(inc);
         }
     }
     if(!project->isEmpty("QMAKE_FRAMEWORKPATH_FLAGS"))
@@ -290,7 +285,7 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
         if (project->isActiveConfig("gcc_MD_depends")) {
             ProStringList objects = project->values("OBJECTS");
             for (ProStringList::Iterator it = objects.begin(); it != objects.end(); ++it) {
-                QString d_file = (*it).toQString().replace(QRegExp(Option::obj_ext + "$"), ".d");
+                QString d_file = (*it).toQString().replace(QRegularExpression(Option::obj_ext + "$"), ".d");
                 t << "-include " << escapeDependencyPath(d_file) << Qt::endl;
                 project->values("QMAKE_DISTCLEAN") << d_file;
             }
@@ -346,7 +341,7 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                         if(!d_file.isEmpty()) {
                             d_file = odir + ".deps/" + fileFixify(d_file, FileFixifyBackwards) + ".d";
                             QString d_file_d = escapeDependencyPath(d_file);
-                            QStringList deps = findDependencies((*it).toQString()).filter(QRegExp(
+                            QStringList deps = findDependencies((*it).toQString()).filter(QRegularExpression(
                                         "((^|/)" + Option::h_moc_mod + "|" + Option::cpp_moc_ext + "$)"));
                             if(!deps.isEmpty())
                                 t << d_file_d << ": " << finalizeDependencyPaths(deps).join(' ') << Qt::endl;
@@ -507,7 +502,7 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
         if(do_incremental) {
             ProString s_ext = project->first("QMAKE_EXTENSION_SHLIB");
             QString incr_target = var("QMAKE_ORIG_TARGET").replace(
-                QRegExp("\\." + s_ext), "").replace(QRegExp("^lib"), "") + "_incremental";
+                QRegularExpression("\\." + s_ext), "").replace(QRegularExpression("^lib"), "") + "_incremental";
             if(incr_target.indexOf(Option::dir_sep) != -1)
                 incr_target = incr_target.right(incr_target.length() -
                                                 (incr_target.lastIndexOf(Option::dir_sep) + 1));
@@ -749,7 +744,7 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
                 (!isShallowBundle
                     ? (isFramework
                         ? ("Versions/" + project->first("QMAKE_FRAMEWORK_VERSION") + "/Resources/")
-                        : "Contents/")
+                        : QString("Contents/"))
                     : QString())
                 + "Info.plist";
             bundledFiles << info_plist_out;
@@ -1393,8 +1388,7 @@ void UnixMakefileGenerator::init2()
     }
 
     if (include_deps && project->isActiveConfig("gcc_MD_depends")) {
-        // use -MMD if we know about -isystem too
-        ProString MD_flag(project->values("QMAKE_CFLAGS_ISYSTEM").isEmpty() ? "-MD" : "-MMD");
+        ProString MD_flag("-MD");
         project->values("QMAKE_CFLAGS") += MD_flag;
         project->values("QMAKE_CXXFLAGS") += MD_flag;
     }
@@ -1533,8 +1527,9 @@ std::pair<bool, QString> UnixMakefileGenerator::writeObjectsPart(QTextStream &t,
         for (ProStringList::ConstIterator objit = objs.begin(); objit != objs.end(); ++objit) {
             bool increment = false;
             for (ProStringList::ConstIterator incrit = incrs.begin(); incrit != incrs.end(); ++incrit) {
-                if ((*objit).toQString().indexOf(QRegExp((*incrit).toQString(), Qt::CaseSensitive,
-                                                         QRegExp::Wildcard)) != -1) {
+                auto regexp = QRegularExpression::fromWildcard((*incrit).toQString(), Qt::CaseSensitive,
+                                                               QRegularExpression::UnanchoredWildcardConversion);
+                if ((*objit).toQString().contains(regexp)) {
                     increment = true;
                     incrs_out.append((*objit));
                     break;
@@ -1560,7 +1555,7 @@ std::pair<bool, QString> UnixMakefileGenerator::writeObjectsPart(QTextStream &t,
             objectsLinkLine = "$(OBJECTS)";
         } else {
             QString ld_response_file = fileVar("OBJECTS_DIR");
-            ld_response_file += var("QMAKE_LINK_OBJECT_SCRIPT") + "." + var("TARGET");
+            ld_response_file += var("QMAKE_LINK_OBJECT_SCRIPT") + "." + var("QMAKE_TARGET");
             if (!var("BUILD_NAME").isEmpty())
                 ld_response_file += "." + var("BUILD_NAME");
             if (!var("MAKEFILE").isEmpty())

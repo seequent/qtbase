@@ -1,15 +1,46 @@
 # Generated from qmake.pro.
 
 #####################################################################
-## qmake Binary:
+## qmake Tool:
 #####################################################################
 
-qt_add_tool(qmake # special case
+qt_get_tool_target_name(target_name qmake)
+qt_add_tool(${target_name}
     NO_QT # special case
     TOOLS_TARGET Core # special case
     # GUI # special case: remove this
     SOURCES
-        ../src/corelib/codecs/qutfcodec.cpp ../src/corelib/codecs/qutfcodec_p.h
+        ../src/3rdparty/pcre2/src/config.h
+        ../src/3rdparty/pcre2/src/pcre2.h
+        ../src/3rdparty/pcre2/src/pcre2_auto_possess.c
+        ../src/3rdparty/pcre2/src/pcre2_chartables.c
+        ../src/3rdparty/pcre2/src/pcre2_compile.c
+        ../src/3rdparty/pcre2/src/pcre2_config.c
+        ../src/3rdparty/pcre2/src/pcre2_context.c
+        ../src/3rdparty/pcre2/src/pcre2_dfa_match.c
+        ../src/3rdparty/pcre2/src/pcre2_error.c
+        ../src/3rdparty/pcre2/src/pcre2_extuni.c
+        ../src/3rdparty/pcre2/src/pcre2_find_bracket.c
+        ../src/3rdparty/pcre2/src/pcre2_internal.h
+        ../src/3rdparty/pcre2/src/pcre2_intmodedep.h
+        ../src/3rdparty/pcre2/src/pcre2_jit_compile.c
+        ../src/3rdparty/pcre2/src/pcre2_maketables.c
+        ../src/3rdparty/pcre2/src/pcre2_match.c
+        ../src/3rdparty/pcre2/src/pcre2_match_data.c
+        ../src/3rdparty/pcre2/src/pcre2_newline.c
+        ../src/3rdparty/pcre2/src/pcre2_ord2utf.c
+        ../src/3rdparty/pcre2/src/pcre2_pattern_info.c
+        ../src/3rdparty/pcre2/src/pcre2_script_run.c
+        ../src/3rdparty/pcre2/src/pcre2_serialize.c
+        ../src/3rdparty/pcre2/src/pcre2_string_utils.c
+        ../src/3rdparty/pcre2/src/pcre2_study.c
+        ../src/3rdparty/pcre2/src/pcre2_substitute.c
+        ../src/3rdparty/pcre2/src/pcre2_substring.c
+        ../src/3rdparty/pcre2/src/pcre2_tables.c
+        ../src/3rdparty/pcre2/src/pcre2_ucd.c
+        ../src/3rdparty/pcre2/src/pcre2_ucp.h
+        ../src/3rdparty/pcre2/src/pcre2_valid_utf.c
+        ../src/3rdparty/pcre2/src/pcre2_xclass.c
         ../src/corelib/global/qendian.cpp # special case
         ../src/corelib/global/qglobal.cpp ../src/corelib/global/qglobal.h
         ../src/corelib/global/qlibraryinfo.cpp
@@ -48,16 +79,30 @@ qt_add_tool(qmake # special case
         ../src/corelib/serialization/qjsonvalue.cpp ../src/corelib/serialization/qjsonvalue.h
         ../src/corelib/serialization/qjsonwriter_p.h
         ../src/corelib/serialization/qtextstream.cpp ../src/corelib/serialization/qtextstream.h
-        ../src/corelib/serialization/qxmlstream.cpp ../src/corelib/serialization/qxmlstream.h
-        ../src/corelib/serialization/qxmlutils.cpp ../src/corelib/serialization/qxmlutils_p.h
-        ../src/corelib/tools/qarraydata.cpp ../src/corelib/tools/qarraydata.h
-        ../src/corelib/tools/qarraydataops.h
-        ../src/corelib/tools/qarraydatapointer.h
-        ../src/corelib/tools/qbitarray.cpp ../src/corelib/tools/qbitarray.h
         ../src/corelib/text/qbytearray.cpp ../src/corelib/text/qbytearray.h
         ../src/corelib/text/qbytearraylist.cpp ../src/corelib/text/qbytearraylist.h # special case
         ../src/corelib/text/qbytearraymatcher.cpp ../src/corelib/text/qbytearraymatcher.h
         ../src/corelib/text/qchar.h
+        ../src/corelib/text/qlocale.cpp ../src/corelib/text/qlocale.h
+        ../src/corelib/text/qlocale_tools.cpp ../src/corelib/text/qlocale_tools_p.h
+        ../src/corelib/text/qregexp.cpp ../src/corelib/text/qregexp.h
+        ../src/corelib/text/qregularexpression.cpp ../src/corelib/text/qregularexpression.h
+        ../src/corelib/text/qstring.cpp ../src/corelib/text/qstring.h
+        ../src/corelib/text/qstringbuilder.cpp ../src/corelib/text/qstringbuilder.h
+        ../src/corelib/text/qstringconverter.cpp ../src/corelib/text/qstringconverter.h ../src/corelib/text/qstringconverter_p.h
+        ../src/corelib/text/qstringlist.cpp ../src/corelib/text/qstringlist.h
+        ../src/corelib/text/qstringmatcher.h
+        ../src/corelib/text/qvsnprintf.cpp
+        ../src/corelib/time/qcalendar.cpp ../src/corelib/time/qcalendar.h
+        ../src/corelib/time/qcalendarbackend_p.h
+        ../src/corelib/time/qcalendarmath_p.h
+        ../src/corelib/time/qdatetime.cpp ../src/corelib/time/qdatetime.h ../src/corelib/time/qdatetime_p.h
+        ../src/corelib/time/qgregoriancalendar.cpp ../src/corelib/time/qgregoriancalendar_p.h
+        ../src/corelib/time/qromancalendar.cpp ../src/corelib/time/qromancalendar_p.h
+        ../src/corelib/tools/qarraydata.cpp ../src/corelib/tools/qarraydata.h
+        ../src/corelib/tools/qarraydataops.h
+        ../src/corelib/tools/qarraydatapointer.h
+        ../src/corelib/tools/qbitarray.cpp ../src/corelib/tools/qbitarray.h
         ../src/corelib/tools/qcryptographichash.cpp ../src/corelib/tools/qcryptographichash.h
         ../src/corelib/time/qcalendar.cpp ../src/corelib/time/qcalendar.h # special case
         ../src/corelib/time/qcalendarbackend_p.h ../src/corelib/time/qcalendarmath_p.h # special case
@@ -70,8 +115,11 @@ qt_add_tool(qmake # special case
         ../src/corelib/text/qlocale_tools.cpp ../src/corelib/text/qlocale_tools_p.h
         ../src/corelib/tools/qmap.cpp ../src/corelib/tools/qmap.h
         ../src/corelib/text/qregexp.cpp ../src/corelib/text/qregexp.h
+        ../src/corelib/text/qregularexpression.cpp ../src/corelib/text/qregularexpression.h
         ../src/corelib/tools/qringbuffer.cpp # special case
         ../src/corelib/text/qstring.cpp ../src/corelib/text/qstring.h
+        ../src/corelib/text/qstringbuilder.cpp ../src/corelib/text/qstringbuilder.h
+        ../src/corelib/text/qstringconverter.cpp ../src/corelib/text/qstringconverter.h ../src/corelib/text/qstringconverter_p.h
         ../src/corelib/text/qstringlist.cpp ../src/corelib/text/qstringlist.h
         ../src/corelib/text/qstringmatcher.h
         ../src/corelib/tools/qvector.h
@@ -107,14 +155,20 @@ qt_add_tool(qmake # special case
         project.cpp project.h
         property.cpp property.h
     DEFINES
+        HAVE_CONFIG_H
+        PCRE2_DISABLE_JIT
         PROEVALUATOR_FULL
         QT_BOOTSTRAPPED
         QT_BUILD_QMAKE
+        QT_USE_QSTRINGBUILDER
         QT_NO_FOREACH
         QT_VERSION_STR="${PROJECT_VERSION}" # special case
         QT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR} # special case
         QT_VERSION_MINOR=${PROJECT_VERSION_MINOR} # special case
         QT_VERSION_PATCH=${PROJECT_VERSION_PATCH} # special case
+        PCRE2_CODE_UNIT_WIDTH=16
+        PCRE2_DISABLE_JIT
+        HAVE_CONFIG_H
     INCLUDE_DIRECTORIES
         # . # special case remove
         generators
@@ -134,7 +188,7 @@ qt_add_tool(qmake # special case
 ## Scopes:
 #####################################################################
 
-qt_extend_target(qmake CONDITION WIN32
+qt_extend_target(${target_name} CONDITION WIN32
     SOURCES
         ../src/corelib/global/qoperatingsystemversion_win.cpp
         ../src/corelib/io/qfilesystemengine_win.cpp
@@ -142,13 +196,15 @@ qt_extend_target(qmake CONDITION WIN32
         ../src/corelib/io/qfsfileengine_win.cpp
         ../src/corelib/io/qsettings_win.cpp
         ../src/corelib/plugin/qsystemlibrary.cpp
-        ../src/corelib/text/qlocale_win.cpp # special case
-        library/registry.cpp # special case
+        ../src/corelib/text/qlocale_win.cpp
+        library/registry.cpp
     DEFINES
         UNICODE
         _CRT_SECURE_NO_WARNINGS
         _ENABLE_EXTENDED_ALIGNED_STORAGE
         _SCL_SECURE_NO_WARNINGS
+    PUBLIC_DEFINES
+        PCRE2_STATIC
     PUBLIC_LIBRARIES
         advapi32
         kernel32
@@ -156,7 +212,7 @@ qt_extend_target(qmake CONDITION WIN32
         ole32
 )
 
-qt_extend_target(qmake CONDITION UNIX
+qt_extend_target(${target_name} CONDITION UNIX
     SOURCES
         ../src/corelib/io/qfilesystemengine_unix.cpp
         ../src/corelib/io/qfilesystemiterator_unix.cpp
@@ -165,7 +221,7 @@ qt_extend_target(qmake CONDITION UNIX
         ../src/corelib/text/qlocale_unix.cpp
 )
 
-qt_extend_target(qmake CONDITION MACOS
+qt_extend_target(${target_name} CONDITION MACOS
     SOURCES
         ../src/corelib/kernel/qcore_foundation.mm # special case
         ../src/corelib/kernel/qcore_mac.mm # special case
@@ -196,25 +252,25 @@ extend_target(qmake CONDITION WIN32
         ole32 advapi32 kernel32 netapi32
 )
 
-qt_extend_target(qmake CONDITION WIN32 AND mingw
+qt_extend_target(${target_name} CONDITION MINGW AND WIN32
     PUBLIC_LIBRARIES
         uuid
 )
 
-qt_extend_target(qmake CONDITION CLANG AND WIN32
+qt_extend_target(${target_name} CONDITION CLANG AND WIN32
     COMPILE_OPTIONS
         "-fms-compatibility-version=19.00.23506"
         "-Wno-microsoft-enum-value"
 )
 
 # special case:
-set_target_properties(qmake PROPERTIES
+set_target_properties(${target_name} PROPERTIES
     AUTOMOC OFF
     AUTORCC OFF
     AUTOUIC OFF
 )
 
-qt_internal_add_link_flags_gc_sections(qmake PRIVATE) # special case
+qt_internal_add_link_flags_gc_sections(${target_name} PRIVATE) # special case
 
-qt_enable_msvc_cplusplus_define(qmake PUBLIC) # special case
-
+qt_enable_msvc_cplusplus_define(${target_name} PUBLIC) # special case
+qt_skip_warnings_are_errors(${target_name}) # special case

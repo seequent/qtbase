@@ -48,7 +48,6 @@
 
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
-#include <QtCore/QSet>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QBuffer>
 #include <QtCore/QUrl>
@@ -639,7 +638,8 @@ QList<QMimeType> QMimeDatabase::mimeTypesForFileName(const QString &fileName) co
 QString QMimeDatabase::suffixForFileName(const QString &fileName) const
 {
     QMutexLocker locker(&d->mutex);
-    return d->findByFileName(QFileInfo(fileName).fileName()).m_foundSuffix;
+    const int suffixLength = d->findByFileName(QFileInfo(fileName).fileName()).m_knownSuffixLength;
+    return fileName.right(suffixLength);
 }
 
 /*!

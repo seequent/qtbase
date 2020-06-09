@@ -125,8 +125,7 @@ using QByteArrayData = QArrayDataPointer<char>;
             static_cast<QTypedArrayData<char> *>(const_cast<QArrayData *>(&qbytearray_literal)), \
             const_cast<char *>(str), \
             Size }; \
-        const QByteArray ba(holder); \
-        return ba; \
+        return QByteArray(holder); \
     }()) \
     /**/
 
@@ -225,8 +224,17 @@ public:
     Q_REQUIRED_RESULT QByteArray left(int len) const;
     Q_REQUIRED_RESULT QByteArray right(int len) const;
     Q_REQUIRED_RESULT QByteArray mid(int index, int len = -1) const;
+
+    Q_REQUIRED_RESULT QByteArray first(qsizetype n) const
+    { Q_ASSERT(n >= 0); Q_ASSERT(n <= size()); return QByteArray(data(), int(n)); }
+    Q_REQUIRED_RESULT QByteArray last(qsizetype n) const
+    { Q_ASSERT(n >= 0); Q_ASSERT(n <= size()); return QByteArray(data() + size() - n, int(n)); }
+    Q_REQUIRED_RESULT QByteArray from(qsizetype pos) const
+    { Q_ASSERT(pos >= 0); Q_ASSERT(pos <= size()); return QByteArray(data() + pos, size() - int(pos)); }
+    Q_REQUIRED_RESULT QByteArray slice(qsizetype pos, qsizetype n) const
+    { Q_ASSERT(pos >= 0); Q_ASSERT(n >= 0); Q_ASSERT(size_t(pos) + size_t(n) <= size_t(size())); return QByteArray(data() + pos, int(n)); }
     Q_REQUIRED_RESULT QByteArray chopped(int len) const
-    { Q_ASSERT(len >= 0); Q_ASSERT(len <= size()); return left(size() - len); }
+    { Q_ASSERT(len >= 0); Q_ASSERT(len <= size()); return first(size() - len); }
 
     bool startsWith(const QByteArray &a) const;
     bool startsWith(char c) const;
@@ -354,6 +362,8 @@ public:
     inline QByteArray &setNum(ushort, int base = 10);
     inline QByteArray &setNum(int, int base = 10);
     inline QByteArray &setNum(uint, int base = 10);
+    inline QByteArray &setNum(long, int base = 10);
+    inline QByteArray &setNum(ulong, int base = 10);
     QByteArray &setNum(qlonglong, int base = 10);
     QByteArray &setNum(qulonglong, int base = 10);
     inline QByteArray &setNum(float, char f = 'g', int prec = 6);
@@ -362,6 +372,8 @@ public:
 
     Q_REQUIRED_RESULT static QByteArray number(int, int base = 10);
     Q_REQUIRED_RESULT static QByteArray number(uint, int base = 10);
+    Q_REQUIRED_RESULT static QByteArray number(long, int base = 10);
+    Q_REQUIRED_RESULT static QByteArray number(ulong, int base = 10);
     Q_REQUIRED_RESULT static QByteArray number(qlonglong, int base = 10);
     Q_REQUIRED_RESULT static QByteArray number(qulonglong, int base = 10);
     Q_REQUIRED_RESULT static QByteArray number(double, char f = 'g', int prec = 6);
@@ -629,6 +641,10 @@ inline QByteArray &QByteArray::setNum(ushort n, int base)
 inline QByteArray &QByteArray::setNum(int n, int base)
 { return base == 10 ? setNum(qlonglong(n), base) : setNum(qulonglong(uint(n)), base); }
 inline QByteArray &QByteArray::setNum(uint n, int base)
+{ return setNum(qulonglong(n), base); }
+inline QByteArray &QByteArray::setNum(long n, int base)
+{ return base == 10 ? setNum(qlonglong(n), base) : setNum(qulonglong(ulong(n)), base); }
+inline QByteArray &QByteArray::setNum(ulong n, int base)
 { return setNum(qulonglong(n), base); }
 inline QByteArray &QByteArray::setNum(float n, char f, int prec)
 { return setNum(double(n),f,prec); }

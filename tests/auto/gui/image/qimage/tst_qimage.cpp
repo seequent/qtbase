@@ -44,7 +44,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #endif
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 #  include <qt_windows.h>
 #endif
 
@@ -69,8 +69,6 @@ private slots:
 
     void setAlphaChannel_data();
     void setAlphaChannel();
-
-    void alphaChannel();
 
     void convertToFormat_data();
     void convertToFormat();
@@ -240,11 +238,11 @@ private slots:
 
     void wideImage();
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     void toWinHBITMAP_data();
     void toWinHBITMAP();
     void fromMonoHBITMAP();
-#endif // Q_OS_WIN && !Q_OS_WINRT
+#endif // Q_OS_WIN
 
 private:
     const QString m_prefix;
@@ -544,32 +542,6 @@ void tst_QImage::setAlphaChannel()
         }
     }
     QVERIFY(allPixelsOK);
-
-    QImage outAlpha = image.alphaChannel();
-    QCOMPARE(outAlpha.size(), image.size());
-
-    bool allAlphaOk = true;
-    for (int y=0; y<height; ++y) {
-        for (int x=0; x<width; ++x) {
-            allAlphaOk &= outAlpha.pixelIndex(x, y) == alpha;
-        }
-    }
-    QVERIFY(allAlphaOk);
-
-}
-
-void tst_QImage::alphaChannel()
-{
-    QImage img(10, 10, QImage::Format_Mono);
-    img.setColor(0, Qt::transparent);
-    img.setColor(1, Qt::black);
-    img.fill(0);
-
-    QPainter p(&img);
-    p.fillRect(2, 2, 6, 6, Qt::black);
-    p.end();
-
-    QCOMPARE(img.alphaChannel(), img.convertToFormat(QImage::Format_ARGB32).alphaChannel());
 }
 
 void tst_QImage::convertToFormat_data()
@@ -3804,7 +3776,7 @@ void tst_QImage::wideImage()
     // Qt6: Test that it actually works on 64bit architectures.
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 QT_BEGIN_NAMESPACE
 Q_GUI_EXPORT HBITMAP qt_imageToWinHBITMAP(const QImage &p, int hbitmapFormat = 0);
 Q_GUI_EXPORT QImage qt_imageFromWinHBITMAP(HBITMAP bitmap, int hbitmapFormat = 0);
@@ -3918,7 +3890,7 @@ void tst_QImage::fromMonoHBITMAP() // QTBUG-72343, corruption for mono bitmaps
     DeleteObject(hbitmap);
 }
 
-#endif // Q_OS_WIN && !Q_OS_WINRT
+#endif // Q_OS_WIN
 
 QTEST_GUILESS_MAIN(tst_QImage)
 #include "tst_qimage.moc"

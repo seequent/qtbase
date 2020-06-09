@@ -147,9 +147,6 @@ public:
         void insertMultiAtEnd(const QModelIndex& key, QPersistentModelIndexData *data);
     } persistent;
 
-    Qt::DropActions supportedDragActions;
-
-    QHash<int,QByteArray> roleNames;
     static const QHash<int,QByteArray> &defaultRoleNames();
     static bool isVariantLessThan(const QVariant &left, const QVariant &right,
                                   Qt::CaseSensitivity cs = Qt::CaseSensitive, bool isLocaleAware = false);

@@ -68,6 +68,10 @@ private slots:
     void genericPropertyBinding();
     void genericPropertyBindingBool();
     void staticChangeHandler();
+    void setBindingFunctor();
+    void multipleObservers();
+    void propertyAlias();
+    void notifiedProperty();
 };
 
 void tst_QProperty::functorBinding()
@@ -221,11 +225,11 @@ void tst_QProperty::avoidDependencyAllocationAfterFirstEval()
     QCOMPARE(propWithBinding.value(), int(11));
 
     QVERIFY(QPropertyBasePointer::get(propWithBinding).bindingPtr());
-    QCOMPARE(QPropertyBasePointer::get(propWithBinding).bindingPtr()->dependencyObserverCount, 2);
+    QCOMPARE(QPropertyBasePointer::get(propWithBinding).bindingPtr()->dependencyObserverCount, 2u);
 
     firstDependency = 100;
     QCOMPARE(propWithBinding.value(), int(110));
-    QCOMPARE(QPropertyBasePointer::get(propWithBinding).bindingPtr()->dependencyObserverCount, 2);
+    QCOMPARE(QPropertyBasePointer::get(propWithBinding).bindingPtr()->dependencyObserverCount, 2u);
 }
 
 void tst_QProperty::propertyArrays()
@@ -672,6 +676,182 @@ void tst_QProperty::staticChangeHandler()
     t.x = 100;
     QVector<int> values{42, 100};
     QCOMPARE(t.observedValues, values);
+}
+
+void tst_QProperty::setBindingFunctor()
+{
+    QProperty<int> property;
+    QProperty<int> injectedValue(100);
+    // Make sure that this picks the setBinding overload that takes a functor and
+    // moves it correctly.
+    property.setBinding([&injectedValue]() { return injectedValue.value(); });
+    injectedValue = 200;
+    QCOMPARE(property.value(), 200);
+}
+
+void tst_QProperty::multipleObservers()
+{
+    QProperty<int> property;
+    property.setValue(5);
+    QCOMPARE(property.value(), 5);
+
+    int value1 = 1;
+    auto changeHandler = property.onValueChanged([&]() { value1 = property.value(); });
+    QCOMPARE(value1, 1);
+
+    int value2 = 2;
+    auto subscribeHandler = property.subscribe([&]() { value2 = property.value(); });
+    QCOMPARE(value2, 5);
+
+    property.setValue(6);
+    QCOMPARE(property.value(), 6);
+    QCOMPARE(value1, 6);
+    QCOMPARE(value2, 6);
+
+    property.setBinding([]() { return 12; });
+    QCOMPARE(value1, 12);
+    QCOMPARE(value2, 12);
+    QCOMPARE(property.value(), 12);
+
+    property.setBinding(QPropertyBinding<int>());
+    QCOMPARE(value1, 12);
+    QCOMPARE(value2, 12);
+    QCOMPARE(property.value(), 12);
+
+    property.setValue(22);
+    QCOMPARE(value1, 22);
+    QCOMPARE(value2, 22);
+    QCOMPARE(property.value(), 22);
+}
+
+void tst_QProperty::propertyAlias()
+{
+    QScopedPointer<QProperty<int>> property(new QProperty<int>);
+    property->setValue(5);
+    QPropertyAlias alias(property.get());
+    QVERIFY(alias.isValid());
+    QCOMPARE(alias.value(), 5);
+
+    int value1 = 1;
+    auto changeHandler = alias.onValueChanged([&]() { value1 = alias.value(); });
+    QCOMPARE(value1, 1);
+
+    int value2 = 2;
+    auto subscribeHandler = alias.subscribe([&]() { value2 = alias.value(); });
+    QCOMPARE(value2, 5);
+
+    alias.setValue(6);
+    QVERIFY(alias.isValid());
+    QCOMPARE(alias.value(), 6);
+    QCOMPARE(value1, 6);
+    QCOMPARE(value2, 6);
+
+    alias.setBinding([]() { return 12; });
+    QCOMPARE(value1, 12);
+    QCOMPARE(value2, 12);
+    QCOMPARE(alias.value(), 12);
+
+    alias.setValue(22);
+    QCOMPARE(value1, 22);
+    QCOMPARE(value2, 22);
+    QCOMPARE(alias.value(), 22);
+
+    property.reset();
+
+    QVERIFY(!alias.isValid());
+    QCOMPARE(alias.value(), int());
+    QCOMPARE(value1, 22);
+    QCOMPARE(value2, 22);
+
+    // Does not crash
+    alias.setValue(25);
+    QCOMPARE(alias.value(), int());
+    QCOMPARE(value1, 22);
+    QCOMPARE(value2, 22);
+}
+
+struct ClassWithNotifiedProperty
+{
+    QVector<int> recordedValues;
+
+    void callback() { recordedValues << property.value(); }
+
+    QNotifiedProperty<int, &ClassWithNotifiedProperty::callback> property;
+};
+
+void tst_QProperty::notifiedProperty()
+{
+    ClassWithNotifiedProperty instance;
+    std::array<QProperty<int>, 5> otherProperties = {
+        QProperty<int>([&]() { return instance.property + 1; }),
+        QProperty<int>([&]() { return instance.property + 2; }),
+        QProperty<int>([&]() { return instance.property + 3; }),
+        QProperty<int>([&]() { return instance.property + 4; }),
+        QProperty<int>([&]() { return instance.property + 5; }),
+    };
+
+    auto check = [&] {
+        const int val = instance.property.value();
+        for (int i = 0; i < int(otherProperties.size()); ++i)
+            QCOMPARE(otherProperties[i].value(), val + i + 1);
+    };
+
+    QVERIFY(instance.recordedValues.isEmpty());
+    check();
+
+    instance.property.setValue(&instance, 42);
+    QCOMPARE(instance.recordedValues.count(), 1);
+    QCOMPARE(instance.recordedValues.at(0), 42);
+    instance.recordedValues.clear();
+    check();
+
+    instance.property.setValue(&instance, 42);
+    QVERIFY(instance.recordedValues.isEmpty());
+    check();
+
+    int subscribedCount = 0;
+    QProperty<int> injectedValue(100);
+    instance.property.setBinding(&instance, [&injectedValue]() { return injectedValue.value(); });
+    auto subscriber = [&] { ++subscribedCount; };
+    std::array<QPropertyChangeHandler<decltype (subscriber)>, 10> subscribers = {
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber),
+            instance.property.subscribe(subscriber)
+    };
+
+    QCOMPARE(subscribedCount, 10);
+    subscribedCount = 0;
+
+    QCOMPARE(instance.property.value(), 100);
+    QCOMPARE(instance.recordedValues.count(), 1);
+    QCOMPARE(instance.recordedValues.at(0), 100);
+    instance.recordedValues.clear();
+    check();
+    QCOMPARE(subscribedCount, 0);
+
+    injectedValue = 200;
+    QCOMPARE(instance.property.value(), 200);
+    QCOMPARE(instance.recordedValues.count(), 1);
+    QCOMPARE(instance.recordedValues.at(0), 200);
+    instance.recordedValues.clear();
+    check();
+    QCOMPARE(subscribedCount, 10);
+    subscribedCount = 0;
+
+    injectedValue = 400;
+    QCOMPARE(instance.property.value(), 400);
+    QCOMPARE(instance.recordedValues.count(), 1);
+    QCOMPARE(instance.recordedValues.at(0), 400);
+    instance.recordedValues.clear();
+    check();
+    QCOMPARE(subscribedCount, 10);
 }
 
 QTEST_MAIN(tst_QProperty);

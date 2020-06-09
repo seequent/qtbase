@@ -59,7 +59,7 @@ QT_BEGIN_NAMESPACE
 
 // see also tst_qtextdocumentfragment.cpp
 #define MAX_ENTITY 258
-static const struct QTextHtmlEntity { const char name[9]; quint16 code; } entities[]= {
+static const struct QTextHtmlEntity { const char name[9]; char16_t code; } entities[]= {
     { "AElig", 0x00c6 },
     { "AMP", 38 },
     { "Aacute", 0x00c1 },
@@ -835,14 +835,7 @@ QString QTextHtmlParser::parseEntity()
             if (ok) {
                 if (uc >= 0x80 && uc < 0x80 + (sizeof(windowsLatin1ExtendedCharacters)/sizeof(windowsLatin1ExtendedCharacters[0])))
                     uc = windowsLatin1ExtendedCharacters[uc - 0x80];
-                QString str;
-                if (QChar::requiresSurrogates(uc)) {
-                    str += QChar(QChar::highSurrogate(uc));
-                    str += QChar(QChar::lowSurrogate(uc));
-                } else {
-                    str = QChar(uc);
-                }
-                return str;
+                return QStringView{QChar::fromUcs4(uc)}.toString();
             }
         }
     }

@@ -36,7 +36,6 @@
 #include <qcoreapplication.h>
 
 #include <qfileinfo.h>
-#include <qtextcodec.h>
 #include <qmap.h>
 
 Q_DECLARE_METATYPE(QUrl::FormattingOptions)
@@ -3170,12 +3169,10 @@ void tst_QUrl::fromUserInputWithCwd_data()
         QTest::newRow(QByteArray(fileName) + "-in-dot") << fileName << QStringLiteral(".") << url << url;
     }
 
-#ifndef Q_OS_WINRT // WinRT cannot cd outside current / sandbox
     QDir parent(base);
     QVERIFY(parent.cdUp());
     QUrl parentUrl = QUrl::fromLocalFile(parent.path());
     QTest::newRow("dotdot") << ".." << base << parentUrl << parentUrl;
-#endif
 
     QTest::newRow("nonexisting") << "nonexisting" << base << QUrl("http://nonexisting") << QUrl::fromLocalFile(base + "/nonexisting");
     QTest::newRow("short-url") << "example.org" << base << QUrl("http://example.org") << QUrl::fromLocalFile(base + "/example.org");

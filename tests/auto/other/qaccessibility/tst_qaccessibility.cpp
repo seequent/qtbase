@@ -30,10 +30,8 @@
 #include <QtCore/qglobal.h>
 #ifdef Q_OS_WIN
 # include <QtCore/qt_windows.h>
-#ifndef Q_OS_WINRT
 # include <oleacc.h>
-# include <QtWindowsUIAutomationSupport/private/qwindowsuiawrapper_p.h>
-#endif
+# include <QtGui/private/qwindowsuiawrapper_p.h>
 # include <servprov.h>
 # include <winuser.h>
 #endif
@@ -3774,7 +3772,7 @@ void tst_QAccessibility::bridgeTest()
 {
     // For now this is a simple test to see if the bridge is working at all.
     // Ideally it should be extended to test all aspects of the bridge.
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 
     QWidget window;
     QVBoxLayout *lay = new QVBoxLayout(&window);
@@ -3827,8 +3825,10 @@ void tst_QAccessibility::bridgeTest()
     QVERIFY(SUCCEEDED(hr));
 
     // Get UI Automation interface.
+    const GUID CLSID_CUIAutomation_test{0xff48dba4, 0x60ef, 0x4201,
+                                        {0xaa,0x87, 0x54,0x10,0x3e,0xef,0x59,0x4e}};
     IUIAutomation *automation = nullptr;
-    hr = CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
+    hr = CoCreateInstance(CLSID_CUIAutomation_test, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
     QVERIFY(SUCCEEDED(hr));
 
     // Get button element from UI Automation using point.

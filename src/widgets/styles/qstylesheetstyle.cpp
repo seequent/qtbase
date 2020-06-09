@@ -123,6 +123,8 @@
 #include <QtGui/qpainterpath.h>
 #include <QtGui/qscreen.h>
 
+#include <QtCore/private/qduplicatetracker_p.h>
+
 QT_BEGIN_NAMESPACE
 
 using namespace QCss;
@@ -689,6 +691,7 @@ static const char knownStyleHints[][45] = {
     "gridline-color",
     "harddisk-icon",
     "home-icon",
+    "lineedit-clear-button-icon",
     "icon-size",
     "leftarrow-icon",
     "lineedit-password-character",
@@ -2582,25 +2585,25 @@ void QStyleSheetStyle::setProperties(QWidget *w)
 
     {
         // scan decls for final occurrence of each "qproperty"
-        QSet<const QString> propertySet;
+        QDuplicateTracker<QString> propertySet;
+        propertySet.reserve(decls.size());
         for (int i = decls.count() - 1; i >= 0; --i) {
             const QString property = decls.at(i).d->property;
             if (!property.startsWith(QLatin1String("qproperty-"), Qt::CaseInsensitive))
                 continue;
-            if (!propertySet.contains(property)) {
-                propertySet.insert(property);
+            if (!propertySet.hasSeen(property))
                 finals.append(i);
-            }
         }
     }
 
     for (int i = finals.count() - 1; i >= 0; --i) {
         const Declaration &decl = decls.at(finals[i]);
-        QString property = decl.d->property;
-        property.remove(0, 10); // strip "qproperty-"
+        QStringView property = decl.d->property;
+        property = property.mid(10); // strip "qproperty-"
+        const auto propertyL1 = property.toLatin1();
 
         const QMetaObject *metaObject = w->metaObject();
-        int index = metaObject->indexOfProperty(property.toLatin1());
+        int index = metaObject->indexOfProperty(propertyL1);
         if (Q_UNLIKELY(index == -1)) {
             qWarning() << w << " does not have a property named " << property;
             continue;
@@ -2612,7 +2615,7 @@ void QStyleSheetStyle::setProperties(QWidget *w)
         }
 
         QVariant v;
-        const QVariant value = w->property(property.toLatin1());
+        const QVariant value = w->property(propertyL1);
         switch (value.userType()) {
         case QMetaType::QIcon: v = decl.iconValue(); break;
         case QMetaType::QImage: v = QImage(decl.uriValue()); break;
@@ -2627,7 +2630,7 @@ void QStyleSheetStyle::setProperties(QWidget *w)
         default: v = decl.d->values.at(0).variant; break;
         }
 
-        w->setProperty(property.toLatin1(), v);
+        w->setProperty(propertyL1, v);
     }
 }
 
@@ -3892,7 +3895,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
             if (!cb->currentText.isEmpty() && !cb->editable) {
                 QPalette styledPalette(cb->palette);
                 rule.configurePalette(&styledPalette, QPalette::Text, QPalette::Base);
-                drawItemText(p, editRect.adjusted(0, 0, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, styledPalette,
+                drawItemText(p, editRect.adjusted(0, 0, 0, 0), cb->textAlignment, styledPalette,
                              cb->state & State_Enabled, cb->currentText, QPalette::Text);
             }
             p->restore();
@@ -5309,6 +5312,7 @@ static QLatin1String propertyNameForStandardPixmap(QStyle::StandardPixmap sp)
         case QStyle::SP_ArrowBack: return QLatin1String("backward-icon");
         case QStyle::SP_ArrowForward: return QLatin1String("forward-icon");
         case QStyle::SP_DirHomeIcon: return QLatin1String("home-icon");
+        case QStyle::SP_LineEditClearButton: return QLatin1String("lineedit-clear-button-icon");
         default: return QLatin1String("");
     }
 }
@@ -6013,11 +6017,11 @@ QRect QStyleSheetStyle::subElementRect(SubElement se, const QStyleOption *opt, c
         QRenderRule subRule = renderRule(w, opt, PseudoElement_TabBarTab);
         if (subRule.hasBox() || !subRule.hasNativeBorder()) {
             if (se == SE_TabBarTabText) {
-                if (const QStyleOptionTabV4 *tab = qstyleoption_cast<const QStyleOptionTabV4 *>(opt)) {
+                if (const QStyleOptionTab *tab = qstyleoption_cast<const QStyleOptionTab *>(opt)) {
                     const QTabBar *bar = qobject_cast<const QTabBar *>(w);
                     const QRect optRect = bar && tab->tabIndex != -1 ? bar->tabRect(tab->tabIndex) : opt->rect;
                     const QRect r = positionRect(w, subRule, PseudoElement_TabBarTab, optRect, opt->direction);
-                    QStyleOptionTabV4 tabCopy(*tab);
+                    QStyleOptionTab tabCopy(*tab);
                     tabCopy.rect = subRule.contentsRect(r);
                     return ParentStyle::subElementRect(se, &tabCopy, w);
                 }

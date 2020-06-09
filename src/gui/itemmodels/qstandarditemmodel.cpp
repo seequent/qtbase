@@ -48,7 +48,7 @@
 #include <QtCore/qstringlist.h>
 #include <QtCore/qbitarray.h>
 #include <QtCore/qmimedata.h>
-
+#include <private/qduplicatetracker_p.h>
 #include <private/qstandarditemmodel_p.h>
 #include <qdebug.h>
 #include <algorithm>
@@ -1371,24 +1371,6 @@ void QStandardItem::setCheckable(bool checkable)
 */
 
 /*!
-  \fn void QStandardItem::setTristate(bool tristate)
-  \obsolete
-
-  Use QStandardItem::setAutoTristate(bool tristate) instead.
-  For a tristate checkbox that the user can change between all three
-  states, use QStandardItem::setUserTristate(bool tristate) instead.
-*/
-
-/*!
-  \fn void QStandardItem::isTristate() const
-  \obsolete
-
-  Use QStandardItem::isAutoTristate() instead.
-  For a tristate checkbox that the user can change between all three
-  states, use QStandardItem::isUserTristate() instead.
-*/
-
-/*!
   Determines that the item is tristate and controlled by QTreeWidget if \a tristate
   is \c true.
   This enables automatic management of the state of parent items in QTreeWidget
@@ -1441,13 +1423,6 @@ void QStandardItem::setUserTristate(bool tristate)
 
   \sa setUserTristate(), isCheckable(), checkState()
 */
-
-#if QT_DEPRECATED_SINCE(5, 6)
-void QStandardItem::setTristate(bool tristate)
-{
-    setAutoTristate(tristate);
-}
-#endif
 
 #if QT_CONFIG(draganddrop)
 
@@ -2131,8 +2106,8 @@ QDataStream &operator<<(QDataStream &out, const QStandardItem &item)
     that interface (such as QListView, QTableView and QTreeView, and your own
     custom views). For performance and flexibility, you may want to subclass
     QAbstractItemModel to provide support for different kinds of data
-    repositories. For example, the QDirModel provides a model interface to the
-    underlying file system.
+    repositories. For example, the QFileSystemModel provides a model interface
+    to the underlying file system.
 
     When you want a list or tree, you typically create an empty
     QStandardItemModel and use appendRow() to add items to the model, and
@@ -2255,6 +2230,15 @@ void QStandardItemModel::setItemRoleNames(const QHash<int,QByteArray> &roleNames
 {
     Q_D(QStandardItemModel);
     d->roleNames = roleNames;
+}
+
+/*!
+  reimp
+*/
+QHash<int, QByteArray> QStandardItemModel::roleNames() const
+{
+    Q_D(const QStandardItemModel);
+    return d->roleNames;
 }
 
 /*!
@@ -2869,14 +2853,6 @@ bool QStandardItemModel::hasChildren(const QModelIndex &parent) const
 /*!
   \reimp
 */
-QModelIndex QStandardItemModel::sibling(int row, int column, const QModelIndex &idx) const
-{
-    return QAbstractItemModel::sibling(row, column, idx);
-}
-
-/*!
-  \reimp
-*/
 QVariant QStandardItemModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     Q_D(const QStandardItemModel);
@@ -3019,20 +2995,9 @@ bool QStandardItemModel::setData(const QModelIndex &index, const QVariant &value
     return true;
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 /*!
     \reimp
  */
-#else
-/*!
-  \since 5.12
-  Removes the data stored in all the roles for the given \a index.
-  Returns \c true if \a index is valid and data was cleared, \c false
-  otherwise.
-
-  \sa setData(), data()
-*/
-#endif
 bool QStandardItemModel::clearItemData(const QModelIndex &index)
 {
     if (!checkIndex(index, CheckIndexOption::IndexIsValid))
@@ -3139,12 +3104,11 @@ QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
 
     //remove duplicates childrens
     {
-        QSet<QStandardItem *> seen;
+        QDuplicateTracker<QStandardItem *> seen;
         while (!stack.isEmpty()) {
             QStandardItem *itm = stack.pop();
-            if (seen.contains(itm))
+            if (seen.hasSeen(itm))
                 continue;
-            seen.insert(itm);
 
             const QVector<QStandardItem*> &childList = itm->d_func()->children;
             for (int i = 0; i < childList.count(); ++i) {

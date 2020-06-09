@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'chatmainwindow.ui'
 **
-** Created by: Qt User Interface Compiler version 5.12.0
+** Created by: Qt User Interface Compiler version 6.0.0
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -139,8 +139,8 @@ public:
         menuFile->addAction(actionQuit);
 
         retranslateUi(ChatMainWindow);
-        QObject::connect(messageLineEdit, SIGNAL(returnPressed()), sendButton, SLOT(animateClick()));
-        QObject::connect(actionQuit, SIGNAL(triggered(bool)), ChatMainWindow, SLOT(close()));
+        QObject::connect(messageLineEdit, &QLineEdit::returnPressed, sendButton, &QPushButton::animateClick);
+        QObject::connect(actionQuit, &QAction::triggered, ChatMainWindow, &QMainWindow::close);
 
         QMetaObject::connectSlotsByName(ChatMainWindow);
     } // setupUi

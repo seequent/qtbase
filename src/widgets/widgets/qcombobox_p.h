@@ -178,8 +178,8 @@ protected:
     void mouseMoveEvent(QMouseEvent *e) override
     {
         // Enable fast scrolling if the cursor is directly above or below the popup.
-        const int mouseX = e->pos().x();
-        const int mouseY = e->pos().y();
+        const int mouseX = e->position().toPoint().x();
+        const int mouseY = e->position().toPoint().y();
         const bool horizontallyInside = pos().x() < mouseX && mouseX < rect().right() + 1;
         const bool verticallyOutside = (sliderAction == QAbstractSlider::SliderSingleStepAdd) ?
                                         rect().bottom() + 1 < mouseY : mouseY < pos().y();
@@ -372,7 +372,7 @@ public:
     void updateArrow(QStyle::StateFlag state);
     bool updateHoverControl(const QPoint &pos);
     void trySetValidIndex();
-    QRect popupGeometry(int screen = -1) const;
+    QRect popupGeometry() const;
     QStyle::SubControl newHoverControl(const QPoint &pos);
     int computeWidthHint() const;
     QSize recomputeSizeHint(QSize &sh) const;
@@ -410,9 +410,6 @@ public:
 #ifdef Q_OS_MAC
     QPlatformMenu *m_platformMenu = nullptr;
 #endif
-#if QT_CONFIG(completer)
-    QPointer<QCompleter> completer;
-#endif
     QPersistentModelIndex currentIndex;
     QPersistentModelIndex root;
     QString placeholderText;
@@ -424,7 +421,6 @@ public:
     QComboBox::SizeAdjustPolicy sizeAdjustPolicy = QComboBox::AdjustToContentsOnFirstShow;
     QStyle::StateFlag arrowState = QStyle::State_None;
     QStyle::SubControl hoverControl = QStyle::SC_None;
-    Qt::CaseSensitivity autoCompletionCaseSensitivity = Qt::CaseInsensitive;
     int minimumContentsLength = 0;
     int indexBeforeChange = -1;
     int maxVisibleItems = 10;
@@ -432,7 +428,6 @@ public:
     int modelColumn = 0;
     int placeholderIndex = -1;
     bool shownOnce : 1;
-    bool autoCompletion : 1;
     bool duplicatesEnabled : 1;
     bool frame : 1;
     bool inserting : 1;

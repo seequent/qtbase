@@ -50,7 +50,7 @@
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtCore/qt_windows.h>
 #include <qpa/qplatformintegration.h>
-#include <QtWindowsUIAutomationSupport/private/qwindowsuiawrapper_p.h>
+#include <QtGui/private/qwindowsuiawrapper_p.h>
 
 #include <QtCore/private/qwinregistry_p.h>
 
@@ -166,6 +166,9 @@ void QWindowsUiaAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *event
         break;
     case QAccessible::ValueChanged:
         QWindowsUiaMainProvider::notifyValueChange(static_cast<QAccessibleValueChangeEvent *>(event));
+        break;
+    case QAccessible::NameChanged:
+        QWindowsUiaMainProvider::notifyNameChange(event);
         break;
     case QAccessible::SelectionAdd:
         QWindowsUiaMainProvider::notifySelectionChange(event);

@@ -39,7 +39,6 @@
 
 #include "qxcbmime.h"
 
-#include <QtCore/QTextCodec>
 #include <QtGui/QImageWriter>
 #include <QtCore/QBuffer>
 #include <qdebug.h>
@@ -159,23 +158,15 @@ QVector<xcb_atom_t> QXcbMime::mimeAtomsForFormat(QXcbConnection *connection, con
 }
 
 QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a, const QByteArray &d, const QString &format,
-                                       QMetaType::Type requestedType, const QByteArray &encoding)
+                                       QMetaType::Type requestedType, bool hasUtf8)
 {
     QByteArray data = d;
     QString atomName = mimeAtomToString(connection, a);
 //    qDebug() << "mimeConvertDataToFormat" << format << atomName << data;
 
-    if (!encoding.isEmpty()
-        && atomName == format + QLatin1String(";charset=") + QLatin1String(encoding)) {
-
-#if QT_CONFIG(textcodec)
-        if (requestedType == QMetaType::QString) {
-            QTextCodec *codec = QTextCodec::codecForName(encoding);
-            if (codec)
-                return codec->toUnicode(data);
-        }
-#endif
-
+    if (hasUtf8 && atomName == format + QLatin1String(";charset=utf-8")) {
+        if (requestedType == QMetaType::QString)
+            return QString::fromUtf8(data);
         return data;
     }
 
@@ -201,7 +192,7 @@ QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a,
         if ((byte0 == 0xff && byte1 == 0xfe) || (byte0 == 0xfe && byte1 == 0xff)
             || (byte0 != 0 && byte1 == 0) || (byte0 == 0 && byte1 != 0)) {
             const QString str = QString::fromUtf16(
-                  reinterpret_cast<const ushort *>(data.constData()), data.size() / 2);
+                  reinterpret_cast<const char16_t *>(data.constData()), data.size() / 2);
             if (!str.isNull()) {
                 if (format == QLatin1String("text/uri-list")) {
                     const auto urls = str.splitRef(QLatin1Char('\n'));
@@ -265,9 +256,9 @@ QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a,
 }
 
 xcb_atom_t QXcbMime::mimeAtomForFormat(QXcbConnection *connection, const QString &format, QMetaType::Type requestedType,
-                                 const QVector<xcb_atom_t> &atoms, QByteArray *requestedEncoding)
+                                 const QVector<xcb_atom_t> &atoms, bool *hasUtf8)
 {
-    requestedEncoding->clear();
+    *hasUtf8 = false;
 
     // find matches for string types
     if (format == QLatin1String("text/plain")) {
@@ -306,7 +297,7 @@ xcb_atom_t QXcbMime::mimeAtomForFormat(QXcbConnection *connection, const QString
 
         xcb_atom_t a = connection->internAtom(std::move(formatWithCharset).toLatin1());
         if (a && atoms.contains(a)) {
-            *requestedEncoding = "utf-8";
+            *hasUtf8 = true;
             return a;
         }
     }

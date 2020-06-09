@@ -444,7 +444,7 @@ QT_BEGIN_NAMESPACE
     When the number of matches cannot be determined in advance, a
     common idiom is to use cap() in a loop. For example:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 0
+    \snippet code/src_corelib_text_qregexp.cpp 0
 
     \target assertions
     \section1 Assertions
@@ -538,7 +538,7 @@ QT_BEGIN_NAMESPACE
     To test a string against a wildcard expression, use exactMatch().
     For example:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 1
+    \snippet code/src_corelib_text_qregexp.cpp 1
 
     \target perl-users
     \section1 Notes for Perl Users
@@ -560,7 +560,7 @@ QT_BEGIN_NAMESPACE
     applied to all the quantifiers in the pattern. For example, to
     match the Perl regexp \b{ro+?m} requires:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 2
+    \snippet code/src_corelib_text_qregexp.cpp 2
 
     The equivalent of Perl's \c{/i} option is
     setCaseSensitivity(Qt::CaseInsensitive).
@@ -589,7 +589,7 @@ QT_BEGIN_NAMESPACE
     the other hand, C++'s rules for literal strings can be used to
     achieve the same:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 3
+    \snippet code/src_corelib_text_qregexp.cpp 3
 
     Both zero-width positive and zero-width negative lookahead
     assertions (?=pattern) and (?!pattern) are supported with the same
@@ -608,12 +608,12 @@ QT_BEGIN_NAMESPACE
     \target code-examples
     \section1 Code Examples
 
-    \snippet code/src_corelib_tools_qregexp.cpp 4
+    \snippet code/src_corelib_text_qregexp.cpp 4
 
     The third string matches '\underline{6}'. This is a simple validation
     regexp for integers in the range 0 to 99.
 
-    \snippet code/src_corelib_tools_qregexp.cpp 5
+    \snippet code/src_corelib_text_qregexp.cpp 5
 
     The second string matches '\underline{This_is-OK}'. We've used the
     character set abbreviation '\\S' (non-whitespace) and the anchors
@@ -623,25 +623,25 @@ QT_BEGIN_NAMESPACE
     'letter' or 'correspondence' but only match whole words i.e. not
     'email'
 
-    \snippet code/src_corelib_tools_qregexp.cpp 6
+    \snippet code/src_corelib_text_qregexp.cpp 6
 
     The second string matches "Please write the \underline{letter}". The
     word 'letter' is also captured (because of the parentheses). We
     can see what text we've captured like this:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 7
+    \snippet code/src_corelib_text_qregexp.cpp 7
 
     This will capture the text from the first set of capturing
     parentheses (counting capturing left parentheses from left to
     right). The parentheses are counted from 1 since cap(0) is the
     whole matched regexp (equivalent to '&' in most regexp engines).
 
-    \snippet code/src_corelib_tools_qregexp.cpp 8
+    \snippet code/src_corelib_text_qregexp.cpp 8
 
     Here we've passed the QRegExp to QString's replace() function to
     replace the matched text with new text.
 
-    \snippet code/src_corelib_tools_qregexp.cpp 9
+    \snippet code/src_corelib_text_qregexp.cpp 9
 
     We've used the indexIn() function to repeatedly match the regexp in
     the string. Note that instead of moving forward by one character
@@ -655,7 +655,7 @@ QT_BEGIN_NAMESPACE
     One common use of regexps is to split lines of delimited data into
     their component fields.
 
-    \snippet code/src_corelib_tools_qregexp.cpp 10
+    \snippet code/src_corelib_text_qregexp.cpp 10
 
     In this example our input lines have the format company name, web
     address and country. Unfortunately the regexp is rather long and
@@ -665,13 +665,13 @@ QT_BEGIN_NAMESPACE
     QString::split() function can take a separator string or regexp
     as an argument and split a string accordingly.
 
-    \snippet code/src_corelib_tools_qregexp.cpp 11
+    \snippet code/src_corelib_text_qregexp.cpp 11
 
     Here field[0] is the company, field[1] the web address and so on.
 
     To imitate the matching of a shell we can use wildcard mode.
 
-    \snippet code/src_corelib_tools_qregexp.cpp 12
+    \snippet code/src_corelib_text_qregexp.cpp 12
 
     Wildcard matching can be convenient because of its simplicity, but
     any wildcard regexp can be defined using full regexps, e.g.
@@ -766,7 +766,7 @@ QT_BEGIN_NAMESPACE
     exactly, you can wrap the pattern using the QRegularExpression::anchoredPattern()
     function:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 21
+    \snippet code/src_corelib_text_qregexp.cpp 21
 
     \section3 Porting from QRegExp's Partial Matching
 
@@ -1030,11 +1030,7 @@ static bool operator==(const QRegExpEngineKey &key1, const QRegExpEngineKey &key
 
 static size_t qHash(const QRegExpEngineKey &key, size_t seed = 0) noexcept
 {
-    QtPrivate::QHashCombine hash;
-    seed = hash(seed, key.pattern);
-    seed = hash(seed, key.patternSyntax);
-    seed = hash(seed, key.cs);
-    return seed;
+    return qHashMulti(seed, key.pattern, key.patternSyntax, key.cs);
 }
 
 class QRegExpEngine;
@@ -4392,6 +4388,18 @@ bool QRegExp::exactMatch(const QString &str) const
     }
 }
 
+/*!
+   Returns the regexp as a QVariant
+*/
+QRegExp::operator QVariant() const
+{
+QT_WARNING_PUSH QT_WARNING_DISABLE_DEPRECATED
+    QVariant v;
+    v.setValue(*this);
+    return v;
+QT_WARNING_POP
+}
+
 // ### Qt 5: make non-const
 /*!
     Attempts to find a match in \a str from position \a offset (0 by
@@ -4409,7 +4417,7 @@ bool QRegExp::exactMatch(const QString &str) const
     QString::replace().
 
     Example:
-    \snippet code/src_corelib_tools_qregexp.cpp 13
+    \snippet code/src_corelib_text_qregexp.cpp 13
 
     Although const, this function sets matchedLength(),
     capturedTexts() and pos().
@@ -4483,6 +4491,298 @@ int QRegExp::matchedLength() const
     return priv->matchState.captured[1];
 }
 
+
+/*!
+  Replaces every occurrence of this regular expression in
+  \a str with \a after and returns the result.
+
+  For regular expressions containing \l{capturing parentheses},
+  occurrences of \b{\\1}, \b{\\2}, ..., in \a after are replaced
+  with \a{rx}.cap(1), cap(2), ...
+
+  \sa indexIn(), lastIndexIn(), QRegExp::cap()
+*/
+QString QRegExp::replaceIn(const QString &str, const QString &after) const
+{
+    struct QStringCapture
+    {
+        int pos;
+        int len;
+        int no;
+    };
+
+    QRegExp rx2(*this);
+
+    if (str.isEmpty() && rx2.indexIn(str) == -1)
+        return str;
+
+    QString s(str);
+
+    int index = 0;
+    int numCaptures = rx2.captureCount();
+    int al = after.length();
+    QRegExp::CaretMode caretMode = QRegExp::CaretAtZero;
+
+    if (numCaptures > 0) {
+        const QChar *uc = after.unicode();
+        int numBackRefs = 0;
+
+        for (int i = 0; i < al - 1; i++) {
+            if (uc[i] == QLatin1Char('\\')) {
+                int no = uc[i + 1].digitValue();
+                if (no > 0 && no <= numCaptures)
+                    numBackRefs++;
+            }
+        }
+
+        /*
+            This is the harder case where we have back-references.
+        */
+        if (numBackRefs > 0) {
+            QVarLengthArray<QStringCapture, 16> captures(numBackRefs);
+            int j = 0;
+
+            for (int i = 0; i < al - 1; i++) {
+                if (uc[i] == QLatin1Char('\\')) {
+                    int no = uc[i + 1].digitValue();
+                    if (no > 0 && no <= numCaptures) {
+                        QStringCapture capture;
+                        capture.pos = i;
+                        capture.len = 2;
+
+                        if (i < al - 2) {
+                            int secondDigit = uc[i + 2].digitValue();
+                            if (secondDigit != -1 && ((no * 10) + secondDigit) <= numCaptures) {
+                                no = (no * 10) + secondDigit;
+                                ++capture.len;
+                            }
+                        }
+
+                        capture.no = no;
+                        captures[j++] = capture;
+                    }
+                }
+            }
+
+            while (index <= s.length()) {
+                index = rx2.indexIn(s, index, caretMode);
+                if (index == -1)
+                    break;
+
+                QString after2(after);
+                for (j = numBackRefs - 1; j >= 0; j--) {
+                    const QStringCapture &capture = captures[j];
+                    after2.replace(capture.pos, capture.len, rx2.cap(capture.no));
+                }
+
+                s.replace(index, rx2.matchedLength(), after2);
+                index += after2.length();
+
+                // avoid infinite loop on 0-length matches (e.g., QRegExp("[a-z]*"))
+                if (rx2.matchedLength() == 0)
+                    ++index;
+
+                caretMode = QRegExp::CaretWontMatch;
+            }
+            return s;
+        }
+    }
+
+    /*
+        This is the simple and optimized case where we don't have
+        back-references.
+    */
+    while (index != -1) {
+        struct {
+            int pos;
+            int length;
+        } replacements[2048];
+
+        int pos = 0;
+        int adjust = 0;
+        while (pos < 2047) {
+            index = rx2.indexIn(s, index, caretMode);
+            if (index == -1)
+                break;
+            int ml = rx2.matchedLength();
+            replacements[pos].pos = index;
+            replacements[pos++].length = ml;
+            index += ml;
+            adjust += al - ml;
+            // avoid infinite loop
+            if (!ml)
+                index++;
+        }
+        if (!pos)
+            break;
+        replacements[pos].pos = s.size();
+        int newlen = s.size() + adjust;
+
+        // to continue searching at the right position after we did
+        // the first round of replacements
+        if (index != -1)
+            index += adjust;
+        QString newstring;
+        newstring.reserve(newlen + 1);
+        QChar *newuc = newstring.data();
+        QChar *uc = newuc;
+        int copystart = 0;
+        int i = 0;
+        while (i < pos) {
+            int copyend = replacements[i].pos;
+            int size = copyend - copystart;
+            memcpy(static_cast<void*>(uc), static_cast<const void *>(s.constData() + copystart), size * sizeof(QChar));
+            uc += size;
+            memcpy(static_cast<void *>(uc), static_cast<const void *>(after.constData()), al * sizeof(QChar));
+            uc += al;
+            copystart = copyend + replacements[i].length;
+            i++;
+        }
+        memcpy(static_cast<void *>(uc), static_cast<const void *>(s.constData() + copystart), (s.size() - copystart) * sizeof(QChar));
+        newstring.resize(newlen);
+        s = newstring;
+        caretMode = QRegExp::CaretWontMatch;
+    }
+    return s;
+
+}
+
+
+/*!
+  \fn QString QRegExp::removeIn(const QString &str)
+
+  Removes every occurrence of this regular expression \a str, and
+  returns the result
+
+  Does the same as replaceIn(str, QString()).
+
+  \sa indexIn(), lastIndexIn(), replaceIn()
+*/
+
+
+/*!
+  \fn QString QRegExp::countIn(const QString &str)
+
+   Returns the number of times this regular expression matches
+   in \a str.
+
+  \sa indexIn(), lastIndexIn(), replaceIn()
+*/
+
+int QRegExp::countIn(const QString &str) const
+{
+    QRegExp rx2(*this);
+    int count = 0;
+    int index = -1;
+    int len = str.length();
+    while (index < len - 1) {                 // count overlapping matches
+        index = rx2.indexIn(str, index + 1);
+        if (index == -1)
+            break;
+        count++;
+    }
+    return count;
+}
+
+/*!
+    Splits \a str into substrings wherever this regular expression
+    matches, and returns the list of those strings. If this regular
+    expression does not match anywhere in the string, split() returns a
+    single-element list containing \a str.
+
+    \sa QStringList::join(), section(), QString::split()
+*/
+QStringList QRegExp::splitString(const QString &str, Qt::SplitBehavior behavior) const
+{
+    QRegExp rx2(*this);
+    QStringList list;
+    int start = 0;
+    int extra = 0;
+    int end;
+    while ((end = rx2.indexIn(str, start + extra)) != -1) {
+        int matchedLen = rx2.matchedLength();
+        if (start != end || behavior == Qt::KeepEmptyParts)
+            list.append(str.mid(start, end - start));
+        start = end + matchedLen;
+        extra = (matchedLen == 0) ? 1 : 0;
+    }
+    if (start != str.size() || behavior == Qt::KeepEmptyParts)
+        list.append(str.mid(start, -1));
+    return list;
+}
+
+/*!
+    \fn QStringList QStringList::filter(const QRegExp &rx) const
+
+    \overload
+
+    Returns a list of all the strings that match the regular
+    expression \a rx.
+*/
+QStringList QRegExp::filterList(const QStringList &stringList) const
+{
+    QStringList res;
+    for (const QString &s : stringList) {
+        if (containedIn(s))
+            res << s;
+    }
+    return res;
+}
+
+/*!
+    Replaces every occurrence of the regexp \a rx, in each of the
+    string lists's strings, with \a after. Returns a reference to the
+    string list.
+*/
+QStringList QRegExp::replaceIn(const QStringList &stringList, const QString &after) const
+{
+    QStringList list;
+    for (const QString &s : stringList)
+        list << replaceIn(s, after);
+    return list;
+}
+
+/*!
+    Returns the index position of the first exact match of this regexp in
+    \a list, searching forward from index position \a from. Returns
+    -1 if no item matched.
+
+    \sa lastIndexIn(), contains(), exactMatch()
+*/
+int QRegExp::indexIn(const QStringList &list, int from) const
+{
+    QRegExp rx2(*this);
+    if (from < 0)
+        from = qMax(from + list.size(), 0);
+    for (int i = from; i < list.size(); ++i) {
+        if (rx2.exactMatch(list.at(i)))
+           return i;
+    }
+    return -1;
+}
+
+/*!
+    Returns the index position of the last exact match of this regexp in
+    \a list, searching backward from index position \a from. If \a
+    from is -1 (the default), the search starts at the last item.
+    Returns -1 if no item matched.
+
+    \sa indexOf(), contains(), QRegExp::exactMatch()
+*/
+int QRegExp::lastIndexIn(const QStringList &list, int from) const
+{
+    QRegExp rx2(*this);
+    if (from < 0)
+        from += list.size();
+    else if (from >= list.size())
+        from = list.size() - 1;
+    for (int i = from; i >= 0; --i) {
+        if (rx2.exactMatch(list.at(i)))
+            return i;
+    }
+    return -1;
+}
+
 #ifndef QT_NO_REGEXP_CAPTURE
 
 /*!
@@ -4503,17 +4803,17 @@ int QRegExp::captureCount() const
     (capturing) subexpression of the regexp.
 
     For example:
-    \snippet code/src_corelib_tools_qregexp.cpp 14
+    \snippet code/src_corelib_text_qregexp.cpp 14
 
     The above example also captures elements that may be present but
     which we have no interest in. This problem can be solved by using
     non-capturing parentheses:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 15
+    \snippet code/src_corelib_text_qregexp.cpp 15
 
     Note that if you want to iterate over the list, you should iterate
     over a copy, e.g.
-    \snippet code/src_corelib_tools_qregexp.cpp 16
+    \snippet code/src_corelib_text_qregexp.cpp 16
 
     Some regexps can match an indeterminate number of times. For
     example if the input string is "Offsets: 12 14 99 231 7" and the
@@ -4566,7 +4866,7 @@ QStringList QRegExp::capturedTexts()
     match has index 0 and the parenthesized subexpressions have
     indexes starting from 1 (excluding non-capturing parentheses).
 
-    \snippet code/src_corelib_tools_qregexp.cpp 17
+    \snippet code/src_corelib_text_qregexp.cpp 17
 
     The order of elements matched by cap() is as follows. The first
     element, cap(0), is the entire matching string. Each subsequent
@@ -4595,7 +4895,7 @@ QString QRegExp::cap(int nth)
     of the whole match.
 
     Example:
-    \snippet code/src_corelib_tools_qregexp.cpp 18
+    \snippet code/src_corelib_text_qregexp.cpp 18
 
     For zero-length matches, pos() always returns -1. (For example, if
     cap(4) would return an empty string, pos(4) returns -1.) This is
@@ -4641,6 +4941,7 @@ QString QRegExp::errorString()
 {
     return const_cast<const QRegExp *>(this)->errorString();
 }
+
 #endif
 
 /*!
@@ -4650,11 +4951,11 @@ QString QRegExp::errorString()
 
     Example:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 19
+    \snippet code/src_corelib_text_qregexp.cpp 19
 
     This function is useful to construct regexp patterns dynamically:
 
-    \snippet code/src_corelib_tools_qregexp.cpp 20
+    \snippet code/src_corelib_text_qregexp.cpp 20
 
     \sa setPatternSyntax()
 */

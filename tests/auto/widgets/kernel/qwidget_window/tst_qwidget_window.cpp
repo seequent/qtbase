@@ -113,6 +113,8 @@ private slots:
     void tst_resize_count();
     void tst_move_count();
 
+    void tst_showhide_count();
+
     void tst_eventfilter_on_toplevel();
 
     void QTBUG_50561_QCocoaBackingStore_paintDevice_crash();
@@ -190,9 +192,6 @@ void tst_QWidget_window::tst_move_show()
     const QPoint pos(100, 100);
     w.move(pos);
     w.show();
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "Winrt does not support move", Abort);
-#endif
     QVERIFY2(qFuzzyCompareWindowPosition(w.pos(), pos, m_fuzz),
              qPrintable(msgPointMismatch(w.pos(), pos)));
 }
@@ -224,9 +223,6 @@ void tst_QWidget_window::tst_resize_show()
     QWidget w;
     w.resize(m_testWidgetSize);
     w.show();
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "Winrt does not support resize", Abort);
-#endif
     QCOMPARE(w.size(), m_testWidgetSize);
 }
 
@@ -416,8 +412,7 @@ void tst_QWidget_window::tst_exposeObscuredMapped_QTBUG39220()
 
     const auto integration = QGuiApplicationPrivate::platformIntegration();
     if (!integration->hasCapability(QPlatformIntegration::MultipleWindows)
-        || !integration->hasCapability(QPlatformIntegration::NonFullScreenWindows)
-        || QGuiApplication::platformName() == QLatin1String("winrt")) {
+        || !integration->hasCapability(QPlatformIntegration::NonFullScreenWindows)) {
         QSKIP("The platform does not have the required capabilities");
     }
     // QTBUG-39220: Fully obscured parent widgets may not receive expose
@@ -538,7 +533,7 @@ private:
 
 void DnDEventLoggerWidget::formatDropEvent(const char *function, const QDropEvent *e, QTextStream &str) const
 {
-    str << objectName() << "::" << function  << " at " << e->pos().x() << ',' << e->pos().y()
+    str << objectName() << "::" << function  << " at " << e->position().toPoint().x() << ',' << e->position().toPoint().y()
         << " action=" << e->dropAction()
         << ' ' << quintptr(e->mimeData()) << " '" << e->mimeData()->text() << '\'';
 }
@@ -582,7 +577,7 @@ static QString msgEventAccepted(const QDropEvent &e)
 {
     QString message;
     QTextStream str(&message);
-    str << "Event at " << e.pos().x() << ',' << e.pos().y() << ' ' << (e.isAccepted() ? "accepted" : "ignored");
+    str << "Event at " << e.position().toPoint().x() << ',' << e.position().toPoint().y() << ' ' << (e.isAccepted() ? "accepted" : "ignored");
     return message;
 }
 
@@ -629,9 +624,6 @@ void tst_QWidget_window::tst_dnd()
     QWidget *dropsAcceptingWidget3 = new DnDEventLoggerWidget(&log, &dndTestWidget, true);
     dropsAcceptingWidget3->setAcceptDrops(true);
     dropsAcceptingWidget3->setObjectName(QLatin1String("acceptingDropsWidget3"));
-    // 260 + 40 = 300 = widget size, must not be more than that.
-    // otherwise it will break WinRT because there the tlw is maximized every time
-    // and this window will receive one more event
     dropsAcceptingWidget3->resize(180, 40);
     dropsAcceptingWidget3->move(10, 260);
 
@@ -723,7 +715,7 @@ protected:
     {
         e->accept();
         _dndEvents.append(QStringLiteral("DragMove "));
-        emit releaseMouseButton();
+        emit dragMoveReceived();
     }
     void dragLeaveEvent(QDragLeaveEvent *e)
     {
@@ -737,7 +729,7 @@ protected:
     }
 
 signals:
-    void releaseMouseButton();
+    void dragMoveReceived();
 };
 
 void tst_QWidget_window::tst_dnd_events()
@@ -772,7 +764,7 @@ void tst_QWidget_window::tst_dnd_events()
 
     // Some dnd implementation rely on running internal event loops, so we have to use
     // the following queued signal hack to simulate mouse clicks in the widget.
-    QObject::connect(&dndWidget, &DnDEventRecorder::releaseMouseButton, this, [=]() {
+    QObject::connect(&dndWidget, &DnDEventRecorder::dragMoveReceived, this, [=]() {
         QTest::mouseRelease(window, Qt::LeftButton);
     }, Qt::QueuedConnection);
 
@@ -781,6 +773,27 @@ void tst_QWidget_window::tst_dnd_events()
     QTest::mousePress(window, Qt::LeftButton);
 
     QCOMPARE(dndWidget._dndEvents, expectedDndEvents);
+
+    dndWidget._dndEvents.clear();
+    dndWidget.disconnect();
+    int step = 0;
+    QObject::connect(&dndWidget, &DnDEventRecorder::dragMoveReceived, this, [window, &step]() {
+        switch (step++) {
+        case 0:
+            QTest::keyPress(window, Qt::Key_Shift, Qt::ShiftModifier);
+            break;
+        case 1:
+            QTest::keyRelease(window, Qt::Key_Shift, Qt::NoModifier);
+            break;
+        default:
+            QTest::mouseRelease(window, Qt::LeftButton);
+            break;
+        }
+    }, Qt::QueuedConnection);
+
+    QTest::mousePress(window, Qt::LeftButton);
+    const QString expectedDndWithModsEvents = "DragEnter DragMove DragMove DragMove DropEvent ";
+    QCOMPARE(dndWidget._dndEvents, expectedDndWithModsEvents);
 }
 
 class DropTarget : public QWidget
@@ -971,9 +984,6 @@ void tst_QWidget_window::tst_resize_count()
         resize.setWindowFlags(Qt::X11BypassWindowManagerHint);
         resize.show();
         QVERIFY(QTest::qWaitForWindowExposed(&resize));
-#ifdef Q_OS_WINRT
-        QEXPECT_FAIL("", "Winrt does not support resize", Abort);
-#endif
         QCOMPARE(resize.resizeCount, 1);
         resize.resizeCount = 0;
         QSize size = resize.size();
@@ -1020,6 +1030,78 @@ void tst_QWidget_window::tst_resize_count()
     }
 
 }
+
+/*!
+    This test verifies that windows get a balanced number of show
+    and hide events, no matter how the window was closed.
+*/
+void tst_QWidget_window::tst_showhide_count()
+{
+    class EventSpy : public QObject
+    {
+    public:
+        EventSpy()
+        {
+            QApplication::instance()->installEventFilter(this);
+        }
+
+        int takeCount(QWidget *widget, QEvent::Type type) {
+            const auto entry = Entry(widget, type);
+            int count = counter[entry];
+            counter[entry] = 0;
+            return count;
+        }
+    protected:
+        bool eventFilter(QObject *receiver, QEvent *event)
+        {
+            if (QWidget *widget = qobject_cast<QWidget*>(receiver)) {
+                const auto entry = Entry(widget, event->type());
+                ++counter[entry];
+                return false;
+            }
+            return QObject::eventFilter(receiver, event);
+        }
+    private:
+        using Entry = QPair<QWidget*, QEvent::Type>;
+        QHash<Entry, int> counter;
+    };
+
+    EventSpy spy;
+
+    QWidget w1;
+    w1.setGeometry(100, 100, 200, 200);
+
+    w1.show();
+    QCOMPARE(spy.takeCount(&w1, QEvent::Show), 1);
+    w1.hide();
+    QCOMPARE(spy.takeCount(&w1, QEvent::Hide), 1);
+    w1.close();
+    QCOMPARE(spy.takeCount(&w1, QEvent::Close), 1);
+    w1.show();
+    QCOMPARE(spy.takeCount(&w1, QEvent::Show), 1);
+    w1.close();
+    QCOMPARE(spy.takeCount(&w1, QEvent::Hide), 1);
+    QCOMPARE(spy.takeCount(&w1, QEvent::Close), 1);
+
+    w1.show();
+    QWidget *popup = new QWidget(&w1, Qt::Popup);
+    popup->setGeometry(120, 120, 30, 30);
+    popup->show();
+    popup->close();
+    QCOMPARE(spy.takeCount(popup, QEvent::Show), 1);
+    QCOMPARE(spy.takeCount(popup, QEvent::Hide), 1);
+    QCOMPARE(spy.takeCount(popup, QEvent::Close), 1);
+
+    popup->show();
+
+    // clicking outside the popup should close the popup
+    QTest::mousePress(popup->window(), Qt::LeftButton, {}, QPoint(-10, -10));
+
+    QCOMPARE(spy.takeCount(popup, QEvent::Show), 1);
+    QCOMPARE(spy.takeCount(popup, QEvent::Hide), 1);
+    QCOMPARE(spy.takeCount(popup, QEvent::Close), 1);
+}
+
 
 class MoveWidget : public QWidget
 {
@@ -1179,11 +1261,6 @@ void tst_QWidget_window::setWindowState()
     w.setWindowState(state);
     QCOMPARE(w.windowState(), state);
     w.show();
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("0", "Winrt windows are maximized by default", Abort);
-    QEXPECT_FAIL("Qt::WindowMinimized", "Winrt windows are maximized by default", Abort);
-    QEXPECT_FAIL("Qt::WindowFullScreen", "Winrt windows are maximized by default", Abort);
-#endif
     QCOMPARE(w.windowState(), state);
     QCOMPARE(w.windowHandle()->windowStates(), state);
     if (!(state & Qt::WindowMinimized))

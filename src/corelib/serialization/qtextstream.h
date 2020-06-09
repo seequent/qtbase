@@ -45,6 +45,7 @@
 #include <QtCore/qchar.h>
 #include <QtCore/qlocale.h>
 #include <QtCore/qscopedpointer.h>
+#include <QtCore/qstringconverter.h>
 
 #include <stdio.h>
 
@@ -53,10 +54,6 @@
 #endif
 
 QT_BEGIN_NAMESPACE
-
-
-class QTextCodec;
-class QTextDecoder;
 
 class QTextStreamPrivate;
 class Q_CORE_EXPORT QTextStream                                // text stream class
@@ -98,15 +95,12 @@ public:
     explicit QTextStream(const QByteArray &array, QIODevice::OpenMode openMode = QIODevice::ReadOnly);
     virtual ~QTextStream();
 
-#if QT_CONFIG(textcodec)
-    void setCodec(QTextCodec *codec);
-    void setCodec(const char *codecName);
-    QTextCodec *codec() const;
+    void setEncoding(QStringConverter::Encoding encoding);
+    QStringConverter::Encoding encoding() const;
     void setAutoDetectUnicode(bool enabled);
     bool autoDetectUnicode() const;
     void setGenerateByteOrderMark(bool generate);
     bool generateByteOrderMark() const;
-#endif
 
     void setLocale(const QLocale &locale);
     QLocale locale() const;

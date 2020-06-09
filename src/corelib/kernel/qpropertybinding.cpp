@@ -51,6 +51,8 @@ QPropertyBindingPrivate::~QPropertyBindingPrivate()
 {
     if (firstObserver)
         firstObserver.unlink();
+    if (!hasStaticObserver)
+        inlineDependencyObservers.~ObserverArray(); // Explicit because of union.
 }
 
 void QPropertyBindingPrivate::unlinkAndDeref()
@@ -65,6 +67,8 @@ void QPropertyBindingPrivate::markDirtyAndNotifyObservers()
     dirty = true;
     if (firstObserver)
         firstObserver.notify(this, propertyDataPtr);
+    if (hasStaticObserver)
+        staticObserverCallback(staticObserver);
 }
 
 bool QPropertyBindingPrivate::evaluateIfDirtyAndReturnTrueIfValueChanged()

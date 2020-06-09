@@ -39,7 +39,6 @@
 #include <QAction>
 #include <QStatusBar>
 #include <QLineEdit>
-#include <QDesktopWidget>
 #include <QPushButton>
 #include <QLabel>
 #include <QMouseEvent>
@@ -225,19 +224,15 @@ void ScreenWatcherMainWindow::startMouseMonitor()
 
 void screenAdded(QScreen* screen)
 {
-    screen->setOrientationUpdateMask((Qt::ScreenOrientations)0x0F);
-    qDebug("\nscreenAdded %s siblings %d first %s", qPrintable(screen->name()), screen->virtualSiblings().count(),
+    qDebug("\nscreenAdded %s siblings %d fast %s", qPrintable(screen->name()), screen->virtualSiblings().count(),
         (screen->virtualSiblings().isEmpty() ? "none" : qPrintable(screen->virtualSiblings().first()->name())));
     ScreenWatcherMainWindow *w = new ScreenWatcherMainWindow(screen);
 
-    // Set the screen via QDesktopWidget. This corresponds to setScreen() for the underlying
-    // QWindow. This is essential when having separate X screens since the the positioning below is
-    // not sufficient to get the windows show up on the desired screen.
-    QList<QScreen *> screens = QGuiApplication::screens();
-    int screenNumber = screens.indexOf(screen);
-    Q_ASSERT(screenNumber >= 0);
-    // ### Qt 6: Find a replacement for QDesktopWidget::screen()
-    w->setParent(qApp->desktop()->screen(screenNumber));
+    // Set the screen; this corresponds to setScreen() for the underlying
+    // QWindow. This is essential when having separate X screens since the
+    // positioning below is not sufficient to get the windows show up on the
+    // desired screen.
+    w->setParent(qApp->desktop(screen));
 
     w->show();
 

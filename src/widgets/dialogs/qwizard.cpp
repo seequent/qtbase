@@ -47,7 +47,6 @@
 #include "qapplication.h"
 #include "qboxlayout.h"
 #include "qlayoutitem.h"
-#include "qdesktopwidget.h"
 #include <private/qdesktopwidget_p.h>
 #include "qevent.h"
 #include "qframe.h"
@@ -399,7 +398,7 @@ void QWizardHeader::setup(const QWizardLayoutInfo &info, const QString &title,
         /*
             There is no widthForHeight() function, so we simulate it with a loop.
         */
-        int candidateSubTitleWidth = qMin(512, 2 * QDesktopWidgetPrivate::width() / 3);
+        int candidateSubTitleWidth = qMin(512, 2 * QGuiApplication::primaryScreen()->virtualGeometry().width() / 3);
         int delta = candidateSubTitleWidth >> 1;
         while (delta > 0) {
             if (subTitleLabel->heightForWidth(candidateSubTitleWidth - delta)
@@ -3232,11 +3231,7 @@ void QWizard::paintEvent(QPaintEvent * event)
 /*!
     \reimp
 */
-#  if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 bool QWizard::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
-#  else
-bool QWizard::nativeEvent(const QByteArray &eventType, void *message, long *result)
-#  endif
 {
 #if QT_CONFIG(style_windowsvista)
     Q_D(QWizard);

@@ -65,6 +65,7 @@ struct Q_AUTOTEST_EXPORT QPropertyBasePointer
 
     QPropertyBindingPrivate *bindingPtr() const;
 
+    void setObservers(QPropertyObserver *observer);
     void addObserver(QPropertyObserver *observer);
     void setFirstObserver(QPropertyObserver *observer);
     QPropertyObserverPointer firstObserver() const;
@@ -87,6 +88,7 @@ struct QPropertyObserverPointer
 
     void setBindingToMarkDirty(QPropertyBindingPrivate *binding);
     void setChangeHandler(void (*changeHandler)(QPropertyObserver *, void *));
+    void setAliasedProperty(void *propertyPtr);
 
     void notify(QPropertyBindingPrivate *triggeringBinding, void *propertyDataPtr);
     void observeProperty(QPropertyBasePointer property);

@@ -45,7 +45,6 @@ qt*-config.pri
 !/lib/README
 /plugins/
 
-/imports/
 /qml/
 
 /doc/*.qch
@@ -53,10 +52,6 @@ qt*-config.pri
 /doc/qdoc
 /doc/qmake
 /doc/qt*/*
-
-/src/angle/src/QtANGLE/*.def
-/src/angle/src/QtANGLE/libANGLE/
-/src/angle/src/libGLESv2/libANGLE/
 
 # FIXME: Ignore these again?
 # /examples/*/*/*
@@ -279,8 +274,6 @@ tags
 *.exe.embed.manifest
 *.exe_manifest.rc
 *.exe_manifest.res
-*.appxmanifest
-.qmake.winrt_uuid_*
 
 # Visual Studio Code generated files
 .vscode

@@ -45,7 +45,6 @@
 #include <qmimedata.h>
 #include <qdebug.h>
 #include <qvector.h>
-#include <qregexp.h>
 #if QT_CONFIG(regularexpression)
 #  include <qregularexpression.h>
 #endif
@@ -353,6 +352,22 @@ void *QPersistentModelIndex::internalPointer() const
 }
 
 /*!
+    \fn const void *QPersistentModelIndex::constInternalPointer() const
+    \since 6.0
+    \internal
+
+    Returns a \c{const void} \c{*} pointer used by the model to
+    associate the index with the internal data structure.
+*/
+
+const void *QPersistentModelIndex::constInternalPointer() const
+{
+    if (d)
+        return d->index.constInternalPointer();
+    return nullptr;
+}
+
+/*!
     \fn quintptr QPersistentModelIndex::internalId() const
 
     \internal
@@ -394,26 +409,6 @@ QModelIndex QPersistentModelIndex::sibling(int row, int column) const
         return d->index.sibling(row, column);
     return QModelIndex();
 }
-
-#if QT_DEPRECATED_SINCE(5, 8)
-/*!
-    \obsolete
-
-    Use QAbstractItemModel::index() instead.
-
-    Returns the child of the model index that is stored in the given \a row
-    and \a column.
-
-    \sa parent(), sibling()
-*/
-
-QModelIndex QPersistentModelIndex::child(int row, int column) const
-{
-    if (d)
-        return d->index.model()->index(row, column, d->index);
-    return QModelIndex();
-}
-#endif
 
 /*!
     Returns the data for the given \a role for the item referred to by the
@@ -502,9 +497,7 @@ Q_GLOBAL_STATIC(QEmptyItemModel, qEmptyModel)
 
 
 QAbstractItemModelPrivate::QAbstractItemModelPrivate()
-    : QObjectPrivate(),
-      supportedDragActions(-1),
-      roleNames(defaultRoleNames())
+    : QObjectPrivate()
 {
 }
 
@@ -1066,6 +1059,15 @@ void QAbstractItemModel::resetInternalData()
 */
 
 /*!
+    \fn const void *QModelIndex::constInternalPointer() const
+
+    Returns a \c{const void} \c{*} pointer used by the model to associate
+    the index with the internal data structure.
+
+    \sa QAbstractItemModel::createIndex()
+*/
+
+/*!
     \fn quintptr QModelIndex::internalId() const
 
     Returns a \c{quintptr} used by the model to associate
@@ -1123,22 +1125,6 @@ void QAbstractItemModel::resetInternalData()
 
     \sa sibling(), siblingAtColumn()
     \since 5.11
-*/
-
-/*!
-    \fn QModelIndex QModelIndex::child(int row, int column) const
-
-    \obsolete
-
-    Use QAbstractItemModel::index() instead.
-
-    Returns the child of the model index that is stored in the given \a row and
-    \a column.
-
-    \note This function does not work for an invalid model index which is often
-    used as the root index.
-
-    \sa parent(), sibling()
 */
 
 /*!
@@ -1862,7 +1848,6 @@ bool QAbstractItemModel::setData(const QModelIndex &index, const QVariant &value
     return false;
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 /*!
     \since 6.0
     Removes the data stored in all the roles for the given \a index.
@@ -1877,7 +1862,6 @@ bool QAbstractItemModel::clearItemData(const QModelIndex &index)
     Q_UNUSED(index);
     return false;
 }
-#endif
 
 /*!
     \fn QVariant QAbstractItemModel::data(const QModelIndex &index, int role) const = 0
@@ -2084,32 +2068,8 @@ Qt::DropActions QAbstractItemModel::supportedDropActions() const
 */
 Qt::DropActions QAbstractItemModel::supportedDragActions() const
 {
-    Q_D(const QAbstractItemModel);
-    if (int(d->supportedDragActions) != -1)
-        return d->supportedDragActions;
     return supportedDropActions();
 }
-
-/*!
-    \internal
- */
-void QAbstractItemModel::doSetSupportedDragActions(Qt::DropActions actions)
-{
-    Q_D(QAbstractItemModel);
-    d->supportedDragActions = actions;
-}
-
-/*!
-    \since 4.2
-    \obsolete
-    \fn void QAbstractItemModel::setSupportedDragActions(Qt::DropActions actions)
-
-    This function is obsolete. Reimplement supportedDragActions() instead.
-
-    Sets the supported drag \a actions for the items in the model.
-
-    \sa supportedDragActions(), {Using drag and drop with item views}
-*/
 
 /*!
     \note The base class implementation of this function does nothing and
@@ -2462,30 +2422,6 @@ QSize QAbstractItemModel::span(const QModelIndex &) const
 }
 
 /*!
-    \fn void QAbstractItemModel::setRoleNames(const QHash<int,QByteArray> &roleNames)
-    \since 4.6
-    \obsolete
-
-    This function is obsolete. Reimplement roleNames() instead.
-
-    Sets the model's role names to \a roleNames.
-
-    This function allows mapping of role identifiers to role property names in
-    scripting languages.
-
-    \sa roleNames()
-*/
-
-/*!
-    \internal
- */
-void QAbstractItemModel::doSetRoleNames(const QHash<int,QByteArray> &roleNames)
-{
-    Q_D(QAbstractItemModel);
-    d->roleNames = roleNames;
-}
-
-/*!
     \since 4.6
 
     Returns the model's role names.
@@ -2518,8 +2454,7 @@ void QAbstractItemModel::doSetRoleNames(const QHash<int,QByteArray> &roleNames)
 */
 QHash<int,QByteArray> QAbstractItemModel::roleNames() const
 {
-    Q_D(const QAbstractItemModel);
-    return d->roleNames;
+    return QAbstractItemModelPrivate::defaultRoleNames();
 }
 
 /*!
@@ -2590,7 +2525,7 @@ bool QAbstractItemModel::setHeaderData(int section, Qt::Orientation orientation,
 }
 
 /*!
-    \fn QModelIndex QAbstractItemModel::createIndex(int row, int column, void *ptr) const
+    \fn QModelIndex QAbstractItemModel::createIndex(int row, int column, const void *ptr) const
 
     Creates a model index for the given \a row and \a column with the internal
     pointer \a ptr.
@@ -3235,28 +3170,6 @@ void QAbstractItemModel::endMoveColumns()
 }
 
 /*!
-    \fn void QAbstractItemModel::reset()
-    \obsolete
-
-    Resets the model to its original state in any attached views.
-
-    This function emits the signals modelAboutToBeReset() and modelReset().
-
-    \note Use beginResetModel() and endResetModel() instead whenever possible.
-    Use this method only if there is no way to call beginResetModel() before invalidating the model.
-    Otherwise it could lead to unexpected behaviour, especially when used with proxy models.
-
-    For example, in this code both signals modelAboutToBeReset() and modelReset()
-    are emitted \e after the data changes:
-
-    \snippet code/src_corelib_kernel_qabstractitemmodel.cpp 10
-
-    Instead you should use:
-
-    \snippet code/src_corelib_kernel_qabstractitemmodel.cpp 11
-*/
-
-/*!
     Begins a model reset operation.
 
     A reset operation resets the model to its current state in any attached views.
@@ -3299,11 +3212,7 @@ void QAbstractItemModel::endResetModel()
 {
     Q_D(QAbstractItemModel);
     d->invalidatePersistentIndexes();
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     resetInternalData();
-#else
-    QMetaObject::invokeMethod(this, "resetInternalData");
-#endif
     emit modelReset(QPrivateSignal());
 }
 

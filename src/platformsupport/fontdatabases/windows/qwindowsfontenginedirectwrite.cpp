@@ -343,18 +343,16 @@ QString QWindowsFontEngineDirectWrite::filenameFromFontFile(IDWriteFontFile *fon
     return ret;
 }
 
-bool QWindowsFontEngineDirectWrite::processHheaTable() const
+void QWindowsFontEngineDirectWrite::initializeHeightMetrics() const
 {
-    if (!QFontEngine::processHheaTable()) {
-        DWRITE_FONT_METRICS metrics;
-        m_directWriteFontFace->GetMetrics(&metrics);
+    DWRITE_FONT_METRICS metrics;
+    m_directWriteFontFace->GetMetrics(&metrics);
 
-        m_ascent = DESIGN_TO_LOGICAL(metrics.ascent);
-        m_descent = DESIGN_TO_LOGICAL(metrics.descent);
-        m_leading = DESIGN_TO_LOGICAL(metrics.lineGap);
-    }
+    m_ascent = DESIGN_TO_LOGICAL(metrics.ascent);
+    m_descent = DESIGN_TO_LOGICAL(metrics.descent);
+    m_leading = DESIGN_TO_LOGICAL(metrics.lineGap);
 
-    return true;
+    QFontEngine::initializeHeightMetrics();
 }
 
 void QWindowsFontEngineDirectWrite::collectMetrics()
@@ -517,13 +515,6 @@ void QWindowsFontEngineDirectWrite::recalcAdvances(QGlyphLayout *glyphs, QFontEn
         qreal stretch = fontDef.stretch != QFont::AnyStretch ? fontDef.stretch / 100.0 : 1.0;
         for (int i = 0; i < glyphs->numGlyphs; ++i)
             glyphs->advances[i] = DESIGN_TO_LOGICAL(glyphMetrics[i].advanceWidth * stretch);
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-        if (fontDef.styleStrategy & QFont::ForceIntegerMetrics) {
-QT_WARNING_POP
-            for (int i = 0; i < glyphs->numGlyphs; ++i)
-                glyphs->advances[i] = glyphs->advances[i].round();
-        }
     } else {
         qErrnoWarning("%s: GetDesignGlyphMetrics failed", __FUNCTION__);
     }
@@ -563,17 +554,9 @@ glyph_metrics_t QWindowsFontEngineDirectWrite::boundingBox(const QGlyphLayout &g
 {
     if (glyphs.numGlyphs == 0)
         return glyph_metrics_t();
-
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    bool round = fontDef.styleStrategy & QFont::ForceIntegerMetrics;
-QT_WARNING_POP
-
     QFixed w = 0;
-    for (int i = 0; i < glyphs.numGlyphs; ++i) {
-        w += round ? glyphs.effectiveAdvance(i).round() : glyphs.effectiveAdvance(i);
-
-    }
+    for (int i = 0; i < glyphs.numGlyphs; ++i)
+        w += glyphs.effectiveAdvance(i);
 
     return glyph_metrics_t(0, -ascent(), w - lastRightBearing(glyphs), ascent() + descent(), w, 0);
 }
@@ -592,15 +575,6 @@ glyph_metrics_t QWindowsFontEngineDirectWrite::boundingBox(glyph_t g)
         QFixed verticalOriginY = DESIGN_TO_LOGICAL(glyphMetrics.verticalOriginY);
         QFixed topSideBearing = DESIGN_TO_LOGICAL(glyphMetrics.topSideBearing);
         QFixed bottomSideBearing = DESIGN_TO_LOGICAL(glyphMetrics.bottomSideBearing);
-
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-        if (fontDef.styleStrategy & QFont::ForceIntegerMetrics) {
-QT_WARNING_POP
-            advanceWidth = advanceWidth.round();
-            advanceHeight = advanceHeight.round();
-        }
-
         QFixed width = advanceWidth - leftSideBearing - rightSideBearing;
         QFixed height = advanceHeight - topSideBearing - bottomSideBearing;
         return glyph_metrics_t(leftSideBearing,
@@ -621,37 +595,22 @@ QFixed QWindowsFontEngineDirectWrite::capHeight() const
     if (m_capHeight <= 0)
         return calculatedCapHeight();
 
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    return fontDef.styleStrategy & QFont::ForceIntegerMetrics
-            ? m_capHeight.round()
-            : m_capHeight;
-QT_WARNING_POP
+    return m_capHeight;
 }
 
 QFixed QWindowsFontEngineDirectWrite::xHeight() const
 {
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    return fontDef.styleStrategy & QFont::ForceIntegerMetrics
-           ? m_xHeight.round()
-           : m_xHeight;
-QT_WARNING_POP
+    return m_xHeight;
 }
 
 qreal QWindowsFontEngineDirectWrite::maxCharWidth() const
 {
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    return fontDef.styleStrategy & QFont::ForceIntegerMetrics
-           ? m_maxAdvanceWidth.round().toReal()
-           : m_maxAdvanceWidth.toReal();
-QT_WARNING_POP
+    return m_maxAdvanceWidth.toReal();
 }
 
 QImage QWindowsFontEngineDirectWrite::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t)
 {
-    QImage im = alphaRGBMapForGlyph(glyph, subPixelPosition, t);
+    QImage im = imageForGlyph(glyph, subPixelPosition, glyphMargin(Format_A8), t);
 
     QImage alphaMap(im.width(), im.height(), QImage::Format_Alpha8);
 
@@ -725,13 +684,16 @@ QImage QWindowsFontEngineDirectWrite::imageForGlyph(glyph_t t,
                 &transform,
                 renderMode,
                 measureMode,
-                margin, margin,
+                0.0, 0.0,
                 &glyphAnalysis
                 );
 
     if (SUCCEEDED(hr)) {
         RECT rect;
         glyphAnalysis->GetAlphaTextureBounds(DWRITE_TEXTURE_CLEARTYPE_3x1, &rect);
+
+        if (rect.top == rect.bottom || rect.left == rect.right)
+            return QImage();
 
         QRect boundingRect = QRect(QPoint(rect.left - margin,
                                           rect.top - margin),
@@ -1027,7 +989,6 @@ glyph_metrics_t QWindowsFontEngineDirectWrite::alphaMapBoundingBox(glyph_t glyph
             hintingPreferenceToRenderingMode(QFont::HintingPreference(fontDef.hintingPreference));
     DWRITE_MEASURING_MODE measureMode = renderModeToMeasureMode(renderMode);
 
-    const int margin = glyphMargin(QFontEngine::Format_A32);
     IDWriteGlyphRunAnalysis *glyphAnalysis = NULL;
     HRESULT hr = m_fontEngineData->directWriteFactory->CreateGlyphRunAnalysis(
                 &glyphRun,
@@ -1035,7 +996,7 @@ glyph_metrics_t QWindowsFontEngineDirectWrite::alphaMapBoundingBox(glyph_t glyph
                 &transform,
                 renderMode,
                 measureMode,
-                margin, margin,
+                0.0, 0.0,
                 &glyphAnalysis
                 );
 
@@ -1044,8 +1005,13 @@ glyph_metrics_t QWindowsFontEngineDirectWrite::alphaMapBoundingBox(glyph_t glyph
         glyphAnalysis->GetAlphaTextureBounds(DWRITE_TEXTURE_CLEARTYPE_3x1, &rect);
         glyphAnalysis->Release();
 
-        return glyph_metrics_t(rect.left - margin,
-                               rect.top - margin,
+        int margin = glyphMargin(format);
+
+        if (rect.left == rect.right || rect.top == rect.bottom)
+            return glyph_metrics_t();
+
+        return glyph_metrics_t(rect.left,
+                               rect.top,
                                rect.right - rect.left + margin * 2,
                                rect.bottom - rect.top + margin * 2,
                                bbox.xoff, bbox.yoff);
@@ -1056,7 +1022,7 @@ glyph_metrics_t QWindowsFontEngineDirectWrite::alphaMapBoundingBox(glyph_t glyph
 
 QImage QWindowsFontEngineDirectWrite::bitmapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t, const QColor &color)
 {
-    return imageForGlyph(glyph, subPixelPosition, glyphMargin(QFontEngine::Format_A32), t, color);
+    return imageForGlyph(glyph, subPixelPosition, glyphMargin(QFontEngine::Format_ARGB), t, color);
 }
 
 QT_END_NAMESPACE

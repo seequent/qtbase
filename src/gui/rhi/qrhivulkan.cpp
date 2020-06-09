@@ -791,6 +791,8 @@ static inline VkFormat toVkTextureFormat(QRhiTexture::Format format, QRhiTexture
         return srgb ? VK_FORMAT_B8G8R8A8_SRGB : VK_FORMAT_B8G8R8A8_UNORM;
     case QRhiTexture::R8:
         return srgb ? VK_FORMAT_R8_SRGB : VK_FORMAT_R8_UNORM;
+    case QRhiTexture::RG8:
+        return srgb ? VK_FORMAT_R8G8_SRGB : VK_FORMAT_R8G8_UNORM;
     case QRhiTexture::R16:
         return VK_FORMAT_R16_UNORM;
     case QRhiTexture::RED_OR_ALPHA8:
@@ -884,10 +886,16 @@ static inline QRhiTexture::Format colorTextureFormatFromVkFormat(VkFormat format
         return QRhiTexture::BGRA8;
     case VK_FORMAT_R8_UNORM:
         return QRhiTexture::R8;
+    case VK_FORMAT_R8G8_UNORM:
+        return QRhiTexture::RG8;
     case VK_FORMAT_R8_SRGB:
         if (flags)
             (*flags) |= QRhiTexture::sRGB;
         return QRhiTexture::R8;
+    case VK_FORMAT_R8G8_SRGB:
+        if (flags)
+            (*flags) |= QRhiTexture::sRGB;
+        return QRhiTexture::RG8;
     case VK_FORMAT_R16_UNORM:
         return QRhiTexture::R16;
     default: // this cannot assert, must warn and return unknown
@@ -1219,12 +1227,24 @@ bool QRhiVulkan::createOffscreenRenderPass(QVkRenderPassDescriptor *rpD,
     for (auto it = firstColorAttachment; it != lastColorAttachment; ++it) {
         if (it->resolveTexture()) {
             QVkTexture *rtexD = QRHI_RES(QVkTexture, it->resolveTexture());
+            const VkFormat dstFormat = rtexD->vkformat;
             if (rtexD->samples > VK_SAMPLE_COUNT_1_BIT)
                 qWarning("Resolving into a multisample texture is not supported");
 
+            QVkTexture *texD = QRHI_RES(QVkTexture, it->texture());
+            QVkRenderBuffer *rbD = QRHI_RES(QVkRenderBuffer, it->renderBuffer());
+            const VkFormat srcFormat = texD ? texD->vkformat : rbD->vkformat;
+            if (srcFormat != dstFormat) {
+                // This is a validation error. But some implementations survive,
+                // actually. Warn about it however, because it's an error with
+                // some other backends (like D3D) as well.
+                qWarning("Multisample resolve between different formats (%d and %d) is not supported.",
+                         int(srcFormat), int(dstFormat));
+            }
+
             VkAttachmentDescription attDesc;
             memset(&attDesc, 0, sizeof(attDesc));
-            attDesc.format = rtexD->vkformat;
+            attDesc.format = dstFormat;
             attDesc.samples = VK_SAMPLE_COUNT_1_BIT;
             attDesc.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // ignored
             attDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1989,10 +2009,13 @@ QRhi::FrameOpResult QRhiVulkan::finish()
 
     if (inFrame) {
         // Allocate and begin recording on a new command buffer.
-        if (ofr.active)
+        if (ofr.active) {
             startPrimaryCommandBuffer(&ofr.cbWrapper.cb);
-        else
-            startPrimaryCommandBuffer(&swapChainD->frameRes[swapChainD->currentFrameSlot].cmdBuf);
+        } else {
+            QVkSwapChain::FrameResources &frame(swapChainD->frameRes[swapChainD->currentFrameSlot]);
+            startPrimaryCommandBuffer(&frame.cmdBuf);
+            swapChainD->cbWrapper.cb = frame.cmdBuf;
+        }
     }
 
     executeDeferredReleases(true);
@@ -4025,6 +4048,8 @@ bool QRhiVulkan::isFeatureSupported(QRhi::Feature feature) const
         return true;
     case QRhi::RenderToNonBaseMipLevel:
         return true;
+    case QRhi::UIntAttributes:
+        return true;
     default:
         Q_UNREACHABLE();
         return false;
@@ -4084,9 +4109,10 @@ bool QRhiVulkan::isDeviceLost() const
 }
 
 QRhiRenderBuffer *QRhiVulkan::createRenderBuffer(QRhiRenderBuffer::Type type, const QSize &pixelSize,
-                                                 int sampleCount, QRhiRenderBuffer::Flags flags)
+                                                 int sampleCount, QRhiRenderBuffer::Flags flags,
+                                                 QRhiTexture::Format backingFormatHint)
 {
-    return new QVkRenderBuffer(this, type, pixelSize, sampleCount, flags);
+    return new QVkRenderBuffer(this, type, pixelSize, sampleCount, flags, backingFormatHint);
 }
 
 QRhiTexture *QRhiVulkan::createTexture(QRhiTexture::Format format, const QSize &pixelSize,
@@ -4857,6 +4883,14 @@ static inline VkFormat toVkAttributeFormat(QRhiVertexInputAttribute::Format form
         return VK_FORMAT_R8G8_UNORM;
     case QRhiVertexInputAttribute::UNormByte:
         return VK_FORMAT_R8_UNORM;
+    case QRhiVertexInputAttribute::UInt4:
+        return VK_FORMAT_R32G32B32A32_UINT;
+    case QRhiVertexInputAttribute::UInt3:
+        return VK_FORMAT_R32G32B32_UINT;
+    case QRhiVertexInputAttribute::UInt2:
+        return VK_FORMAT_R32G32_UINT;
+    case QRhiVertexInputAttribute::UInt:
+        return VK_FORMAT_R32_UINT;
     default:
         Q_UNREACHABLE();
         return VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -5124,10 +5158,10 @@ QVkBuffer::QVkBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, int s
 
 QVkBuffer::~QVkBuffer()
 {
-    release();
+    destroy();
 }
 
-void QVkBuffer::release()
+void QVkBuffer::destroy()
 {
     if (!buffers[0])
         return;
@@ -5158,10 +5192,10 @@ void QVkBuffer::release()
     rhiD->unregisterResource(this);
 }
 
-bool QVkBuffer::build()
+bool QVkBuffer::create()
 {
     if (buffers[0])
-        release();
+        destroy();
 
     if (m_usage.testFlag(QRhiBuffer::StorageBuffer) && m_type == Dynamic) {
         qWarning("StorageBuffer cannot be combined with Dynamic");
@@ -5241,18 +5275,19 @@ QRhiBuffer::NativeBuffer QVkBuffer::nativeBuffer()
 }
 
 QVkRenderBuffer::QVkRenderBuffer(QRhiImplementation *rhi, Type type, const QSize &pixelSize,
-                                 int sampleCount, Flags flags)
-    : QRhiRenderBuffer(rhi, type, pixelSize, sampleCount, flags)
+                                 int sampleCount, Flags flags,
+                                 QRhiTexture::Format backingFormatHint)
+    : QRhiRenderBuffer(rhi, type, pixelSize, sampleCount, flags, backingFormatHint)
 {
 }
 
 QVkRenderBuffer::~QVkRenderBuffer()
 {
-    release();
+    destroy();
     delete backingTexture;
 }
 
-void QVkRenderBuffer::release()
+void QVkRenderBuffer::destroy()
 {
     if (!memory && !backingTexture)
         return;
@@ -5272,7 +5307,7 @@ void QVkRenderBuffer::release()
     if (backingTexture) {
         Q_ASSERT(backingTexture->lastActiveFrameSlot == -1);
         backingTexture->lastActiveFrameSlot = e.lastActiveFrameSlot;
-        backingTexture->release();
+        backingTexture->destroy();
     }
 
     QRHI_RES_RHI(QRhiVulkan);
@@ -5284,10 +5319,10 @@ void QVkRenderBuffer::release()
     rhiD->unregisterResource(this);
 }
 
-bool QVkRenderBuffer::build()
+bool QVkRenderBuffer::create()
 {
     if (memory || backingTexture)
-        release();
+        destroy();
 
     if (m_pixelSize.isEmpty())
         return false;
@@ -5300,7 +5335,7 @@ bool QVkRenderBuffer::build()
     case QRhiRenderBuffer::Color:
     {
         if (!backingTexture) {
-            backingTexture = QRHI_RES(QVkTexture, rhiD->createTexture(QRhiTexture::RGBA8,
+            backingTexture = QRHI_RES(QVkTexture, rhiD->createTexture(backingFormat(),
                                                                       m_pixelSize,
                                                                       m_sampleCount,
                                                                       QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
@@ -5309,7 +5344,7 @@ bool QVkRenderBuffer::build()
             backingTexture->setSampleCount(m_sampleCount);
         }
         backingTexture->setName(m_objectName);
-        if (!backingTexture->build())
+        if (!backingTexture->create())
             return false;
         vkformat = backingTexture->vkformat;
         QRHI_PROF_F(newRenderBuffer(this, false, false, samples));
@@ -5344,7 +5379,10 @@ bool QVkRenderBuffer::build()
 
 QRhiTexture::Format QVkRenderBuffer::backingFormat() const
 {
-    return m_type == Color ? QRhiTexture::RGBA8 : QRhiTexture::UnknownFormat;
+    if (m_backingFormatHint != QRhiTexture::UnknownFormat)
+        return m_backingFormatHint;
+    else
+        return m_type == Color ? QRhiTexture::RGBA8 : QRhiTexture::UnknownFormat;
 }
 
 QVkTexture::QVkTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize,
@@ -5361,10 +5399,10 @@ QVkTexture::QVkTexture(QRhiImplementation *rhi, Format format, const QSize &pixe
 
 QVkTexture::~QVkTexture()
 {
-    release();
+    destroy();
 }
 
-void QVkTexture::release()
+void QVkTexture::destroy()
 {
     if (!image)
         return;
@@ -5403,10 +5441,10 @@ void QVkTexture::release()
     rhiD->unregisterResource(this);
 }
 
-bool QVkTexture::prepareBuild(QSize *adjustedSize)
+bool QVkTexture::prepareCreate(QSize *adjustedSize)
 {
     if (image)
-        release();
+        destroy();
 
     QRHI_RES_RHI(QRhiVulkan);
     vkformat = toVkTextureFormat(m_format, m_flags);
@@ -5450,7 +5488,7 @@ bool QVkTexture::prepareBuild(QSize *adjustedSize)
     return true;
 }
 
-bool QVkTexture::finishBuild()
+bool QVkTexture::finishCreate()
 {
     QRHI_RES_RHI(QRhiVulkan);
 
@@ -5483,10 +5521,10 @@ bool QVkTexture::finishBuild()
     return true;
 }
 
-bool QVkTexture::build()
+bool QVkTexture::create()
 {
     QSize size;
-    if (!prepareBuild(&size))
+    if (!prepareCreate(&size))
         return false;
 
     const bool isRenderTarget = m_flags.testFlag(QRhiTexture::RenderTarget);
@@ -5535,7 +5573,7 @@ bool QVkTexture::build()
     }
     imageAlloc = allocation;
 
-    if (!finishBuild())
+    if (!finishCreate())
         return false;
 
     rhiD->setObjectName(uint64_t(image), VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, m_objectName);
@@ -5548,18 +5586,18 @@ bool QVkTexture::build()
     return true;
 }
 
-bool QVkTexture::buildFrom(QRhiTexture::NativeTexture src)
+bool QVkTexture::createFrom(QRhiTexture::NativeTexture src)
 {
-    auto *img = static_cast<const VkImage*>(src.object);
-    if (!img || !*img)
+    VkImage img = VkImage(src.object);
+    if (img == 0)
         return false;
 
-    if (!prepareBuild())
+    if (!prepareCreate())
         return false;
 
-    image = *img;
+    image = img;
 
-    if (!finishBuild())
+    if (!finishCreate())
         return false;
 
     QRHI_PROF;
@@ -5575,7 +5613,7 @@ bool QVkTexture::buildFrom(QRhiTexture::NativeTexture src)
 
 QRhiTexture::NativeTexture QVkTexture::nativeTexture()
 {
-    return {&image, usageState.layout};
+    return {quint64(image), usageState.layout};
 }
 
 void QVkTexture::setNativeLayout(int layout)
@@ -5628,10 +5666,10 @@ QVkSampler::QVkSampler(QRhiImplementation *rhi, Filter magFilter, Filter minFilt
 
 QVkSampler::~QVkSampler()
 {
-    release();
+    destroy();
 }
 
-void QVkSampler::release()
+void QVkSampler::destroy()
 {
     if (!sampler)
         return;
@@ -5648,10 +5686,10 @@ void QVkSampler::release()
     rhiD->unregisterResource(this);
 }
 
-bool QVkSampler::build()
+bool QVkSampler::create()
 {
     if (sampler)
-        release();
+        destroy();
 
     VkSamplerCreateInfo samplerInfo;
     memset(&samplerInfo, 0, sizeof(samplerInfo));
@@ -5687,10 +5725,10 @@ QVkRenderPassDescriptor::QVkRenderPassDescriptor(QRhiImplementation *rhi)
 
 QVkRenderPassDescriptor::~QVkRenderPassDescriptor()
 {
-    release();
+    destroy();
 }
 
-void QVkRenderPassDescriptor::release()
+void QVkRenderPassDescriptor::destroy()
 {
     if (!rp)
         return;
@@ -5782,10 +5820,10 @@ QVkReferenceRenderTarget::QVkReferenceRenderTarget(QRhiImplementation *rhi)
 
 QVkReferenceRenderTarget::~QVkReferenceRenderTarget()
 {
-    release();
+    destroy();
 }
 
-void QVkReferenceRenderTarget::release()
+void QVkReferenceRenderTarget::destroy()
 {
     // nothing to do here
 }
@@ -5818,10 +5856,10 @@ QVkTextureRenderTarget::QVkTextureRenderTarget(QRhiImplementation *rhi,
 
 QVkTextureRenderTarget::~QVkTextureRenderTarget()
 {
-    release();
+    destroy();
 }
 
-void QVkTextureRenderTarget::release()
+void QVkTextureRenderTarget::destroy()
 {
     if (!d.fb)
         return;
@@ -5848,7 +5886,7 @@ void QVkTextureRenderTarget::release()
 
 QRhiRenderPassDescriptor *QVkTextureRenderTarget::newCompatibleRenderPassDescriptor()
 {
-    // not yet built so cannot rely on data computed in build()
+    // not yet built so cannot rely on data computed in create()
 
     QRHI_RES_RHI(QRhiVulkan);
     QVkRenderPassDescriptor *rp = new QVkRenderPassDescriptor(m_rhi);
@@ -5869,10 +5907,10 @@ QRhiRenderPassDescriptor *QVkTextureRenderTarget::newCompatibleRenderPassDescrip
     return rp;
 }
 
-bool QVkTextureRenderTarget::build()
+bool QVkTextureRenderTarget::create()
 {
     if (d.fb)
-        release();
+        destroy();
 
     const bool hasColorAttachments = m_desc.cbeginColorAttachments() != m_desc.cendColorAttachments();
     Q_ASSERT(hasColorAttachments || m_desc.depthTexture());
@@ -6029,10 +6067,10 @@ QVkShaderResourceBindings::QVkShaderResourceBindings(QRhiImplementation *rhi)
 
 QVkShaderResourceBindings::~QVkShaderResourceBindings()
 {
-    release();
+    destroy();
 }
 
-void QVkShaderResourceBindings::release()
+void QVkShaderResourceBindings::destroy()
 {
     if (!layout)
         return;
@@ -6057,10 +6095,10 @@ void QVkShaderResourceBindings::release()
     rhiD->unregisterResource(this);
 }
 
-bool QVkShaderResourceBindings::build()
+bool QVkShaderResourceBindings::create()
 {
     if (layout)
-        release();
+        destroy();
 
     for (int i = 0; i < QVK_FRAMES_IN_FLIGHT; ++i)
         descSets[i] = VK_NULL_HANDLE;
@@ -6127,10 +6165,10 @@ QVkGraphicsPipeline::QVkGraphicsPipeline(QRhiImplementation *rhi)
 
 QVkGraphicsPipeline::~QVkGraphicsPipeline()
 {
-    release();
+    destroy();
 }
 
-void QVkGraphicsPipeline::release()
+void QVkGraphicsPipeline::destroy()
 {
     if (!pipeline && !layout)
         return;
@@ -6151,10 +6189,10 @@ void QVkGraphicsPipeline::release()
     rhiD->unregisterResource(this);
 }
 
-bool QVkGraphicsPipeline::build()
+bool QVkGraphicsPipeline::create()
 {
     if (pipeline)
-        release();
+        destroy();
 
     QRHI_RES_RHI(QRhiVulkan);
     if (!rhiD->sanityCheckGraphicsPipeline(this))
@@ -6376,10 +6414,10 @@ QVkComputePipeline::QVkComputePipeline(QRhiImplementation *rhi)
 
 QVkComputePipeline::~QVkComputePipeline()
 {
-    release();
+    destroy();
 }
 
-void QVkComputePipeline::release()
+void QVkComputePipeline::destroy()
 {
     if (!pipeline && !layout)
         return;
@@ -6400,10 +6438,10 @@ void QVkComputePipeline::release()
     rhiD->unregisterResource(this);
 }
 
-bool QVkComputePipeline::build()
+bool QVkComputePipeline::create()
 {
     if (pipeline)
-        release();
+        destroy();
 
     QRHI_RES_RHI(QRhiVulkan);
     if (!rhiD->ensurePipelineCache())
@@ -6471,10 +6509,10 @@ QVkCommandBuffer::QVkCommandBuffer(QRhiImplementation *rhi)
 
 QVkCommandBuffer::~QVkCommandBuffer()
 {
-    release();
+    destroy();
 }
 
-void QVkCommandBuffer::release()
+void QVkCommandBuffer::destroy()
 {
     // nothing to do here, cb is not owned by us
 }
@@ -6504,10 +6542,10 @@ QVkSwapChain::QVkSwapChain(QRhiImplementation *rhi)
 
 QVkSwapChain::~QVkSwapChain()
 {
-    release();
+    destroy();
 }
 
-void QVkSwapChain::release()
+void QVkSwapChain::destroy()
 {
     if (sc == VK_NULL_HANDLE)
         return;
@@ -6554,7 +6592,7 @@ QSize QVkSwapChain::surfacePixelSize()
 
 QRhiRenderPassDescriptor *QVkSwapChain::newCompatibleRenderPassDescriptor()
 {
-    // not yet built so cannot rely on data computed in buildOrResize()
+    // not yet built so cannot rely on data computed in createOrResize()
 
     if (!ensureSurface()) // make sure sampleCount and colorFormat reflect what was requested
         return nullptr;
@@ -6659,18 +6697,18 @@ bool QVkSwapChain::ensureSurface()
     return true;
 }
 
-bool QVkSwapChain::buildOrResize()
+bool QVkSwapChain::createOrResize()
 {
     QRHI_RES_RHI(QRhiVulkan);
     const bool needsRegistration = !window || window != m_window;
 
     // Can be called multiple times due to window resizes - that is not the
-    // same as a simple release+build (as with other resources). Thus no
-    // release() here. See recreateSwapChain().
+    // same as a simple destroy+create (as with other resources). Thus no
+    // destroy() here. See recreateSwapChain().
 
     // except if the window actually changes
     if (window && window != m_window)
-        release();
+        destroy();
 
     window = m_window;
     m_currentPixelSize = surfacePixelSize();
@@ -6691,7 +6729,7 @@ bool QVkSwapChain::buildOrResize()
     if (m_depthStencil && m_depthStencil->pixelSize() != pixelSize) {
         if (m_depthStencil->flags().testFlag(QRhiRenderBuffer::UsedWithSwapChainOnly)) {
             m_depthStencil->setPixelSize(pixelSize);
-            if (!m_depthStencil->build())
+            if (!m_depthStencil->create())
                 qWarning("Failed to rebuild swapchain's associated depth-stencil buffer for size %dx%d",
                          pixelSize.width(), pixelSize.height());
         } else {

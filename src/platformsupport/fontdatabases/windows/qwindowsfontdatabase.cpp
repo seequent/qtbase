@@ -496,7 +496,7 @@ namespace {
         {}
 
         QString populatedFontFamily;
-        QSet<QPair<QString,QString> > foundFontAndStyles;
+        QSet<FontAndStyle> foundFontAndStyles;
         QWindowsFontDatabase *windowsFontDatabase;
     };
 }
@@ -637,7 +637,7 @@ static int QT_WIN_CALLBACK storeFont(const LOGFONT *logFont, const TEXTMETRIC *t
         signature = &reinterpret_cast<const NEWTEXTMETRICEX *>(textmetric)->ntmFontSig;
         // We get a callback for each script-type supported, but we register them all
         // at once using the signature, so we only need one call to addFontToDatabase().
-        QPair<QString,QString> fontAndStyle(familyName, styleName);
+        FontAndStyle fontAndStyle = {familyName, styleName};
         if (sfp->foundFontAndStyles.contains(fontAndStyle))
             return 1;
         sfp->foundFontAndStyles.insert(fontAndStyle);
@@ -1175,6 +1175,8 @@ QFontEngine *QWindowsFontDatabase::createEngine(const QFontDef &request, const Q
                                                                   reinterpret_cast<void **>(&directWriteFontFace2)))) {
                     if (directWriteFontFace2->IsColorFont())
                         isColorFont = directWriteFontFace2->GetPaletteEntryCount() > 0;
+
+                    directWriteFontFace2->Release();
                 }
 #endif
                 useDw = useDw || useDirectWrite(hintingPreference, fam, isColorFont);
@@ -1196,9 +1198,8 @@ QFontEngine *QWindowsFontDatabase::createEngine(const QFontDef &request, const Q
                         fedw->glyphFormat = QFontEngine::Format_ARGB;
                     fedw->initFontInfo(fontDef, dpi);
                     fe = fedw;
-                } else {
-                    directWriteFontFace->Release();
                 }
+                directWriteFontFace->Release();
             } else if (useDw) {
                 const QString errorString = qt_error_string(int(hr));
                 qWarning().noquote().nospace() << "DirectWrite: CreateFontFaceFromHDC() failed ("

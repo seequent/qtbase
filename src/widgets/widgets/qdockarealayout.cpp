@@ -44,7 +44,6 @@
 #include "QtWidgets/qtabbar.h"
 #endif
 #include "QtWidgets/qstyle.h"
-#include "QtWidgets/qdesktopwidget.h"
 #include <private/qdesktopwidget_p.h>
 #include "QtWidgets/qapplication.h"
 #include "QtCore/qvariant.h"
@@ -3021,10 +3020,10 @@ QSize QDockAreaLayout::minimumSize() const
 QRect QDockAreaLayout::constrainedRect(QRect rect, QWidget* widget)
 {
     QRect desktop;
-    if (QDesktopWidgetPrivate::isVirtualDesktop())
+    if (QGuiApplication::primaryScreen()->virtualSiblings().size() > 1)
         desktop = QDesktopWidgetPrivate::screenGeometry(rect.topLeft());
     else
-        desktop = QDesktopWidgetPrivate::screenGeometry(widget);
+        desktop = QWidgetPrivate::screenGeometry(widget);
 
     if (desktop.isValid()) {
         rect.setWidth(qMin(rect.width(), desktop.width()));

@@ -67,7 +67,7 @@ namespace QtConcurrent {
 class Q_CONCURRENT_EXPORT BlockSizeManager
 {
 public:
-    explicit BlockSizeManager(int iterationCount);
+    explicit BlockSizeManager(QThreadPool *pool, int iterationCount);
 
     void timeBeforeUser();
     void timeAfterUser();
@@ -158,11 +158,12 @@ class IterateKernel : public ThreadEngine<T>
 public:
     typedef T ResultType;
 
-    IterateKernel(Iterator _begin, Iterator _end)
-        : begin(_begin), end(_end), current(_begin), currentIndex(0),
-           forIteration(selectIteration(typename std::iterator_traits<Iterator>::iterator_category())), progressReportingEnabled(true)
+    IterateKernel(QThreadPool *pool, Iterator _begin, Iterator _end)
+        : ThreadEngine<T>(pool), begin(_begin), end(_end), current(_begin), currentIndex(0)
+        , forIteration(selectIteration(typename std::iterator_traits<Iterator>::iterator_category()))
+        , iterationCount(forIteration ? std::distance(_begin, _end) : 0)
+        , progressReportingEnabled(true)
     {
-        iterationCount =  forIteration ? std::distance(_begin, _end) : 0;
     }
 
     virtual ~IterateKernel() { }
@@ -197,7 +198,7 @@ public:
 
     ThreadFunctionResult forThreadFunction()
     {
-        BlockSizeManager blockSizeManager(iterationCount);
+        BlockSizeManager blockSizeManager(ThreadEngineBase::threadPool, iterationCount);
         ResultReporter<T> resultReporter(this);
 
         for(;;) {
@@ -288,9 +289,9 @@ public:
     const Iterator end;
     Iterator current;
     QAtomicInt currentIndex;
-    bool forIteration;
+    const bool forIteration;
     QAtomicInt iteratorThreads;
-    int iterationCount;
+    const int iterationCount;
 
     bool progressReportingEnabled;
     QAtomicInt completed;

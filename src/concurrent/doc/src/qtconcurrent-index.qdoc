@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
@@ -30,6 +30,14 @@
     \title Qt Concurrent
 
     \brief The Qt Concurrent module contains functionality to support concurrent execution of program code.
+
+    \include module-use.qdocinc using qt module
+    \snippet snippets/CMakeLists.txt cmake_use
+
+    See also the \l[QtDoc]{Building with CMake} overview.
+
+    \include module-use.qdocinc building with qmake
+    \snippet snippets/snippets.pro qmake_use
 
     \section1 Getting Started
 
@@ -144,9 +152,8 @@
     \section1 Licenses
 
     The Qt Concurrent module is available under commercial licenses from \l{The Qt Company}.
-    In addition, it is available under free software licenses. Since Qt 5.4,
-    these free software licenses are
-    \l{GNU Lesser General Public License, version 3}, or
+    In addition, it is available under free software licenses:
+    The \l{GNU Lesser General Public License, version 3}, or
     the \l{GNU General Public License, version 2}.
     See \l{Qt Licensing} for further details.
 */

@@ -6,7 +6,7 @@
 
 qt_find_package(WrapFreetype PROVIDED_TARGETS WrapFreetype::WrapFreetype) # special case
 
-qt_add_plugin(QMinimalIntegrationPlugin
+qt_internal_add_plugin(QMinimalIntegrationPlugin
     OUTPUT_NAME qminimal
     TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES minimal # special case
@@ -19,8 +19,6 @@ qt_add_plugin(QMinimalIntegrationPlugin
     PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
-        Qt::EventDispatcherSupportPrivate
-        Qt::FontDatabaseSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
 )
@@ -31,10 +29,20 @@ qt_add_plugin(QMinimalIntegrationPlugin
 ## Scopes:
 #####################################################################
 
+qt_extend_target(QMinimalIntegrationPlugin CONDITION UNIX
+    PUBLIC_LIBRARIES
+        Qt::EventDispatcherSupportPrivate
+)
+
+qt_extend_target(QMinimalIntegrationPlugin CONDITION NOT APPLE
+    PUBLIC_LIBRARIES
+        Qt::FontDatabaseSupportPrivate
+)
+
 qt_extend_target(QMinimalIntegrationPlugin CONDITION QT_FEATURE_freetype
     LIBRARIES
         WrapFreetype::WrapFreetype
 )
 
-#### Keys ignored in scope 3:.:.:minimal.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
+#### Keys ignored in scope 5:.:.:minimal.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
 # PLUGIN_EXTENDS = "-"

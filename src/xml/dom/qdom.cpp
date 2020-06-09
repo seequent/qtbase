@@ -52,9 +52,6 @@
 #if QT_CONFIG(regularexpression)
 #include <qregularexpression.h>
 #endif
-#if QT_CONFIG(textcodec)
-#include <qtextcodec.h>
-#endif
 #include <qtextstream.h>
 #include <qxml.h>
 #include <qvariant.h>
@@ -3648,17 +3645,10 @@ bool QDomAttrPrivate::specified() const
   If \a encodeEOLs is true, characters will be escaped to survive End-of-Line Handling.
 */
 static QString encodeText(const QString &str,
-                          QTextStream &s,
                           const bool encodeQuotes = true,
                           const bool performAVN = false,
                           const bool encodeEOLs = false)
 {
-#if !QT_CONFIG(textcodec)
-    Q_UNUSED(s);
-#else
-    const QTextCodec *const codec = s.codec();
-    Q_ASSERT(codec);
-#endif
     QString retval(str);
     int len = retval.length();
     int i = 0;
@@ -3695,19 +3685,7 @@ static QString encodeText(const QString &str,
             len += 4;
             i += 5;
         } else {
-#if QT_CONFIG(textcodec)
-            if(codec->canEncode(ati))
-                ++i;
-            else
-#endif
-            {
-                // We have to use a character reference to get it through.
-                const ushort codepoint(ati.unicode());
-                const QString replacement(QLatin1String("&#x") + QString::number(codepoint, 16) + QLatin1Char(';'));
-                retval.replace(i, 1, replacement);
-                i += replacement.length();
-                len += replacement.length() - 1;
-            }
+            ++i;
         }
     }
 
@@ -3717,9 +3695,9 @@ static QString encodeText(const QString &str,
 void QDomAttrPrivate::save(QTextStream& s, int, int) const
 {
     if (namespaceURI.isNull()) {
-        s << name << "=\"" << encodeText(value, s, true, true) << '\"';
+        s << name << "=\"" << encodeText(value, true, true) << '\"';
     } else {
-        s << prefix << ':' << name << "=\"" << encodeText(value, s, true, true) << '\"';
+        s << prefix << ':' << name << "=\"" << encodeText(value, true, true) << '\"';
         /* This is a fix for 138243, as good as it gets.
          *
          * QDomElementPrivate::save() output a namespace declaration if
@@ -3733,7 +3711,7 @@ void QDomAttrPrivate::save(QTextStream& s, int, int) const
          * arrive in those situations. */
         if(!ownerNode ||
            ownerNode->prefix != prefix) {
-            s << " xmlns:" << prefix << "=\"" << encodeText(namespaceURI, s, true, true) << '\"';
+            s << " xmlns:" << prefix << "=\"" << encodeText(namespaceURI, true, true) << '\"';
         }
     }
 }
@@ -4082,7 +4060,7 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
             qName = prefix + QLatin1Char(':') + name;
             nsDecl = QLatin1String(" xmlns:") + prefix;
         }
-        nsDecl += QLatin1String("=\"") + encodeText(namespaceURI, s) + QLatin1Char('\"');
+        nsDecl += QLatin1String("=\"") + encodeText(namespaceURI) + QLatin1Char('\"');
     }
     s << '<' << qName << nsDecl;
 
@@ -4094,9 +4072,9 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
         for (; it != m_attr->map.constEnd(); ++it) {
             s << ' ';
             if (it.value()->namespaceURI.isNull()) {
-                s << it.value()->name << "=\"" << encodeText(it.value()->value, s, true, true) << '\"';
+                s << it.value()->name << "=\"" << encodeText(it.value()->value, true, true) << '\"';
             } else {
-                s << it.value()->prefix << ':' << it.value()->name << "=\"" << encodeText(it.value()->value, s, true, true) << '\"';
+                s << it.value()->prefix << ':' << it.value()->name << "=\"" << encodeText(it.value()->value, true, true) << '\"';
                 /* This is a fix for 138243, as good as it gets.
                  *
                  * QDomElementPrivate::save() output a namespace declaration if
@@ -4111,7 +4089,7 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
                 if((!it.value()->ownerNode ||
                    it.value()->ownerNode->prefix != it.value()->prefix) &&
                    !outputtedPrefixes.hasSeen(it.value()->prefix)) {
-                    s << " xmlns:" << it.value()->prefix << "=\"" << encodeText(it.value()->namespaceURI, s, true, true) << '\"';
+                    s << " xmlns:" << it.value()->prefix << "=\"" << encodeText(it.value()->namespaceURI, true, true) << '\"';
                 }
             }
         }
@@ -4692,7 +4670,7 @@ QDomTextPrivate* QDomTextPrivate::splitText(int offset)
 void QDomTextPrivate::save(QTextStream& s, int, int) const
 {
     QDomTextPrivate *that = const_cast<QDomTextPrivate*>(this);
-    s << encodeText(value, s, !(that->parent() && that->parent()->isElement()), false, true);
+    s << encodeText(value, !(that->parent() && that->parent()->isElement()), false, true);
 }
 
 /**************************************************************
@@ -5961,10 +5939,8 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
     const QDomNodePrivate* n = first;
 
     if(encUsed == QDomNode::EncodingFromDocument) {
-#if QT_CONFIG(textcodec) && QT_CONFIG(regularexpression)
+#if QT_CONFIG(regularexpression)
         const QDomNodePrivate* n = first;
-
-        QTextCodec *codec = nullptr;
 
         if (n && n->isProcessingInstruction() && n->nodeName() == QLatin1String("xml")) {
             // we have an XML declaration
@@ -5974,13 +5950,14 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
             QString enc = match.captured(3);
             if (enc.isEmpty())
                 enc = match.captured(5);
-            if (!enc.isEmpty())
-                codec = QTextCodec::codecForName(std::move(enc).toLatin1());
+            if (!enc.isEmpty()) {
+                auto encoding = QStringConverter::encodingForName(enc.toUtf8().constData());
+                if (!encoding)
+                    qWarning() << "QDomDocument::save(): Unsupported encoding" << enc << "specified.";
+                else
+                    s.setEncoding(encoding.value());
+            }
         }
-        if (!codec)
-            codec = QTextCodec::codecForName("UTF-8");
-        if (codec)
-            s.setCodec(codec);
 #endif
         bool doc = false;
 
@@ -5997,13 +5974,7 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
     else {
 
         // Write out the XML declaration.
-#if !QT_CONFIG(textcodec)
-        const QLatin1String codecName("iso-8859-1");
-#else
-        const QTextCodec *const codec = s.codec();
-        Q_ASSERT_X(codec, "QDomNode::save()", "A codec must be specified in the text stream.");
-        const QByteArray codecName = codec->name();
-#endif
+        const QByteArray codecName = QStringConverter::nameForEncoding(s.encoding());
 
         s << "<?xml version=\"1.0\" encoding=\""
           << codecName

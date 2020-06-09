@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -102,7 +102,7 @@
 # if !defined(Q_CC_MINGW) || (defined(Q_CC_MINGW) && defined(__MINGW64_VERSION_MAJOR))
 #  include <crtdbg.h>
 # endif
-#include <windows.h> // for Sleep
+#include <qt_windows.h> // for Sleep
 #endif
 #ifdef Q_OS_UNIX
 #include <errno.h>
@@ -787,11 +787,7 @@ Q_TESTLIB_EXPORT void qtest_qParseArgs(int argc, const char *const argv[], bool 
 
         } else if (strcmp(argv[i], "-vb") == 0) {
             QBenchmarkGlobalData::current->verboseOutput = true;
-#if defined(Q_OS_WINRT)
-        } else if (strncmp(argv[i], "-ServerName:", 12) == 0 ||
-                   strncmp(argv[i], "-qdevel", 7) == 0) {
-            continue;
-#elif defined(Q_OS_MAC) && defined(HAVE_XCTEST)
+#if defined(Q_OS_MAC) && defined(HAVE_XCTEST)
         } else if (int skip = QXcodeTestLogger::parseCommandLineArgument(argv[i])) {
             i += (skip - 1); // Eating argv[i] with a continue counts towards skips
             continue;
@@ -1523,7 +1519,7 @@ void TestMethods::invokeTests(QObject *testObject) const
     QTestResult::setCurrentTestFunction(nullptr);
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 
 // Helper class for resolving symbol names by dynamically loading "dbghelp.dll".
 class DebugSymbolResolver
@@ -1621,7 +1617,7 @@ DebugSymbolResolver::Symbol DebugSymbolResolver::resolveSymbol(DWORD64 address) 
     return result;
 }
 
-#endif // Q_OS_WIN && !Q_OS_WINRT
+#endif // Q_OS_WIN
 
 class FatalSignalHandler
 {
@@ -1632,10 +1628,8 @@ public:
 #  if !defined(Q_CC_MINGW)
         _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_DEBUG);
 #  endif
-#  if !defined(Q_OS_WINRT)
         SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
         SetUnhandledExceptionFilter(windowsFaultHandler);
-#  endif
 #elif defined(Q_OS_UNIX) && !defined(Q_OS_WASM)
         sigemptyset(&handledSignals);
 
@@ -1717,7 +1711,7 @@ public:
     }
 
 private:
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     static LONG WINAPI windowsFaultHandler(struct _EXCEPTION_POINTERS *exInfo)
     {
         enum { maxStackFrames = 100 };
@@ -1760,7 +1754,7 @@ private:
 
         return EXCEPTION_EXECUTE_HANDLER;
     }
-#endif // defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#endif // defined(Q_OS_WIN)
 
 #if defined(Q_OS_UNIX) && !defined(Q_OS_WASM)
     static void signal(int signum)
@@ -2541,16 +2535,21 @@ bool QTest::compare_helper(bool success, const char *failureMsg,
 }
 
 template <typename T>
-static bool floatingCompare(const T &t1, const T &t2)
+static bool floatingCompare(const T &actual, const T &expected)
 {
-    switch (qFpClassify(t1))
+    switch (qFpClassify(expected))
     {
     case FP_INFINITE:
-        return (t1 < 0) == (t2 < 0) && qFpClassify(t2) == FP_INFINITE;
+        return (expected < 0) == (actual < 0) && qFpClassify(actual) == FP_INFINITE;
     case FP_NAN:
-        return qFpClassify(t2) == FP_NAN;
+        return qFpClassify(actual) == FP_NAN;
     default:
-        return qFuzzyCompare(t1, t2);
+        if (!qFuzzyIsNull(expected))
+            return qFuzzyCompare(actual, expected);
+        Q_FALLTHROUGH();
+    case FP_SUBNORMAL: // subnormal is always fuzzily null
+    case FP_ZERO:
+        return qFuzzyIsNull(actual);
     }
 }
 

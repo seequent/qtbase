@@ -567,9 +567,11 @@ endif()
 # MANUAL_MOC_JSON_FILES parameter. The latter can be obtained by running moc with
 # the --output-json parameter.
 # Params:
-#   INSTALL_DIR: Location where to install the metatypes file (Optional)
-#   COPY_OVER_INSTALL: When present will install the file via a post build step
-#   copy rather than using install
+#   INSTALL_DIR: Location where to install the metatypes file. For public consumption,
+#                defaults to a ${CMAKE_INSTALL_PREFIX}/lib/metatypes directory.
+#                Executable metatypes files are never installed.
+#   COPY_OVER_INSTALL: (Qt Internal) When present will install the file via a post build step
+#   copy rather than using install.
 function(qt6_generate_meta_types_json_file target)
 
     get_target_property(existing_meta_types_file ${target} INTERFACE_QT_META_TYPES_BUILD_FILE)
@@ -578,22 +580,6 @@ function(qt6_generate_meta_types_json_file target)
     endif()
 
     cmake_parse_arguments(arg "COPY_OVER_INSTALL" "INSTALL_DIR" "MANUAL_MOC_JSON_FILES" ${ARGN})
-
-    if (NOT QT_BUILDING_QT)
-        if (NOT arg_INSTALL_DIR)
-            message(FATAL_ERROR "Please specify an install directory using INSTALL_DIR")
-        endif()
-    else()
-        # Automatically fill install args when building qt
-        set(metatypes_install_dir ${INSTALL_LIBDIR}/metatypes)
-        set(args)
-        if (NOT QT_WILL_INSTALL)
-            set(arg_COPY_OVER_INSTALL TRUE)
-        endif()
-        if (NOT arg_INSTALL_DIR)
-            set(arg_INSTALL_DIR "${metatypes_install_dir}")
-        endif()
-    endif()
 
     get_target_property(target_type ${target} TYPE)
     if (target_type STREQUAL "INTERFACE_LIBRARY")
@@ -606,6 +592,19 @@ function(qt6_generate_meta_types_json_file target)
         return()
     endif()
 
+    # Whether the generated json file needs to be installed for prefix-builds, or copied for
+    # non-prefix builds. Regardless of the type of build, executable metatypes.json files should
+    # not be installed. Only library .json files should be installed.
+    set(should_install "TRUE")
+    if (target_type STREQUAL "EXECUTABLE")
+        set(should_install "FALSE")
+    endif()
+
+    # Automatically fill default install args when not specified.
+    if (NOT arg_INSTALL_DIR)
+        set(arg_INSTALL_DIR "lib/metatypes")
+    endif()
+
     get_target_property(target_binary_dir ${target} BINARY_DIR)
     set(type_list_file "${target_binary_dir}/meta_types/${target}_json_file_list.txt")
     set(type_list_file_manual "${target_binary_dir}/meta_types/${target}_json_file_list_manual.txt")
@@ -613,14 +612,14 @@ function(qt6_generate_meta_types_json_file target)
     get_target_property(uses_automoc ${target} AUTOMOC)
     set(automoc_args)
     set(automoc_dependencies)
-    #Handle automoc generated data
+    # Handle automoc generated data
     if (uses_automoc)
         # Tell automoc to output json files)
         set_property(TARGET "${target}" APPEND PROPERTY
             AUTOMOC_MOC_OPTIONS "--output-json"
         )
 
-        if(CMAKE_BUILD_TYPE)
+        if(NOT CMAKE_CONFIGURATION_TYPES)
             set(cmake_autogen_cache_file
                 "${target_binary_dir}/CMakeFiles/${target}_autogen.dir/ParseCache.txt")
             set(mutli_config_args
@@ -729,7 +728,8 @@ function(qt6_generate_meta_types_json_file target)
         set(arg_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/${arg_INSTALL_DIR}")
     endif()
 
-    if (arg_COPY_OVER_INSTALL AND NOT EXISTS ${arg_INSTALL_DIR}/${metatypes_file_name})
+    if (should_install AND arg_COPY_OVER_INSTALL
+          AND NOT EXISTS ${arg_INSTALL_DIR}/${metatypes_file_name})
         file(MAKE_DIRECTORY "${arg_INSTALL_DIR}")
         file(TOUCH "${arg_INSTALL_DIR}/${metatypes_file_name}")
     endif()
@@ -751,50 +751,69 @@ function(qt6_generate_meta_types_json_file target)
     set(metatypes_file_genex_build)
     set(metatypes_file_genex_install)
     if (arg_COPY_OVER_INSTALL)
-        set(metatypes_file_genex_build
-            "$<BUILD_INTERFACE:$<$<BOOL:$<TARGET_PROPERTY:QT_CONSUMES_METATYPES>>:${arg_INSTALL_DIR}/${metatypes_file_name}>>"
-        )
+        if(should_install)
+            set(metatypes_file_genex_build
+                "$<BUILD_INTERFACE:$<$<BOOL:$<TARGET_PROPERTY:QT_CONSUMES_METATYPES>>:${arg_INSTALL_DIR}/${metatypes_file_name}>>"
+            )
+        endif()
     else()
         set(metatypes_file_genex_build
             "$<BUILD_INTERFACE:$<$<BOOL:$<TARGET_PROPERTY:QT_CONSUMES_METATYPES>>:${metatypes_file}>>"
         )
-        set(metatypes_file_genex_install
-            "$<INSTALL_INTERFACE:$<$<BOOL:$<TARGET_PROPERTY:QT_CONSUMES_METATYPES>>:$<INSTALL_PREFIX>/${arg_INSTALL_DIR}/${metatypes_file_name}>>"
-        )
+        if(should_install)
+            set(metatypes_file_genex_install
+                "$<INSTALL_INTERFACE:$<$<BOOL:$<TARGET_PROPERTY:QT_CONSUMES_METATYPES>>:$<INSTALL_PREFIX>/${arg_INSTALL_DIR}/${metatypes_file_name}>>"
+            )
+        endif()
     endif()
     set_source_files_properties(${metatypes_file} PROPERTIES HEADER_FILE_ONLY TRUE)
 
     set_target_properties(${target} PROPERTIES
         INTERFACE_QT_MODULE_HAS_META_TYPES YES
         INTERFACE_QT_MODULE_META_TYPES_FROM_BUILD YES
-        INTERFACE_QT_META_TYPES_BUILD_FILE ${metatypes_file}
+        INTERFACE_QT_META_TYPES_BUILD_FILE "${metatypes_file}"
         QT_MODULE_META_TYPES_FILE_GENEX_BUILD "${metatypes_file_genex_build}"
         QT_MODULE_META_TYPES_FILE_GENEX_INSTALL "${metatypes_file_genex_install}"
     )
     target_sources(${target} INTERFACE ${metatypes_file_genex_build} ${metatypes_file_genex_install})
 
-    if (arg_COPY_OVER_INSTALL)
-        get_target_property(target_type ${target} TYPE)
-        set(command_args
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${metatypes_file}"
-                "${arg_INSTALL_DIR}/${metatypes_file_name}"
-        )
-        if (target_type STREQUAL "OBJECT_LIBRARY")
-            add_custom_target(${target}_metatypes_copy
-                DEPENDS "${metatypes_file}"
-                ${command_args}
+    # Installation is complicated, because there are multiple combinations.
+    # In non-prefix builds (signaled by arg_COPY_OVER_INSTALL == TRUE), Qt modules are /copied/
+    # into the qt_prefix/lib/metatypes.
+    # In prefix builds (signaled by arg_COPY_OVER_INSTALL == FALSE), Qt modules are /installed/
+    # into the qt_prefix/lib/metatypes.
+    # Currently only the internal qt_add_module sets arg_COPY_OVER_INSTALL.
+    #
+    # Tests and examples are executables, and thus will not have their meta types installed, but
+    # they will have them generated (if this function is called).
+    #
+    # Regular libraries and plugins (which are not part of the Qt build), will be /installed/
+    # into a lib/metatypes directory relative to their prefix, rather than the Qt prefix (only
+    # outside of a Qt build).
+    # We don't support non-prefix builds for libraries or plugins which are not part of the official
+    # Qt build. Aka everything non-prefix / COPY_OVER_INSTALL related are implementation details
+    # that users shouldn't use.
+    if(should_install)
+        if (arg_COPY_OVER_INSTALL)
+            set(command_args
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${metatypes_file}"
+                    "${arg_INSTALL_DIR}/${metatypes_file_name}"
             )
-            add_dependencies(${target} ${target}_metatypes_copy)
+            if (target_type STREQUAL "OBJECT_LIBRARY")
+                add_custom_target(${target}_metatypes_copy
+                    DEPENDS "${metatypes_file}"
+                    ${command_args}
+                )
+                add_dependencies(${target} ${target}_metatypes_copy)
+            else()
+                add_custom_command(TARGET ${target} POST_BUILD
+                    ${command_args}
+                )
+            endif()
         else()
-            add_custom_command(TARGET ${target} POST_BUILD
-                ${command_args}
-            )
+            install(FILES "${metatypes_file}" DESTINATION "${arg_INSTALL_DIR}")
         endif()
-    else()
-        install(FILES "${metatypes_file}"
-            DESTINATION "${arg_INSTALL_DIR}"
-        )
     endif()
 endfunction()
 
@@ -805,23 +824,26 @@ if(NOT QT_NO_CREATE_VERSIONLESS_FUNCTIONS)
 endif()
 
 # Generate Win32 RC files for a target. All entries in the RC file are generated
-# from target prorties:
+# from target properties:
 #
 # QT_TARGET_COMPANY_NAME: RC Company name
 # QT_TARGET_DESCRIPTION: RC File Description
 # QT_TARGET_VERSION: RC File and Product Version
 # QT_TARGET_COPYRIGHT: RC LegalCopyright
 # QT_TARGET_PRODUCT_NAME: RC ProductName
+# QT_TARGET_COMMENTS: RC Comments
+# QT_TARGET_ORIGINAL_FILENAME: RC Original FileName
+# QT_TARGET_TRADEMARKS: RC LegalTrademarks
+# QT_TARGET_INTERNALNAME: RC InternalName
 # QT_TARGET_RC_ICONS: List of paths to icon files
 #
-# If you don not wish to auto-generate rc files, it's possible to provide your
+# If you do not wish to auto-generate rc files, it's possible to provide your
 # own RC file by setting the property QT_TARGET_WINDOWS_RC_FILE with a path to
 # an existing rc file.
-#
 function(qt6_generate_win32_rc_file target)
-
+    set(prohibited_target_types INTERFACE_LIBRARY STATIC_LIBRARY OBJECT_LIBRARY)
     get_target_property(target_type ${target} TYPE)
-    if (target_type STREQUAL "INTERFACE_LIBRARY")
+    if(target_type IN_LIST prohibited_target_types)
         return()
     endif()
 
@@ -834,9 +856,16 @@ function(qt6_generate_win32_rc_file target)
         return()
     endif()
 
-    if (NOT target_rc_file)
+    if (target_rc_file)
+        # Use the provided RC file
+        target_sources(${target} PRIVATE "${target_rc_file}")
+    else()
         # Generate RC File
-        set(rc_file_output "${target_binary_dir}/${target}_resource.rc")
+        set(rc_file_output "${target_binary_dir}/")
+        if(QT_GENERATOR_IS_MULTI_CONFIG)
+            string(APPEND rc_file_output "$<CONFIG>/")
+        endif()
+        string(APPEND rc_file_output "${target}_resource.rc")
         set(target_rc_file "${rc_file_output}")
 
         set(company_name "")
@@ -865,6 +894,18 @@ function(qt6_generate_win32_rc_file target)
             set(product_name "${target}")
         endif()
 
+        set(comments "")
+        get_target_property(target_comments ${target} QT_TARGET_COMMENTS)
+        if (target_comments)
+            set(comments "${target_comments}")
+        endif()
+
+        set(legal_trademarks "")
+        get_target_property(target_trademarks ${target} QT_TARGET_TRADEMARKS)
+        if (target_trademarks)
+            set(legal_trademarks "${target_trademarks}")
+        endif()
+
         set(product_version "")
         if (target_version)
             if(target_version MATCHES "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+")
@@ -884,21 +925,37 @@ function(qt6_generate_win32_rc_file target)
         endif()
 
         set(file_version "${product_version}")
-        set(original_file_name "$<TARGET_FILE_NAME:${target}>")
         string(REPLACE "." "," version_comma ${product_version})
+
+        set(original_file_name "$<TARGET_FILE_NAME:${target}>")
+        get_target_property(target_original_file_name ${target} QT_TARGET_ORIGINAL_FILENAME)
+        if (target_original_file_name)
+            set(original_file_name "${target_original_file_name}")
+        endif()
+
+        set(internal_name "")
+        get_target_property(target_internal_name ${target} QT_TARGET_INTERNALNAME)
+        if (target_internal_name)
+            set(internal_name "${target_internal_name}")
+        endif()
 
         set(icons "")
         get_target_property(target_icons ${target} QT_TARGET_RC_ICONS)
         if (target_icons)
             set(index 1)
             foreach( icon IN LISTS target_icons)
-                string(APPEND icons "IDI_ICON${index}    ICON    DISCARDABLE   \"${icon}\"\n")
+                string(APPEND icons "IDI_ICON${index}    ICON    \"${icon}\"\n")
                 math(EXPR index "${index} +1")
             endforeach()
         endif()
 
+        set(target_file_type "VFT_DLL")
+        if(target_type STREQUAL "EXECUTABLE")
+            set(target_file_type "VFT_APP")
+        endif()
+
         set(contents "#include <windows.h>
-${incons}
+${icons}
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION ${version_comma}
 PRODUCTVERSION ${version_comma}
@@ -908,9 +965,9 @@ FILEFLAGSMASK 0x3fL
 #else
     FILEFLAGS 0x0L
 #endif
-FILEOS VOS__WINDOWS32
-FILETYPE VFT_DLL
-FILESUBTYPE 0x0L
+FILEOS VOS_NT_WINDOWS32
+FILETYPE ${target_file_type}
+FILESUBTYPE VFT2_UNKNOWN
 BEGIN
     BLOCK \"StringFileInfo\"
     BEGIN
@@ -923,6 +980,9 @@ BEGIN
             VALUE \"OriginalFilename\", \"${original_file_name}\"
             VALUE \"ProductName\", \"${product_name}\"
             VALUE \"ProductVersion\", \"${product_version}\"
+            VALUE \"Comments\", \"${comments}\"
+            VALUE \"LegalTrademarks\", \"${legal_trademarks}\"
+            VALUE \"InternalName\", \"${internal_name}\"
         END
     END
     BLOCK \"VarFileInfo\"
@@ -940,16 +1000,33 @@ END
             CONTENT "${contents}"
         )
 
-        add_custom_command(OUTPUT "${target_rc_file}"
-            DEPENDS "${rc_file_output}.tmp"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${target_rc_file}.tmp"
-                "${target_rc_file}"
-        )
+        if(QT_GENERATOR_IS_MULTI_CONFIG)
+            set(cfgs ${CMAKE_CONFIGURATION_TYPES})
+            set(outputs "")
+            foreach(cfg ${cfgs})
+                string(REPLACE "$<CONFIG>" "${cfg}" expanded_rc_file_output "${rc_file_output}")
+                list(APPEND outputs "${expanded_rc_file_output}")
+            endforeach()
+        else()
+            set(cfgs "${CMAKE_BUILD_TYPE}")
+            set(outputs "${rc_file_output}")
+        endif()
+        while(outputs)
+            list(POP_FRONT cfgs cfg)
+            list(POP_FRONT outputs output)
+            set(input "${output}.tmp")
+            add_custom_command(OUTPUT "${output}"
+                DEPENDS "${input}"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${input}" "${output}"
+            )
+
+            # We would like to do the following:
+            #     target_sources(${target} PRIVATE "$<$<CONFIG:${cfg}>:${output}>")
+            # However, https://gitlab.kitware.com/cmake/cmake/-/issues/20682 doesn't let us.
+            add_library(${target}_${cfg}_rc OBJECT "${output}")
+            target_link_libraries(${target} PRIVATE "$<$<CONFIG:${cfg}>:${target}_${cfg}_rc>")
+        endwhile()
     endif()
-
-    target_sources(${target} PRIVATE ${target_rc_file})
-
 endfunction()
 
 function(__qt_get_relative_resource_path_for_file output_alias file)
@@ -1140,6 +1217,7 @@ function(qt6_add_plugin target)
     cmake_parse_arguments(arg
         "STATIC"
         "OUTPUT_NAME"
+        "CLASS_NAME"
         ""
         ${ARGN}
     )
@@ -1151,6 +1229,10 @@ function(qt6_add_plugin target)
             # CMake defaults to using .so extensions for loadable modules, aka plugins,
             # but Qt plugins are actually suffixed with .dylib.
             set_property(TARGET "${target}" PROPERTY SUFFIX ".dylib")
+        endif()
+        if(WIN32)
+            # CMake sets for Windows-GNU platforms the suffix "lib"
+            set_property(TARGET "${target}" PROPERTY PREFIX "")
         endif()
     endif()
 
@@ -1167,6 +1249,15 @@ function(qt6_add_plugin target)
             LIBRARY_OUTPUT_NAME "plugins_${arg_TYPE}_${output_name}"
         )
     endif()
+
+    # Derive the class name from the target name if it's not explicitly specified.
+    set(plugin_class_name "")
+    if (NOT arg_CLASS_NAME)
+        set(plugin_class_name "${target}")
+    else()
+        set(plugin_class_name "${arg_CLASS_NAME}")
+    endif()
+    set_target_properties(${target} PROPERTIES QT_PLUGIN_CLASS_NAME "${plugin_class_name}")
 
     set(static_plugin_define "")
     if (arg_STATIC)
@@ -1189,3 +1280,10 @@ if(NOT QT_NO_CREATE_VERSIONLESS_FUNCTIONS)
         endif()
     endfunction()
 endif()
+
+# By default Qt6 forces usage of utf8 sources for consumers of Qt.
+# Users can opt out of utf8 sources by calling this function with the target name of their
+# application or library.
+function(qt_disable_utf8_sources target)
+    set_target_properties("${target}" PROPERTIES QT_NO_UTF8_SOURCE TRUE)
+endfunction()

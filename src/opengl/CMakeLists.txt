@@ -30,6 +30,7 @@ qt_add_module(OpenGL
         qopenglversionprofile.cpp qopenglversionprofile.h
         qopenglvertexarrayobject.cpp qopenglvertexarrayobject.h
         qopenglwindow.cpp qopenglwindow.h
+        qplatformbackingstoreopenglsupport.cpp qplatformbackingstoreopenglsupport.h
         qtopenglglobal.h
     DEFINES
         QT_NO_FOREACH
@@ -83,6 +84,19 @@ qt_extend_target(OpenGL CONDITION NOT QT_FEATURE_opengles2
         qopenglfunctions_4_5_core.cpp qopenglfunctions_4_5_core.h
         qopenglqueryhelper_p.h
         qopengltimerquery.cpp qopengltimerquery.h
+)
+
+qt_extend_target(OpenGL CONDITION QT_FEATURE_vulkan
+    SOURCES
+        qvkconvenience.cpp qvkconvenience_p.h
+    PUBLIC_LIBRARIES
+        Vulkan::Vulkan_nolink
+)
+
+qt_extend_target(OpenGL CONDITION QT_FEATURE_egl
+    SOURCES
+        qopenglcompositor.cpp qopenglcompositor_p.h
+        qopenglcompositorbackingstore.cpp qopenglcompositorbackingstore_p.h
 )
 qt_add_docs(OpenGL
     doc/qtopengl.qdocconf

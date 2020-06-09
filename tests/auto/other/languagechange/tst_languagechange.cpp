@@ -41,7 +41,6 @@
 #include <QtWidgets/QColorDialog>
 #include <QtWidgets/QDialogButtonBox>
 #include <QtWidgets/QFileDialog>
-#include <QtWidgets/QDesktopWidget>
 
 class tst_languageChange : public QObject
 {
@@ -197,7 +196,7 @@ void tst_languageChange::retranslatability_data()
                     << "QFileDialog::Back"
                     << "QFileDialog::Create New Folder"
                     << "QFileDialog::Detail View"
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINRT)
+#if !defined(Q_OS_MAC)
                     << "QFileDialog::File"
 #endif
                     << "QFileDialog::Files of type:"

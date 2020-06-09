@@ -55,18 +55,7 @@ class Q_CORE_EXPORT QItemSelectionRange
 {
 
 public:
-    inline QItemSelectionRange() : tl(), br() {}
-#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
-    // ### Qt 6: remove them all, the compiler-generated ones are fine
-    inline QItemSelectionRange(const QItemSelectionRange &other)
-        : tl(other.tl), br(other.br) {}
-    QItemSelectionRange(QItemSelectionRange &&other) noexcept
-        : tl(std::move(other.tl)), br(std::move(other.br)) {}
-    QItemSelectionRange &operator=(QItemSelectionRange &&other) noexcept
-    { tl = std::move(other.tl); br = std::move(other.br); return *this; }
-    QItemSelectionRange &operator=(const QItemSelectionRange &other)
-    { tl = other.tl; br = other.br; return *this; }
-#endif // Qt < 6
+    QItemSelectionRange() = default;
     QItemSelectionRange(const QModelIndex &topL, const QModelIndex &bottomR) : tl(topL), br(bottomR) {}
     explicit QItemSelectionRange(const QModelIndex &index) : tl(index), br(tl) {}
 
@@ -103,10 +92,6 @@ public:
     }
 
     bool intersects(const QItemSelectionRange &other) const;
-#if QT_DEPRECATED_SINCE(5, 0)
-    inline QItemSelectionRange intersect(const QItemSelectionRange &other) const
-        { return intersected(other); }
-#endif
     QItemSelectionRange intersected(const QItemSelectionRange &other) const;
 
 
@@ -257,7 +242,7 @@ public:
                       const QItemSelectionRange &other,
                       QItemSelection *result);
 };
-Q_DECLARE_SHARED_NOT_MOVABLE_UNTIL_QT6(QItemSelection)
+Q_DECLARE_SHARED(QItemSelection)
 
 #ifndef QT_NO_DEBUG_STREAM
 Q_CORE_EXPORT QDebug operator<<(QDebug, const QItemSelectionRange &);

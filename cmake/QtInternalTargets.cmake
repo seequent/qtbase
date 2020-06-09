@@ -58,8 +58,15 @@ function(qt_internal_set_warnings_are_errors_flags target)
             list(APPEND flags /WX)
         endif()
     endif()
-    set(add_flags "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_SKIP_WARNINGS_ARE_ERRORS>>>")
-    set(flags_generator_expression "$<${add_flags}:${flags}>")
+    set(warnings_are_errors_enabled_genex
+        "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_SKIP_WARNINGS_ARE_ERRORS>>>")
+
+    # Apprently qmake only adds -Werror to CXX and OBJCXX files, not C files. We have to do the
+    # same otherwise MinGW builds break when building 3rdparty\md4c\md4c.c (and probably on other
+    # platforms too).
+    set(cxx_only_genex "$<OR:$<COMPILE_LANGUAGE:CXX>,$<COMPILE_LANGUAGE:OBJCXX>>")
+    set(final_condition_genex "$<AND:${warnings_are_errors_enabled_genex},${cxx_only_genex}>")
+    set(flags_generator_expression "$<${final_condition_genex}:${flags}>")
     target_compile_options("${target}" INTERFACE "${flags_generator_expression}")
 endfunction()
 
@@ -140,7 +147,7 @@ if (MSVC)
         )
     endif()
 
-    target_compile_options(PlatformCommonInternal INTERFACE -Zc:wchar_t -utf-8)
+    target_compile_options(PlatformCommonInternal INTERFACE -Zc:wchar_t)
 
     target_link_options(PlatformCommonInternal INTERFACE
         -DYNAMICBASE -NXCOMPAT
@@ -148,3 +155,71 @@ if (MSVC)
         $<$<CONFIG:RelWithDebInfo>:-OPT:REF>
     )
 endif()
+
+function(qt_get_implicit_sse2_genex_condition out_var)
+    set(is_shared_lib "$<STREQUAL:$<TARGET_PROPERTY:TYPE>,SHARED_LIBRARY>")
+    set(is_static_lib "$<STREQUAL:$<TARGET_PROPERTY:TYPE>,STATIC_LIBRARY>")
+    set(is_static_qt_build "$<NOT:$<BOOL:${QT_BUILD_SHARED_LIBS}>>")
+    set(is_staitc_lib_during_static_qt_build "$<AND:${is_static_qt_build},${is_static_lib}>")
+    set(enable_sse2_condition "$<OR:${is_shared_lib},${is_staitc_lib_during_static_qt_build}>")
+    set(${out_var} "${enable_sse2_condition}" PARENT_SCOPE)
+endfunction()
+
+function(qt_auto_detect_implicit_sse2)
+    # sse2 configuration adjustment in qt_module.prf
+    # If the compiler supports SSE2, enable it unconditionally in all of Qt shared libraries
+    # (and only the libraries). This is not expected to be a problem because:
+    # - on Windows, sharing of libraries is uncommon
+    # - on Mac OS X, all x86 CPUs already have SSE2 support (we won't even reach here)
+    # - on Linux, the dynamic loader can find the libraries on LIBDIR/sse2/
+    # The last guarantee does not apply to executables and plugins, so we can't enable for them.
+    set(__implicit_sse2_for_qt_modules_enabled FALSE PARENT_SCOPE)
+    if(TEST_subarch_sse2 AND NOT TEST_arch_${TEST_architecture_arch}_subarch_sse2)
+        qt_get_implicit_sse2_genex_condition(enable_sse2_condition)
+        set(enable_sse2_genex "$<${enable_sse2_condition}:${QT_CFLAGS_SSE2}>")
+        target_compile_options(PlatformModuleInternal INTERFACE ${enable_sse2_genex})
+        set(__implicit_sse2_for_qt_modules_enabled TRUE PARENT_SCOPE)
+    endif()
+endfunction()
+qt_auto_detect_implicit_sse2()
+
+function(qt_auto_detect_fpmath)
+    # fpmath configuration adjustment in qt_module.prf
+    set(fpmath_supported FALSE)
+    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "3.4")
+            set(fpmath_supported TRUE)
+        endif()
+    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
+        if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "5.1")
+            set(fpmath_supported TRUE)
+        endif()
+    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+        set(fpmath_supported TRUE)
+    endif()
+    if(fpmath_supported AND TEST_architecture_arch STREQUAL "i386" AND __implicit_sse2_for_qt_modules_enabled)
+        qt_get_implicit_sse2_genex_condition(enable_sse2_condition)
+        set(enable_fpmath_genex "$<${enable_sse2_condition}:-mfpmath=sse>")
+        target_compile_options(PlatformModuleInternal INTERFACE ${enable_fpmath_genex})
+    endif()
+endfunction()
+qt_auto_detect_fpmath()
+
+function(qt_handle_apple_app_extension_api_only)
+    if(APPLE)
+        # Build Qt libraries with -fapplication-extension. Needed to avoid linker warnings
+        # transformed into errors on darwin platforms.
+        set(flags "-fapplication-extension")
+        set(genex_condition "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_NO_APP_EXTENSION_ONLY_API>>>")
+        set(flags "$<${genex_condition}:${flags}>")
+        target_compile_options(PlatformModuleInternal INTERFACE ${flags})
+        target_link_options(PlatformModuleInternal INTERFACE ${flags})
+        target_compile_options(PlatformPluginInternal INTERFACE ${flags})
+        target_link_options(PlatformPluginInternal INTERFACE ${flags})
+    endif()
+endfunction()
+function(qt_disable_apple_app_extension_api_only target)
+    set_target_properties("${target}" PROPERTIES QT_NO_APP_EXTENSION_ONLY_API TRUE)
+endfunction()
+
+qt_handle_apple_app_extension_api_only()

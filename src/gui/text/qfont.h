@@ -80,10 +80,6 @@ public:
         PreferQuality       = 0x0040,
         PreferAntialias     = 0x0080,
         NoAntialias         = 0x0100,
-#if QT_DEPRECATED_SINCE(5, 15)
-        OpenGLCompatible Q_DECL_ENUMERATOR_DEPRECATED = 0x0200,
-        ForceIntegerMetrics Q_DECL_ENUMERATOR_DEPRECATED = 0x0400,
-#endif
         NoSubpixelAntialias = 0x0800,
         PreferNoShaping     = 0x1000,
         NoFontMerging       = 0x8000
@@ -249,11 +245,6 @@ public:
     void setHintingPreference(HintingPreference hintingPreference);
     HintingPreference hintingPreference() const;
 
-#if QT_DEPRECATED_SINCE(5, 5)
-    bool rawMode() const;
-    void setRawMode(bool);
-#endif
-
     // dupicated from QFontInfo
     bool exactMatch() const;
 
@@ -266,12 +257,6 @@ public:
     inline QFont &operator=(QFont &&other) noexcept
     { qSwap(d, other.d); qSwap(resolve_mask, other.resolve_mask);  return *this; }
 
-#if QT_DEPRECATED_SINCE(5, 3)
-    // needed for X11
-    QT_DEPRECATED void setRawName(const QString &);
-    QT_DEPRECATED QString rawName() const;
-#endif
-
     QString key() const;
 
     QString toString() const;
@@ -283,18 +268,11 @@ public:
     static void insertSubstitution(const QString&, const QString &);
     static void insertSubstitutions(const QString&, const QStringList &);
     static void removeSubstitutions(const QString &);
-#if QT_DEPRECATED_SINCE(5, 0)
-    static QT_DEPRECATED void removeSubstitution(const QString &family) { removeSubstitutions(family); }
-#endif
     static void initialize();
     static void cleanup();
     static void cacheStatistics();
 
     QString defaultFamily() const;
-#if QT_DEPRECATED_SINCE(5, 13)
-    QT_DEPRECATED QString lastResortFamily() const;
-    QT_DEPRECATED QString lastResortFont() const;
-#endif
 
     QFont resolve(const QFont &) const;
     inline uint resolve() const { return resolve_mask; }

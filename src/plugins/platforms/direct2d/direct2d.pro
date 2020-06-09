@@ -2,14 +2,10 @@ TARGET = qdirect2d
 
 QT += \
     core-private gui-private \
-    eventdispatcher_support-private \
-    fontdatabase_support-private theme_support-private
+    fontdatabase_support-private
 
-qtConfig(accessibility): QT += accessibility_support-private
-qtConfig(vulkan): QT += vulkan_support-private
-
-LIBS += -ldwmapi -lversion
-QMAKE_USE_PRIVATE += gdi32 dwrite_1 d2d1_1 d3d11_1 dxgi1_2
+LIBS += -ldwmapi -lversion -ld3d11 -ldxgi -ldxguid
+QMAKE_USE_PRIVATE += gdi32 dwrite_1 d2d1_1
 
 include(../windows/windows.pri)
 

@@ -257,7 +257,7 @@ struct QBidiAlgorithm {
         // load directions of string, and determine isolate pairs
         for (int i = 0; i < length; ++i) {
             int pos = i;
-            uint uc = text[i].unicode();
+            char32_t uc = text[i].unicode();
             if (QChar::isHighSurrogate(uc) && i < length - 1) {
                 ++i;
                 analysis[i].bidiDirection = QChar::DirNSM;
@@ -829,7 +829,7 @@ struct QBidiAlgorithm {
                 int pos = *it;
                 QChar::Direction dir = analysis[pos].bidiDirection;
                 if (dir == QChar::DirON) {
-                    const QUnicodeTables::Properties *p = QUnicodeTables::properties(text[pos].unicode());
+                    const QUnicodeTables::Properties *p = QUnicodeTables::properties(char16_t{text[pos].unicode()});
                     if (p->mirrorDiff) {
                         // either opening or closing bracket
                         if (p->category == QChar::Punctuation_Open) {
@@ -1525,10 +1525,10 @@ void QTextEngine::shapeText(int item) const
             if (QChar::isHighSurrogate(string[i])
                     && i + 1 < itemLength
                     && QChar::isLowSurrogate(string[i + 1])) {
+                initialGlyphs.attributes[glyph_pos].dontPrint = !QChar::isPrint(QChar::surrogateToUcs4(string[i], string[i + 1]));
                 ++i;
                 log_clusters[i] = glyph_pos;
 
-                initialGlyphs.attributes[glyph_pos].dontPrint = !QChar::isPrint(QChar::surrogateToUcs4(string[i], string[i + 1]));
             } else {
                 initialGlyphs.attributes[glyph_pos].dontPrint = !QChar::isPrint(string[i]);
             }
@@ -1736,10 +1736,7 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si,
                 g.glyphs[i] |= (engineIdx << 24);
         }
 
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-        if (!actualFontEngine->supportsSubPixelPositions() || (actualFontEngine->fontDef.styleStrategy & QFont::ForceIntegerMetrics)) {
-QT_WARNING_POP
+        if (!actualFontEngine->supportsSubPixelPositions()) {
             for (uint i = 0; i < num_glyphs; ++i)
                 g.advances[i] = g.advances[i].round();
         }
@@ -1887,9 +1884,9 @@ void QTextEngine::validate() const
         layoutData->string = block.text();
         const bool nextBlockValid = block.next().isValid();
         if (!nextBlockValid && option.flags() & QTextOption::ShowDocumentTerminator) {
-            layoutData->string += QChar(0xA7);
+            layoutData->string += QLatin1Char('\xA7');
         } else if (option.flags() & QTextOption::ShowLineAndParagraphSeparators) {
-            layoutData->string += QLatin1Char(nextBlockValid ? 0xb6 : 0x20);
+            layoutData->string += QLatin1Char(nextBlockValid ? '\xB6' : '\x20');
         }
 
     } else {
@@ -2413,9 +2410,9 @@ static void set(QJustificationPoint *point, int type, const QGlyphLayout &glyph,
     point->glyph = glyph;
 
     if (type >= Justification_Arabic_Normal) {
-        QChar ch(0x640); // Kashida character
+        const char32_t ch = U'\x640'; // Kashida character
 
-        glyph_t kashidaGlyph = fe->glyphIndex(ch.unicode());
+        glyph_t kashidaGlyph = fe->glyphIndex(ch);
         if (kashidaGlyph != 0) {
             QGlyphLayout g;
             g.numGlyphs = 1;
@@ -3034,7 +3031,7 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
     {
         QFontEngine *engine = fnt.d->engineForScript(QChar::Script_Common);
 
-        QChar ellipsisChar(0x2026);
+        QChar ellipsisChar = u'\x2026';
 
         // We only want to use the ellipsis character if it is from the main
         // font (not one of the fallbacks), since using a fallback font
@@ -3076,6 +3073,8 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
     if (!attributes)
         return QString();
 
+    constexpr char16_t ZWJ = u'\x200d'; // ZERO-WIDTH JOINER
+
     if (mode == Qt::ElideRight) {
         QFixed currentWidth;
         int pos;
@@ -3093,7 +3092,7 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
                  && currentWidth < availableWidth);
 
         if (nextCharJoins(layoutData->string, pos))
-            ellipsisText.prepend(QChar(0x200d) /* ZWJ */);
+            ellipsisText.prepend(ZWJ);
 
         return stringMidRetainingBidiCC(layoutData->string,
                                         QString(), ellipsisText,
@@ -3116,7 +3115,7 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
                  && currentWidth < availableWidth);
 
         if (prevCharJoins(layoutData->string, pos))
-            ellipsisText.append(QChar(0x200d) /* ZWJ */);
+            ellipsisText.append(ZWJ);
 
         return stringMidRetainingBidiCC(layoutData->string,
                                         ellipsisText, QString(),
@@ -3151,9 +3150,9 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
                  && leftWidth + rightWidth < availableWidth);
 
         if (nextCharJoins(layoutData->string, leftPos))
-            ellipsisText.prepend(QChar(0x200d) /* ZWJ */);
+            ellipsisText.prepend(ZWJ);
         if (prevCharJoins(layoutData->string, rightPos))
-            ellipsisText.append(QChar(0x200d) /* ZWJ */);
+            ellipsisText.append(ZWJ);
 
         return layoutData->string.midRef(from, leftPos - from) + ellipsisText + layoutData->string.midRef(rightPos, to - rightPos);
     }

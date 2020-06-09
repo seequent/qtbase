@@ -1580,7 +1580,11 @@ void QMainWindowLayout::setTabShape(QTabWidget::TabShape tabShape)
 
 QTabWidget::TabPosition QMainWindowLayout::tabPosition(Qt::DockWidgetArea area) const
 {
-    return tabPositions[toDockPos(area)];
+    const auto dockPos = toDockPos(area);
+    if (dockPos < QInternal::DockCount)
+        return tabPositions[dockPos];
+    qWarning("QMainWindowLayout::tabPosition called with out-of-bounds value '%d'", int(area));
+    return QTabWidget::North;
 }
 
 void QMainWindowLayout::setTabPosition(Qt::DockWidgetAreas areas, QTabWidget::TabPosition tabPosition)
@@ -1709,7 +1713,7 @@ void QMainWindowTabBar::mouseMoveEvent(QMouseEvent *e)
         int offset = QApplication::startDragDistance() + 1;
         offset *= 3;
         QRect r = rect().adjusted(-offset, -offset, offset, offset);
-        if (d->dragInProgress && !r.contains(e->pos()) && d->validIndex(d->pressedIndex)) {
+        if (d->dragInProgress && !r.contains(e->position().toPoint()) && d->validIndex(d->pressedIndex)) {
             QMainWindowLayout* mlayout = qt_mainwindow_layout(mainWindow);
             QDockAreaLayoutInfo *info = mlayout->dockInfo(this);
             Q_ASSERT(info);
@@ -1739,7 +1743,7 @@ void QMainWindowTabBar::mouseMoveEvent(QMouseEvent *e)
     if (draggingDock) {
         QDockWidgetPrivate *dockPriv = static_cast<QDockWidgetPrivate *>(QObjectPrivate::get(draggingDock));
         if (dockPriv->state && dockPriv->state->dragging) {
-            QPoint pos = e->globalPos() - dockPriv->state->pressPos;
+            QPoint pos = e->globalPosition().toPoint() - dockPriv->state->pressPos;
             draggingDock->move(pos);
             // move will call QMainWindowLayout::hover
         }
@@ -1779,6 +1783,15 @@ bool QMainWindowTabBar::event(QEvent *e)
 
 QTabBar *QMainWindowLayout::getTabBar()
 {
+    if (!usedTabBars.isEmpty()) {
+        /*
+            If dock widgets have been removed and added while the main window was
+            hidden, then the layout hasn't been activated yet, and tab bars from empty
+            docking areas haven't been put in the cache yet.
+        */
+        activate();
+    }
+
     QTabBar *result = nullptr;
     if (!unusedTabBars.isEmpty()) {
         result = unusedTabBars.takeLast();

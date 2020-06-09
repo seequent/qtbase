@@ -31,7 +31,7 @@
 
 #include <proitems.h>
 
-#include <qregexp.h>
+#include <qregularexpression.h>
 #include <qdir.h>
 #include <stdlib.h>
 #include <time.h>
@@ -43,11 +43,6 @@ QString MingwMakefileGenerator::escapeDependencyPath(const QString &path) const
     QString ret = path;
     ret.replace('\\', "/");  // ### this shouldn't be here
     return MakefileGenerator::escapeDependencyPath(ret);
-}
-
-QString MingwMakefileGenerator::getManifestFileForRcFile() const
-{
-    return project->first("QMAKE_MANIFEST").toQString();
 }
 
 ProString MingwMakefileGenerator::fixLibFlag(const ProString &lib)
@@ -69,13 +64,13 @@ MingwMakefileGenerator::parseLibFlag(const ProString &flag, ProString *arg)
     return MakefileGenerator::parseLibFlag(flag, arg);
 }
 
-bool MingwMakefileGenerator::processPrlFileBase(QString &origFile, const QStringRef &origName,
-                                                const QStringRef &fixedBase, int slashOff)
+bool MingwMakefileGenerator::processPrlFileBase(QString &origFile, QStringView origName,
+                                                QStringView fixedBase, int slashOff)
 {
-    if (origName.startsWith("lib")) {
+    if (origName.startsWith(u"lib")) {
         QString newFixedBase = fixedBase.left(slashOff) + fixedBase.mid(slashOff + 3);
         if (Win32MakefileGenerator::processPrlFileBase(origFile, origName,
-                                                       QStringRef(&newFixedBase), slashOff)) {
+                                                       QStringView(newFixedBase), slashOff)) {
             return true;
         }
     }
@@ -205,17 +200,12 @@ void MingwMakefileGenerator::writeIncPart(QTextStream &t)
 {
     t << "INCPATH       = ";
 
-    QString isystem = var("QMAKE_CFLAGS_ISYSTEM");
     const ProStringList &incs = project->values("INCLUDEPATH");
     for (ProStringList::ConstIterator incit = incs.begin(); incit != incs.end(); ++incit) {
         QString inc = (*incit).toQString();
-        inc.replace(QRegExp("\\\\$"), "");
+        inc.replace(QRegularExpression("\\\\$"), "");
 
-        if (!isystem.isEmpty() && isSystemInclude(inc))
-            t << isystem << ' ';
-        else
-            t << "-I";
-        t << escapeFilePath(inc) << ' ';
+        t << "-I" << escapeFilePath(inc) << ' ';
     }
     t << Qt::endl;
 }

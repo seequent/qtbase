@@ -66,6 +66,10 @@
 #define QT_NO_USING_NAMESPACE
 #define QT_NO_DEPRECATED
 
+#ifndef QT_BUILD_QMAKE
+#define QT_NO_REGEXP
+#endif
+
 // Keep feature-test macros in alphabetic order by feature name:
 #define QT_FEATURE_alloca 1
 #define QT_FEATURE_alloca_h -1
@@ -106,11 +110,7 @@
 #define QT_FEATURE_lttng -1
 #define QT_NO_QOBJECT
 #define QT_FEATURE_process -1
-#ifndef QT_BUILD_QMAKE
 #define QT_FEATURE_regularexpression 1
-#else
-#define QT_FEATURE_regularexpression -1
-#endif
 #ifdef __GLIBC_PREREQ
 # define QT_FEATURE_renameat2 (__GLIBC_PREREQ(2, 28) ? 1 : -1)
 #else
@@ -141,18 +141,17 @@
 #define QT_FEATURE_zstd -1
 #endif
 
+#define QT_FEATURE_textcodec -1
+
 #ifdef QT_BUILD_QMAKE
 #define QT_FEATURE_commandlineparser -1
 #define QT_NO_COMPRESS
 #define QT_JSON_READONLY
 #define QT_FEATURE_settings 1
 #define QT_NO_STANDARDPATHS
-#define QT_FEATURE_textcodec -1
 #else
-#define QT_FEATURE_codecs -1
 #define QT_FEATURE_commandlineparser 1
 #define QT_FEATURE_settings -1
-#define QT_FEATURE_textcodec 1
 #endif
 
 #endif // QT_BOOTSTRAPPED

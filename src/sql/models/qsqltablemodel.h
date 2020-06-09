@@ -58,6 +58,7 @@ class Q_SQL_EXPORT QSqlTableModel: public QSqlQueryModel
 {
     Q_OBJECT
     Q_DECLARE_PRIVATE(QSqlTableModel)
+    Q_MOC_INCLUDE(<QtSql/qsqlrecord.h>)
 
 public:
     enum EditStrategy {OnFieldChange, OnRowChange, OnManualSubmit};
@@ -74,9 +75,7 @@ public:
     QSqlRecord record(int row) const;
     QVariant data(const QModelIndex &idx, int role = Qt::DisplayRole) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     bool clearItemData(const QModelIndex &index) override;
-#endif
 
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 

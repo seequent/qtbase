@@ -45,6 +45,7 @@
 #ifndef QT_NO_REGEXP
 
 #include <QtCore/qstring.h>
+#include <QtCore/qvariant.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -93,6 +94,8 @@ public:
 
     bool exactMatch(const QString &str) const;
 
+    operator QVariant() const;
+
     int indexIn(const QString &str, int offset = 0, CaretMode caretMode = CaretAtZero) const;
     int lastIndexIn(const QString &str, int offset = -1, CaretMode caretMode = CaretAtZero) const;
     int matchedLength() const;
@@ -108,6 +111,20 @@ public:
     QString errorString();
 #endif
 
+    QString replaceIn(const QString &str, const QString &after) const;
+    QString removeIn(const QString &str) const
+    { return replaceIn(str, QString()); }
+    bool containedIn(const QString &str) const
+    { return indexIn(str) != -1; }
+    int countIn(const QString &str) const;
+
+    QStringList splitString(const QString &str, Qt::SplitBehavior behavior = Qt::KeepEmptyParts) const;
+
+    int indexIn(const QStringList &list, int from) const;
+    int lastIndexIn(const QStringList &list, int from) const;
+    QStringList replaceIn(const QStringList &stringList, const QString &after) const;
+    QStringList filterList(const QStringList &stringList) const;
+
     static QString escape(const QString &str);
 
     friend Q_CORE_EXPORT size_t qHash(const QRegExp &key, size_t seed) noexcept;
@@ -115,8 +132,6 @@ public:
 private:
     QRegExpPrivate *priv;
 };
-
-Q_DECLARE_TYPEINFO(QRegExp, Q_MOVABLE_TYPE);
 
 #ifndef QT_NO_DATASTREAM
 Q_CORE_EXPORT QDataStream &operator<<(QDataStream &out, const QRegExp &regExp);
@@ -128,6 +143,8 @@ Q_CORE_EXPORT QDebug operator<<(QDebug, const QRegExp &);
 #endif
 
 QT_END_NAMESPACE
+
+Q_DECLARE_METATYPE(QRegExp)
 
 #endif // QT_NO_REGEXP
 

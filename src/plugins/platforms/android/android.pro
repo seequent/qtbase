@@ -4,12 +4,10 @@ LIBS += -ljnigraphics -landroid
 
 QT += \
     core-private gui-private \
-    eventdispatcher_support-private accessibility_support-private \
-    fontdatabase_support-private egl_support-private
+    eventdispatcher_support-private \
+    egl_support-private
 
-qtConfig(vulkan): QT += vulkan_support-private
-
-qtHaveModule(platformcompositor_support-private): QT += platformcompositor_support-private
+qtConfig(opengl): QT += opengl-private
 
 OTHER_FILES += $$PWD/android.json
 

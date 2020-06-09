@@ -37,10 +37,11 @@
 **
 ****************************************************************************/
 
-#include <private/qdrawhelper_p.h>
 #include <private/qguiapplication_p.h>
 #include <private/qcolortrclut_p.h>
+#include <private/qdrawhelper_p.h>
 #include <private/qendian_p.h>
+#include <private/qpixellayout_p.h>
 #include <private/qsimd_p.h>
 #include <private/qimage_p.h>
 
@@ -129,7 +130,7 @@ void qGamma_correct_back_to_linear_cs(QImage *image)
  *****************************************************************************/
 
 // The drawhelper conversions from/to RGB32 are passthroughs which is not always correct for general image conversion
-#if !defined(__ARM_NEON__)
+#if !defined(__ARM_NEON__) || !(Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
 static void QT_FASTCALL storeRGB32FromARGB32PM(uchar *dest, const uint *src, int index, int count,
                                                const QVector<QRgb> *, QDitherInfo *)
 {
@@ -159,7 +160,7 @@ static const uint *QT_FASTCALL fetchRGB32ToARGB32PM(uint *buffer, const uchar *s
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
 extern void QT_FASTCALL storeRGB32FromARGB32PM_sse4(uchar *dest, const uint *src, int index, int count,
                                                     const QVector<QRgb> *, QDitherInfo *);
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) && (Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
 extern void QT_FASTCALL storeRGB32FromARGB32PM_neon(uchar *dest, const uint *src, int index, int count,
                                                     const QVector<QRgb> *, QDitherInfo *);
 #endif
@@ -187,7 +188,7 @@ void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversio
                 store = storeRGB32FromARGB32PM_sse4;
             else
                 store = storeRGB32FromARGB32PM;
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) && (Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
             store = storeRGB32FromARGB32PM_neon;
 #else
             store = storeRGB32FromARGB32PM;
@@ -236,14 +237,15 @@ void convert_generic(QImageData *dest, const QImageData *src, Qt::ImageConversio
     int segments = src->nbytes / (1<<16);
     segments = std::min(segments, src->height);
 
-    if (segments <= 1)
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments <= 1 || threadPool->contains(QThread::currentThread()))
         return convertSegment(0, src->height);
 
     QSemaphore semaphore;
     int y = 0;
     for (int i = 0; i < segments; ++i) {
         int yn = (src->height - y) / (segments - i);
-        QThreadPool::globalInstance()->start([&, y, yn]() {
+        threadPool->start([&, y, yn]() {
             convertSegment(y, y + yn);
             semaphore.release(1);
         });
@@ -290,14 +292,15 @@ void convert_generic_to_rgb64(QImageData *dest, const QImageData *src, Qt::Image
     int segments = src->nbytes / (1<<16);
     segments = std::min(segments, src->height);
 
-    if (segments <= 1)
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments <= 1 || threadPool->contains(QThread::currentThread()))
         return convertSegment(0, src->height);
 
     QSemaphore semaphore;
     int y = 0;
     for (int i = 0; i < segments; ++i) {
         int yn = (src->height - y) / (segments - i);
-        QThreadPool::globalInstance()->start([&, y, yn]() {
+        threadPool->start([&, y, yn]() {
             convertSegment(y, y + yn);
             semaphore.release(1);
         });
@@ -349,7 +352,7 @@ bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::Im
                 store = storeRGB32FromARGB32PM_sse4;
             else
                 store = storeRGB32FromARGB32PM;
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) && (Q_BYTE_ORDER == Q_LITTLE_ENDIAN)
             store = storeRGB32FromARGB32PM_neon;
 #else
             store = storeRGB32FromARGB32PM;
@@ -396,12 +399,13 @@ bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::Im
 #ifdef QT_USE_THREAD_PARALLEL_IMAGE_CONVERSIONS
     int segments = data->nbytes / (1<<16);
     segments = std::min(segments, data->height);
-    if (segments > 1) {
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments > 1 && !threadPool->contains(QThread::currentThread())) {
         QSemaphore semaphore;
         int y = 0;
         for (int i = 0; i < segments; ++i) {
             int yn = (data->height - y) / (segments - i);
-            QThreadPool::globalInstance()->start([&, y, yn]() {
+            threadPool->start([&, y, yn]() {
                 convertSegment(y, y + yn);
                 semaphore.release(1);
             });
@@ -2016,6 +2020,21 @@ static void convert_Mono_to_Indexed8(QImageData *dest, const QImageData *src, Qt
     }
 }
 
+static void copy_8bit_pixels(QImageData *dest, const QImageData *src)
+{
+    if (src->bytes_per_line == dest->bytes_per_line) {
+        memcpy(dest->data, src->data, src->bytes_per_line * src->height);
+    } else {
+        const uchar *sdata = src->data;
+        uchar *ddata = dest->data;
+        for (int y = 0; y < src->height; ++y) {
+            memcpy(ddata, sdata, src->width);
+            sdata += src->bytes_per_line;
+            ddata += dest->bytes_per_line;
+        }
+    }
+}
+
 static void convert_Indexed8_to_Alpha8(QImageData *dest, const QImageData *src, Qt::ImageConversionFlags)
 {
     Q_ASSERT(src->format == QImage::Format_Indexed8);
@@ -2031,11 +2050,15 @@ static void convert_Indexed8_to_Alpha8(QImageData *dest, const QImageData *src, 
     }
 
     if (simpleCase)
-        memcpy(dest->data, src->data, src->bytes_per_line * src->height);
+        copy_8bit_pixels(dest, src);
     else {
-        qsizetype size = src->bytes_per_line * src->height;
-        for (qsizetype i = 0; i < size; ++i) {
-            dest->data[i] = translate[src->data[i]];
+        const uchar *sdata = src->data;
+        uchar *ddata = dest->data;
+        for (int y = 0; y < src->height; ++y) {
+            for (int x = 0; x < src->width; ++x)
+                ddata[x] = translate[sdata[x]];
+            sdata += src->bytes_per_line;
+            ddata += dest->bytes_per_line;
         }
     }
 }
@@ -2055,11 +2078,15 @@ static void convert_Indexed8_to_Grayscale8(QImageData *dest, const QImageData *s
     }
 
     if (simpleCase)
-        memcpy(dest->data, src->data, src->bytes_per_line * src->height);
+        copy_8bit_pixels(dest, src);
     else {
-        qsizetype size = src->bytes_per_line * src->height;
-        for (qsizetype i = 0; i < size; ++i) {
-            dest->data[i] = translate[src->data[i]];
+        const uchar *sdata = src->data;
+        uchar *ddata = dest->data;
+        for (int y = 0; y < src->height; ++y) {
+            for (int x = 0; x < src->width; ++x)
+                ddata[x] = translate[sdata[x]];
+            sdata += src->bytes_per_line;
+            ddata += dest->bytes_per_line;
         }
     }
 }
@@ -2107,7 +2134,7 @@ static void convert_Alpha8_to_Indexed8(QImageData *dest, const QImageData *src, 
     Q_ASSERT(src->format == QImage::Format_Alpha8);
     Q_ASSERT(dest->format == QImage::Format_Indexed8);
 
-    memcpy(dest->data, src->data, src->bytes_per_line * src->height);
+    copy_8bit_pixels(dest, src);
 
     dest->colortable = defaultColorTables->alpha;
 }
@@ -2117,8 +2144,7 @@ static void convert_Grayscale8_to_Indexed8(QImageData *dest, const QImageData *s
     Q_ASSERT(src->format == QImage::Format_Grayscale8);
     Q_ASSERT(dest->format == QImage::Format_Indexed8);
 
-    memcpy(dest->data, src->data, src->bytes_per_line * src->height);
-
+    copy_8bit_pixels(dest, src);
 
     dest->colortable = defaultColorTables->gray;
 }

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
+** Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
 ** Copyright (C) 2019 Mail.ru Group.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -33,6 +33,7 @@
 
 #include <QString>
 #include <QStringView>
+#include <QStringTokenizer>
 #include <QChar>
 #include <QScopedArrayPointer>
 #include <QStringRef>
@@ -492,13 +493,15 @@ private:
     template <typename Haystack, typename Needle> void split_impl() const;
 
 private Q_SLOTS:
-    // test all combinations of {QString, QStringRef} x {QString, QLatin1String, QChar}:
+    // test all combinations of {QString, QStringRef} x {QString, QLatin1String, QChar, char16_t}:
     void split_QString_QString_data() { split_data(); }
     void split_QString_QString() { split_impl<QString, QString>(); }
     void split_QString_QLatin1String_data() { split_data(); }
     void split_QString_QLatin1String() { split_impl<QString, QLatin1String>(); }
     void split_QString_QChar_data() { split_data(false); }
     void split_QString_QChar() { split_impl<QString, QChar>(); }
+    void split_QString_char16_t_data() { split_data(false); }
+    void split_QString_char16_t() { split_impl<QString, char16_t>(); }
 
     void split_QStringRef_QString_data() { split_data(); }
     void split_QStringRef_QString() { split_impl<QStringRef, QString>(); }
@@ -506,6 +509,118 @@ private Q_SLOTS:
     void split_QStringRef_QLatin1String() { split_impl<QStringRef, QLatin1String>(); }
     void split_QStringRef_QChar_data() { split_data(false); }
     void split_QStringRef_QChar() { split_impl<QStringRef, QChar>(); }
+    void split_QStringRef_char16_t_data() { split_data(false); }
+    void split_QStringRef_char16_t() { split_impl<QStringRef, char16_t>(); }
+
+private:
+    void tok_data(bool rhsHasVariableLength = true);
+    template <typename Haystack, typename Needle> void tok_impl() const;
+
+private Q_SLOTS:
+    // let Splittable = {QString, QStringRef, QStringView, QLatin1String, const char16_t*, std::u16string}
+    // let Separators = Splittable ∪ {QChar, char16_t}
+    // test Splittable × Separators:
+    void tok_QString_QString_data() { tok_data(); }
+    void tok_QString_QString() { tok_impl<QString, QString>(); }
+    void tok_QString_QStringRef_data() { tok_data(); }
+    void tok_QString_QStringRef() { tok_impl<QString, QStringRef>(); }
+    void tok_QString_QStringView_data() { tok_data(); }
+    void tok_QString_QStringView() { tok_impl<QString, QStringView>(); }
+    void tok_QString_QLatin1String_data() { tok_data(); }
+    void tok_QString_QLatin1String() { tok_impl<QString, QLatin1String>(); }
+    void tok_QString_const_char16_t_star_data() { tok_data(); }
+    void tok_QString_const_char16_t_star() { tok_impl<QString, const char16_t*>(); }
+    void tok_QString_stdu16string_data() { tok_data(); }
+    void tok_QString_stdu16string() { tok_impl<QString, std::u16string>(); }
+    void tok_QString_QChar_data() { tok_data(false); }
+    void tok_QString_QChar() { tok_impl<QString, QChar>(); }
+    void tok_QString_char16_t_data() { tok_data(false); }
+    void tok_QString_char16_t() { tok_impl<QString, char16_t>(); }
+
+    void tok_QStringRef_QString_data() { tok_data(); }
+    void tok_QStringRef_QString() { tok_impl<QStringRef, QString>(); }
+    void tok_QStringRef_QStringRef_data() { tok_data(); }
+    void tok_QStringRef_QStringRef() { tok_impl<QStringRef, QStringRef>(); }
+    void tok_QStringRef_QStringView_data() { tok_data(); }
+    void tok_QStringRef_QStringView() { tok_impl<QStringRef, QStringView>(); }
+    void tok_QStringRef_QLatin1String_data() { tok_data(); }
+    void tok_QStringRef_QLatin1String() { tok_impl<QStringRef, QLatin1String>(); }
+    void tok_QStringRef_const_char16_t_star_data() { tok_data(); }
+    void tok_QStringRef_const_char16_t_star() { tok_impl<QStringRef, const char16_t*>(); }
+    void tok_QStringRef_stdu16string_data() { tok_data(); }
+    void tok_QStringRef_stdu16string() { tok_impl<QStringRef, std::u16string>(); }
+    void tok_QStringRef_QChar_data() { tok_data(false); }
+    void tok_QStringRef_QChar() { tok_impl<QStringRef, QChar>(); }
+    void tok_QStringRef_char16_t_data() { tok_data(false); }
+    void tok_QStringRef_char16_t() { tok_impl<QStringRef, char16_t>(); }
+
+    void tok_QStringView_QString_data() { tok_data(); }
+    void tok_QStringView_QString() { tok_impl<QStringView, QString>(); }
+    void tok_QStringView_QStringRef_data() { tok_data(); }
+    void tok_QStringView_QStringRef() { tok_impl<QStringView, QStringRef>(); }
+    void tok_QStringView_QStringView_data() { tok_data(); }
+    void tok_QStringView_QStringView() { tok_impl<QStringView, QStringView>(); }
+    void tok_QStringView_QLatin1String_data() { tok_data(); }
+    void tok_QStringView_QLatin1String() { tok_impl<QStringView, QLatin1String>(); }
+    void tok_QStringView_const_char16_t_star_data() { tok_data(); }
+    void tok_QStringView_const_char16_t_star() { tok_impl<QStringView, const char16_t*>(); }
+    void tok_QStringView_stdu16string_data() { tok_data(); }
+    void tok_QStringView_stdu16string() { tok_impl<QStringView, std::u16string>(); }
+    void tok_QStringView_QChar_data() { tok_data(false); }
+    void tok_QStringView_QChar() { tok_impl<QStringView, QChar>(); }
+    void tok_QStringView_char16_t_data() { tok_data(false); }
+    void tok_QStringView_char16_t() { tok_impl<QStringView, char16_t>(); }
+
+    void tok_QLatin1String_QString_data() { tok_data(); }
+    void tok_QLatin1String_QString() { tok_impl<QLatin1String, QString>(); }
+    void tok_QLatin1String_QStringRef_data() { tok_data(); }
+    void tok_QLatin1String_QStringRef() { tok_impl<QLatin1String, QStringRef>(); }
+    void tok_QLatin1String_QStringView_data() { tok_data(); }
+    void tok_QLatin1String_QStringView() { tok_impl<QLatin1String, QStringView>(); }
+    void tok_QLatin1String_QLatin1String_data() { tok_data(); }
+    void tok_QLatin1String_QLatin1String() { tok_impl<QLatin1String, QLatin1String>(); }
+    void tok_QLatin1String_const_char16_t_star_data() { tok_data(); }
+    void tok_QLatin1String_const_char16_t_star() { tok_impl<QLatin1String, const char16_t*>(); }
+    void tok_QLatin1String_stdu16string_data() { tok_data(); }
+    void tok_QLatin1String_stdu16string() { tok_impl<QLatin1String, std::u16string>(); }
+    void tok_QLatin1String_QChar_data() { tok_data(false); }
+    void tok_QLatin1String_QChar() { tok_impl<QLatin1String, QChar>(); }
+    void tok_QLatin1String_char16_t_data() { tok_data(false); }
+    void tok_QLatin1String_char16_t() { tok_impl<QLatin1String, char16_t>(); }
+
+    void tok_const_char16_t_star_QString_data() { tok_data(); }
+    void tok_const_char16_t_star_QString() { tok_impl<const char16_t*, QString>(); }
+    void tok_const_char16_t_star_QStringRef_data() { tok_data(); }
+    void tok_const_char16_t_star_QStringRef() { tok_impl<const char16_t*, QStringRef>(); }
+    void tok_const_char16_t_star_QStringView_data() { tok_data(); }
+    void tok_const_char16_t_star_QStringView() { tok_impl<const char16_t*, QStringView>(); }
+    void tok_const_char16_t_star_QLatin1String_data() { tok_data(); }
+    void tok_const_char16_t_star_QLatin1String() { tok_impl<const char16_t*, QLatin1String>(); }
+    void tok_const_char16_t_star_const_char16_t_star_data() { tok_data(); }
+    void tok_const_char16_t_star_const_char16_t_star() { tok_impl<const char16_t*, const char16_t*>(); }
+    void tok_const_char16_t_star_stdu16string_data() { tok_data(); }
+    void tok_const_char16_t_star_stdu16string() { tok_impl<const char16_t*, std::u16string>(); }
+    void tok_const_char16_t_star_QChar_data() { tok_data(false); }
+    void tok_const_char16_t_star_QChar() { tok_impl<const char16_t*, QChar>(); }
+    void tok_const_char16_t_star_char16_t_data() { tok_data(false); }
+    void tok_const_char16_t_star_char16_t() { tok_impl<const char16_t*, char16_t>(); }
+
+    void tok_stdu16string_QString_data() { tok_data(); }
+    void tok_stdu16string_QString() { tok_impl<std::u16string, QString>(); }
+    void tok_stdu16string_QStringRef_data() { tok_data(); }
+    void tok_stdu16string_QStringRef() { tok_impl<std::u16string, QStringRef>(); }
+    void tok_stdu16string_QStringView_data() { tok_data(); }
+    void tok_stdu16string_QStringView() { tok_impl<std::u16string, QStringView>(); }
+    void tok_stdu16string_QLatin1String_data() { tok_data(); }
+    void tok_stdu16string_QLatin1String() { tok_impl<std::u16string, QLatin1String>(); }
+    void tok_stdu16string_const_char16_t_star_data() { tok_data(); }
+    void tok_stdu16string_const_char16_t_star() { tok_impl<std::u16string, const char16_t*>(); }
+    void tok_stdu16string_stdu16string_data() { tok_data(); }
+    void tok_stdu16string_stdu16string() { tok_impl<std::u16string, std::u16string>(); }
+    void tok_stdu16string_QChar_data() { tok_data(false); }
+    void tok_stdu16string_QChar() { tok_impl<std::u16string, QChar>(); }
+    void tok_stdu16string_char16_t_data() { tok_data(false); }
+    void tok_stdu16string_char16_t() { tok_impl<std::u16string, char16_t>(); }
 
 private:
     void mid_data();
@@ -517,11 +632,17 @@ private:
     void right_data();
     template <typename String> void right_impl();
 
+    void slice_data();
+    template <typename String> void slice_impl();
+
+    void first_data();
+    template <typename String> void first_impl();
+
+    void last_data();
+    template <typename String> void last_impl();
+
     void chop_data();
     template <typename String> void chop_impl();
-
-    void truncate_data() { left_data(); }
-    template <typename String> void truncate_impl();
 
 private Q_SLOTS:
 
@@ -536,16 +657,16 @@ private Q_SLOTS:
     void mid_QByteArray_data() { mid_data(); }
     void mid_QByteArray() { mid_impl<QByteArray>(); }
 
-    void left_truncate_QString_data() { left_data(); }
-    void left_truncate_QString() { left_impl<QString>(); }
-    void left_truncate_QStringRef_data() { left_data(); }
-    void left_truncate_QStringRef() { left_impl<QStringRef>(); }
-    void left_truncate_QStringView_data() { left_data(); }
-    void left_truncate_QStringView() { left_impl<QStringView>(); }
-    void left_truncate_QLatin1String_data() { left_data(); }
-    void left_truncate_QLatin1String() { left_impl<QLatin1String>(); }
-    void left_truncate_QByteArray_data() { left_data(); }
-    void left_truncate_QByteArray() { left_impl<QByteArray>(); }
+    void left_QString_data() { left_data(); }
+    void left_QString() { left_impl<QString>(); }
+    void left_QStringRef_data() { left_data(); }
+    void left_QStringRef() { left_impl<QStringRef>(); }
+    void left_QStringView_data() { left_data(); }
+    void left_QStringView() { left_impl<QStringView>(); }
+    void left_QLatin1String_data() { left_data(); }
+    void left_QLatin1String() { left_impl<QLatin1String>(); }
+    void left_QByteArray_data();
+    void left_QByteArray() { left_impl<QByteArray>(); }
 
     void right_QString_data() { right_data(); }
     void right_QString() { right_impl<QString>(); }
@@ -555,8 +676,29 @@ private Q_SLOTS:
     void right_QStringView() { right_impl<QStringView>(); }
     void right_QLatin1String_data() { right_data(); }
     void right_QLatin1String() { right_impl<QLatin1String>(); }
-    void right_QByteArray_data() { right_data(); }
+    void right_QByteArray_data();
     void right_QByteArray() { right_impl<QByteArray>(); }
+
+    void slice_QString_data() { slice_data(); }
+    void slice_QString() { slice_impl<QString>(); }
+    void slice_QStringView_data() { slice_data(); }
+    void slice_QStringView() { slice_impl<QStringView>(); }
+    void slice_QByteArray_data() { slice_data(); }
+    void slice_QByteArray() { slice_impl<QByteArray>(); }
+
+    void first_truncate_QString_data() { first_data(); }
+    void first_truncate_QString() { first_impl<QString>(); }
+    void first_truncate_QStringView_data() { first_data(); }
+    void first_truncate_QStringView() { first_impl<QStringView>(); }
+    void first_truncate_QByteArray_data() { first_data(); }
+    void first_truncate_QByteArray() { first_impl<QByteArray>(); }
+
+    void last_QString_data() { last_data(); }
+    void last_QString() { last_impl<QString>(); }
+    void last_QStringView_data() { last_data(); }
+    void last_QStringView() { last_impl<QStringView>(); }
+    void last_QByteArray_data() { last_data(); }
+    void last_QByteArray() { last_impl<QByteArray>(); }
 
     void chop_QString_data() { chop_data(); }
     void chop_QString() { chop_impl<QString>(); }
@@ -584,6 +726,34 @@ private Q_SLOTS:
     void trim_trimmed_QLatin1String() { trimmed_impl<QLatin1String>(); }
     void trim_trimmed_QByteArray_data() { trimmed_data(); }
     void trim_trimmed_QByteArray() { trimmed_impl<QByteArray>(); }
+
+private:
+    void toNumber_data();
+    template <typename String> void toNumber_impl();
+
+private Q_SLOTS:
+    void toNumber_QString_data() { toNumber_data(); }
+    void toNumber_QString() { toNumber_impl<QString>(); }
+    void toNumber_QStringRef_data() { toNumber_data(); }
+    void toNumber_QStringRef() { toNumber_impl<QStringRef>(); }
+    void toNumber_QStringView_data() { toNumber_data(); }
+    void toNumber_QStringView() { toNumber_impl<QStringView>(); }
+    void toNumber_QByteArray_data() { toNumber_data(); }
+    void toNumber_QByteArray() { toNumber_impl<QByteArray>(); }
+
+private:
+    void count_data();
+    template <typename String> void count_impl();
+
+private Q_SLOTS:
+    void count_QString_data() { count_data(); }
+    void count_QString() { count_impl<QString>(); }
+    void count_QStringRef_data() { count_data(); }
+    void count_QStringRef() { count_impl<QStringRef>(); }
+    void count_QStringView_data() { count_data(); }
+    void count_QStringView() { count_impl<QStringView>(); }
+    void count_QByteArray_data() { count_data(); }
+    void count_QByteArray() { count_impl<QByteArray>(); }
 
     //
     // UTF-16-only checks:
@@ -829,7 +999,7 @@ void tst_QStringApiSymmetry::compare_data(bool hasConceptOfNullAndEmpty)
                                        << 0 << 0;
     }
 
-#define ROW(lhs, rhs) \
+#define ROW(lhs, rhs, caseless) \
     do { \
         static const QString pinned[] = { \
             QString(QLatin1String(lhs)), \
@@ -838,16 +1008,19 @@ void tst_QStringApiSymmetry::compare_data(bool hasConceptOfNullAndEmpty)
         QTest::newRow(qUtf8Printable(QLatin1String("'" lhs "' <> '" rhs "': "))) \
             << QStringRef(&pinned[0]) << QLatin1String(lhs) \
             << QStringRef(&pinned[1]) << QLatin1String(rhs) \
-            << sign(qstrcmp(lhs, rhs)) << sign(qstricmp(lhs, rhs)); \
+            << sign(qstrcmp(lhs, rhs)) << caseless; \
     } while (false)
-    ROW("", "0");
-    ROW("0", "");
-    ROW("0", "1");
-    ROW("0", "0");
-    ROW("10", "0");
-    ROW("01", "1");
-    ROW("\xE4", "\xE4"); // ä <> ä
-    ROW("\xE4", "\xC4"); // ä <> Ä
+#define ASCIIROW(lhs, rhs) ROW(lhs, rhs, sign(qstricmp(lhs, rhs)))
+    ASCIIROW("", "0");
+    ASCIIROW("0", "");
+    ASCIIROW("0", "1");
+    ASCIIROW("0", "0");
+    ASCIIROW("10", "0");
+    ASCIIROW("01", "1");
+    ASCIIROW("e", "e");
+    ASCIIROW("e", "E");
+    ROW("\xE4", "\xE4", 0); // ä <> ä
+    ROW("\xE4", "\xC4", 0); // ä <> Ä
 #undef ROW
 }
 
@@ -869,6 +1042,8 @@ template <> QStringView   make(const QStringRef &sf, QLatin1String,    const QBy
 template <> QLatin1String make(const QStringRef &,   QLatin1String l1, const QByteArray &)   { return l1; }
 template <> QByteArray    make(const QStringRef &,   QLatin1String,    const QByteArray &u8) { return u8; }
 template <> const char *  make(const QStringRef &,   QLatin1String,    const QByteArray &u8) { return u8.data(); }
+template <> const char16_t* make(const QStringRef &sf, QLatin1String,  const QByteArray &)   { return QStringView{sf}.utf16(); } // assumes `sf` doesn't represent a substring
+template <> std::u16string  make(const QStringRef &sf, QLatin1String,  const QByteArray &)   { return sf.toString().toStdU16String(); }
 
 template <typename> struct is_utf8_encoded              : std::false_type {};
 template <>         struct is_utf8_encoded<const char*> : std::true_type {};
@@ -1246,6 +1421,10 @@ static QStringList skipped(const QStringList &sl)
     return result;
 }
 
+template <typename T> T deepCopied(T s) { return s; }
+template <> QString deepCopied(QString s) { return detached(s); }
+template <> QByteArray deepCopied(QByteArray s) { return detached(s); }
+
 template <typename Haystack, typename Needle>
 void tst_QStringApiSymmetry::split_impl() const
 {
@@ -1272,44 +1451,115 @@ void tst_QStringApiSymmetry::split_impl() const
     QCOMPARE(toQStringList(haystack.split(needle, Qt::SkipEmptyParts, Qt::CaseInsensitive)), skippedResultCIS);
 }
 
+void tst_QStringApiSymmetry::tok_data(bool rhsHasVariableLength)
+{
+    split_data(rhsHasVariableLength);
+}
+
+template <typename T> struct has_tokenize_method : std::false_type {};
+template <> struct has_tokenize_method<QString> : std::true_type {};
+template <> struct has_tokenize_method<QStringView> : std::true_type {};
+template <> struct has_tokenize_method<QLatin1String> : std::true_type {};
+
+template <typename T>
+constexpr inline bool has_tokenize_method_v = has_tokenize_method<std::decay_t<T>>::value;
+
+template <typename Haystack, typename Needle>
+void tst_QStringApiSymmetry::tok_impl() const
+{
+    QFETCH(const QStringRef, haystackU16);
+    QFETCH(const QLatin1String, haystackL1);
+    QFETCH(const QStringRef, needleU16);
+    QFETCH(const QLatin1String, needleL1);
+    QFETCH(const QStringList, resultCS);
+    QFETCH(const QStringList, resultCIS);
+
+    const QStringList skippedResultCS = skipped(resultCS);
+    const QStringList skippedResultCIS = skipped(resultCIS);
+
+    const auto haystackU8 = haystackU16.toUtf8();
+    const auto needleU8 = needleU16.toUtf8();
+
+    const auto haystack = make<Haystack>(haystackU16, haystackL1, haystackU8);
+    const auto needle = make<Needle>(needleU16, needleL1, needleU8);
+
+    QCOMPARE(toQStringList(qTokenize(haystack, needle)), resultCS);
+    QCOMPARE(toQStringList(qTokenize(haystack, needle, Qt::KeepEmptyParts, Qt::CaseSensitive)), resultCS);
+    QCOMPARE(toQStringList(qTokenize(haystack, needle, Qt::CaseInsensitive, Qt::KeepEmptyParts)), resultCIS);
+    QCOMPARE(toQStringList(qTokenize(haystack, needle, Qt::SkipEmptyParts, Qt::CaseSensitive)), skippedResultCS);
+    QCOMPARE(toQStringList(qTokenize(haystack, needle, Qt::CaseInsensitive, Qt::SkipEmptyParts)), skippedResultCIS);
+
+    {
+        const auto tok = qTokenize(deepCopied(haystack), deepCopied(needle));
+        // here, the temporaries returned from deepCopied() have already been destroyed,
+        // yet `tok` should have kept a copy alive as needed:
+        QCOMPARE(toQStringList(tok), resultCS);
+    }
+
+#ifdef __cpp_deduction_guides
+    QCOMPARE(toQStringList(QStringTokenizer{haystack, needle}), resultCS);
+    QCOMPARE(toQStringList(QStringTokenizer{haystack, needle, Qt::KeepEmptyParts, Qt::CaseSensitive}), resultCS);
+    QCOMPARE(toQStringList(QStringTokenizer{haystack, needle, Qt::CaseInsensitive, Qt::KeepEmptyParts}), resultCIS);
+    QCOMPARE(toQStringList(QStringTokenizer{haystack, needle, Qt::SkipEmptyParts, Qt::CaseSensitive}), skippedResultCS);
+    QCOMPARE(toQStringList(QStringTokenizer{haystack, needle, Qt::CaseInsensitive, Qt::SkipEmptyParts}), skippedResultCIS);
+
+    {
+        const auto tok = QStringTokenizer{deepCopied(haystack), deepCopied(needle)};
+        // here, the temporaries returned from deepCopied() have already been destroyed,
+        // yet `tok` should have kept a copy alive as needed:
+        QCOMPARE(toQStringList(tok), resultCS);
+    }
+#endif // __cpp_deduction_guides
+
+    if constexpr (has_tokenize_method_v<Haystack>) {
+        QCOMPARE(toQStringList(haystack.tokenize(needle)), resultCS);
+        QCOMPARE(toQStringList(haystack.tokenize(needle, Qt::KeepEmptyParts, Qt::CaseSensitive)), resultCS);
+        QCOMPARE(toQStringList(haystack.tokenize(needle, Qt::CaseInsensitive, Qt::KeepEmptyParts)), resultCIS);
+        QCOMPARE(toQStringList(haystack.tokenize(needle, Qt::SkipEmptyParts, Qt::CaseSensitive)), skippedResultCS);
+        QCOMPARE(toQStringList(haystack.tokenize(needle, Qt::CaseInsensitive, Qt::SkipEmptyParts)), skippedResultCIS);
+
+        {
+            const auto tok = deepCopied(haystack).tokenize(deepCopied(needle));
+            // here, the temporaries returned from deepCopied() have already been destroyed,
+            // yet `tok` should have kept a copy alive as needed:
+            QCOMPARE(toQStringList(tok), resultCS);
+        }
+    }
+}
+
 void tst_QStringApiSymmetry::mid_data()
 {
-    QTest::addColumn<QStringRef>("unicode");
-    QTest::addColumn<QLatin1String>("latin1");
-    QTest::addColumn<int>("pos");
-    QTest::addColumn<int>("n");
-    QTest::addColumn<QStringRef>("result");
-    QTest::addColumn<QStringRef>("result2");
+    slice_data();
 
-    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << 0 << QStringRef() << QStringRef();
-    QTest::addRow("empty") << QStringRef(&empty) << QLatin1String("") << 0 << 0 << QStringRef(&empty) << QStringRef(&empty);
-
-    // Some classes' mid() implementations have a wide contract, others a narrow one
-    // so only test valid arguents here:
+    // mid() has a wider contract compared to slize(), so test those cases here:
 #define ROW(base, p, n, r1, r2) \
-    QTest::addRow("%s%d%d", #base, p, n) << QStringRef(&base) << QLatin1String(#base) << p << n << QStringRef(&r1) << QStringRef(&r2)
+    QTest::addRow("%s %d %d", #base, p, n) << QStringRef(&base) << QLatin1String(#base) << p << n << QStringRef(&r1) << QStringRef(&r2)
 
-    ROW(a, 0, 0, a, empty);
-    ROW(a, 0, 1, a, a);
-    ROW(a, 1, 0, empty, empty);
+    ROW(a, -1, 0, a, null);
+    ROW(a, -1, 2, a, a);
+    ROW(a, -1, 3, a, a);
+    ROW(a, 0, -1, a, a);
+    ROW(a, 0, 2, a, a);
+    ROW(a, -1, -1, a, a);
+    ROW(a, 1, -1, empty, empty);
+    ROW(a, 1, 1, empty, empty);
+    ROW(a, 2, -1, null, null);
+    ROW(a, 2, 1, null, null);
 
-    ROW(ab, 0, 0, ab, empty);
-    ROW(ab, 0, 1, ab, a);
-    ROW(ab, 0, 2, ab, ab);
-    ROW(ab, 1, 0, b,  empty);
-    ROW(ab, 1, 1, b,  b);
-    ROW(ab, 2, 0, empty, empty);
-
-    ROW(abc, 0, 0, abc, empty);
-    ROW(abc, 0, 1, abc, a);
-    ROW(abc, 0, 2, abc, ab);
-    ROW(abc, 0, 3, abc, abc);
-    ROW(abc, 1, 0, bc,  empty);
-    ROW(abc, 1, 1, bc,  b);
-    ROW(abc, 1, 2, bc,  bc);
-    ROW(abc, 2, 0, c,   empty);
-    ROW(abc, 2, 1, c,   c);
-    ROW(abc, 3, 0, empty, empty);
+    ROW(abc, -1, -1, abc, abc);
+    ROW(abc, -1, 0, abc, null);
+    ROW(abc, -1, 2, abc, a);
+    ROW(abc, -1, 3, abc, ab);
+    ROW(abc, -1, 5, abc, abc);
+    ROW(abc, 0, -1, abc, abc);
+    ROW(abc, 0, 5, abc, abc);
+    ROW(abc, -1, 1, abc, null);
+    ROW(abc, -1, 2, abc, a);
+    ROW(abc, -1, 4, abc, abc);
+    ROW(abc, 1, -1, bc, bc);
+    ROW(abc, 1, 1, bc, b);
+    ROW(abc, 3, -1, empty, empty);
+    ROW(abc, 3, 1, empty, empty);
 #undef ROW
 }
 
@@ -1355,30 +1605,35 @@ void tst_QStringApiSymmetry::mid_impl()
 
 void tst_QStringApiSymmetry::left_data()
 {
-    QTest::addColumn<QStringRef>("unicode");
-    QTest::addColumn<QLatin1String>("latin1");
-    QTest::addColumn<int>("n");
-    QTest::addColumn<QStringRef>("result");
+    first_data();
 
-    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << QStringRef();
-    QTest::addRow("empty") << QStringRef(&empty) << QLatin1String("") << 0 << QStringRef(&empty);
-
-    // Some classes' left() implementations have a wide contract, others a narrow one
-    // so only test valid arguents here:
+    // specific data testing out of bounds cases
 #define ROW(base, n, res) \
     QTest::addRow("%s%d", #base, n) << QStringRef(&base) << QLatin1String(#base) << n << QStringRef(&res);
 
-    ROW(a, 0, empty);
-    ROW(a, 1, a);
+    ROW(a, -1, a);
+    ROW(a, 2, a);
 
-    ROW(ab, 0, empty);
-    ROW(ab, 1, a);
-    ROW(ab, 2, ab);
+    ROW(ab, -100, ab);
+    ROW(ab, 100, ab);
+#undef ROW
+}
 
-    ROW(abc, 0, empty);
-    ROW(abc, 1, a);
-    ROW(abc, 2, ab);
-    ROW(abc, 3, abc);
+// This is different from the rest for historical reasons. As we're replacing
+// left() with first() as the recommended API, there's no point fixing this anymore
+void tst_QStringApiSymmetry::left_QByteArray_data()
+{
+    first_data();
+
+    // specific data testing out of bounds cases
+#define ROW(base, n, res) \
+    QTest::addRow("%s%d", #base, n) << QStringRef(&base) << QLatin1String(#base) << n << QStringRef(&res);
+
+    ROW(a, -1, empty);
+    ROW(a, 2, a);
+
+    ROW(ab, -100, empty);
+    ROW(ab, 100, ab);
 #undef ROW
 }
 
@@ -1408,42 +1663,39 @@ void tst_QStringApiSymmetry::left_impl()
         QCOMPARE(left.isNull(), result.isNull());
         QCOMPARE(left.isEmpty(), result.isEmpty());
     }
-    {
-        auto left = s;
-        left.truncate(n);
-
-        QCOMPARE(left, result);
-        QCOMPARE(left.isNull(), result.isNull());
-        QCOMPARE(left.isEmpty(), result.isEmpty());
-    }
 }
 
 void tst_QStringApiSymmetry::right_data()
 {
-    QTest::addColumn<QStringRef>("unicode");
-    QTest::addColumn<QLatin1String>("latin1");
-    QTest::addColumn<int>("n");
-    QTest::addColumn<QStringRef>("result");
+    last_data();
 
-    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << QStringRef();
-    QTest::addRow("empty") << QStringRef(&empty) << QLatin1String("") << 0 << QStringRef(&empty);
-
-    // Some classes' right() implementations have a wide contract, others a narrow one
-    // so only test valid arguents here:
+    // specific data testing out of bounds cases
 #define ROW(base, n, res) \
     QTest::addRow("%s%d", #base, n) << QStringRef(&base) << QLatin1String(#base) << n << QStringRef(&res);
 
-    ROW(a, 0, empty);
-    ROW(a, 1, a);
+    ROW(a, -1, a);
+    ROW(a, 2, a);
 
-    ROW(ab, 0, empty);
-    ROW(ab, 1, b);
-    ROW(ab, 2, ab);
+    ROW(ab, -100, ab);
+    ROW(ab, 100, ab);
+#undef ROW
+}
 
-    ROW(abc, 0, empty);
-    ROW(abc, 1, c);
-    ROW(abc, 2, bc);
-    ROW(abc, 3, abc);
+// This is different from the rest for historical reasons. As we're replacing
+// left() with first() as the recommended API, there's no point fixing this anymore
+void tst_QStringApiSymmetry::right_QByteArray_data()
+{
+    last_data();
+
+    // specific data testing out of bounds cases
+#define ROW(base, n, res) \
+    QTest::addRow("%s%d", #base, n) << QStringRef(&base) << QLatin1String(#base) << n << QStringRef(&res);
+
+    ROW(a, -1, empty);
+    ROW(a, 2, a);
+
+    ROW(ab, -100, empty);
+    ROW(ab, 100, ab);
 #undef ROW
 }
 
@@ -1475,6 +1727,207 @@ void tst_QStringApiSymmetry::right_impl()
     }
 }
 
+void tst_QStringApiSymmetry::slice_data()
+{
+    QTest::addColumn<QStringRef>("unicode");
+    QTest::addColumn<QLatin1String>("latin1");
+    QTest::addColumn<int>("pos");
+    QTest::addColumn<int>("n");
+    QTest::addColumn<QStringRef>("result");
+    QTest::addColumn<QStringRef>("result2");
+
+//    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << 0 << QStringRef() << QStringRef();
+    QTest::addRow("empty") << QStringRef(&empty) << QLatin1String("") << 0 << 0 << QStringRef(&empty) << QStringRef(&empty);
+
+#define ROW(base, p, n, r1, r2) \
+    QTest::addRow("%s%d%d", #base, p, n) << QStringRef(&base) << QLatin1String(#base) << p << n << QStringRef(&r1) << QStringRef(&r2)
+
+    ROW(a, 0, 0, a, empty);
+    ROW(a, 0, 1, a, a);
+    ROW(a, 1, 0, empty, empty);
+
+    ROW(ab, 0, 0, ab, empty);
+    ROW(ab, 0, 1, ab, a);
+    ROW(ab, 0, 2, ab, ab);
+    ROW(ab, 1, 0, b,  empty);
+    ROW(ab, 1, 1, b,  b);
+    ROW(ab, 2, 0, empty, empty);
+
+    ROW(abc, 0, 0, abc, empty);
+    ROW(abc, 0, 1, abc, a);
+    ROW(abc, 0, 2, abc, ab);
+    ROW(abc, 0, 3, abc, abc);
+    ROW(abc, 1, 0, bc,  empty);
+    ROW(abc, 1, 1, bc,  b);
+    ROW(abc, 1, 2, bc,  bc);
+    ROW(abc, 2, 0, c,   empty);
+    ROW(abc, 2, 1, c,   c);
+    ROW(abc, 3, 0, empty, empty);
+#undef ROW
+}
+
+template <typename String>
+void tst_QStringApiSymmetry::slice_impl()
+{
+    QFETCH(const QStringRef, unicode);
+    QFETCH(const QLatin1String, latin1);
+    QFETCH(const int, pos);
+    QFETCH(const int, n);
+    QFETCH(const QStringRef, result);
+    QFETCH(const QStringRef, result2);
+
+    const auto utf8 = unicode.toUtf8();
+
+    const auto s = make<String>(unicode, latin1, utf8);
+
+    {
+        const auto from = s.from(pos);
+        const auto slice = s.slice(pos, n);
+
+        QCOMPARE(from, result);
+        QCOMPARE(from.isNull(), result.isNull());
+        QCOMPARE(from.isEmpty(), result.isEmpty());
+
+        QCOMPARE(slice, result2);
+        QCOMPARE(slice.isNull(), result2.isNull());
+        QCOMPARE(slice.isEmpty(), result2.isEmpty());
+    }
+    {
+        const auto from = detached(s).from(pos);
+        const auto slice = detached(s).slice(pos, n);
+
+        QCOMPARE(from, result);
+        QCOMPARE(from.isNull(), result.isNull());
+        QCOMPARE(from.isEmpty(), result.isEmpty());
+
+        QCOMPARE(slice, result2);
+        QCOMPARE(slice.isNull(), result2.isNull());
+        QCOMPARE(slice.isEmpty(), result2.isEmpty());
+    }
+}
+
+void tst_QStringApiSymmetry::first_data()
+{
+    QTest::addColumn<QStringRef>("unicode");
+    QTest::addColumn<QLatin1String>("latin1");
+    QTest::addColumn<int>("n");
+    QTest::addColumn<QStringRef>("result");
+
+//    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << QStringRef();
+    QTest::addRow("empty") << QStringRef(&empty) << QLatin1String("") << 0 << QStringRef(&empty);
+
+    // Some classes' left() implementations have a wide contract, others a narrow one
+    // so only test valid arguents here:
+#define ROW(base, n, res) \
+    QTest::addRow("%s%d", #base, n) << QStringRef(&base) << QLatin1String(#base) << n << QStringRef(&res);
+
+    ROW(a, 0, empty);
+    ROW(a, 1, a);
+
+    ROW(ab, 0, empty);
+    ROW(ab, 1, a);
+    ROW(ab, 2, ab);
+
+    ROW(abc, 0, empty);
+    ROW(abc, 1, a);
+    ROW(abc, 2, ab);
+    ROW(abc, 3, abc);
+#undef ROW
+}
+
+template <typename String>
+void tst_QStringApiSymmetry::first_impl()
+{
+    QFETCH(const QStringRef, unicode);
+    QFETCH(const QLatin1String, latin1);
+    QFETCH(const int, n);
+    QFETCH(const QStringRef, result);
+
+    const auto utf8 = unicode.toUtf8();
+
+    const auto s = make<String>(unicode, latin1, utf8);
+
+    {
+        const auto first = s.first(n);
+
+        QCOMPARE(first, result);
+        QCOMPARE(first.isNull(), result.isNull());
+        QCOMPARE(first.isEmpty(), result.isEmpty());
+    }
+    {
+        const auto first = detached(s).first(n);
+
+        QCOMPARE(first, result);
+        QCOMPARE(first.isNull(), result.isNull());
+        QCOMPARE(first.isEmpty(), result.isEmpty());
+    }
+    {
+        auto first = s;
+        first.truncate(n);
+
+        QCOMPARE(first, result);
+        QCOMPARE(first.isNull(), result.isNull());
+        QCOMPARE(first.isEmpty(), result.isEmpty());
+    }
+}
+
+void tst_QStringApiSymmetry::last_data()
+{
+    QTest::addColumn<QStringRef>("unicode");
+    QTest::addColumn<QLatin1String>("latin1");
+    QTest::addColumn<int>("n");
+    QTest::addColumn<QStringRef>("result");
+
+//    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << QStringRef();
+    QTest::addRow("empty") << QStringRef(&empty) << QLatin1String("") << 0 << QStringRef(&empty);
+
+    // Some classes' last() implementations have a wide contract, others a narrow one
+    // so only test valid arguents here:
+#define ROW(base, n, res) \
+    QTest::addRow("%s%d", #base, n) << QStringRef(&base) << QLatin1String(#base) << n << QStringRef(&res);
+
+    ROW(a, 0, empty);
+    ROW(a, 1, a);
+
+    ROW(ab, 0, empty);
+    ROW(ab, 1, b);
+    ROW(ab, 2, ab);
+
+    ROW(abc, 0, empty);
+    ROW(abc, 1, c);
+    ROW(abc, 2, bc);
+    ROW(abc, 3, abc);
+#undef ROW
+}
+
+template <typename String>
+void tst_QStringApiSymmetry::last_impl()
+{
+    QFETCH(const QStringRef, unicode);
+    QFETCH(const QLatin1String, latin1);
+    QFETCH(const int, n);
+    QFETCH(const QStringRef, result);
+
+    const auto utf8 = unicode.toUtf8();
+
+    const auto s = make<String>(unicode, latin1, utf8);
+
+    {
+        const auto last = s.last(n);
+
+        QCOMPARE(last, result);
+        QCOMPARE(last.isNull(), result.isNull());
+        QCOMPARE(last.isEmpty(), result.isEmpty());
+    }
+    {
+        const auto last = detached(s).last(n);
+
+        QCOMPARE(last, result);
+        QCOMPARE(last.isNull(), result.isNull());
+        QCOMPARE(last.isEmpty(), result.isEmpty());
+    }
+}
+
 void tst_QStringApiSymmetry::chop_data()
 {
     QTest::addColumn<QStringRef>("unicode");
@@ -1482,7 +1935,7 @@ void tst_QStringApiSymmetry::chop_data()
     QTest::addColumn<int>("n");
     QTest::addColumn<QStringRef>("result");
 
-    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << QStringRef();
+//    QTest::addRow("null") << QStringRef() << QLatin1String() << 0 << QStringRef();
     QTest::addRow("empty") << QStringRef(&empty) << QLatin1String("") << 0 << QStringRef(&empty);
 
     // Some classes' truncate() implementations have a wide contract, others a narrow one
@@ -1594,6 +2047,142 @@ void tst_QStringApiSymmetry::trimmed_impl()
         QCOMPARE(trimmed.isNull(), result.isNull());
         QCOMPARE(trimmed.isEmpty(), result.isEmpty());
     }
+}
+
+void tst_QStringApiSymmetry::toNumber_data()
+{
+    QTest::addColumn<QString>("data");
+    QTest::addColumn<qint64>("result");
+    QTest::addColumn<bool>("ok");
+
+    QTest::addRow("0") << QString::fromUtf8("0") << qint64(0) << true;
+    QTest::addRow("a0") << QString::fromUtf8("a0") << qint64(0) << false;
+    QTest::addRow("10") << QString::fromUtf8("10") << qint64(10) << true;
+    QTest::addRow("-10") << QString::fromUtf8("-10") << qint64(-10) << true;
+    QTest::addRow("32767") << QString::fromUtf8("32767") << qint64(32767) << true;
+    QTest::addRow("32768") << QString::fromUtf8("32768") << qint64(32768) << true;
+    QTest::addRow("-32767") << QString::fromUtf8("-32767") << qint64(-32767) << true;
+    QTest::addRow("-32768") << QString::fromUtf8("-32768") << qint64(-32768) << true;
+    QTest::addRow("100x") << QString::fromUtf8("100x") << qint64(0) << false;
+    QTest::addRow("-100x") << QString::fromUtf8("-100x") << qint64(0) << false;
+}
+
+template<typename T>
+bool inRange(qint64 n)
+{
+    bool checkMax = quint64(std::numeric_limits<T>::max()) <= quint64(std::numeric_limits<qint64>::max());
+    if (checkMax && n > qint64(std::numeric_limits<T>::max()))
+        return false;
+    return qint64(std::numeric_limits<T>::min()) <= n;
+}
+
+template<typename String>
+void tst_QStringApiSymmetry::toNumber_impl()
+{
+    QFETCH(const QString, data);
+    QFETCH(qint64, result);
+    QFETCH(bool, ok);
+
+    const auto utf8 = data.toUtf8();
+    const auto l1s  = data.toLatin1();
+    const auto l1   = l1s.isNull() ? QLatin1String() : QLatin1String(l1s);
+
+    const auto ref = data.isNull() ? QStringRef() : QStringRef(&data);
+    const auto s = make<String>(ref, l1, utf8);
+
+    bool is_ok = false;
+    qint64 n = 0;
+
+    n = s.toShort(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<short>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    n = s.toUShort(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<ushort>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    n = s.toInt(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<int>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    n = s.toUInt(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<uint>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    n = s.toLong(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<long>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    n = s.toULong(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<ulong>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    n = s.toLongLong(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<qlonglong>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    n = s.toULongLong(&is_ok);
+    QCOMPARE(is_ok, ok && inRange<qulonglong>(result));
+    if (is_ok)
+        QCOMPARE(n, result);
+
+    if (qint64(float(n)) == n) {
+        float f = s.toFloat(&is_ok);
+        QCOMPARE(is_ok, ok);
+        if (is_ok)
+            QCOMPARE(qint64(f), result);
+    }
+
+    if (qint64(double(n)) == n) {
+        double d = s.toDouble(&is_ok);
+        QCOMPARE(is_ok, ok);
+        if (is_ok)
+            QCOMPARE(qint64(d), result);
+    }
+}
+
+
+void tst_QStringApiSymmetry::count_data()
+{
+    QTest::addColumn<QString>("data");
+    QTest::addColumn<QString>("needle");
+    QTest::addColumn<qsizetype>("result");
+
+    QTest::addRow("xxx") << QString::fromUtf8("xxx") << QString::fromUtf8("x") << qsizetype(3);
+    QTest::addRow("xyzaaaxyz") << QString::fromUtf8("xyzaaaxyz") << QString::fromUtf8("xyz") << qsizetype(2);
+}
+
+template <typename String>
+void tst_QStringApiSymmetry::count_impl()
+{
+    QFETCH(const QString, data);
+    QFETCH(const QString, needle);
+    QFETCH(qsizetype, result);
+
+    const auto utf8 = data.toUtf8();
+    const auto l1s  = data.toLatin1();
+    const auto l1   = l1s.isNull() ? QLatin1String() : QLatin1String(l1s);
+
+    const auto ref = data.isNull() ? QStringRef() : QStringRef(&data);
+    const auto s = make<String>(ref, l1, utf8);
+
+    const auto nutf8 = needle.toUtf8();
+    const auto nl1s  = needle.toLatin1();
+    const auto nl1   = nl1s.isNull() ? QLatin1String() : QLatin1String(l1s);
+
+    const auto nref = needle.isNull() ? QStringRef() : QStringRef(&needle);
+    const auto ns = make<String>(nref, nl1, nutf8);
+
+    QCOMPARE(s.count(ns), result);
+    if (ns.length() == 1)
+        QCOMPARE(s.count(ns.data()[0]), result);
 }
 
 //

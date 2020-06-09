@@ -23,12 +23,21 @@ set(__GlobalConfig_path_suffix "${INSTALL_CMAKE_NAMESPACE}")
 qt_path_join(__GlobalConfig_build_dir ${QT_CONFIG_BUILD_DIR} ${__GlobalConfig_path_suffix})
 qt_path_join(__GlobalConfig_install_dir ${QT_CONFIG_INSTALL_DIR} ${__GlobalConfig_path_suffix})
 set(__GlobalConfig_install_dir_absolute "${__GlobalConfig_install_dir}")
+set(__qt_bin_dir_absolute "${QT_INSTALL_DIR}/${INSTALL_BINDIR}")
 if(QT_WILL_INSTALL)
     # Need to prepend the install prefix when doing prefix builds, because the config install dir
     # is relative then.
     qt_path_join(__GlobalConfig_install_dir_absolute
-                 ${CMAKE_INSTALL_PREFIX} ${__GlobalConfig_install_dir_absolute})
+                 ${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}
+                 ${__GlobalConfig_install_dir_absolute})
+    qt_path_join(__qt_bin_dir_absolute
+                 ${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX} ${__qt_bin_dir_absolute})
 endif()
+# Compute relative path from $qt_prefix/bin dir to global CMake config install dir, to use in the
+# unix-y qt-cmake shell script, to make it work even if the installed Qt is relocated.
+file(RELATIVE_PATH
+     __GlobalConfig_relative_path_from_bin_dir_to_cmake_config_dir
+     ${__qt_bin_dir_absolute} ${__GlobalConfig_install_dir_absolute})
 
 # Generate and install Qt6 config file.
 configure_package_config_file(
@@ -43,29 +52,10 @@ write_basic_package_version_file(
     COMPATIBILITY AnyNewerVersion
 )
 
-# Generate and install Qt6Tools config file.
-configure_package_config_file(
-    "${PROJECT_SOURCE_DIR}/cmake/QtToolsConfig.cmake.in"
-    "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ToolsConfig.cmake"
-    INSTALL_DESTINATION "${__GlobalConfig_install_dir}"
-)
-write_basic_package_version_file(
-    ${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ToolsConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY AnyNewerVersion
-)
-
 qt_install(FILES
     "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}Config.cmake"
     "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ConfigVersion.cmake"
     DESTINATION "${__GlobalConfig_install_dir}"
-    COMPONENT Devel
-)
-
-qt_install(FILES
-    "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ToolsConfig.cmake"
-    "${__GlobalConfig_build_dir}/${INSTALL_CMAKE_NAMESPACE}ToolsConfigVersion.cmake"
-    DESTINATION "${__GlobalConfig_install_dir}Tools"
     COMPONENT Devel
 )
 
@@ -107,7 +97,7 @@ if(QT_HOST_PATH)
 endif()
 
 if(CMAKE_TOOLCHAIN_FILE)
-    set(init_original_toolchain_file "set(qt_chainload_toolchain_file \"${CMAKE_TOOLCHAIN_FILE}\")")
+    set(init_original_toolchain_file "set(__qt_chainload_toolchain_file \"${CMAKE_TOOLCHAIN_FILE}\")")
 endif()
 
 if(VCPKG_CHAINLOAD_TOOLCHAIN_FILE)
@@ -158,7 +148,9 @@ endif()
 string(REPLACE ";" "\n" init_vcpkg "${init_vcpkg}")
 string(REPLACE ";" "\n" init_platform "${init_platform}")
 string(REPLACE "LITERAL_SEMICOLON" ";" init_platform "${init_platform}")
+qt_compute_relative_path_from_cmake_config_dir_to_prefix()
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/qt.toolchain.cmake.in" "${__GlobalConfig_build_dir}/qt.toolchain.cmake" @ONLY)
+unset(qt_path_from_cmake_config_dir_to_prefix)
 qt_install(FILES "${__GlobalConfig_build_dir}/qt.toolchain.cmake" DESTINATION "${__GlobalConfig_install_dir}" COMPONENT Devel)
 
 # Also provide a convenience cmake wrapper
@@ -196,9 +188,18 @@ unset(__qt_cmake_extra)
 # Instead a template CMakeLists.txt project is used which sets up all the necessary private bits
 # and then calls add_subdirectory on the provided project path.
 set(__qt_cmake_standalone_test_bin_name "qt-cmake-standalone-test")
-set(__qt_cmake_private_path "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qt-cmake-private")
+set(__qt_cmake_private_path
+    "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qt-cmake-private")
 set(__qt_cmake_standalone_test_path
     "${__build_internals_install_dir}/${__build_internals_standalone_test_template_dir}")
+
+if(QT_WILL_INSTALL)
+    # Need to prepend the install prefix when doing prefix builds, because the build internals
+    # install dir is relative in that case..
+    qt_path_join(__qt_cmake_standalone_test_path
+                 "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}"
+                 "${__qt_cmake_standalone_test_path}")
+endif()
 if(UNIX)
     string(PREPEND __qt_cmake_private_path "exec ")
     set(__qt_cmake_standalone_passed_args "\"$@\" -DPWD=\"$PWD\"")
@@ -212,15 +213,28 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/bin/qt-cmake-standalone-test.in"
 qt_install(PROGRAMS "${QT_BUILD_DIR}/${INSTALL_BINDIR}/${__qt_cmake_standalone_test_bin_name}"
            DESTINATION "${INSTALL_BINDIR}")
 
+# Create an installation script that the CI can use to handle installation for both
+# single and multiple configurations.
+set(__qt_cmake_install_script_name "qt-cmake-private-install.cmake")
+if(CMAKE_CONFIGURATION_TYPES)
+    set(__qt_configured_configs "${CMAKE_CONFIGURATION_TYPES}")
+elseif(CMAKE_BUILD_TYPE)
+    set(__qt_configured_configs "${CMAKE_BUILD_TYPE}")
+endif()
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/bin/${__qt_cmake_install_script_name}.in"
+    "${QT_BUILD_DIR}/${INSTALL_BINDIR}/${__qt_cmake_install_script_name}" @ONLY)
+qt_install(PROGRAMS "${QT_BUILD_DIR}/${INSTALL_BINDIR}/${__qt_cmake_install_script_name}"
+           DESTINATION "${INSTALL_BINDIR}")
+
 ## Library to hold global features:
 ## These features are stored and accessed via Qt::GlobalConfig, but the
 ## files always lived in Qt::Core, so we keep it that way
 add_library(GlobalConfig INTERFACE)
 target_include_directories(GlobalConfig INTERFACE
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include/QtCore>
-    $<INSTALL_INTERFACE:include>
-    $<INSTALL_INTERFACE:include/QtCore>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/${INSTALL_INCLUDEDIR}>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/${INSTALL_INCLUDEDIR}/QtCore>
+    $<INSTALL_INTERFACE:${INSTALL_INCLUDEDIR}>
+    $<INSTALL_INTERFACE:${INSTALL_INCLUDEDIR}/QtCore>
 )
 qt_feature_module_begin(NO_MODULE
     PUBLIC_FILE src/corelib/global/qconfig.h
@@ -248,16 +262,19 @@ add_library(Qt::GlobalConfig ALIAS GlobalConfig)
 add_library(GlobalConfigPrivate INTERFACE)
 target_link_libraries(GlobalConfigPrivate INTERFACE GlobalConfig)
 target_include_directories(GlobalConfigPrivate INTERFACE
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include/QtCore/${PROJECT_VERSION}>
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include/QtCore/${PROJECT_VERSION}/QtCore>
-    $<INSTALL_INTERFACE:include/QtCore/${PROJECT_VERSION}>
-    $<INSTALL_INTERFACE:include/QtCore/${PROJECT_VERSION}/QtCore>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/${INSTALL_INCLUDEDIR}/QtCore/${PROJECT_VERSION}>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/${INSTALL_INCLUDEDIR}/QtCore/${PROJECT_VERSION}/QtCore>
+    $<INSTALL_INTERFACE:${INSTALL_INCLUDEDIR}/QtCore/${PROJECT_VERSION}>
+    $<INSTALL_INTERFACE:${INSTALL_INCLUDEDIR}/QtCore/${PROJECT_VERSION}/QtCore>
 )
 add_library(Qt::GlobalConfigPrivate ALIAS GlobalConfigPrivate)
 
 # Propagate minimum C++ 17 via Platform to Qt consumers (apps), after the global features
 # are computed.
 qt_set_language_standards_interface_compile_features(Platform)
+
+# By default enable utf8 sources for both Qt and Qt consumers. Can be opted out.
+qt_enable_utf8_sources(Platform)
 
 # defines PlatformCommonInternal PlatformModuleInternal PlatformPluginInternal PlatformToolInternal
 include(QtInternalTargets)
@@ -293,6 +310,8 @@ qt_copy_or_install(FILES
                    cmake/QtFindWrapHelper.cmake
                    cmake/QtFindWrapConfigExtra.cmake.in
                    cmake/QtFileConfigure.txt.in
+                   cmake/QtGenerateExtPri.cmake
+                   cmake/QtGenerateLibPri.cmake
                    cmake/QtPlatformSupport.cmake
                    cmake/QtPlatformAndroid.cmake
                    cmake/QtPostProcess.cmake

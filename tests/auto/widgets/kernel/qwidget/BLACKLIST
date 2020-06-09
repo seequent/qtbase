@@ -10,6 +10,7 @@ opensuse-42.3
 ubuntu-16.04
 [focusProxyAndInputMethods]
 rhel-7.6
+centos
 opensuse-leap
 ubuntu
 [raise]
@@ -35,11 +36,9 @@ opensuse-leap
 ubuntu-16.04
 [multipleToplevelFocusCheck]
 rhel-7.6
+centos
 opensuse-leap
 ubuntu
-[windowState]
-# QTBUG-75270
-winrt
 
 [syntheticEnterLeave]
 macos # Can't move cursor (QTBUG-76312)

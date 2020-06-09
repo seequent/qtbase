@@ -62,7 +62,7 @@ static const int QTEXTSTREAM_BUFFERSIZE = 16384;
 
     It's also common to use QTextStream to read console input and write
     console output. QTextStream is locale aware, and will automatically decode
-    standard input using the correct codec. Example:
+    standard input using the correct encoding. Example:
 
     \snippet code/src_corelib_io_qtextstream.cpp 1
 
@@ -74,16 +74,16 @@ static const int QTEXTSTREAM_BUFFERSIZE = 16384;
     buffer into the device and call flush() on the device.
 
     Internally, QTextStream uses a Unicode based buffer, and
-    QTextCodec is used by QTextStream to automatically support
-    different character sets. By default, QTextCodec::codecForLocale()
-    is used for reading and writing, but you can also set the codec by
-    calling setCodec(). Automatic Unicode detection is also
+    QStringConverter is used by QTextStream to automatically support
+    different encodings. By default, UTF-8
+    is used for reading and writing, but you can also set the encoding by
+    calling setEncoding(). Automatic Unicode detection is also
     supported. When this feature is enabled (the default behavior),
-    QTextStream will detect the UTF-16 or the UTF-32 BOM (Byte Order Mark) and
-    switch to the appropriate UTF codec when reading. QTextStream
+    QTextStream will detect the UTF-8, UTF-16 or the UTF-32 BOM (Byte Order Mark) and
+    switch to the appropriate UTF encoding when reading. QTextStream
     does not write a BOM by default, but you can enable this by calling
     setGenerateByteOrderMark(true). When QTextStream operates on a QString
-    directly, the codec is disabled.
+    directly, the encoding is disabled.
 
     There are three general ways to use QTextStream when reading text
     files:
@@ -165,7 +165,7 @@ static const int QTEXTSTREAM_BUFFERSIZE = 16384;
     parameter: qSetFieldWidth(), qSetPadChar(), and
     qSetRealNumberPrecision().
 
-    \sa QDataStream, QIODevice, QFile, QBuffer, QTcpSocket, {Text Codecs Example}
+    \sa QDataStream, QIODevice, QFile, QBuffer, QTcpSocket
 */
 
 /*! \enum QTextStream::RealNumberNotation
@@ -233,6 +233,7 @@ static const int QTEXTSTREAM_BUFFERSIZE = 16384;
 
 #include <locale.h>
 #include "private/qlocale_p.h"
+#include "private/qstringconverter_p.h"
 
 #include <stdlib.h>
 #include <limits.h>
@@ -325,12 +326,8 @@ QT_BEGIN_NAMESPACE
     \internal
 */
 QTextStreamPrivate::QTextStreamPrivate(QTextStream *q_ptr)
-    :
-#if QT_CONFIG(textcodec)
-    readConverterSavedState(nullptr),
-#endif
-    readConverterSavedStateOffset(0),
-    locale(QLocale::c())
+    : readConverterSavedStateOffset(0),
+      locale(QLocale::c())
 {
     this->q_ptr = q_ptr;
     reset();
@@ -347,31 +344,7 @@ QTextStreamPrivate::~QTextStreamPrivate()
 #endif
         delete device;
     }
-#if QT_CONFIG(textcodec)
-    delete readConverterSavedState;
-#endif
 }
-
-#if QT_CONFIG(textcodec)
-static void resetCodecConverterStateHelper(QTextCodec::ConverterState *state)
-{
-    state->~ConverterState();
-    new (state) QTextCodec::ConverterState;
-}
-
-static void copyConverterStateHelper(QTextCodec::ConverterState *dest,
-    const QTextCodec::ConverterState *src)
-{
-    // ### QTextCodec::ConverterState's copy constructors and assignments are
-    // private. This function copies the structure manually.
-    Q_ASSERT(!src->d);
-    dest->flags = src->flags;
-    dest->invalidChars = src->invalidChars;
-    dest->state_data[0] = src->state_data[0];
-    dest->state_data[1] = src->state_data[1];
-    dest->state_data[2] = src->state_data[2];
-}
-#endif
 
 void QTextStreamPrivate::Params::reset()
 {
@@ -401,15 +374,12 @@ void QTextStreamPrivate::reset()
     readBufferStartDevicePos = 0;
     lastTokenSize = 0;
 
-#if QT_CONFIG(textcodec)
-    codec = QTextCodec::codecForLocale();
-    resetCodecConverterStateHelper(&readConverterState);
-    resetCodecConverterStateHelper(&writeConverterState);
-    delete readConverterSavedState;
-    readConverterSavedState = nullptr;
-    writeConverterState.flags |= QTextCodec::IgnoreHeader;
+    hasWrittenData = false;
+    generateBOM = false;
+    encoding = QStringConverter::Utf8;
+    toUtf16 = QStringDecoder(encoding);
+    fromUtf16 = QStringEncoder(encoding);
     autoDetectUnicode = true;
-#endif
 }
 
 /*!
@@ -461,22 +431,19 @@ bool QTextStreamPrivate::fillReadBuffer(qint64 maxBytes)
     if (bytesRead <= 0)
         return false;
 
-#if QT_CONFIG(textcodec)
-    // codec auto detection, explicitly defaults to locale encoding if the
-    // codec has been set to 0.
-    if (!codec || autoDetectUnicode) {
+    if (autoDetectUnicode) {
         autoDetectUnicode = false;
 
-        codec = QTextCodec::codecForUtfText(QByteArray::fromRawData(buf, bytesRead), codec);
-        if (!codec) {
-            codec = QTextCodec::codecForLocale();
-            writeConverterState.flags |= QTextCodec::IgnoreHeader;
+        auto e = QStringConverter::encodingForData(buf, bytesRead);
+        // QStringConverter::Locale implies unknown, so keep the current encoding
+        if (e) {
+            encoding = *e;
+            toUtf16 = QStringDecoder(encoding);
+            fromUtf16 = QStringEncoder(encoding);
         }
     }
 #if defined (QTEXTSTREAM_DEBUG)
-    qDebug("QTextStreamPrivate::fillReadBuffer(), using %s codec",
-           codec ? codec->name().constData() : "no");
-#endif
+    qDebug("QTextStreamPrivate::fillReadBuffer(), using %s encoding", QStringConverter::nameForEncoding(encoding));
 #endif
 
 #if defined (QTEXTSTREAM_DEBUG)
@@ -485,13 +452,7 @@ bool QTextStreamPrivate::fillReadBuffer(qint64 maxBytes)
 #endif
 
     int oldReadBufferSize = readBuffer.size();
-#if QT_CONFIG(textcodec)
-    // convert to unicode
-    readBuffer += Q_LIKELY(codec) ? codec->toUnicode(buf, bytesRead, &readConverterState)
-                                  : QString::fromLatin1(buf, bytesRead);
-#else
-    readBuffer += QString::fromLatin1(buf, bytesRead);
-#endif
+    readBuffer += toUtf16(buf, bytesRead);
 
     // remove all '\r\n' in the string.
     if (readBuffer.size() > oldReadBufferSize && textModeEnabled) {
@@ -567,23 +528,9 @@ void QTextStreamPrivate::flushWriteBuffer()
     }
 #endif
 
-#if QT_CONFIG(textcodec)
-    if (!codec)
-        codec = QTextCodec::codecForLocale();
-#if defined (QTEXTSTREAM_DEBUG)
-    qDebug("QTextStreamPrivate::flushWriteBuffer(), using %s codec (%s generating BOM)",
-           codec ? codec->name().constData() : "no",
-           !codec || (writeConverterState.flags & QTextCodec::IgnoreHeader) ? "not" : "");
-#endif
-
-    // convert from unicode to raw data
-    // codec might be null if we're already inside global destructors (QTestCodec::codecForLocale returned null)
-    QByteArray data = Q_LIKELY(codec) ? codec->fromUnicode(writeBuffer.data(), writeBuffer.size(), &writeConverterState)
-                                      : writeBuffer.toLatin1();
-#else
-    QByteArray data = writeBuffer.toLatin1();
-#endif
+    QByteArray data = fromUtf16(writeBuffer);
     writeBuffer.clear();
+    hasWrittenData = true;
 
     // write raw data to the device
     qint64 bytesWritten = device->write(data);
@@ -786,18 +733,8 @@ inline void QTextStreamPrivate::consume(int size)
 */
 inline void QTextStreamPrivate::saveConverterState(qint64 newPos)
 {
-#if QT_CONFIG(textcodec)
-    if (readConverterState.d) {
-        // converter cannot be copied, so don't save anything
-        // don't update readBufferStartDevicePos either
-        return;
-    }
-
-    if (!readConverterSavedState)
-        readConverterSavedState = new QTextCodec::ConverterState;
-    copyConverterStateHelper(readConverterSavedState, &readConverterState);
-#endif
-
+    // ### Hack, FIXME
+    memcpy((void *)&savedToUtf16, (void *)&toUtf16, sizeof(QStringDecoder));
     readBufferStartDevicePos = newPos;
     readConverterSavedStateOffset = 0;
 }
@@ -807,17 +744,11 @@ inline void QTextStreamPrivate::saveConverterState(qint64 newPos)
 */
 inline void QTextStreamPrivate::restoreToSavedConverterState()
 {
-#if QT_CONFIG(textcodec)
-    if (readConverterSavedState) {
-        // we have a saved state
-        // that means the converter can be copied
-        copyConverterStateHelper(&readConverterState, readConverterSavedState);
-    } else {
-        // the only state we could save was the initial
-        // so reset to that
-        resetCodecConverterStateHelper(&readConverterState);
-    }
-#endif
+    if (savedToUtf16.isValid())
+        memcpy((void *)&toUtf16, (void *)&savedToUtf16, sizeof(QStringDecoder));
+    else
+        toUtf16.resetState();
+    savedToUtf16 = QStringDecoder();
 }
 
 /*!
@@ -1202,14 +1133,8 @@ bool QTextStream::seek(qint64 pos)
             return false;
         d->resetReadBuffer();
 
-#if QT_CONFIG(textcodec)
-        // Reset the codec converter states.
-        resetCodecConverterStateHelper(&d->readConverterState);
-        resetCodecConverterStateHelper(&d->writeConverterState);
-        delete d->readConverterSavedState;
-        d->readConverterSavedState = nullptr;
-        d->writeConverterState.flags |= QTextCodec::IgnoreHeader;
-#endif
+        d->toUtf16.resetState();
+        d->fromUtf16.resetState();
         return true;
     }
 
@@ -1253,11 +1178,9 @@ qint64 QTextStream::pos() const
         QTextStreamPrivate *thatd = const_cast<QTextStreamPrivate *>(d);
         thatd->readBuffer.clear();
 
-#if QT_CONFIG(textcodec)
         thatd->restoreToSavedConverterState();
         if (d->readBufferStartDevicePos == 0)
             thatd->autoDetectUnicode = true;
-#endif
 
         // Rewind the device to get to the current position Ensure that
         // readBufferOffset is unaffected by fillReadBuffer()
@@ -1305,7 +1228,7 @@ void QTextStream::skipWhiteSpace()
     replaced.
 
     \note This function resets locale to the default locale ('C')
-    and codec to the default codec, QTextCodec::codecForLocale().
+    and encoding to the default encoding, UTF-8.
 
     \sa device(), setString()
 */
@@ -2577,10 +2500,9 @@ QTextStream &QTextStream::operator<<(double f)
 /*!
     Writes the string \a string to the stream, and returns a reference
     to the QTextStream. The string is first encoded using the assigned
-    codec (the default codec is QTextCodec::codecForLocale()) before
-    it is written to the stream.
+    encoding (the default is UTF-8) before it is written to the stream.
 
-    \sa setFieldWidth(), setCodec()
+    \sa setFieldWidth(), setEncoding()
 */
 QTextStream &QTextStream::operator<<(const QString &string)
 {
@@ -2693,7 +2615,7 @@ QTextStream &QTextStream::operator<<(const void *ptr)
 namespace Qt {
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::bin(QTextStream &stream)
+    \fn QTextStream &bin(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::bin() instead.
 */
@@ -2701,6 +2623,8 @@ namespace Qt {
 /*!
     Calls QTextStream::setIntegerBase(2) on \a stream and returns \a
     stream.
+
+    \since 5.14
 
     \sa oct(), dec(), hex(), {QTextStream manipulators}
 */
@@ -2711,7 +2635,7 @@ QTextStream &bin(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::oct(QTextStream &stream)
+    \fn QTextStream &oct(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::oct() instead.
 */
@@ -2719,6 +2643,8 @@ QTextStream &bin(QTextStream &stream)
 /*!
     Calls QTextStream::setIntegerBase(8) on \a stream and returns \a
     stream.
+
+    \since 5.14
 
     \sa bin(), dec(), hex(), {QTextStream manipulators}
 */
@@ -2729,7 +2655,7 @@ QTextStream &oct(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::dec(QTextStream &stream)
+    \fn QTextStream &dec(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::dec() instead.
 */
@@ -2737,6 +2663,8 @@ QTextStream &oct(QTextStream &stream)
 /*!
     Calls QTextStream::setIntegerBase(10) on \a stream and returns \a
     stream.
+
+    \since 5.14
 
     \sa bin(), oct(), hex(), {QTextStream manipulators}
 */
@@ -2747,7 +2675,7 @@ QTextStream &dec(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::hex(QTextStream &stream)
+    \fn QTextStream &hex(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::hex() instead.
 */
@@ -2755,6 +2683,8 @@ QTextStream &dec(QTextStream &stream)
 /*!
     Calls QTextStream::setIntegerBase(16) on \a stream and returns \a
     stream.
+
+    \since 5.14
 
     \note The hex modifier can only be used for writing to streams.
     \sa bin(), oct(), dec(), {QTextStream manipulators}
@@ -2766,7 +2696,7 @@ QTextStream &hex(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::showbase(QTextStream &stream)
+    \fn QTextStream &showbase(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::showbase() instead.
 */
@@ -2774,6 +2704,8 @@ QTextStream &hex(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::ShowBase) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa noshowbase(), forcesign(), forcepoint(), {QTextStream manipulators}
 */
@@ -2784,7 +2716,7 @@ QTextStream &showbase(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::forcesign(QTextStream &stream)
+    \fn QTextStream &forcesign(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::forcesign() instead.
 */
@@ -2792,6 +2724,8 @@ QTextStream &showbase(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::ForceSign) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa noforcesign(), forcepoint(), showbase(), {QTextStream manipulators}
 */
@@ -2802,7 +2736,7 @@ QTextStream &forcesign(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::forcepoint(QTextStream &stream)
+    \fn QTextStream &forcepoint(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::forcepoint() instead.
 */
@@ -2810,6 +2744,8 @@ QTextStream &forcesign(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::ForcePoint) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa noforcepoint(), forcesign(), showbase(), {QTextStream manipulators}
 */
@@ -2820,7 +2756,7 @@ QTextStream &forcepoint(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::noshowbase(QTextStream &stream)
+    \fn QTextStream &noshowbase(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::noshowbase() instead.
 */
@@ -2828,6 +2764,8 @@ QTextStream &forcepoint(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
     ~QTextStream::ShowBase) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa showbase(), noforcesign(), noforcepoint(), {QTextStream manipulators}
 */
@@ -2838,7 +2776,7 @@ QTextStream &noshowbase(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::noforcesign(QTextStream &stream)
+    \fn QTextStream &noforcesign(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::noforcesign() instead.
 */
@@ -2846,6 +2784,8 @@ QTextStream &noshowbase(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
     ~QTextStream::ForceSign) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa forcesign(), noforcepoint(), noshowbase(), {QTextStream manipulators}
 */
@@ -2856,7 +2796,7 @@ QTextStream &noforcesign(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::noforcepoint(QTextStream &stream)
+    \fn QTextStream &noforcepoint(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::noforcepoint() instead.
 */
@@ -2864,6 +2804,8 @@ QTextStream &noforcesign(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
     ~QTextStream::ForcePoint) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa forcepoint(), noforcesign(), noshowbase(), {QTextStream manipulators}
 */
@@ -2874,7 +2816,7 @@ QTextStream &noforcepoint(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::uppercasebase(QTextStream &stream)
+    \fn QTextStream &uppercasebase(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::uppercasebase() instead.
 */
@@ -2882,6 +2824,8 @@ QTextStream &noforcepoint(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::UppercaseBase) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa lowercasebase(), uppercasedigits(), {QTextStream manipulators}
 */
@@ -2892,7 +2836,7 @@ QTextStream &uppercasebase(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::uppercasedigits(QTextStream &stream)
+    \fn QTextStream &uppercasedigits(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::uppercasedigits() instead.
 */
@@ -2900,6 +2844,8 @@ QTextStream &uppercasebase(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::UppercaseDigits) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa lowercasedigits(), uppercasebase(), {QTextStream manipulators}
 */
@@ -2910,7 +2856,7 @@ QTextStream &uppercasedigits(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::lowercasebase(QTextStream &stream)
+    \fn QTextStream &lowercasebase(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::lowercasebase() instead.
 */
@@ -2918,6 +2864,8 @@ QTextStream &uppercasedigits(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
     ~QTextStream::UppercaseBase) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa uppercasebase(), lowercasedigits(), {QTextStream manipulators}
 */
@@ -2928,7 +2876,7 @@ QTextStream &lowercasebase(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::lowercasedigits(QTextStream &stream)
+    \fn QTextStream &lowercasedigits(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::lowercasedigits() instead.
 */
@@ -2936,6 +2884,8 @@ QTextStream &lowercasebase(QTextStream &stream)
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
     ~QTextStream::UppercaseDigits) on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa uppercasedigits(), lowercasebase(), {QTextStream manipulators}
 */
@@ -2946,7 +2896,7 @@ QTextStream &lowercasedigits(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::fixed(QTextStream &stream)
+    \fn QTextStream &fixed(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::fixed() instead.
 */
@@ -2954,6 +2904,8 @@ QTextStream &lowercasedigits(QTextStream &stream)
 /*!
     Calls QTextStream::setRealNumberNotation(QTextStream::FixedNotation)
     on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa scientific(), {QTextStream manipulators}
 */
@@ -2964,7 +2916,7 @@ QTextStream &fixed(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::scientific(QTextStream &stream)
+    \fn QTextStream &scientific(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::scientific() instead.
 */
@@ -2972,6 +2924,8 @@ QTextStream &fixed(QTextStream &stream)
 /*!
     Calls QTextStream::setRealNumberNotation(QTextStream::ScientificNotation)
     on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa fixed(), {QTextStream manipulators}
 */
@@ -2982,7 +2936,7 @@ QTextStream &scientific(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::left(QTextStream &stream)
+    \fn QTextStream &left(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::left() instead.
 */
@@ -2990,6 +2944,8 @@ QTextStream &scientific(QTextStream &stream)
 /*!
     Calls QTextStream::setFieldAlignment(QTextStream::AlignLeft)
     on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa {QTextStream::}{right()}, {QTextStream::}{center()}, {QTextStream manipulators}
 */
@@ -3000,7 +2956,7 @@ QTextStream &left(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::right(QTextStream &stream)
+    \fn QTextStream &right(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::right() instead.
 */
@@ -3008,6 +2964,8 @@ QTextStream &left(QTextStream &stream)
 /*!
     Calls QTextStream::setFieldAlignment(QTextStream::AlignRight)
     on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa {QTextStream::}{left()}, {QTextStream::}{center()}, {QTextStream manipulators}
 */
@@ -3018,7 +2976,7 @@ QTextStream &right(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::center(QTextStream &stream)
+    \fn QTextStream &center(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::center() instead.
 */
@@ -3026,6 +2984,8 @@ QTextStream &right(QTextStream &stream)
 /*!
     Calls QTextStream::setFieldAlignment(QTextStream::AlignCenter)
     on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa {QTextStream::}{left()}, {QTextStream::}{right()}, {QTextStream manipulators}
 */
@@ -3036,7 +2996,7 @@ QTextStream &center(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::endl(QTextStream &stream)
+    \fn QTextStream &endl(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::endl() instead.
 */
@@ -3051,6 +3011,8 @@ QTextStream &center(QTextStream &stream)
     Note: On Windows, all '\\n' characters are written as '\\r\\n' if
     QTextStream's device or string is opened using the QIODevice::Text flag.
 
+    \since 5.14
+
     \sa flush(), reset(), {QTextStream manipulators}
 */
 QTextStream &endl(QTextStream &stream)
@@ -3059,13 +3021,15 @@ QTextStream &endl(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::flush(QTextStream &stream)
+    \fn QTextStream &flush(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::flush() instead.
 */
 
 /*!
     Calls QTextStream::flush() on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa endl(), reset(), {QTextStream manipulators}
 */
@@ -3076,13 +3040,15 @@ QTextStream &flush(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::reset(QTextStream &stream)
+    \fn QTextStream &reset(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::reset() instead.
 */
 
 /*!
     Calls QTextStream::reset() on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa flush(), {QTextStream manipulators}
 */
@@ -3093,13 +3059,15 @@ QTextStream &reset(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &QTextStreamFunctions::ws(QTextStream &stream)
+    \fn QTextStream &ws(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::ws() instead.
 */
 
 /*!
     Calls \l {QTextStream::}{skipWhiteSpace()} on \a stream and returns \a stream.
+
+    \since 5.14
 
     \sa {QTextStream manipulators}
 */
@@ -3132,18 +3100,19 @@ QTextStream &ws(QTextStream &stream)
     Equivalent to QTextStream::setRealNumberPrecision(\a precision).
 */
 
-#if QT_CONFIG(textcodec)
 
 namespace Qt {
 /*!
-    \fn QTextStream &QTextStreamFunctions::bom(QTextStream &stream)
+    \fn QTextStream &bom(QTextStream &stream)
     \relates QTextStream
     \obsolete Use Qt::bom() instead.
 */
 
 /*!
     Toggles insertion of the Byte Order Mark on \a stream when QTextStream is
-    used with a UTF codec.
+    used with a UTF encoding.
+
+    \since 5.14
 
     \sa QTextStream::setGenerateByteOrderMark(), {QTextStream manipulators}
 */
@@ -3155,75 +3124,66 @@ QTextStream &bom(QTextStream &stream)
 
 } // namespace Qt
 
+
 /*!
-    Sets the codec for this stream to \a codec. The codec is used for
+    Sets the encoding for this stream to \a encoding. The encoding is used for
     decoding any data that is read from the assigned device, and for
     encoding any data that is written. By default,
-    QTextCodec::codecForLocale() is used, and automatic unicode
+    QStringConverter::Utf8 is used, and automatic unicode
     detection is enabled.
 
     If QTextStream operates on a string, this function does nothing.
 
     \warning If you call this function while the text stream is reading
     from an open sequential socket, the internal buffer may still contain
-    text decoded using the old codec.
+    text decoded using the old encoding.
 
-    \sa codec(), setAutoDetectUnicode(), setLocale()
+    \sa encoding(), setAutoDetectUnicode(), setLocale()
 */
-void QTextStream::setCodec(QTextCodec *codec)
+void QTextStream::setEncoding(QStringConverter::Encoding encoding)
 {
     Q_D(QTextStream);
+    if (d->encoding == encoding)
+        return;
+
     qint64 seekPos = -1;
     if (!d->readBuffer.isEmpty()) {
         if (!d->device->isSequential()) {
             seekPos = pos();
         }
     }
-    d->codec = codec;
+
+    d->encoding = encoding;
+    d->toUtf16 = QStringDecoder(d->encoding);
+    bool generateBOM = d->hasWrittenData && d->generateBOM;
+    d->fromUtf16 = QStringEncoder(d->encoding,
+                                  generateBOM ? QStringEncoder::Flag::WriteBom : QStringEncoder::Flag::Default);
+
     if (seekPos >=0 && !d->readBuffer.isEmpty())
         seek(seekPos);
 }
 
 /*!
-    Sets the codec for this stream to the QTextCodec for the encoding
-    specified by \a codecName. Common values for \c codecName include
-    "ISO 8859-1", "UTF-8", and "UTF-16". If the encoding isn't
-    recognized, nothing happens.
+    Returns the encoding that is current assigned to the stream.
 
-    Example:
-
-    \snippet code/src_corelib_io_qtextstream.cpp 10
-
-    \sa QTextCodec::codecForName(), setLocale()
+    \sa setEncoding(), setAutoDetectUnicode(), locale()
 */
-void QTextStream::setCodec(const char *codecName)
-{
-    QTextCodec *codec = QTextCodec::codecForName(codecName);
-    if (codec)
-        setCodec(codec);
-}
-
-/*!
-    Returns the codec that is current assigned to the stream.
-
-    \sa setCodec(), setAutoDetectUnicode(), locale()
-*/
-QTextCodec *QTextStream::codec() const
+QStringConverter::Encoding QTextStream::encoding() const
 {
     Q_D(const QTextStream);
-    return d->codec;
+    return d->encoding;
 }
 
 /*!
     If \a enabled is true, QTextStream will attempt to detect Unicode encoding
     by peeking into the stream data to see if it can find the UTF-8, UTF-16, or
     UTF-32 Byte Order Mark (BOM). If this mark is found, QTextStream will
-    replace the current codec with the UTF codec.
+    replace the current encoding with the UTF encoding.
 
-    This function can be used together with setCodec(). It is common
-    to set the codec to UTF-8, and then enable UTF-16 detection.
+    This function can be used together with setEncoding(). It is common
+    to set the encoding to UTF-8, and then enable UTF-16 detection.
 
-    \sa autoDetectUnicode(), setCodec(), QTextCodec::codecForUtfText()
+    \sa autoDetectUnicode(), setEncoding()
 */
 void QTextStream::setAutoDetectUnicode(bool enabled)
 {
@@ -3235,7 +3195,7 @@ void QTextStream::setAutoDetectUnicode(bool enabled)
     Returns \c true if automatic Unicode detection is enabled, otherwise
     returns \c false. Automatic Unicode detection is enabled by default.
 
-    \sa setAutoDetectUnicode(), setCodec(), QTextCodec::codecForUtfText()
+    \sa setAutoDetectUnicode(), setEncoding()
 */
 bool QTextStream::autoDetectUnicode() const
 {
@@ -3244,7 +3204,7 @@ bool QTextStream::autoDetectUnicode() const
 }
 
 /*!
-    If \a generate is true and a UTF codec is used, QTextStream will insert
+    If \a generate is true and a UTF encoding is used, QTextStream will insert
     the BOM (Byte Order Mark) before any data has been written to the
     device. If \a generate is false, no BOM will be inserted. This function
     must be called before any data is written. Otherwise, it does nothing.
@@ -3254,14 +3214,16 @@ bool QTextStream::autoDetectUnicode() const
 void QTextStream::setGenerateByteOrderMark(bool generate)
 {
     Q_D(QTextStream);
-    if (d->writeBuffer.isEmpty()) {
-        d->writeConverterState.flags.setFlag(QTextCodec::IgnoreHeader, !generate);
-    }
+    if (d->hasWrittenData || d->generateBOM == generate)
+        return;
+
+    d->generateBOM = generate;
+    d->fromUtf16 = QStringEncoder(d->encoding, generate ? QStringConverter::Flag::WriteBom : QStringConverter::Flag::Default);
 }
 
 /*!
     Returns \c true if QTextStream is set to generate the UTF BOM (Byte Order
-    Mark) when using a UTF codec; otherwise returns \c false. UTF BOM generation is
+    Mark) when using a UTF encoding; otherwise returns \c false. UTF BOM generation is
     set to false by default.
 
     \sa setGenerateByteOrderMark()
@@ -3269,10 +3231,8 @@ void QTextStream::setGenerateByteOrderMark(bool generate)
 bool QTextStream::generateByteOrderMark() const
 {
     Q_D(const QTextStream);
-    return (d->writeConverterState.flags & QTextCodec::IgnoreHeader) == 0;
+    return d->generateBOM;
 }
-
-#endif
 
 /*!
     \since 4.5
@@ -3337,9 +3297,7 @@ QTextStream &reset(QTextStream &s) { return Qt::reset(s); }
 
 QTextStream &ws(QTextStream &s) { return Qt::ws(s); }
 
-#if QT_CONFIG(textcodec)
 QTextStream &bom(QTextStream &s) { return Qt::bom(s); }
-#endif
 } // namespace QTextStreamFunctions
 #endif
 
@@ -3375,9 +3333,7 @@ Q_CORE_EXPORT QTextStream &reset(QTextStream &s) { return Qt::reset(s); }
 
 Q_CORE_EXPORT QTextStream &ws(QTextStream &s) { return Qt::ws(s); }
 
-#if QT_CONFIG(textcodec)
 Q_CORE_EXPORT QTextStream &bom(QTextStream &s) { return Qt::bom(s); }
-#endif
 #endif
 
 QT_END_NAMESPACE

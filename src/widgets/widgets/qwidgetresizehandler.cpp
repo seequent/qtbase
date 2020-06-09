@@ -41,7 +41,6 @@
 
 #include "qframe.h"
 #include "qapplication.h"
-#include "qdesktopwidget.h"
 #include <private/qdesktopwidget_p.h>
 #include "qcursor.h"
 #if QT_CONFIG(sizegrip)
@@ -111,7 +110,7 @@ bool QWidgetResizeHandler::eventFilter(QObject *o, QEvent *ee)
         if (w->isMaximized())
             break;
         const QRect widgetRect = widget->rect().marginsAdded(QMargins(range, range, range, range));
-        const QPoint cursorPoint = widget->mapFromGlobal(e->globalPos());
+        const QPoint cursorPoint = widget->mapFromGlobal(e->globalPosition().toPoint());
         if (!widgetRect.contains(cursorPoint))
             return false;
         if (e->button() == Qt::LeftButton) {
@@ -119,7 +118,7 @@ bool QWidgetResizeHandler::eventFilter(QObject *o, QEvent *ee)
             emit activate();
             mouseMoveEvent(e);
             buttonDown = true;
-            moveOffset = widget->mapFromGlobal(e->globalPos());
+            moveOffset = widget->mapFromGlobal(e->globalPosition().toPoint());
             invertedMoveOffset = widget->rect().bottomRight() - moveOffset;
             if (mode != Center)
                 return true;
@@ -165,7 +164,7 @@ bool QWidgetResizeHandler::eventFilter(QObject *o, QEvent *ee)
 
 void QWidgetResizeHandler::mouseMoveEvent(QMouseEvent *e)
 {
-    QPoint pos = widget->mapFromGlobal(e->globalPos());
+    QPoint pos = widget->mapFromGlobal(e->globalPosition().toPoint());
     if (!active && !buttonDown) {
         if (pos.y() <= range && pos.x() <= range)
             mode = TopLeft;
@@ -204,7 +203,7 @@ void QWidgetResizeHandler::mouseMoveEvent(QMouseEvent *e)
 
 
     QPoint globalPos = (!widget->isWindow() && widget->parentWidget()) ?
-                       widget->parentWidget()->mapFromGlobal(e->globalPos()) : e->globalPos();
+                       widget->parentWidget()->mapFromGlobal(e->globalPosition().toPoint()) : e->globalPosition().toPoint();
     if (!widget->isWindow() && !widget->parentWidget()->rect().contains(globalPos)) {
         if (globalPos.x() < 0)
             globalPos.rx() = 0;
@@ -221,7 +220,7 @@ void QWidgetResizeHandler::mouseMoveEvent(QMouseEvent *e)
 
     // Workaround for window managers which refuse to move a tool window partially offscreen.
     if (QGuiApplication::platformName() == QLatin1String("xcb")) {
-        const QRect desktop = QDesktopWidgetPrivate::availableGeometry(widget);
+        const QRect desktop = QWidgetPrivate::availableScreenGeometry(widget);
         pp.rx() = qMax(pp.x(), desktop.left());
         pp.ry() = qMax(pp.y(), desktop.top());
         p.rx() = qMin(p.x(), desktop.right());
@@ -336,7 +335,7 @@ void QWidgetResizeHandler::keyPressEvent(QKeyEvent * e)
     switch (e->key()) {
     case Qt::Key_Left:
         pos.rx() -= delta;
-        if (pos.x() <= QDesktopWidgetPrivate::geometry().left()) {
+        if (pos.x() <= QGuiApplication::primaryScreen()->virtualGeometry().left()) {
             if (mode == TopLeft || mode == BottomLeft) {
                 moveOffset.rx() += delta;
                 invertedMoveOffset.rx() += delta;
@@ -361,7 +360,7 @@ void QWidgetResizeHandler::keyPressEvent(QKeyEvent * e)
         break;
     case Qt::Key_Right:
         pos.rx() += delta;
-        if (pos.x() >= QDesktopWidgetPrivate::geometry().right()) {
+        if (pos.x() >= QGuiApplication::primaryScreen()->virtualGeometry().right()) {
             if (mode == TopRight || mode == BottomRight) {
                 moveOffset.rx() += delta;
                 invertedMoveOffset.rx() += delta;
@@ -386,7 +385,7 @@ void QWidgetResizeHandler::keyPressEvent(QKeyEvent * e)
         break;
     case Qt::Key_Up:
         pos.ry() -= delta;
-        if (pos.y() <= QDesktopWidgetPrivate::geometry().top()) {
+        if (pos.y() <= QGuiApplication::primaryScreen()->virtualGeometry().top()) {
             if (mode == TopLeft || mode == TopRight) {
                 moveOffset.ry() += delta;
                 invertedMoveOffset.ry() += delta;
@@ -411,7 +410,7 @@ void QWidgetResizeHandler::keyPressEvent(QKeyEvent * e)
         break;
     case Qt::Key_Down:
         pos.ry() += delta;
-        if (pos.y() >= QDesktopWidgetPrivate::geometry().bottom()) {
+        if (pos.y() >= QGuiApplication::primaryScreen()->virtualGeometry().bottom()) {
             if (mode == BottomLeft || mode == BottomRight) {
                 moveOffset.ry() += delta;
                 invertedMoveOffset.ry() += delta;

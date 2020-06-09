@@ -40,7 +40,6 @@
 #include "qcolordialog.h"
 
 #include "qapplication.h"
-#include "qdesktopwidget.h"
 #include <private/qdesktopwidget_p.h>
 #include "qdrawutil.h"
 #include "qevent.h"
@@ -382,7 +381,7 @@ void QWellArray::paintCellContents(QPainter *p, int row, int col, const QRect &r
 void QWellArray::mousePressEvent(QMouseEvent *e)
 {
     // The current cell marker is set to the cell the mouse is pressed in
-    QPoint pos = e->pos();
+    QPoint pos = e->position().toPoint();
     setCurrent(rowAt(pos.y()), columnAt(pos.x()));
 }
 
@@ -626,7 +625,7 @@ void QColorWell::mousePressEvent(QMouseEvent *e)
     oldCurrent = QPoint(selectedRow(), selectedColumn());
     QWellArray::mousePressEvent(e);
     mousePressed = true;
-    pressPos = e->pos();
+    pressPos = e->position().toPoint();
 }
 
 void QColorWell::mouseMoveEvent(QMouseEvent *e)
@@ -635,7 +634,7 @@ void QColorWell::mouseMoveEvent(QMouseEvent *e)
 #if QT_CONFIG(draganddrop)
     if (!mousePressed)
         return;
-    if ((pressPos - e->pos()).manhattanLength() > QApplication::startDragDistance()) {
+    if ((pressPos - e->position().toPoint()).manhattanLength() > QApplication::startDragDistance()) {
         setCurrent(oldCurrent.x(), oldCurrent.y());
         int i = rowAt(pressPos.y()) + columnAt(pressPos.x()) * numRows();
         QColor col(values[i]);
@@ -673,7 +672,7 @@ void QColorWell::dragLeaveEvent(QDragLeaveEvent *)
 void QColorWell::dragMoveEvent(QDragMoveEvent *e)
 {
     if (qvariant_cast<QColor>(e->mimeData()->colorData()).isValid()) {
-        setCurrent(rowAt(e->pos().y()), columnAt(e->pos().x()));
+        setCurrent(rowAt(e->position().toPoint().y()), columnAt(e->position().toPoint().x()));
         e->accept();
     } else {
         e->ignore();
@@ -684,7 +683,7 @@ void QColorWell::dropEvent(QDropEvent *e)
 {
     QColor col = qvariant_cast<QColor>(e->mimeData()->colorData());
     if (col.isValid()) {
-        int i = rowAt(e->pos().y()) + columnAt(e->pos().x()) * numRows();
+        int i = rowAt(e->position().toPoint().y()) + columnAt(e->position().toPoint().x()) * numRows();
         emit colorChanged(i, col.rgb());
         e->accept();
     } else {
@@ -799,11 +798,11 @@ QColorLuminancePicker::~QColorLuminancePicker()
 
 void QColorLuminancePicker::mouseMoveEvent(QMouseEvent *m)
 {
-    setVal(y2val(m->y()));
+    setVal(y2val(m->position().toPoint().y()));
 }
 void QColorLuminancePicker::mousePressEvent(QMouseEvent *m)
 {
-    setVal(y2val(m->y()));
+    setVal(y2val(m->position().toPoint().y()));
 }
 
 void QColorLuminancePicker::setVal(int v)
@@ -932,14 +931,14 @@ void QColorPicker::setCol(int h, int s)
 
 void QColorPicker::mouseMoveEvent(QMouseEvent *m)
 {
-    QPoint p = m->pos() - contentsRect().topLeft();
+    QPoint p = m->position().toPoint() - contentsRect().topLeft();
     setCol(p);
     emit newCol(hue, sat);
 }
 
 void QColorPicker::mousePressEvent(QMouseEvent *m)
 {
-    QPoint p = m->pos() - contentsRect().topLeft();
+    QPoint p = m->position().toPoint() - contentsRect().topLeft();
     setCol(p);
     emit newCol(hue, sat);
 }
@@ -1113,7 +1112,7 @@ inline bool QColorShower::isAlphaVisible() const
 void QColorShowLabel::mousePressEvent(QMouseEvent *e)
 {
     mousePressed = true;
-    pressPos = e->pos();
+    pressPos = e->position().toPoint();
 }
 
 void QColorShowLabel::mouseMoveEvent(QMouseEvent *e)
@@ -1123,7 +1122,7 @@ void QColorShowLabel::mouseMoveEvent(QMouseEvent *e)
 #else
     if (!mousePressed)
         return;
-    if ((pressPos - e->pos()).manhattanLength() > QApplication::startDragDistance()) {
+    if ((pressPos - e->position().toPoint()).manhattanLength() > QApplication::startDragDistance()) {
         QMimeData *mime = new QMimeData;
         mime->setColorData(col);
         QPixmap pix(30, 20);
@@ -1565,7 +1564,7 @@ bool QColorDialogPrivate::selectColor(const QColor &col)
 
 QColor QColorDialogPrivate::grabScreenColor(const QPoint &p)
 {
-    const QDesktopWidget *desktop = QApplication::desktop();
+    const QWidget *desktop = QApplication::desktop();
     const QPixmap pixmap = QGuiApplication::primaryScreen()->grabWindow(desktop->winId(), p.x(), p.y(), 1, 1);
     QImage i = pixmap.toImage();
     return i.pixel(0, 0);
@@ -1616,7 +1615,7 @@ void QColorDialogPrivate::_q_pickScreenColor()
     q->grabMouse();
 #endif
 
-#ifdef Q_OS_WIN32 // excludes WinRT
+#ifdef Q_OS_WIN32
     // On Windows mouse tracking doesn't work over other processes's windows
     updateTimer->start(30);
 
@@ -1706,7 +1705,7 @@ void QColorDialogPrivate::initWidgets()
 #else
     // small displays (e.g. PDAs) cannot fit the full color dialog,
     // so just use the color picker.
-    smallDisplay = (QDesktopWidgetPrivate::width() < 480 || QDesktopWidgetPrivate::height() < 350);
+    smallDisplay = (QGuiApplication::primaryScreen()->virtualGeometry().width() < 480 || QGuiApplication::primaryScreen()->virtualGeometry().height() < 350);
     const int lumSpace = topLay->spacing() / 2;
 #endif
 
@@ -2219,15 +2218,15 @@ void QColorDialogPrivate::updateColorPicking(const QPoint &globalPos)
 bool QColorDialogPrivate::handleColorPickingMouseMove(QMouseEvent *e)
 {
     // If the cross is visible the grabbed color will be black most of the times
-    cp->setCrossVisible(!cp->geometry().contains(e->pos()));
+    cp->setCrossVisible(!cp->geometry().contains(e->position().toPoint()));
 
-    updateColorPicking(e->globalPos());
+    updateColorPicking(e->globalPosition().toPoint());
     return true;
 }
 
 bool QColorDialogPrivate::handleColorPickingMouseButtonRelease(QMouseEvent *e)
 {
-    setCurrentColor(grabScreenColor(e->globalPos()), SetColorAll);
+    setCurrentColor(grabScreenColor(e->globalPosition().toPoint()), SetColorAll);
     releaseColorPicking();
     return true;
 }

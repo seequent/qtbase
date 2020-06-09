@@ -37,7 +37,6 @@
 #include <qstyle.h>
 #include <QVBoxLayout>
 #include <QSizeGrip>
-#include <QDesktopWidget>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsView>
 #include <QWindow>
@@ -307,10 +306,6 @@ void tst_QDialog::showAsTool()
     testWidget.activateWindow();
     QVERIFY(QTest::qWaitForWindowActive(&testWidget));
     dialog.exec();
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "As winrt does not support child widgets, the dialog is being activated"
-                 "together with the main widget.", Continue);
-#endif
     if (testWidget.style()->styleHint(QStyle::SH_Widget_ShareActivation, 0, &testWidget)) {
         QCOMPARE(dialog.wasActive(), true);
     } else {
@@ -468,8 +463,7 @@ void tst_QDialog::snapToDefaultButton()
 #ifdef QT_NO_CURSOR
     QSKIP("Test relies on there being a cursor");
 #else
-    if (!QGuiApplication::platformName().compare(QLatin1String("wayland"), Qt::CaseInsensitive)
-        || !QGuiApplication::platformName().compare(QLatin1String("winrt"), Qt::CaseInsensitive))
+    if (!QGuiApplication::platformName().compare(QLatin1String("wayland"), Qt::CaseInsensitive))
         QSKIP("This platform does not support setting the cursor position.");
 
     const QRect dialogGeometry(QGuiApplication::primaryScreen()->availableGeometry().topLeft()

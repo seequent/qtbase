@@ -37,6 +37,8 @@
 **
 ****************************************************************************/
 
+#include <AppKit/AppKit.h>
+
 #include "qcocoaintegration.h"
 
 #include "qcocoawindow.h"
@@ -66,18 +68,7 @@
 
 #include <QtGui/private/qcoregraphics_p.h>
 
-#include <QtFontDatabaseSupport/private/qfontengine_coretext_p.h>
-
-#if QT_CONFIG(opengl)
-#include <QtPlatformCompositorSupport/qpa/qplatformbackingstoreopenglsupport.h>
-#endif
-
-#ifdef QT_WIDGETS_LIB
-#include <QtWidgets/qtwidgetsglobal.h>
-#if QT_CONFIG(filedialog)
-#include "qcocoafiledialoghelper.h"
-#endif
-#endif
+#include <QtGui/private/qfontengine_coretext_p.h>
 
 #include <IOKit/graphics/IOGraphicsLib.h>
 
@@ -189,7 +180,6 @@ QCocoaIntegration::QCocoaIntegration(const QStringList &paramList)
         }
     }
 
-    // ### For AA_MacPluginApplication we don't want to load the menu nib.
     // Qt 4 also does not set the application delegate, so that behavior
     // is matched here.
     if (!QCoreApplication::testAttribute(Qt::AA_PluginApplication)) {
@@ -334,9 +324,6 @@ QPlatformBackingStore *QCocoaIntegration::createPlatformBackingStore(QWindow *wi
     else
         backingStore = new QNSWindowBackingStore(window);
 
-#if QT_CONFIG(opengl)
-    backingStore->setOpenGLSupport(new QPlatformBackingStoreOpenGLSupport(backingStore));
-#endif
     return backingStore;
 }
 
@@ -482,7 +469,9 @@ QList<QCocoaWindow *> *QCocoaIntegration::popupWindowStack()
 
 void QCocoaIntegration::setApplicationIcon(const QIcon &icon) const
 {
-    NSApp.applicationIconImage = [NSImage imageFromQIcon:icon];
+    // Fall back to a size that looks good on the highest resolution screen available
+    auto fallbackSize = NSApp.dockTile.size.width * qGuiApp->devicePixelRatio();
+    NSApp.applicationIconImage = [NSImage imageFromQIcon:icon withSize:fallbackSize];
 }
 
 void QCocoaIntegration::beep() const
@@ -530,6 +519,6 @@ void QCocoaIntegration::focusWindowChanged(QWindow *focusWindow)
     setApplicationIcon(focusWindow->icon());
 }
 
-#include "moc_qcocoaintegration.cpp"
-
 QT_END_NAMESPACE
+
+#include "moc_qcocoaintegration.cpp"

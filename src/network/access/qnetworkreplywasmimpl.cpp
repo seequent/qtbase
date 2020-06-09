@@ -221,7 +221,7 @@ void QNetworkReplyWasmImplPrivate::doSendRequest()
     if (headersData.count() > 0) {
         const char* customHeaders[arrayLength];
         int i = 0;
-        for (i; i < headersData.count() * 2; (i = i + 2)) {
+        for (i; i < headersData.count(); i++) {
             customHeaders[i] = headersData[i].constData();
             customHeaders[i + 1] = request.rawHeader(headersData[i]).constData();
         }
@@ -245,7 +245,7 @@ void QNetworkReplyWasmImplPrivate::doSendRequest()
         attr.password = request.url().password().toUtf8();
     }
 
-    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_PERSIST_FILE | EMSCRIPTEN_FETCH_REPLACE;
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
 
     QNetworkRequest::CacheLoadControl CacheLoadControlAttribute =
         (QNetworkRequest::CacheLoadControl)request.attribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferNetwork).toInt();
@@ -281,7 +281,7 @@ void QNetworkReplyWasmImplPrivate::emitReplyError(QNetworkReply::NetworkError er
     Q_Q(QNetworkReplyWasmImpl);
 
     q->setError(errorCode, errorString);
-    emit q->error(errorCode);
+    emit q->errorOccurred(errorCode);
 
     q->setFinished(true);
     emit q->finished();
@@ -365,24 +365,28 @@ static int parseHeaderName(const QByteArray &headerName)
 }
 
 
-void QNetworkReplyWasmImplPrivate::headersReceived(const QString &bufferString)
+void QNetworkReplyWasmImplPrivate::headersReceived(const QByteArray &buffer)
 {
     Q_Q(QNetworkReplyWasmImpl);
 
-    if (!bufferString.isEmpty()) {
-        QStringList headers = bufferString.split(QString::fromUtf8("\r\n"), Qt::SkipEmptyParts);
+    if (!buffer.isEmpty()) {
+        QList<QByteArray> headers = buffer.split('\n');
+
         for (int i = 0; i < headers.size(); i++) {
-            QString headerName = headers.at(i).split(QString::fromUtf8(": ")).at(0);
-            QString headersValue = headers.at(i).split(QString::fromUtf8(": ")).at(1);
-            if (headerName.isEmpty() || headersValue.isEmpty())
-                continue;
+            if (headers.at(i).contains(':')) { // headers include final \x00, so skip
+                QByteArray headerName = headers.at(i).split(': ').at(0).trimmed();
+                QByteArray headersValue = headers.at(i).split(': ').at(1).trimmed();
 
-            int headerIndex = parseHeaderName(headerName.toLocal8Bit());
+                if (headerName.isEmpty() || headersValue.isEmpty())
+                    continue;
 
-            if (headerIndex == -1)
-                q->setRawHeader(headerName.toLocal8Bit(), headersValue.toLocal8Bit());
-            else
-                q->setHeader(static_cast<QNetworkRequest::KnownHeaders>(headerIndex), (QVariant)headersValue);
+                int headerIndex = parseHeaderName(headerName);
+
+                if (headerIndex == -1)
+                    q->setRawHeader(headerName, headersValue);
+                else
+                    q->setHeader(static_cast<QNetworkRequest::KnownHeaders>(headerIndex), (QVariant)headersValue);
+            }
         }
     }
     emit q->metaDataChanged();
@@ -450,25 +454,30 @@ void QNetworkReplyWasmImplPrivate::_q_bufferOutgoingData()
 
 void QNetworkReplyWasmImplPrivate::downloadSucceeded(emscripten_fetch_t *fetch)
 {
-    QByteArray buffer(fetch->data, fetch->numBytes);
-
     QNetworkReplyWasmImplPrivate *reply =
             reinterpret_cast<QNetworkReplyWasmImplPrivate*>(fetch->userData);
     if (reply) {
+        QByteArray buffer(fetch->data, fetch->numBytes);
         reply->dataReceived(buffer, buffer.size());
     }
+}
+
+void QNetworkReplyWasmImplPrivate::setStatusCode(int status, const QByteArray &statusText)
+{
+    Q_Q(QNetworkReplyWasmImpl);
+    q->setAttribute(QNetworkRequest::HttpStatusCodeAttribute, status);
+    q->setAttribute(QNetworkRequest::HttpReasonPhraseAttribute, statusText);
 }
 
 void QNetworkReplyWasmImplPrivate::stateChange(emscripten_fetch_t *fetch)
 {
     if (fetch->readyState == /*HEADERS_RECEIVED*/ 2) {
         size_t headerLength = emscripten_fetch_get_response_headers_length(fetch);
-        char *dst = nullptr;
-        emscripten_fetch_get_response_headers(fetch, dst, headerLength + 1);
-        std::string str = dst;
-            QNetworkReplyWasmImplPrivate *reply =
-                    reinterpret_cast<QNetworkReplyWasmImplPrivate*>(fetch->userData);
-        reply->headersReceived(QString::fromStdString(str));
+        QByteArray str(headerLength, Qt::Uninitialized);
+        emscripten_fetch_get_response_headers(fetch, str.data(), str.size());
+        QNetworkReplyWasmImplPrivate *reply =
+                reinterpret_cast<QNetworkReplyWasmImplPrivate*>(fetch->userData);
+        reply->headersReceived(str);
     }
 }
 
@@ -485,14 +494,17 @@ void QNetworkReplyWasmImplPrivate::downloadProgress(emscripten_fetch_t *fetch)
 void QNetworkReplyWasmImplPrivate::downloadFailed(emscripten_fetch_t *fetch)
 {
     QNetworkReplyWasmImplPrivate *reply = reinterpret_cast<QNetworkReplyWasmImplPrivate*>(fetch->userData);
-    Q_ASSERT(reply);
+    if (reply) {
+        QString reasonStr;
+        if (fetch->status > 600 ||  reply->state == QNetworkReplyPrivate::Aborted)
+            reasonStr = QStringLiteral("Operation canceled");
+        else
+            reasonStr = QString::fromUtf8(fetch->statusText);
 
-    QString reasonStr = QString::fromUtf8(fetch->statusText);
-
-    reply->setReplyAttributes(reinterpret_cast<quintptr>(fetch->userData), fetch->status, reasonStr);
-
-    if (fetch->status >= 400 && !reasonStr.isEmpty())
+        QByteArray statusText(fetch->statusText);
+        reply->setStatusCode(fetch->status, statusText);
         reply->emitReplyError(reply->statusCodeFromHttp(fetch->status, reply->request.url()), reasonStr);
+    }
 
     if (fetch->status >= 400)
         emscripten_fetch_close(fetch); // Also free data on failure.

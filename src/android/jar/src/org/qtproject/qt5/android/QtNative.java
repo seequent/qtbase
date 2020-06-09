@@ -159,6 +159,11 @@ public class QtNative
         }
     }
 
+    public static String[] getStringArray(String joinedString)
+    {
+        return joinedString.split(",");
+    }
+
     private static Uri getUriWithValidPermission(Context context, String uri, String openMode)
     {
         try {
@@ -842,6 +847,8 @@ public class QtNative
 
     private static void clearClipData()
     {
+        if (Build.VERSION.SDK_INT >= 28 && m_clipboardManager != null && m_usePrimaryClip)
+            m_clipboardManager.clearPrimaryClip();
         m_usePrimaryClip = false;
     }
     private static void setClipboardText(String text)

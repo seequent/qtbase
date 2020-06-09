@@ -1,3 +1,4 @@
+
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
@@ -69,6 +70,29 @@ private slots:
     void validityCheck_data();
     void validityCheck();
     void escapeSequences();
+
+    void splitString_data();
+    void splitString();
+
+    void countIn();
+    void containedIn();
+
+    void replaceIn_data();
+    void replaceIn();
+    void removeIn_data();
+    void removeIn();
+
+    void filterList();
+    void replaceInList();
+
+    void datastream_data();
+    void datastream();
+
+    void datastream2();
+
+private:
+    void readQRegExp(QDataStream *s);
+    void writeQRegExp(QDataStream* dev);
 };
 
 // Testing get/set functions
@@ -881,19 +905,19 @@ void tst_QRegExp::testInvalidWildcard(){
 void tst_QRegExp::caretAnchoredOptimization()
 {
     QString s = "---babnana----";
-    s.replace( QRegExp("^-*|(-*)$"), "" );
+    s = QRegExp("^-*|(-*)$").replaceIn(s, "" );
     QCOMPARE(s, QLatin1String("babnana"));
 
     s = "---babnana----";
-    s.replace( QRegExp("^-*|(-{0,})$"), "" );
+    s = QRegExp("^-*|(-{0,})$").replaceIn(s, "" );
     QCOMPARE(s, QLatin1String("babnana"));
 
     s = "---babnana----";
-    s.replace( QRegExp("^-*|(-{1,})$"), "" );
+    s = QRegExp("^-*|(-{1,})$").replaceIn(s, "" );
     QCOMPARE(s, QLatin1String("babnana"));
 
     s = "---babnana----";
-    s.replace( QRegExp("^-*|(-+)$"), "" );
+    s = QRegExp("^-*|(-+)$").replaceIn(s, "" );
     QCOMPARE(s, QLatin1String("babnana"));
 }
 
@@ -1379,6 +1403,322 @@ void tst_QRegExp::escapeSequences()
             }
         }
     }
+}
+
+void tst_QRegExp::splitString_data()
+{
+    QTest::addColumn<QString>("string");
+    QTest::addColumn<QString>("pattern");
+    QTest::addColumn<QStringList>("result");
+
+    QTest::newRow("data01") << "Some  text\n\twith  strange whitespace."
+                            << "\\s+"
+                            << (QStringList() << "Some" << "text" << "with" << "strange" << "whitespace." );
+
+    QTest::newRow("data02") << "This time, a normal English sentence."
+                            << "\\W+"
+                            << (QStringList() << "This" << "time" << "a" << "normal" << "English" << "sentence" << "");
+
+    QTest::newRow("data03") << "Now: this sentence fragment."
+                            << "\\b"
+                            << (QStringList() << "" << "Now" << ": " << "this" << " " << "sentence" << " " << "fragment" << ".");
+}
+
+void tst_QRegExp::splitString()
+{
+    QFETCH(QString, string);
+    QFETCH(QString, pattern);
+    QFETCH(QStringList, result);
+    QStringList list = QRegExp(pattern).splitString(string);
+    QVERIFY(list == result);
+
+    QVERIFY(list == result);
+
+    result.removeAll(QString());
+
+    list = QRegExp(pattern).splitString(string, Qt::SkipEmptyParts);
+    QVERIFY(list == result);
+}
+
+void tst_QRegExp::countIn()
+{
+    QString a;
+    a="ABCDEFGHIEfGEFG"; // 15 chars
+    QCOMPARE(QRegExp("[FG][HI]").countIn(a),1);
+    QCOMPARE(QRegExp("[G][HE]").countIn(a),2);
+}
+
+
+void tst_QRegExp::containedIn()
+{
+    QString a;
+    a="ABCDEFGHIEfGEFG"; // 15 chars
+    QVERIFY(QRegExp("[FG][HI]").containedIn(a));
+    QVERIFY(QRegExp("[G][HE]").containedIn(a));
+}
+
+void tst_QRegExp::replaceIn_data()
+{
+    QTest::addColumn<QString>("string" );
+    QTest::addColumn<QString>("regexp" );
+    QTest::addColumn<QString>("after" );
+    QTest::addColumn<QString>("result" );
+
+    QTest::newRow( "rem00" ) << QString("alpha") << QString("a+") << QString("") << QString("lph");
+    QTest::newRow( "rem01" ) << QString("banana") << QString("^.a") << QString("") << QString("nana");
+    QTest::newRow( "rem02" ) << QString("") << QString("^.a") << QString("") << QString("");
+    QTest::newRow( "rem03" ) << QString("") << QString("^.a") << QString() << QString("");
+    QTest::newRow( "rem04" ) << QString() << QString("^.a") << QString("") << QString();
+    QTest::newRow( "rem05" ) << QString() << QString("^.a") << QString() << QString();
+
+    QTest::newRow( "rep00" ) << QString("A <i>bon mot</i>.") << QString("<i>([^<]*)</i>") << QString("\\emph{\\1}") << QString("A \\emph{bon mot}.");
+    QTest::newRow( "rep01" ) << QString("banana") << QString("^.a()") << QString("\\1") << QString("nana");
+    QTest::newRow( "rep02" ) << QString("banana") << QString("(ba)") << QString("\\1X\\1") << QString("baXbanana");
+    QTest::newRow( "rep03" ) << QString("banana") << QString("(ba)(na)na") << QString("\\2X\\1") << QString("naXba");
+
+    QTest::newRow("backref00") << QString("\\1\\2\\3\\4\\5\\6\\7\\8\\9\\A\\10\\11") << QString("\\\\[34]")
+                               << QString("X") << QString("\\1\\2XX\\5\\6\\7\\8\\9\\A\\10\\11");
+    QTest::newRow("backref01") << QString("foo") << QString("[fo]") << QString("\\1") << QString("\\1\\1\\1");
+    QTest::newRow("backref02") << QString("foo") << QString("([fo])") << QString("(\\1)") << QString("(f)(o)(o)");
+    QTest::newRow("backref03") << QString("foo") << QString("([fo])") << QString("\\2") << QString("\\2\\2\\2");
+    QTest::newRow("backref04") << QString("foo") << QString("([fo])") << QString("\\10") << QString("f0o0o0");
+    QTest::newRow("backref05") << QString("foo") << QString("([fo])") << QString("\\11") << QString("f1o1o1");
+    QTest::newRow("backref06") << QString("foo") << QString("([fo])") << QString("\\19") << QString("f9o9o9");
+    QTest::newRow("backref07") << QString("foo") << QString("(f)(o+)")
+                               << QString("\\2\\1\\10\\20\\11\\22\\19\\29\\3")
+                               << QString("ooff0oo0f1oo2f9oo9\\3");
+    QTest::newRow("backref08") << QString("abc") << QString("(((((((((((((([abc]))))))))))))))")
+                               << QString("{\\14}") << QString("{a}{b}{c}");
+    QTest::newRow("backref09") << QString("abcdefghijklmn")
+                               << QString("(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)(l)(m)(n)")
+                               << QString("\\19\\18\\17\\16\\15\\14\\13\\12\\11\\10"
+                                          "\\9\\90\\8\\80\\7\\70\\6\\60\\5\\50\\4\\40\\3\\30\\2\\20\\1")
+                               << QString("a9a8a7a6a5nmlkjii0hh0gg0ff0ee0dd0cc0bb0a");
+    QTest::newRow("backref10") << QString("abc") << QString("((((((((((((((abc))))))))))))))")
+                               << QString("\\0\\01\\011") << QString("\\0\\01\\011");
+    QTest::newRow("invalid") << QString("") << QString("invalid regex\\") << QString("") << QString("");
+}
+
+void tst_QRegExp::replaceIn()
+{
+    QFETCH( QString, string );
+    QFETCH( QString, regexp );
+    QFETCH( QString, after );
+
+    QString s2 = string;
+    s2 = QRegExp(regexp).replaceIn(s2, after);
+    QTEST( s2, "result" );
+    s2 = string;
+}
+
+void tst_QRegExp::removeIn_data()
+{
+    replaceIn_data();
+}
+
+void tst_QRegExp::removeIn()
+{
+    QFETCH( QString, string );
+    QFETCH( QString, regexp );
+    QFETCH( QString, after );
+
+    if ( after.length() == 0 ) {
+        QString s2 = string;
+        s2 = QRegExp(regexp).removeIn(s2);
+        QTEST( s2, "result" );
+    } else {
+        QCOMPARE( 0, 0 ); // shut Qt Test
+    }
+}
+
+void tst_QRegExp::filterList()
+{
+    QStringList list3, list4;
+    list3 << "Bill Gates" << "Joe Blow" << "Bill Clinton";
+    list3 = QRegExp("[i]ll") .filterList(list3);
+    list4 << "Bill Gates" << "Bill Clinton";
+    QCOMPARE( list3, list4 );
+}
+
+void tst_QRegExp::replaceInList()
+{
+    QStringList list3, list4;
+    list3 << "alpha" << "beta" << "gamma" << "epsilon";
+    list3 = QRegExp("^a").replaceIn(list3, "o");
+    list4 << "olpha" << "beta" << "gamma" << "epsilon";
+    QCOMPARE( list3, list4 );
+
+    QStringList list5, list6;
+    list5 << "Bill Clinton" << "Gates, Bill";
+    list6 << "Bill Clinton" << "Bill Gates";
+    list5 = QRegExp("^(.*), (.*)$").replaceIn(list5, "\\2 \\1");
+    QCOMPARE( list5, list6 );
+}
+
+static QRegExp QRegExpData(int index)
+{
+    switch (index) {
+    case 0: return QRegExp();
+    case 1: return QRegExp("");
+    case 2: return QRegExp("A", Qt::CaseInsensitive);
+    case 3: return QRegExp("ABCDE FGHI", Qt::CaseSensitive, QRegExp::Wildcard);
+    case 4: return QRegExp("This is a long string", Qt::CaseInsensitive, QRegExp::FixedString);
+    case 5: return QRegExp("And again a string with a \nCRLF", Qt::CaseInsensitive, QRegExp::RegExp);
+    case 6:
+        {
+            QRegExp rx("abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRESTUVWXYZ 1234567890 ~`!@#$%^&*()_-+={[}]|\\:;\"'<,>.?/");
+            rx.setMinimal(true);
+            return rx;
+        }
+    }
+    return QRegExp("foo");
+}
+#define MAX_QREGEXP_DATA 7
+
+void tst_QRegExp::datastream_data()
+{
+    QTest::addColumn<QString>("device");
+    QTest::addColumn<QString>("byteOrder");
+
+    const char * const devices[] = {
+        "file",
+        "bytearray",
+        "buffer",
+        0
+    };
+    for (int d=0; devices[d] != 0; d++) {
+        QString device = devices[d];
+        for (int b=0; b<2; b++) {
+            QString byte_order = b == 0 ? "BigEndian" : "LittleEndian";
+
+            QString tag = device + QLatin1Char('_') + byte_order;
+            for (int e = 0; e < MAX_QREGEXP_DATA; e++) {
+                QTest::newRow(qPrintable(tag + QLatin1Char('_') + QString::number(e))) << device << byte_order;
+            }
+        }
+    }
+}
+
+static int dataIndex(const QString &tag)
+{
+    int pos = tag.lastIndexOf(QLatin1Char('_'));
+    if (pos >= 0) {
+        int ret = 0;
+        QString count = tag.mid(pos + 1);
+        bool ok;
+        ret = count.toInt(&ok);
+        if (ok)
+            return ret;
+    }
+    return -1;
+}
+
+void tst_QRegExp::datastream()
+{
+    QFETCH(QString, device); \
+
+    qRegisterMetaTypeStreamOperators<QRegExp>("QRegExp");
+
+    if (device == "bytearray") { \
+        QByteArray ba; \
+        QDataStream sout(&ba, QIODevice::WriteOnly); \
+        writeQRegExp(&sout); \
+        QDataStream sin(&ba, QIODevice::ReadOnly); \
+        readQRegExp(&sin); \
+    } else if (device == "file") { \
+        QString fileName = "qdatastream.out"; \
+        QFile fOut(fileName); \
+        QVERIFY(fOut.open(QIODevice::WriteOnly)); \
+        QDataStream sout(&fOut); \
+        writeQRegExp(&sout); \
+        fOut.close(); \
+        QFile fIn(fileName); \
+        QVERIFY(fIn.open(QIODevice::ReadOnly)); \
+        QDataStream sin(&fIn); \
+        readQRegExp(&sin); \
+        fIn.close(); \
+    } else if (device == "buffer") { \
+        QByteArray ba(10000, '\0'); \
+        QBuffer bOut(&ba); \
+        bOut.open(QIODevice::WriteOnly); \
+        QDataStream sout(&bOut); \
+        writeQRegExp(&sout); \
+        bOut.close(); \
+        QBuffer bIn(&ba); \
+        bIn.open(QIODevice::ReadOnly); \
+        QDataStream sin(&bIn); \
+        readQRegExp(&sin); \
+        bIn.close(); \
+    }
+}
+
+static void saveQVariantFromDataStream(const QString &fileName, QDataStream::Version version)
+{
+
+    QFile file(fileName);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QDataStream dataFileStream(&file);
+
+    QString typeName;
+    dataFileStream >> typeName;
+    QByteArray data = file.readAll();
+    const int id = QMetaType::type(typeName.toLatin1());
+
+    QBuffer buffer;
+    buffer.open(QIODevice::ReadWrite);
+    QDataStream stream(&buffer);
+    stream.setVersion(version);
+
+    QVariant constructedVariant(static_cast<QVariant::Type>(id));
+    QCOMPARE(constructedVariant.userType(), id);
+    stream << constructedVariant;
+
+    // We are testing QVariant there is no point in testing full array.
+    QCOMPARE(buffer.data().left(5), data.left(5));
+
+    buffer.seek(0);
+    QVariant recunstructedVariant;
+    stream >> recunstructedVariant;
+    QCOMPARE(recunstructedVariant.userType(), constructedVariant.userType());
+}
+
+void tst_QRegExp::datastream2()
+{
+    saveQVariantFromDataStream(QLatin1String(":/data/qdatastream_4.9.bin"), QDataStream::Qt_4_9);
+    saveQVariantFromDataStream(QLatin1String(":/data/qdatastream_5.0.bin"), QDataStream::Qt_5_0);
+}
+
+void tst_QRegExp::writeQRegExp(QDataStream* s)
+{
+    QRegExp test(QRegExpData(dataIndex(QTest::currentDataTag())));
+    *s << test;
+    *s << QString("Her er det noe tekst");
+    *s << test;
+    *s << QString("nonempty");
+    *s << test;
+    *s << QVariant(test);
+}
+
+void tst_QRegExp::readQRegExp(QDataStream *s)
+{
+    QRegExp R;
+    QString S;
+    QVariant V;
+    QRegExp test(QRegExpData(dataIndex(QTest::currentDataTag())));
+
+    *s >> R;
+    QCOMPARE(R, test);
+    *s >> S;
+    QCOMPARE(S, QString("Her er det noe tekst"));
+    *s >> R;
+    QCOMPARE(R, test);
+    *s >> S;
+    QCOMPARE(S, QString("nonempty"));
+    *s >> R;
+    QCOMPARE(R, test);
+    *s >> V;
+    QCOMPARE(V.userType(), qMetaTypeId<QRegExp>());
+    QCOMPARE(qvariant_cast<QRegExp>(V), test);
 }
 
 

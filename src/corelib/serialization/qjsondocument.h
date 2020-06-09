@@ -74,8 +74,8 @@ struct Q_CORE_EXPORT QJsonParseError
 
     QString    errorString() const;
 
-    int        offset;
-    ParseError error;
+    int        offset = -1;
+    ParseError error = NoError;
 };
 
 class QJsonDocumentPrivate;
@@ -172,7 +172,7 @@ private:
     std::unique_ptr<QJsonDocumentPrivate> d;
 };
 
-Q_DECLARE_SHARED_NOT_MOVABLE_UNTIL_QT6(QJsonDocument)
+Q_DECLARE_SHARED(QJsonDocument)
 
 #if !defined(QT_NO_DEBUG_STREAM) && !defined(QT_JSON_READONLY)
 Q_CORE_EXPORT QDebug operator<<(QDebug, const QJsonDocument &);

@@ -39,10 +39,8 @@
 
 #include "qxml.h"
 #include "qxml_p.h"
-#if QT_CONFIG(textcodec)
-#include "qtextcodec.h"
-#endif
 #include "qbuffer.h"
+#include "qstringconverter.h"
 #if QT_CONFIG(regularexpression)
 #include "qregularexpression.h"
 #endif
@@ -246,9 +244,7 @@ public:
     int pos;
     int length;
     bool nextReturnedEndOfData;
-#if QT_CONFIG(textcodec)
-    QTextDecoder *encMapper;
-#endif
+    QStringDecoder toUnicode;
 
     QByteArray encodingDeclBytes;
     QString encodingDeclChars;
@@ -1077,8 +1073,8 @@ void QXmlAttributes::append(const QString &qName, const QString &uri, const QStr
 */
 
 // the following two are guaranteed not to be a character
-const ushort QXmlInputSource::EndOfData = 0xfffe;
-const ushort QXmlInputSource::EndOfDocument = 0xffff;
+const char16_t QXmlInputSource::EndOfData = 0xfffe;
+const char16_t QXmlInputSource::EndOfDocument = 0xffff;
 
 /*
     Common part of the constructors.
@@ -1092,9 +1088,6 @@ void QXmlInputSource::init()
         d->inputStream = nullptr;
 
         setData(QString());
-#if QT_CONFIG(textcodec)
-        d->encMapper = nullptr;
-#endif
         d->nextReturnedEndOfData = true; // first call to next() will call fetchData()
 
         d->encodingDeclBytes.clear();
@@ -1138,9 +1131,6 @@ QXmlInputSource::QXmlInputSource(QIODevice *dev)
 QXmlInputSource::~QXmlInputSource()
 {
     // ### close the input device.
-#if QT_CONFIG(textcodec)
-    delete d->encMapper;
-#endif
     delete d;
 }
 
@@ -1170,20 +1160,20 @@ QChar QXmlInputSource::next()
             d->nextReturnedEndOfData = false;
             fetchData();
             if (d->pos >= d->length) {
-                return QChar(EndOfDocument);
+                return EndOfDocument;
             }
             return next();
         }
         d->nextReturnedEndOfData = true;
-        return QChar(EndOfData);
+        return EndOfData;
     }
 
     // QXmlInputSource has no way to signal encoding errors. The best we can do
     // is return EndOfDocument. We do *not* return EndOfData, because the reader
     // will then just call this function again to get the next char.
     QChar c = d->unicode[d->pos++];
-    if (c.unicode() == EndOfData)
-        c = QChar(EndOfDocument);
+    if (c == EndOfData)
+        c = EndOfDocument;
     return c;
 }
 
@@ -1301,7 +1291,6 @@ void QXmlInputSource::fetchData()
     }
 }
 
-#if QT_CONFIG(textcodec)
 static QString extractEncodingDecl(const QString &text, bool *needMoreText)
 {
     *needMoreText = false;
@@ -1343,7 +1332,6 @@ static QString extractEncodingDecl(const QString &text, bool *needMoreText)
 
     return encoding;
 }
-#endif // textcodec
 
 /*!
     This function reads the XML file from \a data and tries to
@@ -1358,83 +1346,49 @@ static QString extractEncodingDecl(const QString &text, bool *needMoreText)
 */
 QString QXmlInputSource::fromRawData(const QByteArray &data, bool beginning)
 {
-#if !QT_CONFIG(textcodec)
-    Q_UNUSED(beginning);
-    return QString::fromLatin1(data.constData(), data.size());
-#else
     if (data.size() == 0)
         return QString();
-    if (beginning) {
-        delete d->encMapper;
-        d->encMapper = nullptr;
-    }
 
-    int mib = 106; // UTF-8
+    if (beginning)
+        d->toUnicode = QStringDecoder();
 
     // This is the initial UTF codec we will read the encoding declaration with
-    if (d->encMapper == nullptr) {
+    if (!d->toUnicode.isValid()) {
         d->encodingDeclBytes.clear();
         d->encodingDeclChars.clear();
         d->lookingForEncodingDecl = true;
 
-        // look for byte order mark and read the first 5 characters
-        if (data.size() >= 4) {
-            uchar ch1 = data.at(0);
-            uchar ch2 = data.at(1);
-            uchar ch3 = data.at(2);
-            uchar ch4 = data.at(3);
-
-            if ((ch1 == 0 && ch2 == 0 && ch3 == 0xfe && ch4 == 0xff) ||
-                (ch1 == 0xff && ch2 == 0xfe && ch3 == 0 && ch4 == 0))
-                mib = 1017; // UTF-32 with byte order mark
-            else if (ch1 == 0x3c && ch2 == 0x00 && ch3 == 0x00 && ch4 == 0x00)
-                mib = 1019; // UTF-32LE
-            else if (ch1 == 0x00 && ch2 == 0x00 && ch3 == 0x00 && ch4 == 0x3c)
-                mib = 1018; // UTF-32BE
+        auto encoding = QStringConverter::encodingForData(data.constData(), data.size(), char16_t('<'));
+        if (encoding) {
+            d->lookingForEncodingDecl = false;
+            d->toUnicode = QStringDecoder(*encoding);
+        } else {
+            d->toUnicode = QStringDecoder(QStringDecoder::Utf8);
         }
-        if (mib == 106 && data.size() >= 2) {
-            uchar ch1 = data.at(0);
-            uchar ch2 = data.at(1);
-
-            if ((ch1 == 0xfe && ch2 == 0xff) || (ch1 == 0xff && ch2 == 0xfe))
-                mib = 1015; // UTF-16 with byte order mark
-            else if (ch1 == 0x3c && ch2 == 0x00)
-                mib = 1014; // UTF-16LE
-            else if (ch1 == 0x00 && ch2 == 0x3c)
-                mib = 1013; // UTF-16BE
-        }
-
-        QTextCodec *codec = QTextCodec::codecForMib(mib);
-        Q_ASSERT(codec);
-
-        d->encMapper = codec->makeDecoder();
     }
 
-    QString input = d->encMapper->toUnicode(data.constData(), data.size());
+    QString input = d->toUnicode(data.constData(), data.size());
 
     if (d->lookingForEncodingDecl) {
         d->encodingDeclChars += input;
 
         bool needMoreText;
-        QString encoding = extractEncodingDecl(d->encodingDeclChars, &needMoreText);
+        QByteArray encoding = extractEncodingDecl(d->encodingDeclChars, &needMoreText).toLatin1();
 
         if (!encoding.isEmpty()) {
-            if (QTextCodec *codec = QTextCodec::codecForName(std::move(encoding).toLatin1())) {
-                /* If the encoding is the same, we don't have to do toUnicode() all over again. */
-                if(codec->mibEnum() != mib) {
-                    delete d->encMapper;
-                    d->encMapper = codec->makeDecoder();
+            auto e = QStringDecoder::encodingForData(encoding.constData(), encoding.size());
+            if (e && *e != QStringDecoder::Utf8) {
+                d->toUnicode = QStringDecoder(*e);
 
-                    /* The variable input can potentially be large, so we deallocate
-                     * it before calling toUnicode() in order to avoid having two
-                     * large QStrings in memory simultaneously. */
-                    input.clear();
+                /* The variable input can potentially be large, so we deallocate
+                 * it before calling toUnicode() in order to avoid having two
+                 * large QStrings in memory simultaneously. */
+                input.clear();
 
-                    // prime the decoder with the data so far
-                    d->encMapper->toUnicode(d->encodingDeclBytes.constData(), d->encodingDeclBytes.size());
-                    // now feed it the new data
-                    input = d->encMapper->toUnicode(data.constData(), data.size());
-                }
+                // prime the decoder with the data so far
+                d->toUnicode(d->encodingDeclBytes.constData(), d->encodingDeclBytes.size());
+                // now feed it the new data
+                input = d->toUnicode(data.constData(), data.size());
             }
         }
 
@@ -1443,7 +1397,6 @@ QString QXmlInputSource::fromRawData(const QByteArray &data, bool beginning)
     }
 
     return input;
-#endif
 }
 
 
@@ -7475,7 +7428,12 @@ bool QXmlSimpleReaderPrivate::parseReference()
             case DoneD:
                 tmp = ref().toUInt(&ok, 10);
                 if (ok) {
-                    stringAddC(QChar(tmp));
+                    if (tmp > 0xffff) {
+                        stringAddC(QChar::highSurrogate(tmp));
+                        stringAddC(QChar::lowSurrogate(tmp));
+                    } else {
+                        stringAddC(QChar(tmp));
+                    }
                 } else {
                     reportParseError(QLatin1String(XMLERR_ERRORPARSINGREFERENCE));
                     return false;
@@ -7486,7 +7444,12 @@ bool QXmlSimpleReaderPrivate::parseReference()
             case DoneH:
                 tmp = ref().toUInt(&ok, 16);
                 if (ok) {
-                    stringAddC(QChar(tmp));
+                    if (tmp > 0xffff) {
+                        stringAddC(QChar::highSurrogate(tmp));
+                        stringAddC(QChar::lowSurrogate(tmp));
+                    } else {
+                        stringAddC(QChar(tmp));
+                    }
                 } else {
                     reportParseError(QLatin1String(XMLERR_ERRORPARSINGREFERENCE));
                     return false;
@@ -7830,7 +7793,7 @@ void QXmlSimpleReaderPrivate::next()
     c = inputSource->next();
     // If we are not incremental parsing, we just skip over EndOfData chars to give the
     // parser an uninterrupted stream of document chars.
-    if (c == QChar(QXmlInputSource::EndOfData) && parseStack == nullptr)
+    if (c == QXmlInputSource::EndOfData && parseStack == nullptr)
         c = inputSource->next();
     if (uc == '\n') {
         lineNr++;
@@ -7910,7 +7873,7 @@ QT_WARNING_POP
 */
 void QXmlSimpleReaderPrivate::initData()
 {
-    c = QChar(QXmlInputSource::EndOfData);
+    c = QXmlInputSource::EndOfData;
     xmlRefStack.clear();
     next();
 }
@@ -7961,7 +7924,7 @@ void QXmlSimpleReaderPrivate::unexpectedEof(ParseFunction where, int state)
     if (parseStack == nullptr) {
         reportParseError(QLatin1String(XMLERR_UNEXPECTEDEOF));
     } else {
-        if (c == QChar(QXmlInputSource::EndOfDocument)) {
+        if (c == QXmlInputSource::EndOfDocument) {
             reportParseError(QLatin1String(XMLERR_UNEXPECTEDEOF));
         } else {
             pushParseState(where, state);

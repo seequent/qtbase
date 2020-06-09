@@ -10,11 +10,10 @@ set(OpenGL_GL_PREFERENCE GLVND) # special case:
 qt_find_package(X11_XCB)
 qt_find_package(WrapHarfbuzz PROVIDED_TARGETS WrapHarfbuzz::WrapHarfbuzz)
 qt_find_package(WrapPNG PROVIDED_TARGETS WrapPNG::WrapPNG)
+qt_find_package(WrapFreetype PROVIDED_TARGETS WrapFreetype::WrapFreetype)
 
 if (QT_FEATURE_gui)
-    if (WINRT)
-        set(_default_platform "winrt")
-    elseif(WIN32)
+    if(WIN32)
         set(_default_platform "windows")
     elseif(ANDROID)
         set(_default_platform "android")
@@ -54,11 +53,12 @@ endif()
 
 qt_add_module(Gui
     GENERATE_METATYPES
-    PLUGIN_TYPES platforms platforms/darwin xcbglintegrations platformthemes platforminputcontexts generic iconengines imageformats egldeviceintegrations
+    PLUGIN_TYPES accessiblebridge platforms platforms/darwin xcbglintegrations platformthemes platforminputcontexts generic iconengines imageformats egldeviceintegrations
     FEATURE_DEPENDENCIES  # special case:
         Qt::Network # special case:
     QMAKE_MODULE_CONFIG "${qmake_module_config}" # special case
     SOURCES
+        image/qabstractfileiconengine.cpp image/qabstractfileiconengine_p.h
         image/qbitmap.cpp image/qbitmap.h
         image/qbmphandler.cpp image/qbmphandler_p.h
         image/qicon.cpp image/qicon.h image/qicon_p.h
@@ -183,6 +183,7 @@ qt_add_module(Gui
         painting/qpdf.cpp painting/qpdf_p.h
         painting/qpdfwriter.cpp painting/qpdfwriter.h
         painting/qpen.cpp painting/qpen.h
+        painting/qpixellayout.cpp painting/qpixellayout_p.h
         painting/qplatformbackingstore.cpp painting/qplatformbackingstore.h
         painting/qpolygon.cpp painting/qpolygon.h
         painting/qpolygonclipper_p.h
@@ -278,7 +279,6 @@ qt_add_module(Gui
 )
 
 # Resources:
-
 set_source_files_properties("painting/../../3rdparty/icc/sRGB2014.icc"
     PROPERTIES QT_RESOURCE_ALIAS "sRGB2014.icc"
 )
@@ -319,8 +319,6 @@ qt_extend_target(Gui CONDITION QT_FEATURE_standarditemmodel
 
 
 #### Keys ignored in scope 1:.:.:gui.pro:<TRUE>:
-# MODULE_PLUGIN_TYPES = "platforms" "platforms/darwin" "xcbglintegrations" "platformthemes" "platforminputcontexts" "generic" "iconengines" "imageformats" "egldeviceintegrations"
-# QMAKE_DYNAMIC_LIST_FILE = "$$PWD/QtGui.dynlist"
 # QMAKE_LIBS = "$$QMAKE_LIBS_GUI"
 
 ## Scopes:
@@ -331,13 +329,14 @@ qt_extend_target(Gui CONDITION QT_FEATURE_standarditemmodel
 # used direct public linkage against either libGLESv2 or libGL, depending
 # on the opengl _feature_. This is done by hand now here (where the
 # feature is available).
+# On Windows with 'dynamic' OpenGL we must not link to opengl32.
 # DO NOT MOVE THIS TO THE BEGINNING OF THE FILE, the feature variables are not
 # available until the qt_add_module call.
 if(QT_FEATURE_opengl)
     if(QT_FEATURE_opengles2)
         find_package(GLESv2)
         target_link_libraries(Gui PUBLIC GLESv2::GLESv2)
-    else()
+    elseif(NOT QT_FEATURE_opengl_dynamic)
         find_package(OpenGL)
         target_link_libraries(Gui PUBLIC OpenGL::GL)
     endif()
@@ -360,9 +359,6 @@ qt_extend_target(Gui CONDITION QT_FEATURE_opengl
 #### Keys ignored in scope 2:.:.:gui.pro:QT_FEATURE_opengl:
 # MODULE_CONFIG = "opengl"
 
-#### Keys ignored in scope 3:.:.:gui.pro:QT_FEATURE_angle:
-# MODULE_AUX_INCLUDES = "\$\$QT_MODULE_INCLUDE_BASE/QtANGLE"
-
 qt_extend_target(Gui CONDITION MACOS
     LIBRARIES
         ${FWAppKit}
@@ -374,8 +370,17 @@ qt_extend_target(Gui CONDITION APPLE
     SOURCES
         image/qimage_darwin.mm
         painting/qcoregraphics.mm painting/qcoregraphics_p.h
+        painting/qrasterbackingstore.cpp painting/qrasterbackingstore_p.h
+        platform/darwin/qmacmime.mm platform/darwin/qmacmime_p.h
+        text/coretext/qcoretextfontdatabase.mm text/coretext/qcoretextfontdatabase_p.h
+        text/coretext/qfontengine_coretext.mm text/coretext/qfontengine_coretext_p.h
     LIBRARIES
+        ${FWCoreFoundation}
         ${FWCoreGraphics}
+        ${FWCoreText}
+        ${FWFoundation}
+    PUBLIC_LIBRARIES
+        ${FWImageIO}
 )
 
 qt_extend_target(Gui CONDITION QT_FEATURE_animation
@@ -385,7 +390,9 @@ qt_extend_target(Gui CONDITION QT_FEATURE_animation
 
 qt_extend_target(Gui CONDITION WIN32
     SOURCES
+        image/qpixmap_win.cpp
         kernel/qwindowdefs_win.h
+        platform/windows/qwindowsguieventdispatcher.cpp platform/windows/qwindowsguieventdispatcher_p.h
         rhi/qrhid3d11.cpp rhi/qrhid3d11_p.h
         rhi/qrhid3d11_p_p.h
     PUBLIC_LIBRARIES
@@ -394,51 +401,49 @@ qt_extend_target(Gui CONDITION WIN32
         dxguid
 )
 
-#### Keys ignored in scope 8:.:.:gui.pro:WIN32:
+#### Keys ignored in scope 7:.:.:gui.pro:WIN32:
 # CMAKE_WINDOWS_BUILD = "True"
 
-#### Keys ignored in scope 11:.:.:gui.pro:QT_FEATURE_egl:
+#### Keys ignored in scope 8:.:.:gui.pro:QT_FEATURE_egl:
 # CMAKE_EGL_LIBS = "$$cmakeProcessLibs($$QMAKE_LIBS_EGL)"
 
-#### Keys ignored in scope 12:.:.:gui.pro:NOT QMAKE_LIBDIR_EGL_ISEMPTY:
+#### Keys ignored in scope 9:.:.:gui.pro:NOT QMAKE_LIBDIR_EGL_ISEMPTY:
 # CMAKE_EGL_LIBDIR = "$$cmakeTargetPath($$QMAKE_LIBDIR_EGL)"
 
-#### Keys ignored in scope 13:.:.:gui.pro:QT_FEATURE_opengles2:
+#### Keys ignored in scope 10:.:.:gui.pro:QT_FEATURE_opengles2:
 # CMAKE_GL_HEADER_NAME = "GLES2/gl2.h"
 # CMAKE_OPENGL_INCDIRS = "$$cmakePortablePaths($$QMAKE_INCDIR_OPENGL_ES2)"
 # CMAKE_OPENGL_LIBS = "$$cmakeProcessLibs($$QMAKE_LIBS_OPENGL_ES2)"
 # CMAKE_QT_OPENGL_IMPLEMENTATION = "GLESv2"
 
-#### Keys ignored in scope 14:.:.:gui.pro:NOT QMAKE_INCDIR_OPENGL_ES2_ISEMPTY:
+#### Keys ignored in scope 11:.:.:gui.pro:NOT QMAKE_INCDIR_OPENGL_ES2_ISEMPTY:
 # CMAKE_GL_INCDIRS = "$$cmakeTargetPaths($$QMAKE_INCDIR_OPENGL_ES2)"
 
-#### Keys ignored in scope 15:.:.:gui.pro:NOT QMAKE_LIBDIR_OPENGL_ES2_ISEMPTY:
+#### Keys ignored in scope 12:.:.:gui.pro:NOT QMAKE_LIBDIR_OPENGL_ES2_ISEMPTY:
 # CMAKE_OPENGL_LIBDIR = "$$cmakePortablePaths($$QMAKE_LIBDIR_OPENGL_ES2)"
 
-#### Keys ignored in scope 17:.:.:gui.pro:QT_FEATURE_opengl:
+#### Keys ignored in scope 14:.:.:gui.pro:QT_FEATURE_opengl:
 # CMAKE_GL_HEADER_NAME = "GL/gl.h"
 # CMAKE_OPENGL_INCDIRS = "$$cmakePortablePaths($$QMAKE_INCDIR_OPENGL)"
 # CMAKE_QT_OPENGL_IMPLEMENTATION = "GL"
 
-#### Keys ignored in scope 18:.:.:gui.pro:NOT QMAKE_INCDIR_OPENGL_ISEMPTY:
+#### Keys ignored in scope 15:.:.:gui.pro:NOT QMAKE_INCDIR_OPENGL_ISEMPTY:
 # CMAKE_GL_INCDIRS = "$$cmakeTargetPaths($$QMAKE_INCDIR_OPENGL)"
 
-#### Keys ignored in scope 19:.:.:gui.pro:NOT QT_FEATURE_dynamicgl:
+#### Keys ignored in scope 16:.:.:gui.pro:NOT QT_FEATURE_dynamicgl:
 # CMAKE_OPENGL_LIBS = "$$cmakeProcessLibs($$QMAKE_LIBS_OPENGL)"
 
-#### Keys ignored in scope 20:.:.:gui.pro:NOT QMAKE_LIBDIR_OPENGL_ISEMPTY:
+#### Keys ignored in scope 17:.:.:gui.pro:NOT QMAKE_LIBDIR_OPENGL_ISEMPTY:
 # CMAKE_OPENGL_LIBDIR = "$$cmakePortablePaths($$QMAKE_LIBDIR_OPENGL)"
 
-#### Keys ignored in scope 21:.:.:gui.pro:APPLE:
+#### Keys ignored in scope 18:.:.:gui.pro:APPLE:
 # CMAKE_GL_HEADER_NAME = "gl.h"
-
-#### Keys ignored in scope 22:.:.:gui.pro:QT_FEATURE_egl:
-# CMAKE_EGL_INCDIRS = "$$cmakePortablePaths($$QMAKE_INCDIR_EGL)"
 
 qt_extend_target(Gui CONDITION QT_FEATURE_accessibility
     SOURCES
         accessible/qaccessible.cpp accessible/qaccessible.h
         accessible/qaccessiblebridge.cpp accessible/qaccessiblebridge.h
+        accessible/qaccessiblebridgeutils.cpp accessible/qaccessiblebridgeutils_p.h
         accessible/qaccessiblecache.cpp accessible/qaccessiblecache_p.h
         accessible/qaccessibleobject.cpp accessible/qaccessibleobject.h
         accessible/qaccessibleplugin.cpp accessible/qaccessibleplugin.h
@@ -450,6 +455,21 @@ qt_extend_target(Gui CONDITION APPLE AND QT_FEATURE_accessibility
         accessible/qaccessiblecache_mac.mm
     LIBRARIES
         ${FWFoundation}
+)
+
+qt_extend_target(Gui CONDITION QT_FEATURE_accessibility AND WIN32
+    SOURCES
+        accessible/windows/apisupport/qwindowsuiawrapper.cpp accessible/windows/apisupport/qwindowsuiawrapper_p.h
+        accessible/windows/apisupport/uiaattributeids_p.h
+        accessible/windows/apisupport/uiaclientinterfaces_p.h
+        accessible/windows/apisupport/uiacontroltypeids_p.h
+        accessible/windows/apisupport/uiaerrorids_p.h
+        accessible/windows/apisupport/uiaeventids_p.h
+        accessible/windows/apisupport/uiageneralids_p.h
+        accessible/windows/apisupport/uiapatternids_p.h
+        accessible/windows/apisupport/uiapropertyids_p.h
+        accessible/windows/apisupport/uiaserverinterfaces_p.h
+        accessible/windows/apisupport/uiatypes_p.h
 )
 
 qt_extend_target(Gui CONDITION QT_FEATURE_action
@@ -479,11 +499,6 @@ qt_extend_target(Gui CONDITION QT_FEATURE_movie
         image/qmovie.cpp image/qmovie.h
 )
 
-qt_extend_target(Gui CONDITION WIN32 AND NOT WINRT
-    SOURCES
-        image/qpixmap_win.cpp
-)
-
 qt_extend_target(Gui CONDITION QT_FEATURE_png
     SOURCES
         image/qpnghandler.cpp image/qpnghandler_p.h
@@ -491,10 +506,10 @@ qt_extend_target(Gui CONDITION QT_FEATURE_png
         WrapPNG::WrapPNG
 )
 
-#### Keys ignored in scope 38:.:image:image/image.pri:WIN32 AND mingw:
+#### Keys ignored in scope 38:.:image:image/image.pri:WIN32 AND MINGW:
 # GCC_VERSION = "$${QMAKE_GCC_MAJOR_VERSION}.$${QMAKE_GCC_MINOR_VERSION}.$${QMAKE_GCC_PATCH_VERSION}"
 
-qt_extend_target(Gui CONDITION ((QT_FEATURE_png) AND (WIN32 AND mingw)) AND (GCC_VERSION___equals___8.1.0)
+qt_extend_target(Gui CONDITION ((QT_FEATURE_png) AND (WIN32 AND MINGW)) AND (GCC_VERSION___equals___8.1.0)
     COMPILE_OPTIONS
         -fno-reorder-blocks-and-partition
 )
@@ -626,6 +641,24 @@ qt_extend_target(Gui CONDITION QT_FEATURE_cssparser
         text/qcssparser.cpp text/qcssparser_p.h
 )
 
+qt_extend_target(Gui CONDITION QT_FEATURE_freetype
+    SOURCES
+        text/freetype/qfontengine_ft.cpp text/freetype/qfontengine_ft_p.h
+        text/freetype/qfreetypefontdatabase.cpp text/freetype/qfreetypefontdatabase_p.h
+    LIBRARIES
+        WrapFreetype::WrapFreetype
+)
+
+qt_extend_target(Gui CONDITION APPLE AND NOT MACOS
+    LIBRARIES
+        ${FWUIKit}
+)
+
+qt_extend_target(Gui CONDITION APPLE AND QT_FEATURE_freetype
+    LIBRARIES
+        WrapFreetype::WrapFreetype
+)
+
 qt_extend_target(Gui CONDITION UNIX AND NOT ANDROID AND NOT INTEGRITY AND NOT (TEST_architecture_arch STREQUAL "arm64") AND NOT UIKIT
     DEFINES
         ENABLE_PIXMAN_DRAWHELPERS
@@ -682,6 +715,7 @@ qt_extend_target(Gui CONDITION QT_FEATURE_vulkan
     SOURCES
         rhi/qrhivulkan.cpp rhi/qrhivulkan_p.h
         rhi/qrhivulkan_p_p.h
+        vulkan/qbasicvulkanplatforminstance.cpp vulkan/qbasicvulkanplatforminstance_p.h
         vulkan/qplatformvulkaninstance.cpp vulkan/qplatformvulkaninstance.h
         vulkan/qvulkanfunctions.cpp
         vulkan/qvulkaninstance.cpp vulkan/qvulkaninstance.h
@@ -690,7 +724,7 @@ qt_extend_target(Gui CONDITION QT_FEATURE_vulkan
         Vulkan::Vulkan_nolink
 )
 
-#### Keys ignored in scope 82:.:vulkan:vulkan/vulkan.pri:QT_FEATURE_vkgen:
+#### Keys ignored in scope 89:.:vulkan:vulkan/vulkan.pri:QT_FEATURE_vkgen:
 # special case begin
 # We must always generate syncqt-injected header files,
 # because we added a custom command earlier for those for framework builds.
@@ -746,10 +780,10 @@ add_custom_command(
 # qvkgen_pimpl.input = "QMAKE_QVKGEN_INPUT"
 # qvkgen_pimpl.output = "$$OUT_PWD/vulkan/qvulkanfunctions_p.cpp"
 
-#### Keys ignored in scope 83:.:vulkan:vulkan/vulkan.pri:QT_FEATURE_vulkan:
+#### Keys ignored in scope 90:.:vulkan:vulkan/vulkan.pri:QT_FEATURE_vulkan:
 # qvkgen_h.variable_out = "HEADERS"
 
-#### Keys ignored in scope 84:.:vulkan:vulkan/vulkan.pri:else:
+#### Keys ignored in scope 91:.:vulkan:vulkan/vulkan.pri:else:
 # qvkgen_h.CONFIG = "target_predeps" "no_link"
 
 qt_extend_target(Gui CONDITION WASM
@@ -765,22 +799,13 @@ qt_extend_target(Gui CONDITION IOS OR MACOS
         ${FWMetal}
 )
 
-qt_extend_target(Gui CONDITION NOT GCC OR NOT QT_COMPILER_VERSION_MAJOR STREQUAL 5
+qt_extend_target(Gui # special case CONDITION NOT GCC OR NOT QT_COMPILER_VERSION_MAJOR STREQUAL 5 # source subtraction gone wrong
     SOURCES
         painting/qdrawhelper.cpp
     NO_PCH_SOURCES
         "painting/qdrawhelper.cpp"
 )
 
-qt_extend_target(Gui CONDITION QT_FEATURE_undocommand
-    SOURCES
-        util/qundostack.cpp util/qundostack.h util/qundostack_p.h
-)
-
-qt_extend_target(Gui CONDITION QT_FEATURE_undogroup
-    SOURCES
-        util/qundogroup.cpp util/qundogroup.h
-)
 
 qt_create_tracepoints(Gui qtgui.tracepoints)
 qt_add_docs(Gui

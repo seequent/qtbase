@@ -109,11 +109,31 @@ public:
     void cancel() { d.cancel(); }
     bool isCanceled() const { return d.isCanceled(); }
 
-    void setPaused(bool paused) { d.setPaused(paused); }
-    bool isPaused() const { return d.isPaused(); }
-    void pause() { setPaused(true); }
-    void resume() { setPaused(false); }
-    void togglePaused() { d.togglePaused(); }
+#if QT_DEPRECATED_SINCE(6, 0)
+    QT_DEPRECATED_VERSION_X_6_0("Use setSuspended() instead.")
+    void setPaused(bool paused) { d.setSuspended(paused); }
+
+    QT_DEPRECATED_VERSION_X_6_0("Use isSuspending() or isSuspended() instead.")
+    bool isPaused() const
+    {
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+        return d.isPaused();
+QT_WARNING_POP
+    }
+
+    QT_DEPRECATED_VERSION_X_6_0("Use toggleSuspended() instead.")
+    void togglePaused() { d.toggleSuspended(); }
+
+    QT_DEPRECATED_VERSION_X_6_0("Use suspend() instead.")
+    void pause() { suspend(); }
+#endif
+    bool isSuspending() const { return d.isSuspending(); }
+    bool isSuspended() const { return d.isSuspended(); }
+    void setSuspended(bool suspend) { d.setSuspended(suspend); }
+    void suspend() { setSuspended(true); }
+    void resume() { setSuspended(false); }
+    void toggleSuspended() { d.toggleSuspended(); }
 
     bool isStarted() const { return d.isStarted(); }
     bool isFinished() const { return d.isFinished(); }
@@ -167,6 +187,9 @@ public:
              typename = std::enable_if_t<!QtPrivate::ArgResolver<Function>::HasExtraArgs>>
     QFuture<T> onFailed(Function &&handler);
 #endif
+
+    template<class Function, typename = std::enable_if_t<std::is_invocable_r_v<T, Function>>>
+    QFuture<T> onCanceled(Function &&handler);
 
     class const_iterator
     {
@@ -281,6 +304,9 @@ private:
     template<class Function, class ResultType, class ParentResultType>
     friend class QtPrivate::Continuation;
 
+    template<class Function, class ResultType>
+    friend class QtPrivate::CanceledHandler;
+
 #ifndef QT_NO_EXCEPTIONS
     template<class Function, class ResultType>
     friend class QtPrivate::FailureHandler;
@@ -358,6 +384,15 @@ QFuture<T> QFuture<T>::onFailed(Function &&handler)
 }
 
 #endif
+
+template<class T>
+template<class Function, typename>
+QFuture<T> QFuture<T>::onCanceled(Function &&handler)
+{
+    QFutureInterface<T> promise(QFutureInterfaceBase::State::Pending);
+    QtPrivate::CanceledHandler<Function, T>::create(std::forward<Function>(handler), this, promise);
+    return promise.future();
+}
 
 inline QFuture<void> QFutureInterface<void>::future()
 {

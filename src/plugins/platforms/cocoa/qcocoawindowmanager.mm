@@ -37,6 +37,8 @@
 **
 ****************************************************************************/
 
+#include <AppKit/AppKit.h>
+
 #include "qcocoawindowmanager.h"
 #include "qcocoawindow.h"
 
@@ -98,6 +100,18 @@ void QCocoaWindowManager::modalSessionChanged()
                 // Restore window's natural window level, whatever that was
                 nativeWindow.level = naturalWindowLevel;
             }
+        }
+    }
+
+    // Our worksWhenModal implementation is declarative and will normally be picked
+    // up by AppKit when needed, but to make sure AppKit also reflects the state
+    // in the window tag, so that the window can be ordered front by clicking it,
+    // we need to explicitly call setWorksWhenModal.
+    for (id window in NSApp.windows) {
+        if ([window isKindOfClass:[QNSPanel class]]) {
+            auto *panel = static_cast<QNSPanel *>(window);
+            // Call setter to tell AppKit that our state has changed
+            [panel setWorksWhenModal:panel.worksWhenModal];
         }
     }
 }

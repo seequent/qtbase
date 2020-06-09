@@ -4,7 +4,7 @@ add_subdirectory(shared) # special case
 add_subdirectory(basicdrawing)
 add_subdirectory(concentriccircles)
 add_subdirectory(affine)
-# add_subdirectory(composition) # FIXME: Seems buggy wrt. usesOpenGL function
+# add_subdirectory(composition) # special case FIXME: Seems buggy wrt. usesOpenGL function
 add_subdirectory(deform)
 add_subdirectory(gradients)
 add_subdirectory(pathstroke)

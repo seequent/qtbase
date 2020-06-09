@@ -49,6 +49,7 @@
 
 #include <QDebug>
 #include <QGuiApplication>
+#include <QTouchDevice>
 
 #include <errno.h>
 #include <sys/keycodes.h>
@@ -76,8 +77,7 @@ static QString keyString(int sym, QChar::Category category)
     } else if (category == QChar::Other_PrivateUse) {
         return keyStringForPrivateUseQnxKey(sym);
     } else {
-        uint ucs4_sym = sym;
-        return QString::fromUcs4(&ucs4_sym, 1);
+        return QStringView{QChar::fromUcs4(sym)}.toString();
     }
 }
 

@@ -151,7 +151,7 @@ void QEglFSKmsGbmCursorDeviceListener::onDeviceListChanged(QInputDeviceManager::
 
 void QEglFSKmsGbmCursor::pointerEvent(const QMouseEvent &event)
 {
-    setPos(event.screenPos().toPoint());
+    setPos(event.globalPosition().toPoint());
 }
 
 #ifndef QT_NO_CURSOR
@@ -248,7 +248,7 @@ void QEglFSKmsGbmCursor::setPos(const QPoint &pos)
             }
         } else {
             int ret;
-            if (kmsScreen->isCursorOutOfRange()) {
+            if (kmsScreen->isCursorOutOfRange() && m_bo) {
                 kmsScreen->setCursorOutOfRange(false);
                 uint32_t handle = gbm_bo_get_handle(m_bo).u32;
                 ret = drmModeSetCursor(kmsScreen->device()->fd(), kmsScreen->output().crtc_id,

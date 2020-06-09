@@ -87,6 +87,32 @@ public:
 #endif
         return !inserted;
     }
+    Q_REQUIRED_RESULT bool hasSeen(T &&s)
+    {
+        bool inserted;
+#ifdef __cpp_lib_memory_resource
+        inserted = set.insert(std::move(s)).second;
+#else
+        set.insert(std::move(s));
+        const int n = set.size();
+        inserted = qExchange(setSize, n) != n;
+#endif
+        return !inserted;
+    }
+
+    template <typename C>
+    void appendTo(C &c) const &
+    {
+        for (const auto &e : set)
+            c.push_back(e);
+    }
+
+    template <typename C>
+    void appendTo(C &c) &&
+    {
+        for (auto &e : set)
+            c.push_back(std::move(e));
+    }
 };
 
 QT_END_NAMESPACE

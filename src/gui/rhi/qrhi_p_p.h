@@ -80,7 +80,8 @@ public:
     virtual QRhiRenderBuffer *createRenderBuffer(QRhiRenderBuffer::Type type,
                                                  const QSize &pixelSize,
                                                  int sampleCount,
-                                                 QRhiRenderBuffer::Flags flags) = 0;
+                                                 QRhiRenderBuffer::Flags flags,
+                                                 QRhiTexture::Format backingFormatHint) = 0;
     virtual QRhiTexture *createTexture(QRhiTexture::Format format,
                                        const QSize &pixelSize,
                                        int sampleCount,
@@ -195,10 +196,10 @@ public:
         return resources;
     }
 
-    void addReleaseAndDestroyLater(QRhiResource *res)
+    void addDeleteLater(QRhiResource *res)
     {
         if (inFrame)
-            pendingReleaseAndDestroyResources.insert(res);
+            pendingDeleteResources.insert(res);
         else
             delete res;
     }
@@ -226,7 +227,7 @@ private:
     QVarLengthArray<QRhiResourceUpdateBatch *, 4> resUpdPool;
     QBitArray resUpdPoolMap;
     QSet<QRhiResource *> resources;
-    QSet<QRhiResource *> pendingReleaseAndDestroyResources;
+    QSet<QRhiResource *> pendingDeleteResources;
     QVector<QRhi::CleanupCallback> cleanupCallbacks;
 
     friend class QRhi;
@@ -259,16 +260,16 @@ bool qrhi_toTopLeftRenderTargetRect(const QSize &outputSize, const std::array<T,
 
     const T widthOffset = *x < 0 ? -*x : 0;
     const T heightOffset = *y < 0 ? -*y : 0;
+    *w = *x < outputWidth ? qMax<T>(0, inputWidth - widthOffset) : 0;
+    *h = *y < outputHeight ? qMax<T>(0, inputHeight - heightOffset) : 0;
 
     *x = qBound<T>(0, *x, outputWidth - 1);
     *y = qBound<T>(0, *y, outputHeight - 1);
-    *w = qMax<T>(0, inputWidth - widthOffset);
-    *h = qMax<T>(0, inputHeight - heightOffset);
 
     if (*x + *w > outputWidth)
-        *w = qMax<T>(0, outputWidth - *x - 1);
+        *w = qMax<T>(0, outputWidth - *x);
     if (*y + *h > outputHeight)
-        *h = qMax<T>(0, outputHeight - *y - 1);
+        *h = qMax<T>(0, outputHeight - *y);
 
     return true;
 }
@@ -291,7 +292,7 @@ public:
 
         static BufferOp dynamicUpdate(QRhiBuffer *buf, int offset, int size, const void *data)
         {
-            BufferOp op;
+            BufferOp op = {};
             op.type = DynamicUpdate;
             op.buf = buf;
             op.offset = offset;
@@ -301,7 +302,7 @@ public:
 
         static BufferOp staticUpload(QRhiBuffer *buf, int offset, int size, const void *data)
         {
-            BufferOp op;
+            BufferOp op = {};
             op.type = StaticUpload;
             op.buf = buf;
             op.offset = offset;
@@ -311,7 +312,7 @@ public:
 
         static BufferOp read(QRhiBuffer *buf, int offset, int size, QRhiBufferReadbackResult *result)
         {
-            BufferOp op;
+            BufferOp op = {};
             op.type = Read;
             op.buf = buf;
             op.offset = offset;
@@ -343,7 +344,7 @@ public:
 
         static TextureOp upload(QRhiTexture *tex, const QRhiTextureUploadDescription &desc)
         {
-            TextureOp op;
+            TextureOp op = {};
             op.type = Upload;
             op.dst = tex;
             for (auto it = desc.cbeginEntries(), itEnd = desc.cendEntries(); it != itEnd; ++it)
@@ -353,7 +354,7 @@ public:
 
         static TextureOp copy(QRhiTexture *dst, QRhiTexture *src, const QRhiTextureCopyDescription &desc)
         {
-            TextureOp op;
+            TextureOp op = {};
             op.type = Copy;
             op.dst = dst;
             op.src = src;
@@ -363,7 +364,7 @@ public:
 
         static TextureOp read(const QRhiReadbackDescription &rb, QRhiReadbackResult *result)
         {
-            TextureOp op;
+            TextureOp op = {};
             op.type = Read;
             op.rb = rb;
             op.result = result;
@@ -372,7 +373,7 @@ public:
 
         static TextureOp genMips(QRhiTexture *tex, int layer)
         {
-            TextureOp op;
+            TextureOp op = {};
             op.type = GenMips;
             op.dst = tex;
             op.layer = layer;

@@ -293,26 +293,6 @@
            Currently supported on the Windows platform only.
            This value was added in 5.15
 
-    The following values are deprecated or obsolete:
-
-    \value AA_ImmediateWidgetCreation This attribute is no longer fully
-           supported in Qt 5. It ensures that widgets are created
-           as soon as they are constructed. By default, resources for
-           widgets are allocated on demand to improve efficiency and
-           minimize resource usage. Setting or clearing this attribute
-           affects widgets constructed after the change. Setting it
-           tells Qt to create toplevel windows immediately.
-           Therefore, if it is important to minimize resource
-           consumption, do not set this attribute.
-
-    \value AA_MacPluginApplication This attribute has been deprecated.
-           Use AA_PluginApplication instead.
-
-    \value AA_MSWindowsUseDirect3DByDefault This value is obsolete and
-           has no effect.
-
-    \value AA_X11InitThreads This value is obsolete and has no effect.
-
     \omitvalue AA_AttributeCount
 */
 
@@ -617,7 +597,6 @@
     \value TextJustificationForced Ensures that text lines are justified.
 
     \omitvalue TextLongestVariant
-    \omitvalue TextBypassShaping
     \omitvalue TextForceLeftToRight
     \omitvalue TextForceRightToLeft
 
@@ -703,56 +682,26 @@
 
     \value ISODateWithMs \l{ISO 8601} extended format, including milliseconds if applicable.
 
-    \value SystemLocaleShortDate \e{This enum value is deprecated and
-    shall be removed in Qt 6.} Use QLocale's methods for converting
-    dates and times to and from strings, with the
-    \l{QLocale::ShortFormat}{short format} of
-    \l{QLocale::system()}{the locale used by the operating system}.
-
-    \value SystemLocaleLongDate \e{This enum value is deprecated and
-    shall be removed in Qt 6.} Use QLocale's methods for converting
-    dates and times to and from strings, with the
-    \l{QLocale::LongFormat}{long format} of \l{QLocale::system()}{the
-    locale used by the operating system}.
-
-    \value DefaultLocaleShortDate \e{This enum value is deprecated and
-    shall be removed in Qt 6.} Use QLocale's methods for converting
-    dates and times to and from strings, with the
-    \l{QLocale::ShortFormat}{short format} of
-    \l{QLocale::setDefault()}{the application's locale}.
-
-    \value DefaultLocaleLongDate \e{This enum value is deprecated and
-    shall be removed in Qt 6.} Use QLocale's methods for converting
-    dates and times to and from strings, with the
-    \l{QLocale::LongFormat}{long format} \l{QLocale::setDefault()}{the
-    application's locale}.
-
-    \value SystemLocaleDate \e{This enum value is deprecated and shall
-    be removed in Qt 6.} It is equivalent to SystemLocaleShortDate.
-
-    \value LocaleDate \e{This enum value is deprecated and shall be
-    removed in Qt 6.} It is equivalent to DefaultLocaleShortDate.
-
-    \value LocalDate \e{This enum value is deprecated and shall be
-    removed in Qt 6.} It is equivalent to SystemLocaleShortDate.
-
     \value RFC2822Date \l{RFC 2822}, \l{RFC 850} and \l{RFC 1036} format:
-    either \c{[ddd,] dd MMM yyyy [hh:mm[:ss]][ ±tzoff]}
-    or \c{ddd MMM dd[ hh:mm:ss] yyyy[ ±tzoff]} are recognized for combined dates
-    and times, where \c{tzoff} is a timezone offset in \c{hhmm} format. For
+    either \c{[ddd,] dd MMM yyyy [HH:mm[:ss]][ ±tzoff]}
+    or \c{ddd MMM dd[ HH:mm:ss] yyyy[ ±tzoff]} are recognized for combined dates
+    and times, where \c{tzoff} is a timezone offset in \c{HHmm} format. For
     dates and times separately, the same formats are matched and the unwanted
     parts are ignored. In particular, note that a time is not recognized without
     an accompanying date. When converting dates to string form,
-    format \c{dd MMM yyyy} is used, for times the format is \c{hh:mm:ss}. For
+    format \c{dd MMM yyyy} is used, for times the format is \c{HH:mm:ss}. For
     combined date and time, these are combined
-    as \c{dd MMM yyyy hh:mm:ss ±tzoff} (omitting the optional leading day of the
+    as \c{dd MMM yyyy HH:mm:ss ±tzoff} (omitting the optional leading day of the
     week from the first format recognized).
 
-    \note For \c ISODate formats, each \c Y, \c M and \c D represents a single digit
-    of the year, month and day used to specify the date. Each \c H, \c M and \c S
-    represents a single digit of the hour, minute and second used to specify the time.
-    The presence of a literal \c T character is used to separate the date and time when
-    both are specified.
+    \note For \c ISODate formats, each \c y, \c M and \c d represents a single
+    digit of the year, month, and day used to specify the date. Each \c H, \c m,
+    and \c s represents a single digit of the hour (up to 24), minute and second
+    used to specify the time. The presence of a literal \c T character is used
+    to separate the date and time when both are specified. For the \c
+    RFC2822Date format, MMM stands for the first three letters of the month name
+    in English, the other format characters have the same meaning as for the
+    ISODate format.
 */
 
 

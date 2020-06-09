@@ -1091,10 +1091,7 @@ bool QLocale::operator!=(const QLocale &other) const
 */
 size_t qHash(const QLocale &key, size_t seed) noexcept
 {
-    QtPrivate::QHashCombine hash;
-    seed = hash(seed, key.d->m_data);
-    seed = hash(seed, key.d->m_numberOptions);
-    return seed;
+    return qHashMulti(seed, key.d->m_data, key.d->m_numberOptions);
 }
 
 /*!
@@ -1228,8 +1225,16 @@ void QLocale::setDefault(const QLocale &locale)
 {
     default_data = locale.d->m_data;
 
-    if (defaultLocalePrivate.exists()) // update the cached private
-        *defaultLocalePrivate = locale.d;
+    if (defaultLocalePrivate.isDestroyed())
+        return; // avoid crash on exit
+    if (!defaultLocalePrivate.exists()) {
+        // Force it to exist; see QTBUG-83016
+        QLocale ignoreme;
+        Q_ASSERT(defaultLocalePrivate.exists());
+    }
+
+    // update the cached private
+    *defaultLocalePrivate = locale.d;
 }
 
 /*!
@@ -1565,7 +1570,7 @@ float QLocale::toFloat(const QString &s, bool *ok) const
     This function does not fall back to the 'C' locale if the string
     cannot be interpreted in this locale.
 
-    \snippet code/src_corelib_tools_qlocale.cpp 3
+    \snippet code/src_corelib_text_qlocale.cpp 3
 
     Notice that the last conversion returns 1234.0, because '.' is the
     thousands group separator in the German locale.
@@ -1780,7 +1785,7 @@ float QLocale::toFloat(const QStringRef &s, bool *ok) const
     This function does not fall back to the 'C' locale if the string
     cannot be interpreted in this locale.
 
-    \snippet code/src_corelib_tools_qlocale.cpp 3
+    \snippet code/src_corelib_text_qlocale.cpp 3
 
     Notice that the last conversion returns 1234.0, because '.' is the
     thousands group separator in the German locale.
@@ -1996,7 +2001,7 @@ float QLocale::toFloat(QStringView s, bool *ok) const
     the "C" locale if the string cannot be interpreted in this
     locale.
 
-    \snippet code/src_corelib_tools_qlocale.cpp 3-qstringview
+    \snippet code/src_corelib_text_qlocale.cpp 3-qstringview
 
     Notice that the last conversion returns 1234.0, because '.' is the
     thousands group separator in the German locale.
@@ -3900,7 +3905,7 @@ bool QLocaleData::numberToCLocale(QStringView s, QLocale::NumberOptions number_o
 
         char out = numericToCLocale(in);
         if (out == 0) {
-            const QChar simple(in.size() == 1 ? in.front() : QChar(0));
+            const QChar simple = in.size() == 1 ? in.front() : QChar::Null;
             if (in == listSeparator())
                 out = ';';
             else if (in == percentSign())

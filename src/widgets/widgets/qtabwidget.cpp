@@ -44,7 +44,6 @@
 #include "private/qtabbar_p.h"
 #include "qapplication.h"
 #include "qbitmap.h"
-#include "qdesktopwidget.h"
 #include <private/qdesktopwidget_p.h>
 #include "qevent.h"
 #include "qlayout.h"
@@ -899,7 +898,7 @@ QSize QTabWidget::sizeHint() const
         if (usesScrollButtons())
             t = t.boundedTo(QSize(200,200));
         else
-            t = t.boundedTo(QDesktopWidgetPrivate::size());
+            t = t.boundedTo(QGuiApplication::primaryScreen()->virtualGeometry().size());
     }
 
     QSize sz = basicSize(d->pos == North || d->pos == South, lc, rc, s, t);
@@ -968,7 +967,7 @@ int QTabWidget::heightForWidth(int width) const
         if (usesScrollButtons())
             t = t.boundedTo(QSize(200,200));
         else
-            t = t.boundedTo(QDesktopWidgetPrivate::size());
+            t = t.boundedTo(QGuiApplication::primaryScreen()->virtualSize());
     }
 
     const bool tabIsHorizontal = (d->pos == North || d->pos == South);

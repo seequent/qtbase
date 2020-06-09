@@ -264,7 +264,7 @@ void tst_QTextCodec::fromUnicode()
         array is correct (no off by one, no trailing '\0').
     */
     QByteArray result = codec->fromUnicode(u"abc");
-    if (result.startsWith('a')) {
+    if (eightBit && result.startsWith('a')) {
         QCOMPARE(result.size(), 3);
         QCOMPARE(result, QByteArray("abc"));
     } else {
@@ -1562,24 +1562,24 @@ void tst_QTextCodec::utf8bom_data()
         << QString::fromLatin1("\240");
 
     {
-        static const ushort data[] = { 0x201d };
+        static const char16_t data[] = { 0x201d };
         QTest::newRow("nobom 2")
             << QByteArray("\342\200\235", 3)
-            << QString::fromUtf16(data, sizeof(data)/sizeof(short));
+            << QString::fromUtf16(data, std::size(data));
     }
 
     {
-        static const ushort data[] = { 0xf000 };
+        static const char16_t data[] = { 0xf000 };
         QTest::newRow("bom1")
             << QByteArray("\357\200\200", 3)
-            << QString::fromUtf16(data, sizeof(data)/sizeof(short));
+            << QString::fromUtf16(data, std::size(data));
     }
 
     {
-        static const ushort data[] = { 0xfec0 };
+        static const char16_t data[] = { 0xfec0 };
         QTest::newRow("bom2")
             << QByteArray("\357\273\200", 3)
-            << QString::fromUtf16(data, sizeof(data)/sizeof(short));
+            << QString::fromUtf16(data, std::size(data));
     }
 
     {
@@ -1589,17 +1589,17 @@ void tst_QTextCodec::utf8bom_data()
     }
 
     { // test the non-SIMD code-path
-        static const ushort data[] = { 0x61, 0xfeff, 0x62 };
+        static const char16_t data[] = { 0x61, 0xfeff, 0x62 };
         QTest::newRow("middle-bom (non SIMD)")
             << QByteArray("a\357\273\277b")
-            << QString::fromUtf16(data, sizeof(data)/sizeof(short));
+            << QString::fromUtf16(data, std::size(data));
     }
 
     { // test the SIMD code-path
-        static const ushort data[] = { 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0xfeff, 0x6d };
+        static const char16_t data[] = { 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0xfeff, 0x6d };
         QTest::newRow("middle-bom (SIMD)")
             << QByteArray("abcdefghijkl\357\273\277m")
-            << QString::fromUtf16(data, sizeof(data)/sizeof(short));
+            << QString::fromUtf16(data, std::size(data));
     }
 }
 
@@ -1641,14 +1641,6 @@ void tst_QTextCodec::utf8stateful_data()
     QTest::newRow("2of4+invalid") << QByteArray("\360\220") << QByteArray("a") << QString();
     QTest::newRow("3of4+invalid") << QByteArray("\360\220\210") << QByteArray("a") << QString();
 
-    // invalid: sequence too short (the empty second buffer causes a state reset)
-    QTest::newRow("1of2+empty") << QByteArray("\xc2") << QByteArray() << QString();
-    QTest::newRow("1of3+empty") << QByteArray("\xe0") << QByteArray() << QString();
-    QTest::newRow("2of3+empty") << QByteArray("\xe0\xa0") << QByteArray() << QString();
-    QTest::newRow("1of4+empty") << QByteArray("\360") << QByteArray() << QString();
-    QTest::newRow("2of4+empty") << QByteArray("\360\220") << QByteArray() << QString();
-    QTest::newRow("3of4+empty") << QByteArray("\360\220\210") << QByteArray() << QString();
-
     // overlong sequence:
     QTest::newRow("overlong-1of2") << QByteArray("\xc1") << QByteArray("\x81") << QString();
     QTest::newRow("overlong-1of3") << QByteArray("\xe0") << QByteArray("\x81\x81") << QString();
@@ -1686,7 +1678,6 @@ void tst_QTextCodec::utf8stateful()
     QVERIFY(utf8codec);
 
     QTextCodec::ConverterState state;
-    memset(&state, 0, sizeof state);
 
     QString decoded1 = utf8codec->toUnicode(buffer1, buffer1.size(), &state);
     if (result.isNull()) {
@@ -1720,13 +1711,13 @@ void tst_QTextCodec::utfHeaders_data()
 
     QTest::newRow("utf8 bom")
         << QByteArray("UTF-8")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\xef\xbb\xbfhello")
         << QString::fromLatin1("hello")
         << true;
     QTest::newRow("utf8 nobom")
         << QByteArray("UTF-8")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("hello")
         << QString::fromLatin1("hello")
         << true;
@@ -1745,20 +1736,20 @@ void tst_QTextCodec::utfHeaders_data()
 
     QTest::newRow("utf16 bom be")
         << QByteArray("UTF-16")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\xfe\xff\0h\0e\0l", 8)
         << QString::fromLatin1("hel")
         << true;
     QTest::newRow("utf16 bom le")
         << QByteArray("UTF-16")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\xff\xfeh\0e\0l\0", 8)
         << QString::fromLatin1("hel")
         << true;
     if (QSysInfo::ByteOrder == QSysInfo::BigEndian) {
         QTest::newRow("utf16 nobom")
             << QByteArray("UTF-16")
-            << 0
+            << (int)QTextCodec::DefaultConversion
             << QByteArray("\0h\0e\0l", 6)
             << QString::fromLatin1("hel")
             << true;
@@ -1771,7 +1762,7 @@ void tst_QTextCodec::utfHeaders_data()
     } else {
         QTest::newRow("utf16 nobom")
             << QByteArray("UTF-16")
-            << 0
+            << (int)QTextCodec::DefaultConversion
             << QByteArray("h\0e\0l\0", 6)
             << QString::fromLatin1("hel")
             << true;
@@ -1785,13 +1776,13 @@ void tst_QTextCodec::utfHeaders_data()
 
     QTest::newRow("utf16-be bom be")
         << QByteArray("UTF-16BE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\xfe\xff\0h\0e\0l", 8)
         << QString::fromLatin1("hel")
         << true;
     QTest::newRow("utf16-be nobom")
         << QByteArray("UTF-16BE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\0h\0e\0l", 6)
         << QString::fromLatin1("hel")
         << true;
@@ -1804,13 +1795,13 @@ void tst_QTextCodec::utfHeaders_data()
 
     QTest::newRow("utf16-le bom le")
         << QByteArray("UTF-16LE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\xff\xfeh\0e\0l\0", 8)
         << QString::fromLatin1("hel")
         << true;
     QTest::newRow("utf16-le nobom")
         << QByteArray("UTF-16LE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("h\0e\0l\0", 6)
         << QString::fromLatin1("hel")
         << true;
@@ -1824,20 +1815,20 @@ void tst_QTextCodec::utfHeaders_data()
 
     QTest::newRow("utf32 bom be")
         << QByteArray("UTF-32")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\0\0\xfe\xff\0\0\0h\0\0\0e\0\0\0l", 16)
         << QString::fromLatin1("hel")
         << true;
     QTest::newRow("utf32 bom le")
         << QByteArray("UTF-32")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\xff\xfe\0\0h\0\0\0e\0\0\0l\0\0\0", 16)
         << QString::fromLatin1("hel")
         << true;
     if (QSysInfo::ByteOrder == QSysInfo::BigEndian) {
         QTest::newRow("utf32 nobom")
             << QByteArray("UTF-32")
-            << 0
+            << (int)QTextCodec::DefaultConversion
             << QByteArray("\0\0\0h\0\0\0e\0\0\0l", 12)
             << QString::fromLatin1("hel")
             << true;
@@ -1850,7 +1841,7 @@ void tst_QTextCodec::utfHeaders_data()
     } else {
         QTest::newRow("utf32 nobom")
             << QByteArray("UTF-32")
-            << 0
+            << (int)QTextCodec::DefaultConversion
             << QByteArray("h\0\0\0e\0\0\0l\0\0\0", 12)
             << QString::fromLatin1("hel")
             << true;
@@ -1865,13 +1856,13 @@ void tst_QTextCodec::utfHeaders_data()
 
     QTest::newRow("utf32-be bom be")
         << QByteArray("UTF-32BE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\0\0\xfe\xff\0\0\0h\0\0\0e\0\0\0l", 16)
         << QString::fromLatin1("hel")
         << true;
     QTest::newRow("utf32-be nobom")
         << QByteArray("UTF-32BE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\0\0\0h\0\0\0e\0\0\0l", 12)
         << QString::fromLatin1("hel")
         << true;
@@ -1885,13 +1876,13 @@ void tst_QTextCodec::utfHeaders_data()
 
     QTest::newRow("utf32-le bom le")
         << QByteArray("UTF-32LE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("\xff\xfe\0\0h\0\0\0e\0\0\0l\0\0\0", 16)
         << QString::fromLatin1("hel")
         << true;
     QTest::newRow("utf32-le nobom")
         << QByteArray("UTF-32LE")
-        << 0
+        << (int)QTextCodec::DefaultConversion
         << QByteArray("h\0\0\0e\0\0\0l\0\0\0", 12)
         << QString::fromLatin1("hel")
         << true;

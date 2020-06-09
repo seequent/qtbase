@@ -44,13 +44,9 @@
 #include <qapplication.h>
 #include <private/qapplication_p.h>
 #include <qevent.h>
-#include <qdesktopwidget.h>
 #include <qdebug.h>
 #include <qabstracttextdocumentlayout.h>
 #include "private/qtextdocumentlayout_p.h"
-#if QT_CONFIG(textcodec)
-#include <qtextcodec.h>
-#endif
 #include <qpainter.h>
 #include <qdir.h>
 #if QT_CONFIG(whatsthis)
@@ -314,16 +310,16 @@ void QTextBrowserPrivate::setSource(const QUrl &url, QTextDocument::ResourceType
         if (data.userType() == QMetaType::QString) {
             txt = data.toString();
         } else if (data.userType() == QMetaType::QByteArray) {
+            QByteArray ba = data.toByteArray();
             if (type == QTextDocument::HtmlResource) {
-#if QT_CONFIG(textcodec)
-                QByteArray ba = data.toByteArray();
-                QTextCodec *codec = Qt::codecForHtml(ba);
-                txt = codec->toUnicode(ba);
-#else
-                txt = data.toString();
-#endif
+                auto encoding = QStringConverter::encodingForHtml(ba.constData(), ba.size());
+                if (!encoding)
+                    // fall back to utf8
+                    encoding = QStringDecoder::Utf8;
+                QStringDecoder toUtf16(*encoding);
+                txt = toUtf16(ba);
             } else {
-                txt = QString::fromUtf8(data.toByteArray());
+                txt = QString::fromUtf8(ba);
             }
         }
         if (Q_UNLIKELY(txt.isEmpty()))
@@ -810,13 +806,6 @@ void QTextBrowser::reload()
     setSource(s, d->currentType);
 }
 
-#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
-void QTextBrowser::setSource(const QUrl &url)
-{
-    setSource(url, QTextDocument::UnknownResource);
-}
-#endif
-
 /*!
     Attempts to load the document at the given \a url with the specified \a type.
 
@@ -832,14 +821,12 @@ void QTextBrowser::setSource(const QUrl &url, QTextDocument::ResourceType type)
     doSetSource(url, type);
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
 /*!
     Attempts to load the document at the given \a url with the specified \a type.
 
     setSource() calls doSetSource.  In Qt 5, setSource(const QUrl &url) was virtual.
     In Qt 6, doSetSource() is virtual instead, so that it can be overridden in subclasses.
 */
-#endif
 void QTextBrowser::doSetSource(const QUrl &url, QTextDocument::ResourceType type)
 {
     Q_D(QTextBrowser);

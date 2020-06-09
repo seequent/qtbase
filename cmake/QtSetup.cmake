@@ -51,8 +51,8 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 
-# Detect non-prefix builds, either when the install prefix is set to the binary dir
-# or when enabling developer builds and no prefix is specified.
+# Detect non-prefix builds: either when the qtbase install prefix is set to the binary dir
+# or when a developer build is explicitly enabled and no install prefix is specified.
 # This detection only happens when building qtbase, and later is propagated via the generated
 # QtBuildInternalsExtra.cmake file.
 if (PROJECT_NAME STREQUAL "QtBase" AND NOT QT_BUILD_STANDALONE_TESTS)
@@ -62,8 +62,8 @@ if (PROJECT_NAME STREQUAL "QtBase" AND NOT QT_BUILD_STANDALONE_TESTS)
         set(__qt_will_install_value OFF)
         # Handle non-prefix builds by setting the CMake install prefix to point to qtbase's build
         # dir.
-        # While building another repo (like qtsvg), the CMAKE_INSTALL_PREFIX or CMAKE_PREFIX_PATH
-        # (either work) should be set on the command line to point to the qtbase build dir.
+        # While building another repo (like qtsvg) the CMAKE_PREFIX_PATH
+        # should be set on the command line to point to the qtbase build dir.
         set(CMAKE_INSTALL_PREFIX ${QtBase_BINARY_DIR} CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
     else()
@@ -125,8 +125,13 @@ option(QT_NO_MAKE_TESTS "Should tests be built as part of the default 'all' targ
 # When cross-building, we don't build tools by default. Sometimes this also covers Qt apps as well.
 # Like in qttools/assistant/assistant.pro, load(qt_app), which is guarded by a qtNomakeTools() call.
 
+set(qt_no_make_tools_default OFF)
+if(CMAKE_CROSSCOMPILING AND NOT QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+    set(qt_no_make_tools_default ON)
+endif()
 option(QT_NO_MAKE_TOOLS "Should tools be built as part of the default 'all' target."
-       "${CMAKE_CROSSCOMPILING}")
+       "${qt_no_make_tools_default}")
+unset(qt_no_make_tools_default)
 
 include(CTest)
 enable_testing()

@@ -19,11 +19,14 @@ HEADERS +=  \
         text/qstringalgorithms.h \
         text/qstringalgorithms_p.h \
         text/qstringbuilder.h \
+        text/qstringconverter.h \
+        text/qstringconverter_p.h \
         text/qstringiterator_p.h \
         text/qstringlist.h \
         text/qstringliteral.h \
         text/qstringmatcher.h \
         text/qstringview.h \
+        text/qstringtokenizer.h \
         text/qtextboundaryfinder.h \
         text/qunicodetables_p.h \
         text/qunicodetools_p.h
@@ -39,8 +42,10 @@ SOURCES += \
         text/qregexp.cpp \
         text/qstring.cpp \
         text/qstringbuilder.cpp \
+        text/qstringconverter.cpp \
         text/qstringlist.cpp \
         text/qstringview.cpp \
+        text/qstringtokenizer.cpp \
         text/qtextboundaryfinder.cpp \
         text/qunicodetools.cpp \
         text/qvsnprintf.cpp

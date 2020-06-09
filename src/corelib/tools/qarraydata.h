@@ -288,20 +288,12 @@ struct QTypedArrayData
         }())                                                                    \
     /**/
 
-#ifdef Q_COMPILER_CONSTEXPR
-#define Q_ARRAY_LITERAL_CHECK_LITERAL_TYPE(Type) Q_STATIC_ASSERT(std::is_literal_type<Type>::value)
-#else
-#define Q_ARRAY_LITERAL_CHECK_LITERAL_TYPE(Type) do {} while (0)
-#endif
-
 #define Q_ARRAY_LITERAL_IMPL(Type, ...)                                         \
-    Q_ARRAY_LITERAL_CHECK_LITERAL_TYPE(Type);                                   \
-                                                                                \
     /* Portable compile-time array size computation */                          \
-    static Type const data[] = { __VA_ARGS__ };                                 \
+    static constexpr Type data[] = { __VA_ARGS__ };                             \
     enum { Size = sizeof(data) / sizeof(data[0]) };                             \
                                                                                 \
-    static const QArrayData literal = { Q_BASIC_ATOMIC_INITIALIZER(-1), QArrayData::StaticDataFlags, 0 };          \
+    static constexpr QArrayData literal = { Q_BASIC_ATOMIC_INITIALIZER(-1), QArrayData::StaticDataFlags, 0 };\
                                                                                 \
     QArrayDataPointerRef<Type> ref =                                            \
         { static_cast<QTypedArrayData<Type> *>(                                 \
@@ -314,7 +306,37 @@ namespace QtPrivate {
 struct Q_CORE_EXPORT QContainerImplHelper
 {
     enum CutResult { Null, Empty, Full, Subset };
-    static CutResult mid(int originalLength, int *position, int *length);
+    static constexpr CutResult mid(qsizetype originalLength, qsizetype *_position, qsizetype *_length)
+    {
+        qsizetype &position = *_position;
+        qsizetype &length = *_length;
+        if (position > originalLength) {
+            position = 0;
+            length = 0;
+            return Null;
+        }
+
+        if (position < 0) {
+            if (length < 0 || length + position >= originalLength) {
+                position = 0;
+                length = originalLength;
+                return Full;
+            }
+            if (length + position <= 0) {
+                position = length = 0;
+                return Null;
+            }
+            length += position;
+            position = 0;
+        } else if (size_t(length) > size_t(originalLength - position)) {
+            length = originalLength - position;
+        }
+
+        if (position == 0 && length == originalLength)
+            return Full;
+
+        return length > 0 ? Subset : Empty;
+    }
 };
 }
 

@@ -72,10 +72,6 @@ QT_BEGIN_NAMESPACE
 #define QT_QSETTINGS_ALWAYS_CASE_SENSITIVE_AND_FORGET_ORIGINAL_KEY_ORDER
 #endif
 
-#if defined(Q_OS_WINRT)
-#define QT_QTSETTINGS_FORGET_ORIGINAL_KEY_ORDER
-#endif
-
 // used in testing framework
 #define QSETTINGS_P_H_VERSION 3
 
@@ -224,7 +220,7 @@ public:
                                         const QString &organization, const QString &application);
     static QSettingsPrivate *create(const QString &fileName, QSettings::Format format);
 
-    static void processChild(QStringRef key, ChildSpec spec, QStringList &result);
+    static void processChild(QStringView key, ChildSpec spec, QStringList &result);
 
     // Variant streaming functions
     static QStringList variantListToStringList(const QVariantList &l);
@@ -235,18 +231,16 @@ public:
     static QVariant stringToVariant(const QString &s);
     static void iniEscapedKey(const QString &key, QByteArray &result);
     static bool iniUnescapedKey(const QByteArray &key, int from, int to, QString &result);
-    static void iniEscapedString(const QString &str, QByteArray &result, QTextCodec *codec);
-    static void iniEscapedStringList(const QStringList &strs, QByteArray &result, QTextCodec *codec);
+    static void iniEscapedString(const QString &str, QByteArray &result);
+    static void iniEscapedStringList(const QStringList &strs, QByteArray &result);
     static bool iniUnescapedStringList(const QByteArray &str, int from, int to,
-                                       QString &stringResult, QStringList &stringListResult,
-                                       QTextCodec *codec);
+                                       QString &stringResult, QStringList &stringListResult);
     static QStringList splitArgs(const QString &s, int idx);
 
     QSettings::Format format;
     QSettings::Scope scope;
     QString organizationName;
     QString applicationName;
-    QTextCodec *iniCodec;
 
 protected:
     QStack<QSettingsGroup> groupStack;
@@ -283,7 +277,7 @@ public:
 
     bool readIniFile(const QByteArray &data, UnparsedSettingsMap *unparsedIniSections);
     static bool readIniSection(const QSettingsKey &section, const QByteArray &data,
-                               ParsedSettingsMap *settingsMap, QTextCodec *codec);
+                               ParsedSettingsMap *settingsMap);
     static bool readIniLine(const QByteArray &data, int &dataPos, int &lineStart, int &lineLen,
                             int &equalsPos);
 

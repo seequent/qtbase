@@ -131,7 +131,10 @@ import_plugins:qtConfig(static) {
             else: \
                 warning("Plugin class name could not be determined for plugin '$$plug'.")
         }
-        IMPORT_CPP = $$OUT_PWD/$$lower($$basename(TARGET))_plugin_import.cpp
+        TARGET_BASENAME = $$lower($$basename(TARGET))
+        TARGET_BASENAME ~= s/\s/_/g
+
+        IMPORT_CPP = $$OUT_PWD/$${TARGET_BASENAME}_plugin_import.cpp
         write_file($$IMPORT_CPP, IMPORT_FILE_CONT)|error()
         GENERATED_SOURCES += $$IMPORT_CPP
         QMAKE_DISTCLEAN += $$IMPORT_CPP
@@ -223,15 +226,6 @@ for(ever) {
             }
         }
         QMAKE_USE$$var_sfx += $$MODULE_USES
-        # Add capabilities as defined by modules used in the project
-        winrt {
-            MODULE_WINRT_CAPABILITIES = $$eval(QT.$${QTLIB}.winrt_capabilities)
-            !isEmpty(MODULE_WINRT_CAPABILITIES): \
-                WINRT_MANIFEST.capabilities_default += $$MODULE_WINRT_CAPABILITIES
-            MODULE_WINRT_CAPABILITIES_DEVICE = $$eval(QT.$${QTLIB}.winrt_capabilities_device)
-            !isEmpty(MODULE_WINRT_CAPABILITIES_DEVICE): \
-                WINRT_MANIFEST.capabilities_device_default += $$MODULE_WINRT_CAPABILITIES_DEVICE
-        }
     }
     !isEmpty(BAD_QT):error("Unknown module(s) in QT$$var_sfx: $$replace(BAD_QT, _private$, -private)")
 
@@ -279,11 +273,22 @@ contains(all_qt_module_deps, qml): \
     for (QMLPATH, QMLPATHS): \
         IMPORTPATHS += -importPath $$system_quote($$QMLPATH)
 
-    # add qrc files, too
-    !isEmpty(RESOURCES) {
-       IMPORTPATHS += -qrcFiles
-       for (RESOURCE, RESOURCES): \
-           IMPORTPATHS += $$absolute_path($$system_quote($$RESOURCE), $$_PRO_FILE_PWD_)
+    # add resources to qmlimportscanner
+    for (RESOURCE, RESOURCES) {
+        defined($${RESOURCE}.files, var) {
+            # in case of a "struct", add the struct's files
+            base = $$RESOURCE.base
+            for (f, $$RESOURCE.files): SCANNERRESOURCES += "$$base/$$f"
+        } else {
+            # if the resource is a file, just add it
+            SCANNERRESOURCES += $$RESOURCE
+        }
+    }
+
+    !isEmpty(SCANNERRESOURCES) {
+        IMPORTPATHS += -qrcFiles
+        for (RESOURCE, SCANNERRESOURCES): \
+            IMPORTPATHS += $$absolute_path($$system_quote($$RESOURCE), $$_PRO_FILE_PWD_)
     }
 
 
@@ -320,7 +325,10 @@ contains(all_qt_module_deps, qml): \
                 }
             }
         }
-        QML_IMPORT_CPP = $$OUT_PWD/$$lower($$basename(TARGET))_qml_plugin_import.cpp
+        TARGET_BASENAME = $$lower($$basename(TARGET))
+        TARGET_BASENAME ~= s/\s/_/g
+
+        QML_IMPORT_CPP = $$OUT_PWD/$${TARGET_BASENAME}_qml_plugin_import.cpp
         write_file($$QML_IMPORT_CPP, IMPORT_FILE_CONT)|error()
         GENERATED_SOURCES += $$QML_IMPORT_CPP
         QMAKE_DISTCLEAN += $$QML_IMPORT_CPP

@@ -64,25 +64,21 @@ qt_add_module(XcbQpa
         XKB::XKB
 )
 
+# special case begin
+qt_disable_apple_app_extension_api_only(XcbQpa)
+# special case end
+
 ## Scopes:
 #####################################################################
 
-qt_extend_target(XcbQpa CONDITION TARGET Qt::PlatformCompositorSupportPrivate
+qt_extend_target(XcbQpa CONDITION QT_FEATURE_opengl
     PUBLIC_LIBRARIES
-        Qt::PlatformCompositorSupportPrivate
+        Qt::OpenGLPrivate
 )
 
 qt_extend_target(XcbQpa CONDITION TARGET Qt::LinuxAccessibilitySupportPrivate
     PUBLIC_LIBRARIES
         Qt::LinuxAccessibilitySupportPrivate
-)
-
-qt_extend_target(XcbQpa CONDITION QT_FEATURE_vulkan
-    SOURCES
-        qxcbvulkaninstance.cpp qxcbvulkaninstance.h
-        qxcbvulkanwindow.cpp qxcbvulkanwindow.h
-    PUBLIC_LIBRARIES
-        Qt::VulkanSupportPrivate
 )
 
 qt_extend_target(XcbQpa CONDITION QT_FEATURE_glib
@@ -111,6 +107,12 @@ qt_extend_target(XcbQpa CONDITION QT_FEATURE_xcb_sm
         qxcbsessionmanager.cpp qxcbsessionmanager.h
     PUBLIC_LIBRARIES
         ${X11_SM_LIB} ${X11_ICE_LIB}
+)
+
+qt_extend_target(XcbQpa CONDITION QT_FEATURE_vulkan
+    SOURCES
+        qxcbvulkaninstance.cpp qxcbvulkaninstance.h
+        qxcbvulkanwindow.cpp qxcbvulkanwindow.h
 )
 
 qt_extend_target(XcbQpa CONDITION QT_FEATURE_dlopen
@@ -164,7 +166,7 @@ endif()
 ## QXcbIntegrationPlugin Plugin:
 #####################################################################
 
-qt_add_plugin(QXcbIntegrationPlugin
+qt_internal_add_plugin(QXcbIntegrationPlugin
     OUTPUT_NAME qxcb
     TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES xcb # special case
@@ -178,13 +180,13 @@ qt_add_plugin(QXcbIntegrationPlugin
         Qt::XcbQpaPrivate
 )
 
-#### Keys ignored in scope 20:.:.:xcb-plugin.pro:<TRUE>:
+#### Keys ignored in scope 19:.:.:xcb-plugin.pro:<TRUE>:
 # OTHER_FILES = "xcb.json" "README"
 
 ## Scopes:
 #####################################################################
 
-#### Keys ignored in scope 22:.:.:xcb-plugin.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
+#### Keys ignored in scope 21:.:.:xcb-plugin.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
 # PLUGIN_EXTENDS = "-"
 add_subdirectory(gl_integrations)
 if(OFF)

@@ -51,8 +51,6 @@
 // We mean it.
 //
 
-#include <AppKit/AppKit.h>
-
 #include <private/qguiapplication_p.h>
 #include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/qloggingcategory.h>
@@ -61,6 +59,8 @@
 
 #include <objc/runtime.h>
 #include <objc/message.h>
+
+#if defined(__OBJC__)
 
 Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSView));
 
@@ -72,14 +72,6 @@ Q_DECLARE_LOGGING_CATEGORY(lcQpaWindow)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaDrawing)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaMouse)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaScreen)
-
-#ifndef QT_IGNORE_DEPRECATIONS
-#define QT_IGNORE_DEPRECATIONS(statement) \
-    QT_WARNING_PUSH \
-    QT_WARNING_DISABLE_DEPRECATED \
-    statement \
-    QT_WARNING_POP
-#endif
 
 class QPixmap;
 class QString;
@@ -384,6 +376,8 @@ QSendSuperHelper<Args...> qt_objcDynamicSuperHelper(id receiver, SEL selector, A
 
 // Same as calling super, but the super_class field resolved at runtime instead of compile time
 #define qt_objcDynamicSuper(...) qt_objcDynamicSuperHelper(self, _cmd, ##__VA_ARGS__)
+
+#endif // __OBJC__
 
 #endif //QCOCOAHELPERS_H
 

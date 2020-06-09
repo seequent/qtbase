@@ -66,6 +66,10 @@ enum class Launch { Sync, Async, Inherit };
 
 namespace QtPrivate {
 
+template<class T, class U>
+using EnableIfSameOrConvertible = std::enable_if_t<std::is_same_v<T, U>
+                                                   || std::is_convertible_v<T, U>>;
+
 template<class T>
 using EnableForVoid = std::enable_if_t<std::is_same_v<T, void>>;
 
@@ -118,6 +122,12 @@ struct ArgsType<Arg, Args...>
 {
     using First = Arg;
     static const bool HasExtraArgs = (sizeof...(Args) > 0);
+    using AllArgs =
+            std::conditional_t<HasExtraArgs, std::tuple<std::decay_t<Arg>, std::decay_t<Args>...>,
+                               std::decay_t<Arg>>;
+
+    template<class Class, class Callable>
+    static const bool CanInvokeWithArgs = std::is_invocable_v<Callable, Class, Arg, Args...>;
 };
 
 template<>
@@ -125,6 +135,10 @@ struct ArgsType<>
 {
     using First = void;
     static const bool HasExtraArgs = false;
+    using AllArgs = void;
+
+    template<class Class, class Callable>
+    static const bool CanInvokeWithArgs = std::is_invocable_v<Callable, Class>;
 };
 
 template<typename F>
@@ -166,6 +180,21 @@ template<typename Class, typename R, typename... Args>
 struct ArgResolver<R (Class::*)(Args...) const noexcept> : public ArgsType<Args...>
 {
 };
+
+template<class Class, class Callable>
+using EnableIfInvocable = std::enable_if_t<
+        QtPrivate::ArgResolver<Callable>::template CanInvokeWithArgs<Class, Callable>>;
+
+template<class>
+struct isTuple : std::false_type
+{
+};
+template<class... T>
+struct isTuple<std::tuple<T...>> : std::true_type
+{
+};
+template<class T>
+inline constexpr bool isTupleV = isTuple<T>::value;
 
 template<typename Function, typename ResultType, typename ParentResultType>
 class Continuation
@@ -470,6 +499,28 @@ void Continuation<Function, ResultType, ParentResultType>::fulfillPromise(Args &
         promise.reportAndMoveResult(std::invoke(function, std::forward<Args>(args)...));
 }
 
+template<class T>
+void fulfillPromise(QFutureInterface<T> &promise, QFuture<T> &future)
+{
+    if constexpr (!std::is_void_v<T>) {
+        if constexpr (std::is_copy_constructible_v<T>)
+            promise.reportResult(future.result());
+        else
+            promise.reportAndMoveResult(future.takeResult());
+    }
+}
+
+template<class T, class Function>
+void fulfillPromise(QFutureInterface<T> &promise, Function &&handler)
+{
+    if constexpr (std::is_void_v<T>)
+        handler();
+    else if constexpr (std::is_copy_constructible_v<T>)
+        promise.reportResult(handler());
+    else
+        promise.reportAndMoveResult(handler());
+}
+
 #ifndef QT_NO_EXCEPTIONS
 
 template<class Function, class ResultType>
@@ -504,12 +555,7 @@ void FailureHandler<Function, ResultType>::run()
             handleException<ArgType>();
         }
     } else {
-        if constexpr (!std::is_void_v<ResultType>) {
-            if constexpr (std::is_copy_constructible_v<ResultType>)
-                promise.reportResult(parentFuture.result());
-            else
-                promise.reportAndMoveResult(parentFuture.takeResult());
-        }
+        QtPrivate::fulfillPromise(promise, parentFuture);
     }
     promise.reportFinished();
 }
@@ -548,12 +594,7 @@ void FailureHandler<Function, ResultType>::handleAllExceptions()
         parentFuture.d.exceptionStore().throwPossibleException();
     } catch (...) {
         try {
-            if constexpr (std::is_void_v<ResultType>)
-                handler();
-            else if constexpr (std::is_copy_constructible_v<ResultType>)
-                promise.reportResult(handler());
-            else
-                promise.reportAndMoveResult(handler());
+            QtPrivate::fulfillPromise(promise, std::forward<Function>(handler));
         } catch (...) {
             promise.reportException(std::current_exception());
         }
@@ -562,6 +603,98 @@ void FailureHandler<Function, ResultType>::handleAllExceptions()
 
 #endif // QT_NO_EXCEPTIONS
 
+template<class Function, class ResultType>
+class CanceledHandler
+{
+public:
+    static QFuture<ResultType> create(Function &&handler, QFuture<ResultType> *future,
+                                      QFutureInterface<ResultType> promise)
+    {
+        Q_ASSERT(future);
+
+        auto canceledContinuation = [parentFuture = *future, promise,
+                                     handler = std::move(handler)]() mutable {
+            promise.reportStarted();
+
+            if (parentFuture.isCanceled()) {
+#ifndef QT_NO_EXCEPTIONS
+                if (parentFuture.d.exceptionStore().hasException()) {
+                    // Propagate the exception to the result future
+                    promise.reportException(parentFuture.d.exceptionStore().exception());
+                } else {
+                    try {
+#endif
+                        QtPrivate::fulfillPromise(promise, std::forward<Function>(handler));
+#ifndef QT_NO_EXCEPTIONS
+                    } catch (...) {
+                        promise.reportException(std::current_exception());
+                    }
+                }
+#endif
+            } else {
+                QtPrivate::fulfillPromise(promise, parentFuture);
+            }
+
+            promise.reportFinished();
+        };
+        future->d.setContinuation(std::move(canceledContinuation));
+        return promise.future();
+    }
+};
+
 } // namespace QtPrivate
+
+namespace QtFuture {
+
+template<class Signal>
+using ArgsType = typename QtPrivate::ArgResolver<Signal>::AllArgs;
+
+template<class Sender, class Signal, typename = QtPrivate::EnableIfInvocable<Sender, Signal>>
+static QFuture<ArgsType<Signal>> connect(Sender *sender, Signal signal)
+{
+    using ArgsType = ArgsType<Signal>;
+    QFutureInterface<ArgsType> promise;
+    promise.reportStarted();
+
+    using Connections = std::pair<QMetaObject::Connection, QMetaObject::Connection>;
+    auto connections = std::make_shared<Connections>();
+
+    if constexpr (std::is_void_v<ArgsType>) {
+        connections->first =
+                QObject::connect(sender, signal, sender, [promise, connections]() mutable {
+                    promise.reportFinished();
+                    QObject::disconnect(connections->first);
+                    QObject::disconnect(connections->second);
+                });
+    } else if constexpr (QtPrivate::isTupleV<ArgsType>) {
+        connections->first = QObject::connect(sender, signal, sender,
+                                              [promise, connections](auto... values) mutable {
+                                                  promise.reportResult(std::make_tuple(values...));
+                                                  promise.reportFinished();
+                                                  QObject::disconnect(connections->first);
+                                                  QObject::disconnect(connections->second);
+                                              });
+    } else {
+        connections->first = QObject::connect(sender, signal, sender,
+                                              [promise, connections](ArgsType value) mutable {
+                                                  promise.reportResult(value);
+                                                  promise.reportFinished();
+                                                  QObject::disconnect(connections->first);
+                                                  QObject::disconnect(connections->second);
+                                              });
+    }
+
+    connections->second =
+            QObject::connect(sender, &QObject::destroyed, sender, [promise, connections]() mutable {
+                promise.reportCanceled();
+                promise.reportFinished();
+                QObject::disconnect(connections->first);
+                QObject::disconnect(connections->second);
+            });
+
+    return promise.future();
+}
+
+} // namespace QtFuture
 
 QT_END_NAMESPACE

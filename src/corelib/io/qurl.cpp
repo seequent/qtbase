@@ -422,6 +422,9 @@
 
 QT_BEGIN_NAMESPACE
 
+// in qstring.cpp:
+void qt_from_latin1(char16_t *dst, const char *str, size_t size) noexcept;
+
 inline static bool isHex(char c)
 {
     c |= 0x20;
@@ -722,9 +725,11 @@ inline void QUrlPrivate::setError(ErrorCode errorCode, const QString &source, in
 // the decodedXXX tables are run with the delimiters set to "decode" by default
 // (except for the query, which doesn't use these functions)
 
-#define decode(x) ushort(x)
-#define leave(x)  ushort(0x100 | (x))
-#define encode(x) ushort(0x200 | (x))
+namespace {
+template <typename T> constexpr ushort decode(T x) noexcept { return ushort(x); }
+template <typename T> constexpr ushort leave(T x) noexcept { return ushort(0x100 | x); }
+template <typename T> constexpr ushort encode(T x) noexcept { return ushort(0x200 | x); }
+}
 
 static const ushort userNameInIsolation[] = {
     decode(':'), // 0
@@ -820,7 +825,7 @@ recodeFromUser(const QString &input, const ushort *actions, int from, int to)
     QString output;
     const QChar *begin = input.constData() + from;
     const QChar *end = input.constData() + to;
-    if (qt_urlRecode(output, begin, end, {}, actions))
+    if (qt_urlRecode(output, QStringView{begin, end}, {}, actions))
         return output;
 
     return input.mid(from, to - from);
@@ -828,7 +833,7 @@ recodeFromUser(const QString &input, const ushort *actions, int from, int to)
 
 // appendXXXX functions: copy from the internal form to the external, user form.
 // the internal value is stored in its PrettyDecoded form, so that case is easy.
-static inline void appendToUser(QString &appendTo, const QStringRef &value, QUrl::FormattingOptions options,
+static inline void appendToUser(QString &appendTo, QStringView value, QUrl::FormattingOptions options,
                                 const ushort *actions)
 {
     if (options == QUrl::PrettyDecoded) {
@@ -836,16 +841,9 @@ static inline void appendToUser(QString &appendTo, const QStringRef &value, QUrl
         return;
     }
 
-    if (!qt_urlRecode(appendTo, value.data(), value.end(), options, actions))
+    if (!qt_urlRecode(appendTo, value, options, actions))
         appendTo += value;
 }
-
-static inline void appendToUser(QString &appendTo, const QString &value, QUrl::FormattingOptions options,
-                                const ushort *actions)
-{
-    appendToUser(appendTo, QStringRef(&value), options, actions);
-}
-
 
 inline void QUrlPrivate::appendAuthority(QString &appendTo, QUrl::FormattingOptions options, Section appendingTo) const
 {
@@ -895,13 +893,13 @@ inline void QUrlPrivate::appendUserInfo(QString &appendTo, QUrl::FormattingOptio
         }
     }
 
-    if (!qt_urlRecode(appendTo, userName.constData(), userName.constEnd(), options, userNameActions))
+    if (!qt_urlRecode(appendTo, userName, options, userNameActions))
         appendTo += userName;
     if (options & QUrl::RemovePassword || !hasPassword()) {
         return;
     } else {
         appendTo += QLatin1Char(':');
-        if (!qt_urlRecode(appendTo, password.constData(), password.constEnd(), options, passwordActions))
+        if (!qt_urlRecode(appendTo, password, options, passwordActions))
             appendTo += password;
     }
 }
@@ -1173,7 +1171,7 @@ inline void QUrlPrivate::appendHost(QString &appendTo, QUrl::FormattingOptions o
     if (host.at(0).unicode() == '[') {
         // IPv6 addresses might contain a zone-id which needs to be recoded
         if (options != 0)
-            if (qt_urlRecode(appendTo, host.constBegin(), host.constEnd(), options, nullptr))
+            if (qt_urlRecode(appendTo, host, options, nullptr))
                 return;
         appendTo += host;
     } else {
@@ -1205,7 +1203,7 @@ static const QChar *parseIpFuture(QString &host, const QChar *begin, const QChar
             (begin[2].unicode() >= '0' && begin[2].unicode() <= '9')) {
         // this is so unlikely that we'll just go down the slow path
         // decode the whole string, skipping the "[vH." and "]" which we already know to be there
-        host += QString::fromRawData(begin, 4);
+        host += QStringView(begin, 4);
 
         // uppercase the version, if necessary
         if (begin[2].unicode() >= 'a')
@@ -1215,7 +1213,7 @@ static const QChar *parseIpFuture(QString &host, const QChar *begin, const QChar
         --end;
 
         QString decoded;
-        if (mode == QUrl::TolerantMode && qt_urlRecode(decoded, begin, end, QUrl::FullyDecoded, nullptr)) {
+        if (mode == QUrl::TolerantMode && qt_urlRecode(decoded, QStringView{begin, end}, QUrl::FullyDecoded, nullptr)) {
             begin = decoded.constBegin();
             end = decoded.constEnd();
         }
@@ -1246,7 +1244,7 @@ static const QChar *parseIp6(QString &host, const QChar *begin, const QChar *end
     if (mode == QUrl::TolerantMode) {
         // this struct is kept in automatic storage because it's only 4 bytes
         const ushort decodeColon[] = { decode(':'), 0 };
-        if (qt_urlRecode(decoded, begin, end, QUrl::ComponentFormattingOption::PrettyDecoded, decodeColon) == 0)
+        if (qt_urlRecode(decoded, QStringView{begin, end}, QUrl::ComponentFormattingOption::PrettyDecoded, decodeColon) == 0)
             decoded = QString(begin, end-begin);
     } else {
       decoded = QString(begin, end-begin);
@@ -1346,7 +1344,7 @@ inline bool QUrlPrivate::setHost(const QString &value, int from, int iend, QUrl:
 
     // check for percent-encoding first
     QString s;
-    if (mode == QUrl::TolerantMode && qt_urlRecode(s, begin, end, { }, nullptr)) {
+    if (mode == QUrl::TolerantMode && qt_urlRecode(s, QStringView{begin, end}, { }, nullptr)) {
         // something was decoded
         // anything encoded left?
         int pos = s.indexOf(QChar(0x25)); // '%'
@@ -1359,7 +1357,7 @@ inline bool QUrlPrivate::setHost(const QString &value, int from, int iend, QUrl:
         return setHost(s, 0, s.length(), QUrl::StrictMode);
     }
 
-    s = qt_ACE_do(QString::fromRawData(begin, len), NormalizeAce, ForbidLeadingDot);
+    s = qt_ACE_do(QStringView(begin, len), NormalizeAce, ForbidLeadingDot);
     if (s.isEmpty()) {
         setError(InvalidRegNameError, value);
         return false;
@@ -3509,7 +3507,11 @@ QString QUrl::fromEncodedComponent_helper(const QByteArray &ba)
 */
 QString QUrl::fromAce(const QByteArray &domain)
 {
-    return qt_ACE_do(QString::fromLatin1(domain), NormalizeAce, ForbidLeadingDot /*FIXME: make configurable*/);
+    QVarLengthArray<char16_t> buffer;
+    buffer.resize(domain.size());
+    qt_from_latin1(buffer.data(), domain.data(), domain.size());
+    return qt_ACE_do(QStringView{buffer.data(), buffer.size()},
+                     NormalizeAce, ForbidLeadingDot /*FIXME: make configurable*/);
 }
 
 /*!

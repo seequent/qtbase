@@ -117,7 +117,7 @@ Build options:
   -appstore-compliant .. Disable code that is not allowed in platform app stores.
                          This is on by default for platforms which require distribution
                          through an app store by default, in particular Android,
-                         iOS, tvOS, watchOS, and Universal Windows Platform. [auto]
+                         iOS, tvOS, and watchOS. [auto]
 
   -qtnamespace <name> .. Wrap all Qt library code in 'namespace <name> {...}'.
   -qtlibinfix <infix> .. Rename all libQt5*.so to libQt5*<infix>.so.
@@ -254,7 +254,7 @@ Core options:
 Network options:
 
   -ssl ................. Enable either SSL support method [auto]
-  -no-openssl .......... Do not use OpenSSL [default on Apple and WinRT]
+  -no-openssl .......... Do not use OpenSSL [default on Apple]
   -openssl-linked ...... Use OpenSSL and link to libssl [no]
   -openssl-runtime ..... Use OpenSSL and dynamically load libssl [auto]
   -schannel ............ Use Secure Channel [no] (Windows only)
@@ -280,13 +280,10 @@ Gui, printing, widget options:
 
   -no-opengl ........... Disable OpenGL support
   -opengl <api> ........ Enable OpenGL support. Supported APIs:
-                         es2 (default on Windows), desktop (default on Unix),
-                         dynamic (Windows only)
+                         es2, desktop (default on Unix),
+                         dynamic (Windows only, default on Windows)
   -opengles3 ........... Enable OpenGL ES 3.x support instead of ES 2.x [auto]
   -egl ................. Enable EGL support [auto]
-  -angle ............... Use bundled ANGLE to support OpenGL ES 2.0 [auto]
-                         (Windows only)
-  -combined-angle-lib .. Merge LibEGL and LibGLESv2 into LibANGLE (Windows only)
 
   -qpa <name> .......... Select default QPA backend(s) (e.g., xcb, cocoa, windows)
                          A prioritized list separated by semi-colons.

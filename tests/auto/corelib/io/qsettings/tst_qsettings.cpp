@@ -56,9 +56,7 @@
 
 #if defined(Q_OS_WIN)
 #include <QtCore/qt_windows.h>
-#ifndef Q_OS_WINRT
-#  include <private/qwinregistry_p.h>
-#endif
+#include <private/qwinregistry_p.h>
 #else
 #include <unistd.h>
 #endif
@@ -77,7 +75,7 @@ QT_FORWARD_DECLARE_CLASS(QSettings)
 
 static inline bool canWriteNativeSystemSettings()
 {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     HKEY key;
     const LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"Software", 0, KEY_WRITE, &key);
     if (result == ERROR_SUCCESS)
@@ -159,7 +157,7 @@ private slots:
 #if !defined(Q_OS_WIN) && !defined(QT_QSETTINGS_ALWAYS_CASE_SENSITIVE_AND_FORGET_ORIGINAL_KEY_ORDER)
     void dontReorderIniKeysNeedlessly();
 #endif
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     void consistentRegistryStorage();
 #endif
 
@@ -170,7 +168,6 @@ private slots:
     void childGroups();
     void childKeys_data();
     void childKeys();
-    void setIniCodec();
     void testIniParsing_data();
     void testIniParsing();
     void testEscapes();
@@ -188,7 +185,6 @@ private slots:
     void testByteArray_data();
     void testByteArray();
     void testByteArrayNativeFormat();
-    void iniCodec();
     void bom();
     void embeddedZeroByte_data();
     void embeddedZeroByte();
@@ -216,12 +212,7 @@ void tst_QSettings::getSetCheck()
 static QString settingsPath(const char *path = nullptr)
 {
     // Temporary path for files that are specified explicitly in the constructor.
-#ifndef Q_OS_WINRT
     static const QString tempPath = QDir::tempPath() + QLatin1String("/tst_QSettings");
-#else
-    static const QString tempPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-        + QLatin1String("/tst_QSettings");
-#endif
     return path && *path ? tempPath + QLatin1Char('/') + QLatin1String(path) : tempPath;
 }
 
@@ -326,7 +317,7 @@ void tst_QSettings::cleanupTestFiles()
     if (settingsDir.exists())
         QVERIFY(settingsDir.removeRecursively());
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     QSettings("HKEY_CURRENT_USER\\Software\\software.org", QSettings::NativeFormat).clear();
     QSettings("HKEY_CURRENT_USER\\Software\\other.software.org", QSettings::NativeFormat).clear();
     QSettings("HKEY_CURRENT_USER\\Software\\foo", QSettings::NativeFormat).clear();
@@ -341,7 +332,7 @@ void tst_QSettings::cleanupTestFiles()
         QSettings("HKEY_LOCAL_MACHINE\\Software\\bat", QSettings::NativeFormat).clear();
         QSettings("HKEY_LOCAL_MACHINE\\Software\\baz", QSettings::NativeFormat).clear();
     }
-#elif defined(Q_OS_DARWIN) || defined(Q_OS_WINRT)
+#elif defined(Q_OS_DARWIN)
     QSettings(QSettings::UserScope, "software.org", "KillerAPP").clear();
     QSettings(QSettings::SystemScope, "software.org", "KillerAPP").clear();
     QSettings(QSettings::UserScope, "other.software.org", "KillerAPP").clear();
@@ -354,12 +345,7 @@ void tst_QSettings::cleanupTestFiles()
 
     const QString foo(QLatin1String("foo"));
 
-#if defined(Q_OS_WINRT)
-    QSettings(foo, QSettings::NativeFormat).clear();
-    QFile fooFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QLatin1Char('/') + foo);
-#else
     QFile fooFile(foo);
-#endif
     if (fooFile.exists())
         QVERIFY2(fooFile.remove(), qPrintable(fooFile.errorString()));
 }
@@ -542,7 +528,7 @@ void tst_QSettings::ctor()
         } else {
             caseSensitive = pathconf(settings5.fileName().toLatin1().constData(), _PC_CASE_SENSITIVE);
         }
-#elif defined(Q_OS_WIN32) || defined(Q_OS_WINRT)
+#elif defined(Q_OS_WIN32)
         caseSensitive = false;
 #endif
         if (caseSensitive)
@@ -616,8 +602,8 @@ void tst_QSettings::ctor()
             QCoreApplication::instance()->setOrganizationName("");
             QCoreApplication::instance()->setApplicationName("");
             QSettings settings;
-#if defined(Q_OS_MAC) || defined(Q_OS_WINRT)
-            QEXPECT_FAIL("native", "Default settings on Mac/WinRT are valid, despite organization domain, name, and app name being null", Continue);
+#if defined(Q_OS_MAC)
+            QEXPECT_FAIL("native", "Default settings on Mac are valid, despite organization domain, name, and app name being null", Continue);
 #endif
             QCOMPARE(settings.status(), QSettings::AccessError);
             QCoreApplication::instance()->setOrganizationName("software.org");
@@ -631,8 +617,8 @@ void tst_QSettings::ctor()
         }
 
         QSettings settings(format, QSettings::UserScope, "", "");
-#if defined(Q_OS_MAC) || defined(Q_OS_WINRT)
-        QEXPECT_FAIL("native", "Default settings on Mac/WinRT are valid, despite organization domain, name, and app name being null", Continue);
+#if defined(Q_OS_MAC)
+        QEXPECT_FAIL("native", "Default settings on Mac are valid, despite organization domain, name, and app name being null", Continue);
 #endif
         QCOMPARE(settings.status(), QSettings::AccessError);
         QSettings settings2(format, QSettings::UserScope, "software.org", "KillerAPP");
@@ -693,28 +679,6 @@ void tst_QSettings::testByteArrayNativeFormat()
     QSettings settings(":/resourcefile6.plist", QSettings::NativeFormat);
     QCOMPARE(settings.value("passwordData"), QVariant(QByteArray::fromBase64("RBxVAAsDVsO/")));
 #endif
-}
-
-void tst_QSettings::iniCodec()
-{
-    {
-        QSettings settings("QtProject", "tst_qsettings");
-        settings.setIniCodec("cp1251");
-        QByteArray ba;
-        ba.resize(256);
-        for (int i = 0; i < ba.size(); i++)
-            ba[i] = i;
-        settings.setValue("array",ba);
-    }
-    {
-        QSettings settings("QtProject", "tst_qsettings");
-        settings.setIniCodec("cp1251");
-        QByteArray ba = settings.value("array").toByteArray();
-        QCOMPARE(ba.size(), 256);
-        for (int i = 0; i < ba.size(); i++)
-            QCOMPARE((uchar)ba.at(i), (uchar)i);
-    }
-
 }
 
 void tst_QSettings::bom()
@@ -1748,14 +1712,9 @@ void tst_QSettings::sync()
 
     // Now "some other app" will change other.software.org.ini
     QString userConfDir = settingsPath("__user__") + QDir::separator();
-#if !defined(Q_OS_WINRT)
     unlink((userConfDir + "other.software.org.ini").toLatin1());
     rename((userConfDir + "software.org.ini").toLatin1(),
            (userConfDir + "other.software.org.ini").toLatin1());
-#else
-    QFile::remove(userConfDir + "other.software.org.ini");
-    QFile::rename(userConfDir + "software.org.ini" , userConfDir + "other.software.org.ini");
-#endif
 
     settings2.sync();
 
@@ -2289,7 +2248,7 @@ void tst_QSettings::testRegistryShortRootNames()
 
 void tst_QSettings::testRegistry32And64Bit()
 {
-#if !defined (Q_OS_WIN) || defined(Q_OS_WINRT)
+#if !defined (Q_OS_WIN)
     QSKIP("This test is specific to the Windows registry.", SkipAll);
 #else
 
@@ -2370,7 +2329,7 @@ void tst_QSettings::fromFile()
 
     QString path = "foo";
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     if (format == QSettings::NativeFormat)
         path = "\\HKEY_CURRENT_USER\\Software\\foo";
 #endif
@@ -2415,71 +2374,6 @@ void tst_QSettings::fromFile()
 
     QDir::setCurrent(oldCur);
 }
-
-#ifdef QT_BUILD_INTERNAL
-void tst_QSettings::setIniCodec()
-{
-    QByteArray expeContents4, expeContents5;
-    QByteArray actualContents4, actualContents5;
-
-    {
-        QFile inFile(":/resourcefile4.ini");
-        inFile.open(QIODevice::ReadOnly);
-        expeContents4 = inFile.readAll();
-        inFile.close();
-    }
-
-    {
-        QFile inFile(":/resourcefile5.ini");
-        inFile.open(QIODevice::ReadOnly);
-        expeContents5 = inFile.readAll();
-        inFile.close();
-    }
-
-    {
-        QSettings settings4(QSettings::IniFormat, QSettings::UserScope, "software.org", "KillerAPP");
-        settings4.setIniCodec("UTF-8");
-        settings4.setValue(QLatin1String("Fa\xe7" "ade/QU\xc9" "BEC"), QLatin1String("Fa\xe7" "ade/QU\xc9" "BEC"));
-        settings4.sync();
-
-        QSettings settings5(QSettings::IniFormat, QSettings::UserScope, "other.software.org", "KillerAPP");
-        settings5.setIniCodec("ISO 8859-1");
-        settings5.setValue(QLatin1String("Fa\xe7" "ade/QU\xc9" "BEC"), QLatin1String("Fa\xe7" "ade/QU\xc9" "BEC"));
-        settings5.sync();
-
-        {
-            QFile inFile(settings4.fileName());
-            inFile.open(QIODevice::ReadOnly | QIODevice::Text);
-            actualContents4 = inFile.readAll();
-            inFile.close();
-        }
-
-        {
-            QFile inFile(settings5.fileName());
-            inFile.open(QIODevice::ReadOnly | QIODevice::Text);
-            actualContents5 = inFile.readAll();
-            inFile.close();
-        }
-    }
-
-    QConfFile::clearCache();
-
-    QCOMPARE(actualContents4, expeContents4);
-    QCOMPARE(actualContents5, expeContents5);
-
-    QSettings settings4(QSettings::IniFormat, QSettings::UserScope, "software.org", "KillerAPP");
-    settings4.setIniCodec("UTF-8");
-    QSettings settings5(QSettings::IniFormat, QSettings::UserScope, "other.software.org", "KillerAPP");
-    settings5.setIniCodec("Latin-1");
-
-    QCOMPARE(settings4.allKeys().count(), 1);
-    QCOMPARE(settings5.allKeys().count(), 1);
-
-    QCOMPARE(settings4.allKeys().first(), settings5.allKeys().first());
-    QCOMPARE(settings4.value(settings4.allKeys().first()).toString(),
-             settings5.value(settings5.allKeys().first()).toString());
-}
-#endif
 
 static bool containsSubList(QStringList mom, QStringList son)
 {
@@ -2782,7 +2676,7 @@ static QString iniUnescapedKey(const QByteArray &ba)
 static QByteArray iniEscapedStringList(const QStringList &strList)
 {
     QByteArray result;
-    QSettingsPrivate::iniEscapedStringList(strList, result, 0);
+    QSettingsPrivate::iniEscapedStringList(strList, result);
     return result;
 }
 
@@ -2790,23 +2684,9 @@ static QStringList iniUnescapedStringList(const QByteArray &ba)
 {
     QStringList result;
     QString str;
-#if QSETTINGS_P_H_VERSION >= 2
-    bool isStringList = QSettingsPrivate::iniUnescapedStringList(ba, 0, ba.size(), str, result
-#if QSETTINGS_P_H_VERSION >= 3
-                                                                 , 0
-#endif
-                                                                    );
+    bool isStringList = QSettingsPrivate::iniUnescapedStringList(ba, 0, ba.size(), str, result);
     if (!isStringList)
         result = QStringList(str);
-#else
-    QStringList *strList = QSettingsPrivate::iniUnescapedStringList(ba, 0, ba.size(), str);
-    if (strList) {
-        result = *strList;
-        delete strList;
-    } else {
-        result = QStringList(str);
-    }
-#endif
     return result;
 }
 #endif
@@ -2905,8 +2785,8 @@ void tst_QSettings::testEscapes()
     testEscapedStringList(QChar(0) + QString("0"), "\\0\\x30");
     testEscapedStringList("~!@#$%^&*()_+.-/\\=", "\"~!@#$%^&*()_+.-/\\\\=\"");
     testEscapedStringList("~!@#$%^&*()_+.-/\\", "~!@#$%^&*()_+.-/\\\\");
-    testEscapedStringList(QString("\x7F") + "12aFz", "\\x7f\\x31\\x32\\x61\\x46z");
-    testEscapedStringList(QString("   \t\n\\n") + QChar(0x123) + QChar(0x4567), "\"   \\t\\n\\\\n\\x123\\x4567\"");
+    testEscapedStringList(QString("\x7F") + "12aFz", QByteArray("\x7f") + "12aFz");
+    testEscapedStringList(QString("   \t\n\\n") + QChar(0x123) + QChar(0x4567), "\"   \\t\\n\\\\n\xC4\xA3\xE4\x95\xA7\"");
     testEscapedStringList(QString("\a\b\f\n\r\t\v'\"?\001\002\x03\x04"), "\\a\\b\\f\\n\\r\\t\\v'\\\"?\\x1\\x2\\x3\\x4");
     testEscapedStringList(QStringList() << "," << ";" << "a" << "ab,  \tc, d ", "\",\", \";\", a, \"ab,  \\tc, d \"");
 
@@ -2921,7 +2801,7 @@ void tst_QSettings::testEscapes()
                             QString() + QChar(0) + QChar(0) + QChar(0) + QChar(0) + QChar(1)
                             + QChar(0111) + QChar(011111) + QChar(0) + QChar(0xCDEF) + "GH"
                             + QChar(0x3456),
-                            "\\0\\0\\0\\0\\x1I\\x1249\\0\\xcdefGH\\x3456");
+                            "\\0\\0\\0\\0\\x1I\xE1\x89\x89\\0\xEC\xB7\xAFGH\xE3\x91\x96");
     testUnescapedStringList(QByteArray("\\c\\d\\e\\f\\g\\$\\*\\\0", 16), "\f", "\\f");
     testUnescapedStringList("\"a\",  \t\"bc \", \"  d\" , \"ef  \" ,,g,   hi  i,,, ,",
                             QStringList() << "a" << "bc " << "  d" << "ef  " << "" << "g" << "hi  i"
@@ -3594,7 +3474,7 @@ void tst_QSettings::rainersSyncBugOnMac()
 {
     QFETCH(QSettings::Format, format);
 
-#if defined(Q_OS_DARWIN) || defined(Q_OS_WINRT)
+#if defined(Q_OS_DARWIN)
     if (format == QSettings::NativeFormat)
         QSKIP("Apple OSes do not support direct reads from and writes to .plist files, due to caching and background syncing. See QTBUG-34899.");
 #endif
@@ -3629,7 +3509,7 @@ void tst_QSettings::recursionBug()
     }
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 
 static DWORD readKeyType(HKEY handle, QStringView rSubKey)
 {

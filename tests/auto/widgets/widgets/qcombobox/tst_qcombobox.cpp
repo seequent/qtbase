@@ -263,15 +263,6 @@ void tst_QComboBox::getSetCheck()
     obj1.setCompleter(&completer);
     QVERIFY(obj1.completer() == nullptr); // no QLineEdit is set
 
-#if QT_DEPRECATED_SINCE(5, 13)
-    // bool QComboBox::autoCompletion()
-    // void QComboBox::setAutoCompletion(bool)
-    obj1.setAutoCompletion(false);
-    QCOMPARE(false, obj1.autoCompletion());
-    obj1.setAutoCompletion(true);
-    QCOMPARE(true, obj1.autoCompletion());
-#endif
-
     // bool QComboBox::duplicatesEnabled()
     // void QComboBox::setDuplicatesEnabled(bool)
     obj1.setDuplicatesEnabled(false);
@@ -302,8 +293,6 @@ void tst_QComboBox::getSetCheck()
     QCOMPARE(QComboBox::SizeAdjustPolicy(QComboBox::AdjustToContents), obj1.sizeAdjustPolicy());
     obj1.setSizeAdjustPolicy(QComboBox::SizeAdjustPolicy(QComboBox::AdjustToContentsOnFirstShow));
     QCOMPARE(QComboBox::SizeAdjustPolicy(QComboBox::AdjustToContentsOnFirstShow), obj1.sizeAdjustPolicy());
-    obj1.setSizeAdjustPolicy(QComboBox::SizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLength));
-    QCOMPARE(QComboBox::SizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLength), obj1.sizeAdjustPolicy());
     obj1.setSizeAdjustPolicy(QComboBox::SizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon));
     QCOMPARE(QComboBox::SizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon), obj1.sizeAdjustPolicy());
 
@@ -531,19 +520,10 @@ void tst_QComboBox::sizeAdjustPolicy()
     testWidget->addItem("normal item");
     QCOMPARE(testWidget->sizeHint(), firstShow);
 
-    // check that with minimumContentsLength/AdjustToMinimumContentsLength sizehint changes
-    testWidget->setMinimumContentsLength(30);
-    QCOMPARE(testWidget->sizeHint(), firstShow);
-    testWidget->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLength);
-    QSize minimumContentsLength = testWidget->sizeHint();
-    QVERIFY(minimumContentsLength.width() > firstShow.width());
-    testWidget->setMinimumContentsLength(60);
-    QVERIFY(minimumContentsLength.width() < testWidget->sizeHint().width());
-
     // check that with minimumContentsLength/AdjustToMinimumContentsLengthWithIcon sizehint changes
     testWidget->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     testWidget->setMinimumContentsLength(30);
-    minimumContentsLength = testWidget->sizeHint();
+    QSize minimumContentsLength = testWidget->sizeHint();
     QVERIFY(minimumContentsLength.width() > firstShow.width());
     testWidget->setMinimumContentsLength(60);
     QVERIFY(minimumContentsLength.width() < testWidget->sizeHint().width());
@@ -816,9 +796,6 @@ void tst_QComboBox::virtualAutocompletion()
     QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
     QComboBox *testWidget = topLevel.comboBox();
     testWidget->clear();
-#if QT_DEPRECATED_SINCE(5, 13)
-    testWidget->setAutoCompletion(true);
-#endif
     testWidget->addItem("Foo");
     testWidget->addItem("Bar");
     testWidget->addItem("Boat");
@@ -881,9 +858,6 @@ void tst_QComboBox::autoCompletionCaseSensitivity()
     QCOMPARE(qApp->focusWidget(), (QWidget *)testWidget);
 
     testWidget->clear();
-#if QT_DEPRECATED_SINCE(5, 13)
-    testWidget->setAutoCompletion(true);
-#endif
     testWidget->addItem("Cow");
     testWidget->addItem("irrelevant1");
     testWidget->addItem("aww");
@@ -1720,9 +1694,6 @@ void tst_QComboBox::setCustomModelAndView()
     QTest::qWait(QApplication::doubleClickInterval());
 
     QTest::mouseClick(window->windowHandle(), Qt::LeftButton, {}, view->mapTo(window, subItemRect.center()));
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "Fails on WinRT - QTBUG-68297", Abort);
-#endif
     QTRY_COMPARE(combo.currentText(), subItem21Text);
 }
 
@@ -2432,9 +2403,6 @@ void tst_QComboBox::task190205_setModelAdjustToContents()
     correctBox.addItems(finalContent);
     correctBox.showNormal();
 
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "WinRT does not support more than 1 native top level widget", Abort);
-#endif
     QVERIFY(QTest::qWaitForWindowExposed(&box));
     QVERIFY(QTest::qWaitForWindowExposed(&correctBox));
 
@@ -3104,9 +3072,6 @@ void tst_QComboBox::task_QTBUG_31146_popupCompletion()
 
     QComboBox comboBox;
     comboBox.setEditable(true);
-#if QT_DEPRECATED_SINCE(5, 13)
-    comboBox.setAutoCompletion(true);
-#endif
     comboBox.setInsertPolicy(QComboBox::NoInsert);
     comboBox.completer()->setCaseSensitivity(Qt::CaseInsensitive);
     comboBox.completer()->setCompletionMode(QCompleter::PopupCompletion);
@@ -3382,9 +3347,6 @@ void tst_QComboBox::task_QTBUG_56693_itemFontFromModel()
     QVERIFY(container);
     QVERIFY(QTest::qWaitForWindowExposed(container));
 
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "Fails on WinRT - QTBUG-68297", Abort);
-#endif
     QCOMPARE(proxyStyle->italicItemsNo, 5);
 
     box.hidePopup();

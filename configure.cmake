@@ -6,10 +6,10 @@
 
 #### Libraries
 
-qt_find_package(ZLIB PROVIDED_TARGETS ZLIB::ZLIB)
-qt_find_package(ZSTD PROVIDED_TARGETS ZSTD::ZSTD)
-qt_find_package(WrapDBus1 PROVIDED_TARGETS dbus-1)
-qt_find_package(Libudev PROVIDED_TARGETS PkgConfig::Libudev)
+qt_find_package(ZLIB PROVIDED_TARGETS ZLIB::ZLIB MODULE_NAME global QMAKE_LIB zlib)
+qt_find_package(ZSTD PROVIDED_TARGETS ZSTD::ZSTD MODULE_NAME global QMAKE_LIB zstd)
+qt_find_package(WrapDBus1 PROVIDED_TARGETS dbus-1 MODULE_NAME global QMAKE_LIB dbus)
+qt_find_package(Libudev PROVIDED_TARGETS PkgConfig::Libudev MODULE_NAME global QMAKE_LIB libudev)
 
 
 #### Tests
@@ -308,6 +308,25 @@ int main(int argc, char **argv)
 }
 ")
 
+# intelcet
+qt_config_compile_test(intelcet
+    LABEL "Support for Intel Control-flow Enforcement Technology"
+    CODE
+"
+
+
+int main(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    /* BEGIN TEST: */
+#if !defined(__CET__)
+#  error Intel CET not available
+#endif
+    /* END TEST: */
+    return 0;
+}
+")
+
 
 
 #### Features
@@ -400,7 +419,7 @@ qt_feature_config("separate_debug_info" QMAKE_PUBLIC_QT_CONFIG)
 qt_feature("appstore-compliant" PUBLIC
     LABEL "App store compliance"
     PURPOSE "Disables code that is not allowed in platform app stores"
-    AUTODETECT UIKIT OR ANDROID OR WINRT
+    AUTODETECT UIKIT OR ANDROID
 )
 qt_feature("simulator_and_device" PUBLIC
     LABEL "Build for both simulator and device"
@@ -419,7 +438,7 @@ qt_feature("force_asserts" PUBLIC
 )
 qt_feature("headersclean"
     LABEL "Check for clean headers"
-    AUTODETECT QT_FEATURE_developer_build
+    AUTODETECT OFF
     CONDITION NOT WASM
 )
 qt_feature_config("headersclean" QMAKE_PRIVATE_CONFIG)
@@ -436,7 +455,7 @@ qt_feature_config("framework" QMAKE_PUBLIC_CONFIG
 )
 qt_feature("largefile"
     LABEL "Large file support"
-    CONDITION NOT ANDROID AND NOT INTEGRITY AND NOT WINRT AND NOT rtems
+    CONDITION NOT ANDROID AND NOT INTEGRITY AND NOT rtems
 )
 qt_feature_definition("largefile" "QT_LARGEFILE_SUPPORT" VALUE "64")
 qt_feature_config("largefile" QMAKE_PRIVATE_CONFIG)
@@ -737,7 +756,7 @@ qt_feature("concurrent" PUBLIC
 qt_feature_definition("concurrent" "QT_NO_CONCURRENT" NEGATE VALUE "1")
 qt_feature("dbus" PUBLIC PRIVATE
     LABEL "Qt D-Bus"
-    AUTODETECT NOT UIKIT AND NOT ANDROID AND NOT WINRT
+    AUTODETECT NOT UIKIT AND NOT ANDROID
     CONDITION QT_FEATURE_thread
 )
 qt_feature_definition("dbus" "QT_NO_DBUS" NEGATE VALUE "1")
@@ -811,6 +830,10 @@ qt_feature("relocatable" PRIVATE
     PURPOSE "Enable the Qt installation to be relocated."
     AUTODETECT QT_FEATURE_shared
     CONDITION QT_FEATURE_dlopen OR WIN32 OR NOT QT_FEATURE_shared
+)
+qt_feature("intelcet" PRIVATE
+    LABEL "Using Intel CET"
+    CONDITION TEST_intelcet
 )
 qt_configure_add_summary_build_type_and_config()
 qt_configure_add_summary_section(NAME "Build options")
@@ -907,7 +930,7 @@ qt_configure_add_summary_entry(
 qt_configure_add_summary_build_parts("Build parts")
 qt_configure_add_summary_entry(
     ARGS "appstore-compliant"
-    CONDITION APPLE OR ANDROID OR WINRT OR WIN32
+    CONDITION APPLE OR ANDROID OR WIN32
 )
 qt_configure_end_summary_section() # end of "Build options" section
 qt_configure_add_summary_section(NAME "Qt modules and options")

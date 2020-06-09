@@ -39,6 +39,7 @@
 
 #include "qstringview.h"
 #include "qstring.h"
+#include "qlocale_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -74,14 +75,14 @@ QT_BEGIN_NAMESPACE
     string literal.
 
     QStringViews should be passed by value, not by reference-to-const:
-    \snippet code/src_corelib_tools_qstringview.cpp 0
+    \snippet code/src_corelib_text_qstringview.cpp 0
 
     If you want to give your users maximum freedom in what strings they can pass
     to your function, accompany the QStringView overload with overloads for
 
     \list
         \li \e QChar: this overload can delegate to the QStringView version:
-            \snippet code/src_corelib_tools_qstringview.cpp 1
+            \snippet code/src_corelib_text_qstringview.cpp 1
             even though, for technical reasons, QStringView cannot provide a
             QChar constructor by itself.
         \li \e QString: if you store an unmodified copy of the string and thus would
@@ -285,7 +286,7 @@ QT_BEGIN_NAMESPACE
     If you need the full array, use the constructor from pointer and
     size instead:
 
-    \snippet code/src_corelib_tools_qstringview.cpp 2
+    \snippet code/src_corelib_text_qstringview.cpp 2
 
     \a string must remain valid for the lifetime of this string view
     object.
@@ -356,6 +357,17 @@ QT_BEGIN_NAMESPACE
     \note The character array represented by the return value is \e not null-terminated.
 
     \sa begin(), end(), utf16()
+*/
+
+/*!
+    \fn const QChar *QStringView::constData() const
+    \since 6.0
+
+    Returns a const pointer to the first character in the string.
+
+    \note The character array represented by the return value is \e not null-terminated.
+
+    \sa data(), begin(), end(), utf16()
 */
 
 /*!
@@ -599,49 +611,96 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QStringView QStringView::mid(qsizetype start) const
-
-    Returns the substring starting at position \a start in this object,
-    and extending to the end of the string.
-
-    \note The behavior is undefined when \a start < 0 or \a start > size().
-
-    \sa left(), right(), chopped(), chop(), truncate()
-*/
-
-/*!
     \fn QStringView QStringView::mid(qsizetype start, qsizetype length) const
-    \overload
 
     Returns the substring of length \a length starting at position
     \a start in this object.
 
-    \note The behavior is undefined when \a start < 0, \a length < 0,
-    or \a start + \a length > size().
+    \obsolete Use slice() instead in new code.
 
-    \sa left(), right(), chopped(), chop(), truncate()
+    Returns an empty string view if \a start exceeds the
+    length of the string. If there are less than \a length characters
+    available in the string starting at \a start, or if
+    \a length is negative (default), the function returns all characters that
+    are available from \a start.
+
+    \sa first(), last(), slice(), chopped(), chop(), truncate()
 */
 
 /*!
     \fn QStringView QStringView::left(qsizetype length) const
 
+    \obsolete Use first() instead in new code.
+
     Returns the substring of length \a length starting at position
     0 in this object.
 
-    \note The behavior is undefined when \a length < 0 or \a length > size().
+    The entire string is returned if \a length is greater than or equal
+    to size(), or less than zero.
 
-    \sa mid(), right(), chopped(), chop(), truncate()
+    \sa first(), last(), slice(), startsWith(), chopped(), chop(), truncate()
 */
 
 /*!
     \fn QStringView QStringView::right(qsizetype length) const
 
+    \obsolete Use last() instead in new code.
+
     Returns the substring of length \a length starting at position
     size() - \a length in this object.
 
-    \note The behavior is undefined when \a length < 0 or \a length > size().
+    The entire string is returned if \a length is greater than or equal
+    to size(), or less than zero.
 
-    \sa mid(), left(), chopped(), chop(), truncate()
+    \sa first(), last(), slice(), endsWith(), chopped(), chop(), truncate()
+*/
+
+/*!
+    \fn QStringView QStringView::first(qsizetype n) const
+    \since 6.0
+
+    Returns a string view that points to the first \a n characters
+    of this string.
+
+    \note The behavior is undefined when \a n < 0 or \a n > size().
+
+    \sa last(), subString(), startsWith(), chopped(), chop(), truncate()
+*/
+
+/*!
+    \fn QStringView QStringView::last(qsizetype n) const
+    \since 6.0
+
+    Returns a string view that points to the last \a n characters of this string.
+
+    \note The behavior is undefined when \a n < 0 or \a n > size().
+
+    \sa first(), subString(), endsWith(), chopped(), chop(), truncate()
+*/
+
+/*!
+    \fn QStringView QStringView::slice(qsizetype pos, qsizetype n) const
+    \since 6.0
+
+    Returns a string view that points to \a n characters of this string,
+    starting at position \a pos.
+
+    \note The behavior is undefined when \a pos < 0, \a n < 0,
+    or \a pos + \a n > size().
+
+    \sa first(), last(), chopped(), chop(), truncate()
+*/
+
+/*!
+    \fn QStringView QStringView::from(qsizetype pos) const
+    \since 6.0
+
+    Returns a string view starting at position \a pos in this object,
+    and extending to its end.
+
+    \note The behavior is undefined when \a pos < 0 or \a pos > size().
+
+    \sa first(), last(), chopped(), chop(), truncate()
 */
 
 /*!
@@ -810,7 +869,7 @@ QT_BEGIN_NAMESPACE
 
     The behavior is undefined if the string contains non-Latin1 characters.
 
-    \sa toUtf8(), toLocal8Bit(), QTextCodec
+    \sa toUtf8(), toLocal8Bit(), QStringEncoder
 */
 
 /*!
@@ -818,14 +877,13 @@ QT_BEGIN_NAMESPACE
 
     Returns a local 8-bit representation of the string as a QByteArray.
 
-    QTextCodec::codecForLocale() is used to perform the conversion from
-    Unicode. If the locale's encoding could not be determined, this function
-    does the same as toLatin1().
+    On Unix systems this is equivalen to toUtf8(), on Windows the systems
+    current code page is being used.
 
     The behavior is undefined if the string contains characters not
     supported by the locale's 8-bit encoding.
 
-    \sa toLatin1(), toUtf8(), QTextCodec
+    \sa toLatin1(), toUtf8(), QStringEncoder
 */
 
 /*!
@@ -836,7 +894,7 @@ QT_BEGIN_NAMESPACE
     UTF-8 is a Unicode codec and can represent all characters in a Unicode
     string like QString.
 
-    \sa toLatin1(), toLocal8Bit(), QTextCodec
+    \sa toLatin1(), toLocal8Bit(), QStringEncoder
 */
 
 /*!
@@ -851,7 +909,7 @@ QT_BEGIN_NAMESPACE
 
     The returned vector is not 0-terminated.
 
-    \sa toUtf8(), toLatin1(), toLocal8Bit(), QTextCodec
+    \sa toUtf8(), toLatin1(), toLocal8Bit(), QStringEncoder
 */
 
 /*!
@@ -911,6 +969,296 @@ QT_BEGIN_NAMESPACE
     Returns the number of \c wchar_t entries written to \a array.
 
     \sa QString::toWCharArray()
+*/
+
+/*!
+    \fn qsizetype QStringView::count(QChar ch, Qt::CaseSensitivity cs) const noexcept
+
+    \since 6.0
+    \overload count()
+
+    Returns the number of occurrences of the character \a ch in the
+    string reference.
+
+    If \a cs is Qt::CaseSensitive (default), the search is
+    case sensitive; otherwise the search is case insensitive.
+
+    \sa QString::count(), contains(), indexOf()
+*/
+
+/*!
+    \fn qsizetype QStringView::count(QStringView str, Qt::CaseSensitivity cs) const noexcept
+
+    \since 6.0
+    \overload count()
+
+    Returns the number of (potentially overlapping) occurrences of the
+    string reference \a str in this string reference.
+
+    If \a cs is Qt::CaseSensitive (default), the search is
+    case sensitive; otherwise the search is case insensitive.
+
+    \sa QString::count(), contains(), indexOf()
+*/
+
+/*!
+  \fn qint64 QStringView::toLongLong(bool *ok, int base) const
+
+    Returns the string converted to a \c{long long} using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toLongLong()
+
+    \sa QString::toLongLong()
+
+    \since 6.0
+*/
+
+/*!
+  \fn quint64 QStringView::toULongLong(bool *ok, int base) const
+
+    Returns the string converted to an \c{unsigned long long} using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toULongLong()
+
+    \sa QString::toULongLong()
+
+    \since 6.0
+*/
+
+/*!
+    \fn long QStringView::toLong(bool *ok, int base) const
+
+    Returns the string converted to a \c long using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toLong()
+
+    \sa QString::toLong()
+
+    \since 6.0
+*/
+
+/*!
+    \fn ulong QStringView::toULong(bool *ok, int base) const
+
+    Returns the string converted to an \c{unsigned long} using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toULongLong()
+
+    \sa QString::toULong()
+
+    \since 6.0
+*/
+
+/*!
+  \fn int QStringView::toInt(bool *ok, int base) const
+
+    Returns the string converted to an \c int using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toInt()
+
+    \sa QString::toInt()
+
+    \since 6.0
+*/
+
+/*!
+  \fn uint QStringView::toUInt(bool *ok, int base) const
+
+    Returns the string converted to an \c{unsigned int} using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toUInt()
+
+    \sa QString::toUInt()
+
+    \since 6.0
+*/
+
+/*!
+  \fn short QStringView::toShort(bool *ok, int base) const
+
+    Returns the string converted to a \c short using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toShort()
+
+    \sa QString::toShort()
+
+    \since 6.0
+*/
+
+/*!
+  \fn ushort QStringView::toUShort(bool *ok, int base) const
+
+    Returns the string converted to an \c{unsigned short} using base \a
+    base, which is 10 by default and must be between 2 and 36, or 0.
+    Returns 0 if the conversion fails.
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    If \a base is 0, the C language convention is used: If the string
+    begins with "0x", base 16 is used; if the string begins with "0",
+    base 8 is used; otherwise, base 10 is used.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toUShort()
+
+    \sa QString::toUShort()
+
+    \since 6.0
+*/
+
+/*!
+  \fn double QStringView::toDouble(bool *ok) const
+
+    Returns the string converted to a \c double value.
+
+    Returns an infinity if the conversion overflows or 0.0 if the
+    conversion fails for other reasons (e.g. underflow).
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toDouble()
+
+    For historic reasons, this function does not handle
+    thousands group separators. If you need to convert such numbers,
+    use QLocale::toDouble().
+
+    \sa QString::toDouble()
+
+    \since 6.0
+*/
+
+/*!
+  \fn float QStringView::toFloat(bool *ok) const
+
+    Returns the string converted to a \c float value.
+
+    Returns an infinity if the conversion overflows or 0.0 if the
+    conversion fails for other reasons (e.g. underflow).
+
+    If \a ok is not \nullptr, failure is reported by setting *\a{ok}
+    to \c false, and success by setting *\a{ok} to \c true.
+
+    The string conversion will always happen in the 'C' locale. For locale
+    dependent conversion use QLocale::toFloat()
+
+    \sa QString::toFloat()
+
+    \since 6.0
+*/
+
+
+/*!
+    \fn QStringView::tokenize(Needle &&sep, Flags...flags) const
+    \fn QLatin1String::tokenize(Needle &&sep, Flags...flags) const
+    \fn QString::tokenize(Needle &&sep, Flags...flags) const &
+    \fn QString::tokenize(Needle &&sep, Flags...flags) const &&
+    \fn QString::tokenize(Needle &&sep, Flags...flags) &&
+
+    Splits the string into substring views wherever \a sep occurs, and
+    returns a lazy sequence of those strings.
+
+    Equivalent to
+
+    \code
+    return QStringTokenizer{std::forward<Needle>(sep), flags...};
+    \endcode
+
+    except it works without C++17 Class Template Argument Deduction (CTAD)
+    enabled in the compiler.
+
+    See QStringTokenizer for how \a sep and \a flags interact to form
+    the result.
+
+    \note While this function returns QStringTokenizer, you should never,
+    ever, name its template arguments explicitly. If you can use C++17 Class
+    Template Argument Deduction (CTAD), you may write
+    \code
+    QStringTokenizer result = sv.tokenize(sep);
+    \endcode
+    (without template arguments). If you can't use C++17 CTAD, you must store
+    the return value only in \c{auto} variables:
+    \code
+    auto result = sv.tokenize(sep);
+    \endcode
+    This is because the template arguments of QStringTokenizer have a very
+    subtle dependency on the specific tokenize() overload from which they are
+    returned, and they don't usually correspond to the type used for the separator.
+
+    \since 6.0
+    \sa QStringTokenizer, qTokenize()
 */
 
 QT_END_NAMESPACE

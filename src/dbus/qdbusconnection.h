@@ -77,6 +77,8 @@ class QDBusConnectionPrivate;
 class Q_DBUS_EXPORT QDBusConnection
 {
     Q_GADGET
+    Q_MOC_INCLUDE(<QtDBus/qdbuspendingcall.h>)
+
 public:
     enum BusType { SessionBus, SystemBus, ActivationBus };
     Q_ENUM(BusType)
@@ -212,7 +214,7 @@ private:
     friend class QDBusConnectionPrivate;
     QDBusConnectionPrivate *d;
 };
-Q_DECLARE_SHARED_NOT_MOVABLE_UNTIL_QT6(QDBusConnection)
+Q_DECLARE_SHARED(QDBusConnection)
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QDBusConnection::RegisterOptions)
 Q_DECLARE_OPERATORS_FOR_FLAGS(QDBusConnection::VirtualObjectRegisterOptions)

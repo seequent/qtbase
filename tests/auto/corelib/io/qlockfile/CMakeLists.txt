@@ -7,16 +7,15 @@
 add_qt_test(tst_qlockfile
     SOURCES
         tst_qlockfile.cpp
-    LIBRARIES
-        Qt::CorePrivate
     PUBLIC_LIBRARIES
         Qt::Concurrent
+        Qt::CorePrivate
 )
 
 ## Scopes:
 #####################################################################
 
-extend_target(tst_qlockfile CONDITION WIN32 AND NOT WINRT
+extend_target(tst_qlockfile CONDITION WIN32
     PUBLIC_LIBRARIES
         advapi32
 )

@@ -101,12 +101,16 @@ private slots:
     void renderToTextureTexturedQuadAndUniformBuffer();
     void renderToWindowSimple_data();
     void renderToWindowSimple();
+    void finishWithinSwapchainFrame_data();
+    void finishWithinSwapchainFrame();
     void srbLayoutCompatibility_data();
     void srbLayoutCompatibility();
     void renderPassDescriptorCompatibility_data();
     void renderPassDescriptorCompatibility();
 
 private:
+    void setWindowType(QWindow *window, QRhi::Implementation impl);
+
     struct {
         QRhiNullInitParams null;
 #ifdef TST_GL
@@ -430,12 +434,12 @@ void tst_QRhi::nativeHandles()
             QVERIFY(!mtlHandles->encoder);
 
             QScopedPointer<QRhiTexture> tex(rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 512), 1, QRhiTexture::RenderTarget));
-            QVERIFY(tex->build());
+            QVERIFY(tex->create());
             QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ tex.data() }));
             QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
             QVERIFY(rpDesc);
             rt->setRenderPassDescriptor(rpDesc.data());
-            QVERIFY(rt->build());
+            QVERIFY(rt->create());
             cb->beginPass(rt.data(), Qt::red, { 1.0f, 0 });
             QVERIFY(static_cast<const QRhiMetalCommandBufferNativeHandles *>(cb->nativeHandles())->encoder);
             cb->endPass();
@@ -452,12 +456,12 @@ void tst_QRhi::nativeHandles()
     // QRhiRenderPassDescriptor::nativeHandles()
     {
         QScopedPointer<QRhiTexture> tex(rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 512), 1, QRhiTexture::RenderTarget));
-        QVERIFY(tex->build());
+        QVERIFY(tex->create());
         QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ tex.data() }));
         QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
         QVERIFY(rpDesc);
         rt->setRenderPassDescriptor(rpDesc.data());
-        QVERIFY(rt->build());
+        QVERIFY(rt->create());
 
         const QRhiNativeHandles *rpHandles = rpDesc->nativeHandles();
         switch (impl) {
@@ -505,7 +509,7 @@ void tst_QRhi::nativeTexture()
         QSKIP("QRhi could not be created, skipping testing native texture");
 
     QScopedPointer<QRhiTexture> tex(rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 256)));
-    QVERIFY(tex->build());
+    QVERIFY(tex->create());
 
     const QRhiTexture::NativeTexture nativeTex = tex->nativeTexture();
 
@@ -515,9 +519,8 @@ void tst_QRhi::nativeTexture()
 #ifdef TST_VK
     case QRhi::Vulkan:
     {
-        auto *image = static_cast<const VkImage *>(nativeTex.object);
+        auto image = VkImage(nativeTex.object);
         QVERIFY(image);
-        QVERIFY(*image);
         QVERIFY(nativeTex.layout >= 1); // VK_IMAGE_LAYOUT_GENERAL
         QVERIFY(nativeTex.layout <= 8); // VK_IMAGE_LAYOUT_PREINITIALIZED
     }
@@ -526,27 +529,24 @@ void tst_QRhi::nativeTexture()
 #ifdef TST_GL
     case QRhi::OpenGLES2:
     {
-        auto *textureId = static_cast<const uint *>(nativeTex.object);
+        auto textureId = uint(nativeTex.object);
         QVERIFY(textureId);
-        QVERIFY(*textureId);
     }
         break;
 #endif
 #ifdef TST_D3D11
     case QRhi::D3D11:
     {
-        auto *texture = static_cast<void * const *>(nativeTex.object);
+        auto *texture = reinterpret_cast<void *>(nativeTex.object);
         QVERIFY(texture);
-        QVERIFY(*texture);
     }
         break;
 #endif
 #ifdef TST_MTL
     case QRhi::Metal:
     {
-        void * const * texture = (void * const *)nativeTex.object;
+        auto texture = (void *)nativeTex.object;
         QVERIFY(texture);
-        QVERIFY(*texture);
     }
         break;
 #endif
@@ -573,7 +573,7 @@ void tst_QRhi::nativeBuffer()
     const QRhiBuffer::UsageFlags usages[3] = { QRhiBuffer::VertexBuffer, QRhiBuffer::IndexBuffer, QRhiBuffer::UniformBuffer };
     for (int typeUsageIdx = 0; typeUsageIdx < 3; ++typeUsageIdx) {
         QScopedPointer<QRhiBuffer> buf(rhi->newBuffer(types[typeUsageIdx], usages[typeUsageIdx], 256));
-        QVERIFY(buf->build());
+        QVERIFY(buf->create());
 
         const QRhiBuffer::NativeBuffer nativeBuf = buf->nativeBuffer();
         QVERIFY(nativeBuf.slotCount <= rhi->resourceLimit(QRhi::FramesInFlight));
@@ -673,7 +673,7 @@ void tst_QRhi::resourceUpdateBatchBuffer()
     // dynamic buffer, updates, readback
     {
         QScopedPointer<QRhiBuffer> dynamicBuffer(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, bufferSize));
-        QVERIFY(dynamicBuffer->build());
+        QVERIFY(dynamicBuffer->create());
 
         QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
         QVERIFY(batch);
@@ -700,7 +700,7 @@ void tst_QRhi::resourceUpdateBatchBuffer()
     // static buffer, updates, readback
     {
         QScopedPointer<QRhiBuffer> dynamicBuffer(rhi->newBuffer(QRhiBuffer::Static, QRhiBuffer::VertexBuffer, bufferSize));
-        QVERIFY(dynamicBuffer->build());
+        QVERIFY(dynamicBuffer->create());
 
         QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
         QVERIFY(batch);
@@ -786,7 +786,7 @@ void tst_QRhi::resourceUpdateBatchRGBATextureUpload()
     {
         QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, image.size(),
                                                             1, QRhiTexture::UsedAsTransferSource));
-        QVERIFY(texture->build());
+        QVERIFY(texture->create());
 
         QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
         batch->uploadTexture(texture.data(), image);
@@ -813,7 +813,7 @@ void tst_QRhi::resourceUpdateBatchRGBATextureUpload()
     {
         QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, image.size(),
                                                             1, QRhiTexture::UsedAsTransferSource));
-        QVERIFY(texture->build());
+        QVERIFY(texture->create());
 
         QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
 
@@ -845,7 +845,7 @@ void tst_QRhi::resourceUpdateBatchRGBATextureUpload()
         const QSize fullSize(copySize.width() + gap, copySize.height() + gap);
         QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, fullSize,
                                                             1, QRhiTexture::UsedAsTransferSource));
-        QVERIFY(texture->build());
+        QVERIFY(texture->create());
 
         QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
 
@@ -894,7 +894,7 @@ void tst_QRhi::resourceUpdateBatchRGBATextureUpload()
         const QSize fullSize(copySize.width() + gap, copySize.height() + gap);
         QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, fullSize,
                                                             1, QRhiTexture::UsedAsTransferSource));
-        QVERIFY(texture->build());
+        QVERIFY(texture->create());
 
         QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
 
@@ -945,7 +945,7 @@ void tst_QRhi::resourceUpdateBatchRGBATextureUpload()
 
         QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size(),
                                                             1, QRhiTexture::UsedAsTransferSource));
-        QVERIFY(texture->build());
+        QVERIFY(texture->create());
 
         QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
         batch->uploadTexture(texture.data(), inputImage);
@@ -989,19 +989,19 @@ void tst_QRhi::resourceUpdateBatchRGBATextureCopy()
 
     QScopedPointer<QRhiTexture> redTexture(rhi->newTexture(QRhiTexture::RGBA8, red.size(),
                                                            1, QRhiTexture::UsedAsTransferSource));
-    QVERIFY(redTexture->build());
+    QVERIFY(redTexture->create());
     batch->uploadTexture(redTexture.data(), red);
 
     QScopedPointer<QRhiTexture> greenTexture(rhi->newTexture(QRhiTexture::RGBA8, green.size(),
                                                              1, QRhiTexture::UsedAsTransferSource));
-    QVERIFY(greenTexture->build());
+    QVERIFY(greenTexture->create());
     batch->uploadTexture(greenTexture.data(), green);
 
     // 1. simple copy red -> texture; 2. subimage copy green -> texture; 3. partial subimage copy green -> texture
     {
         QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, red.size(),
                                                             1, QRhiTexture::UsedAsTransferSource));
-        QVERIFY(texture->build());
+        QVERIFY(texture->create());
 
         // 1.
         batch->copyTexture(texture.data(), redTexture.data());
@@ -1087,7 +1087,7 @@ void tst_QRhi::resourceUpdateBatchRGBATextureMip()
             | QRhiTexture::MipMapped
             | QRhiTexture::UsedWithGenerateMips;
     QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, red.size(), 1, textureFlags));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
 
     QRhiResourceUpdateBatch *batch = rhi->nextResourceUpdateBatch();
     batch->uploadTexture(texture.data(), red);
@@ -1154,18 +1154,18 @@ void tst_QRhi::invalidPipeline()
         QSKIP("QRhi could not be created, skipping testing empty shader");
 
     QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, QSize(256, 256), 1, QRhiTexture::RenderTarget));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
     QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ texture.data() }));
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
     rt->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(rt->build());
+    QVERIFY(rt->create());
 
     QRhiCommandBuffer *cb = nullptr;
     QVERIFY(rhi->beginOffscreenFrame(&cb) == QRhi::FrameOpSuccess);
     QVERIFY(cb);
 
     QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
-    QVERIFY(srb->build());
+    QVERIFY(srb->create());
 
     QRhiVertexInputLayout inputLayout;
     inputLayout.setBindings({ { 2 * sizeof(float) } });
@@ -1176,7 +1176,7 @@ void tst_QRhi::invalidPipeline()
     pipeline->setVertexInputLayout(inputLayout);
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(!pipeline->build());
+    QVERIFY(!pipeline->create());
 
     QShader vs;
     QShader fs;
@@ -1187,7 +1187,7 @@ void tst_QRhi::invalidPipeline()
     pipeline->setVertexInputLayout(inputLayout);
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(!pipeline->build());
+    QVERIFY(!pipeline->create());
 
     vs = loadShader(":/data/simple.vert.qsb");
     QVERIFY(vs.isValid());
@@ -1200,28 +1200,28 @@ void tst_QRhi::invalidPipeline()
     pipeline->setVertexInputLayout(inputLayout);
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(!pipeline->build());
+    QVERIFY(!pipeline->create());
 
     // no vertex inputs
     pipeline.reset(rhi->newGraphicsPipeline());
     pipeline->setShaderStages({ { QRhiShaderStage::Vertex, vs }, { QRhiShaderStage::Fragment, fs } });
     pipeline->setRenderPassDescriptor(rpDesc.data());
     pipeline->setShaderResourceBindings(srb.data());
-    QVERIFY(!pipeline->build());
+    QVERIFY(!pipeline->create());
 
     // no renderpass descriptor
     pipeline.reset(rhi->newGraphicsPipeline());
     pipeline->setShaderStages({ { QRhiShaderStage::Vertex, vs }, { QRhiShaderStage::Fragment, fs } });
     pipeline->setVertexInputLayout(inputLayout);
     pipeline->setShaderResourceBindings(srb.data());
-    QVERIFY(!pipeline->build());
+    QVERIFY(!pipeline->create());
 
     // no shader resource bindings
     pipeline.reset(rhi->newGraphicsPipeline());
     pipeline->setShaderStages({ { QRhiShaderStage::Vertex, vs }, { QRhiShaderStage::Fragment, fs } });
     pipeline->setVertexInputLayout(inputLayout);
     pipeline->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(!pipeline->build());
+    QVERIFY(!pipeline->create());
 
     // correct
     pipeline.reset(rhi->newGraphicsPipeline());
@@ -1229,7 +1229,7 @@ void tst_QRhi::invalidPipeline()
     pipeline->setVertexInputLayout(inputLayout);
     pipeline->setRenderPassDescriptor(rpDesc.data());
     pipeline->setShaderResourceBindings(srb.data());
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 }
 
 void tst_QRhi::renderToTextureSimple_data()
@@ -1249,12 +1249,12 @@ void tst_QRhi::renderToTextureSimple()
     const QSize outputSize(1920, 1080);
     QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, outputSize, 1,
                                                         QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
 
     QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ texture.data() }));
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
     rt->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(rt->build());
+    QVERIFY(rt->create());
 
     QRhiCommandBuffer *cb = nullptr;
     QVERIFY(rhi->beginOffscreenFrame(&cb) == QRhi::FrameOpSuccess);
@@ -1268,11 +1268,11 @@ void tst_QRhi::renderToTextureSimple()
         0.0f, 1.0f
     };
     QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertices)));
-    QVERIFY(vbuf->build());
+    QVERIFY(vbuf->create());
     updates->uploadStaticBuffer(vbuf.data(), vertices);
 
     QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
-    QVERIFY(srb->build());
+    QVERIFY(srb->create());
 
     QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
     QShader vs = loadShader(":/data/simple.vert.qsb");
@@ -1287,7 +1287,7 @@ void tst_QRhi::renderToTextureSimple()
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
 
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 
     cb->beginPass(rt.data(), Qt::blue, { 1.0f, 0 }, updates);
     cb->setGraphicsPipeline(pipeline.data());
@@ -1369,7 +1369,7 @@ void tst_QRhi::renderToTextureMip()
                                                         QRhiTexture::RenderTarget
                                                         | QRhiTexture::UsedAsTransferSource
                                                         | QRhiTexture::MipMapped));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
 
     QRhiColorAttachment colorAtt(texture.data());
     colorAtt.setLevel(LEVEL);
@@ -1377,7 +1377,7 @@ void tst_QRhi::renderToTextureMip()
     QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget(rtDesc));
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
     rt->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(rt->build());
+    QVERIFY(rt->create());
 
     QCOMPARE(rt->pixelSize(), rhi->sizeForMipLevel(LEVEL, baseLevelSize));
     const QSize mipSize(baseLevelSize.width() >> LEVEL, baseLevelSize.height() >> LEVEL);
@@ -1395,11 +1395,11 @@ void tst_QRhi::renderToTextureMip()
         0.0f, 1.0f
     };
     QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertices)));
-    QVERIFY(vbuf->build());
+    QVERIFY(vbuf->create());
     updates->uploadStaticBuffer(vbuf.data(), vertices);
 
     QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
-    QVERIFY(srb->build());
+    QVERIFY(srb->create());
 
     QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
     QShader vs = loadShader(":/data/simple.vert.qsb");
@@ -1414,7 +1414,7 @@ void tst_QRhi::renderToTextureMip()
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
 
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 
     cb->beginPass(rt.data(), Qt::blue, { 1.0f, 0 }, updates);
     cb->setGraphicsPipeline(pipeline.data());
@@ -1489,7 +1489,7 @@ void tst_QRhi::renderToTextureCubemapFace()
                                                         QRhiTexture::RenderTarget
                                                         | QRhiTexture::UsedAsTransferSource
                                                         | QRhiTexture::CubeMap)); // will be a cubemap, so 6 layers
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
 
     const int LAYER = 1; // render into the layer for face -X
     const int BAD_LAYER = 2; // +Y
@@ -1500,7 +1500,7 @@ void tst_QRhi::renderToTextureCubemapFace()
     QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget(rtDesc));
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
     rt->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(rt->build());
+    QVERIFY(rt->create());
 
     QCOMPARE(rt->pixelSize(), texture->pixelSize());
     QCOMPARE(rt->pixelSize(), outputSize);
@@ -1517,11 +1517,11 @@ void tst_QRhi::renderToTextureCubemapFace()
         0.0f, 1.0f
     };
     QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertices)));
-    QVERIFY(vbuf->build());
+    QVERIFY(vbuf->create());
     updates->uploadStaticBuffer(vbuf.data(), vertices);
 
     QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
-    QVERIFY(srb->build());
+    QVERIFY(srb->create());
 
     QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
     QShader vs = loadShader(":/data/simple.vert.qsb");
@@ -1536,7 +1536,7 @@ void tst_QRhi::renderToTextureCubemapFace()
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
 
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 
     cb->beginPass(rt.data(), Qt::blue, { 1.0f, 0 }, updates);
     cb->setGraphicsPipeline(pipeline.data());
@@ -1627,12 +1627,12 @@ void tst_QRhi::renderToTextureTexturedQuad()
 
     QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size(), 1,
                                                         QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
 
     QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ texture.data() }));
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
     rt->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(rt->build());
+    QVERIFY(rt->create());
 
     QRhiCommandBuffer *cb = nullptr;
     QVERIFY(rhi->beginOffscreenFrame(&cb) == QRhi::FrameOpSuccess);
@@ -1647,22 +1647,22 @@ void tst_QRhi::renderToTextureTexturedQuad()
         1.0f, 1.0f,     1.0f, 1.0f
     };
     QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(verticesUvs)));
-    QVERIFY(vbuf->build());
+    QVERIFY(vbuf->create());
     updates->uploadStaticBuffer(vbuf.data(), verticesUvs);
 
     QScopedPointer<QRhiTexture> inputTexture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size()));
-    QVERIFY(inputTexture->build());
+    QVERIFY(inputTexture->create());
     updates->uploadTexture(inputTexture.data(), inputImage);
 
     QScopedPointer<QRhiSampler> sampler(rhi->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
-    QVERIFY(sampler->build());
+    QVERIFY(sampler->create());
 
     QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
     srb->setBindings({
                          QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage, inputTexture.data(), sampler.data())
                      });
-    QVERIFY(srb->build());
+    QVERIFY(srb->create());
 
     QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
     pipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
@@ -1681,7 +1681,7 @@ void tst_QRhi::renderToTextureTexturedQuad()
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
 
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 
     cb->beginPass(rt.data(), Qt::black, { 1.0f, 0 }, updates);
     cb->setGraphicsPipeline(pipeline.data());
@@ -1756,12 +1756,12 @@ void tst_QRhi::renderToTextureArrayOfTexturedQuad()
 
     QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size(), 1,
                                                         QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
 
     QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ texture.data() }));
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
     rt->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(rt->build());
+    QVERIFY(rt->create());
 
     QRhiCommandBuffer *cb = nullptr;
     QVERIFY(rhi->beginOffscreenFrame(&cb) == QRhi::FrameOpSuccess);
@@ -1776,33 +1776,33 @@ void tst_QRhi::renderToTextureArrayOfTexturedQuad()
         1.0f, 1.0f,     1.0f, 1.0f
     };
     QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(verticesUvs)));
-    QVERIFY(vbuf->build());
+    QVERIFY(vbuf->create());
     updates->uploadStaticBuffer(vbuf.data(), verticesUvs);
 
     // In this test we pass 3 textures (and samplers) to the fragment shader in
     // form of an array of combined image samplers.
 
     QScopedPointer<QRhiTexture> inputTexture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size()));
-    QVERIFY(inputTexture->build());
+    QVERIFY(inputTexture->create());
     updates->uploadTexture(inputTexture.data(), inputImage);
 
     QImage redImage(inputImage.size(), QImage::Format_RGBA8888);
     redImage.fill(Qt::red);
 
     QScopedPointer<QRhiTexture> redTexture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size()));
-    QVERIFY(redTexture->build());
+    QVERIFY(redTexture->create());
     updates->uploadTexture(redTexture.data(), redImage);
 
     QImage greenImage(inputImage.size(), QImage::Format_RGBA8888);
     greenImage.fill(Qt::green);
 
     QScopedPointer<QRhiTexture> greenTexture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size()));
-    QVERIFY(greenTexture->build());
+    QVERIFY(greenTexture->create());
     updates->uploadTexture(greenTexture.data(), greenImage);
 
     QScopedPointer<QRhiSampler> sampler(rhi->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
-    QVERIFY(sampler->build());
+    QVERIFY(sampler->create());
 
     QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
     QRhiShaderResourceBinding::TextureAndSampler texSamplers[3] = {
@@ -1813,7 +1813,7 @@ void tst_QRhi::renderToTextureArrayOfTexturedQuad()
     srb->setBindings({
                          QRhiShaderResourceBinding::sampledTextures(0, QRhiShaderResourceBinding::FragmentStage, 3, texSamplers)
                      });
-    QVERIFY(srb->build());
+    QVERIFY(srb->create());
 
     QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
     pipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
@@ -1832,7 +1832,7 @@ void tst_QRhi::renderToTextureArrayOfTexturedQuad()
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
 
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 
     cb->beginPass(rt.data(), Qt::black, { 1.0f, 0 }, updates);
     cb->setGraphicsPipeline(pipeline.data());
@@ -1897,12 +1897,12 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
 
     QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size(), 1,
                                                         QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
 
     QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ texture.data() }));
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
     rt->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(rt->build());
+    QVERIFY(rt->create());
 
     QRhiCommandBuffer *cb = nullptr;
     QVERIFY(rhi->beginOffscreenFrame(&cb) == QRhi::FrameOpSuccess);
@@ -1917,7 +1917,7 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
         1.0f, 1.0f,     1.0f, 1.0f
     };
     QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(verticesUvs)));
-    QVERIFY(vbuf->build());
+    QVERIFY(vbuf->create());
     updates->uploadStaticBuffer(vbuf.data(), verticesUvs);
 
     // There will be two renderpasses. One renders with no transformation and
@@ -1929,7 +1929,7 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
     const int UBUF_SIZE = secondUbufOffset + UNIFORM_BLOCK_SIZE;
 
     QScopedPointer<QRhiBuffer> ubuf(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
-    QVERIFY(ubuf->build());
+    QVERIFY(ubuf->create());
 
     QMatrix4x4 matrix;
     updates->updateDynamicBuffer(ubuf.data(), 0, 64, matrix.constData());
@@ -1942,12 +1942,12 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
     updates->updateDynamicBuffer(ubuf.data(), secondUbufOffset + 64, 4, &opacity);
 
     QScopedPointer<QRhiTexture> inputTexture(rhi->newTexture(QRhiTexture::RGBA8, inputImage.size()));
-    QVERIFY(inputTexture->build());
+    QVERIFY(inputTexture->create());
     updates->uploadTexture(inputTexture.data(), inputImage);
 
     QScopedPointer<QRhiSampler> sampler(rhi->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
-    QVERIFY(sampler->build());
+    QVERIFY(sampler->create());
 
     const QRhiShaderResourceBinding::StageFlags commonVisibility = QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage;
     QScopedPointer<QRhiShaderResourceBindings> srb0(rhi->newShaderResourceBindings());
@@ -1955,14 +1955,14 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
                          QRhiShaderResourceBinding::uniformBuffer(0, commonVisibility, ubuf.data(), 0, UNIFORM_BLOCK_SIZE),
                          QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, inputTexture.data(), sampler.data())
                      });
-    QVERIFY(srb0->build());
+    QVERIFY(srb0->create());
 
     QScopedPointer<QRhiShaderResourceBindings> srb1(rhi->newShaderResourceBindings());
     srb1->setBindings({
                          QRhiShaderResourceBinding::uniformBuffer(0, commonVisibility, ubuf.data(), secondUbufOffset, UNIFORM_BLOCK_SIZE),
                          QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, inputTexture.data(), sampler.data())
                      });
-    QVERIFY(srb1->build());
+    QVERIFY(srb1->create());
     QVERIFY(srb1->isLayoutCompatible(srb0.data())); // hence no need for a second pipeline
 
     QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
@@ -1990,7 +1990,7 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
     pipeline->setShaderResourceBindings(srb0.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
 
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 
     cb->beginPass(rt.data(), Qt::black, { 1.0f, 0 }, updates);
     cb->setGraphicsPipeline(pipeline.data());
@@ -2081,26 +2081,8 @@ void tst_QRhi::renderToTextureTexturedQuadAndUniformBuffer()
     QCOMPARE(result1.pixel(28, 178), empty);
 }
 
-void tst_QRhi::renderToWindowSimple_data()
+void tst_QRhi::setWindowType(QWindow *window, QRhi::Implementation impl)
 {
-    rhiTestData();
-}
-
-void tst_QRhi::renderToWindowSimple()
-{
-    QFETCH(QRhi::Implementation, impl);
-    QFETCH(QRhiInitParams *, initParams);
-
-#ifdef Q_OS_WINRT
-    if (impl == QRhi::D3D11)
-        QSKIP("Skipping window-based QRhi rendering on WinRT as the platform and the D3D11 backend are not prepared for this yet");
-#endif
-
-    QScopedPointer<QRhi> rhi(QRhi::create(impl, initParams, QRhi::Flags(), nullptr));
-    if (!rhi)
-        QSKIP("QRhi could not be created, skipping testing rendering");
-
-    QScopedPointer<QWindow> window(new QWindow);
     switch (impl) {
     case QRhi::OpenGLES2:
 #if QT_CONFIG(opengl)
@@ -2122,6 +2104,24 @@ void tst_QRhi::renderToWindowSimple()
     default:
         break;
     }
+}
+
+void tst_QRhi::renderToWindowSimple_data()
+{
+    rhiTestData();
+}
+
+void tst_QRhi::renderToWindowSimple()
+{
+    QFETCH(QRhi::Implementation, impl);
+    QFETCH(QRhiInitParams *, initParams);
+
+    QScopedPointer<QRhi> rhi(QRhi::create(impl, initParams, QRhi::Flags(), nullptr));
+    if (!rhi)
+        QSKIP("QRhi could not be created, skipping testing rendering");
+
+    QScopedPointer<QWindow> window(new QWindow);
+    setWindowType(window.data(), impl);
 
     window->setGeometry(0, 0, 640, 480);
     window->show();
@@ -2132,7 +2132,7 @@ void tst_QRhi::renderToWindowSimple()
     swapChain->setFlags(QRhiSwapChain::UsedAsTransferSource);
     QScopedPointer<QRhiRenderPassDescriptor> rpDesc(swapChain->newCompatibleRenderPassDescriptor());
     swapChain->setRenderPassDescriptor(rpDesc.data());
-    QVERIFY(swapChain->buildOrResize());
+    QVERIFY(swapChain->createOrResize());
 
     QRhiResourceUpdateBatch *updates = rhi->nextResourceUpdateBatch();
 
@@ -2142,11 +2142,11 @@ void tst_QRhi::renderToWindowSimple()
         0.0f, 1.0f
     };
     QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertices)));
-    QVERIFY(vbuf->build());
+    QVERIFY(vbuf->create());
     updates->uploadStaticBuffer(vbuf.data(), vertices);
 
     QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
-    QVERIFY(srb->build());
+    QVERIFY(srb->create());
 
     QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
     QShader vs = loadShader(":/data/simple.vert.qsb");
@@ -2161,7 +2161,7 @@ void tst_QRhi::renderToWindowSimple()
     pipeline->setShaderResourceBindings(srb.data());
     pipeline->setRenderPassDescriptor(rpDesc.data());
 
-    QVERIFY(pipeline->build());
+    QVERIFY(pipeline->create());
 
     const int asyncReadbackFrames = rhi->resourceLimit(QRhi::MaxAsyncReadbackFrames);
     // one frame issues the readback, then we do MaxAsyncReadbackFrames more to ensure the readback completes
@@ -2241,6 +2241,113 @@ void tst_QRhi::renderToWindowSimple()
     QVERIFY(redCount < blueCount);
 }
 
+void tst_QRhi::finishWithinSwapchainFrame_data()
+{
+    rhiTestData();
+}
+
+void tst_QRhi::finishWithinSwapchainFrame()
+{
+    QFETCH(QRhi::Implementation, impl);
+    QFETCH(QRhiInitParams *, initParams);
+
+    QScopedPointer<QRhi> rhi(QRhi::create(impl, initParams, QRhi::Flags(), nullptr));
+    if (!rhi)
+        QSKIP("QRhi could not be created, skipping testing rendering");
+
+    QScopedPointer<QWindow> window(new QWindow);
+    setWindowType(window.data(), impl);
+
+    window->setGeometry(0, 0, 640, 480);
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window.data()));
+
+    QScopedPointer<QRhiSwapChain> swapChain(rhi->newSwapChain());
+    swapChain->setWindow(window.data());
+    swapChain->setFlags(QRhiSwapChain::UsedAsTransferSource);
+    QScopedPointer<QRhiRenderPassDescriptor> rpDesc(swapChain->newCompatibleRenderPassDescriptor());
+    swapChain->setRenderPassDescriptor(rpDesc.data());
+    QVERIFY(swapChain->createOrResize());
+
+    QScopedPointer<QRhiShaderResourceBindings> srb(rhi->newShaderResourceBindings());
+    QVERIFY(srb->create());
+
+    QScopedPointer<QRhiGraphicsPipeline> pipeline(rhi->newGraphicsPipeline());
+    QShader vs = loadShader(":/data/simple.vert.qsb");
+    QVERIFY(vs.isValid());
+    QShader fs = loadShader(":/data/simple.frag.qsb");
+    QVERIFY(fs.isValid());
+    pipeline->setShaderStages({ { QRhiShaderStage::Vertex, vs }, { QRhiShaderStage::Fragment, fs } });
+    QRhiVertexInputLayout inputLayout;
+    inputLayout.setBindings({ { 2 * sizeof(float) } });
+    inputLayout.setAttributes({ { 0, 0, QRhiVertexInputAttribute::Float2, 0 } });
+    pipeline->setVertexInputLayout(inputLayout);
+    pipeline->setShaderResourceBindings(srb.data());
+    pipeline->setRenderPassDescriptor(rpDesc.data());
+    QVERIFY(pipeline->create());
+
+    static const float vertices[] = {
+        -1.0f, -1.0f,
+        1.0f, -1.0f,
+        0.0f, 1.0f
+    };
+    QScopedPointer<QRhiBuffer> vbuf(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertices)));
+    QVERIFY(vbuf->create());
+
+    // exercise begin/endExternal() just a little bit, hence ExternalContentsInPass
+    QVERIFY(rhi->beginFrame(swapChain.data(), QRhi::ExternalContentsInPass) == QRhi::FrameOpSuccess);
+    QRhiCommandBuffer *cb = swapChain->currentFrameCommandBuffer();
+    QRhiRenderTarget *rt = swapChain->currentFrameRenderTarget();
+    const QSize outputSize = swapChain->currentPixelSize();
+
+    // repeat a sequence of upload, renderpass, readback, finish a number of
+    // times within the same frame
+    for (int i = 0; i < 5; ++i) {
+        QRhiResourceUpdateBatch *updates = rhi->nextResourceUpdateBatch();
+        updates->uploadStaticBuffer(vbuf.data(), vertices);
+
+        cb->beginPass(rt, Qt::blue, { 1.0f, 0 }, updates);
+
+        // just have some commands, do not bother with draw calls
+        cb->setGraphicsPipeline(pipeline.data());
+        QRhiViewport viewport(0, 0, float(outputSize.width()), float(outputSize.height()));
+        cb->setViewport(viewport);
+
+        // do a dummy begin/endExternal round: interesting for Vulkan because
+        // there this may start end then submit a secondary command buffer
+        cb->beginExternal();
+        cb->endExternal();
+
+        cb->endPass();
+
+        QRhiReadbackResult readResult;
+        bool ok = false;
+        readResult.completed = [&readResult, &ok, impl] {
+            QImage wrapperImage(reinterpret_cast<const uchar *>(readResult.data.constData()),
+                                readResult.pixelSize.width(), readResult.pixelSize.height(),
+                                QImage::Format_ARGB32_Premultiplied);
+            if (readResult.format == QRhiTexture::RGBA8)
+                wrapperImage = wrapperImage.rgbSwapped();
+
+            if (impl != QRhi::Null)
+                ok = qBlue(wrapperImage.pixel(43, 89)) > 250;
+            else
+                ok = true; // the Null backend does not actually render
+        };
+        QRhiResourceUpdateBatch *readbackBatch = rhi->nextResourceUpdateBatch();
+        readbackBatch->readBackTexture({}, &readResult); // read back the current backbuffer
+        cb->resourceUpdate(readbackBatch);
+
+        // force submit what we have so far, wait for the queue, and then start
+        // a new primary command buffer
+        rhi->finish();
+
+        QVERIFY(ok);
+    }
+
+    rhi->endFrame(swapChain.data());
+}
+
 void tst_QRhi::srbLayoutCompatibility_data()
 {
     rhiTestData();
@@ -2256,25 +2363,25 @@ void tst_QRhi::srbLayoutCompatibility()
         QSKIP("QRhi could not be created, skipping testing texture resource updates");
 
     QScopedPointer<QRhiTexture> texture(rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 512)));
-    QVERIFY(texture->build());
+    QVERIFY(texture->create());
     QScopedPointer<QRhiSampler> sampler(rhi->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
-    QVERIFY(sampler->build());
+    QVERIFY(sampler->create());
     QScopedPointer<QRhiSampler> otherSampler(rhi->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                                              QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
-    QVERIFY(otherSampler->build());
+    QVERIFY(otherSampler->create());
     QScopedPointer<QRhiBuffer> buf(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 1024));
-    QVERIFY(buf->build());
+    QVERIFY(buf->create());
     QScopedPointer<QRhiBuffer> otherBuf(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 256));
-    QVERIFY(otherBuf->build());
+    QVERIFY(otherBuf->create());
 
     // empty (compatible)
     {
         QScopedPointer<QRhiShaderResourceBindings> srb1(rhi->newShaderResourceBindings());
-        QVERIFY(srb1->build());
+        QVERIFY(srb1->create());
 
         QScopedPointer<QRhiShaderResourceBindings> srb2(rhi->newShaderResourceBindings());
-        QVERIFY(srb2->build());
+        QVERIFY(srb2->create());
 
         QVERIFY(srb1->isLayoutCompatible(srb2.data()));
         QVERIFY(srb2->isLayoutCompatible(srb1.data()));
@@ -2283,13 +2390,13 @@ void tst_QRhi::srbLayoutCompatibility()
     // different count (not compatible)
     {
         QScopedPointer<QRhiShaderResourceBindings> srb1(rhi->newShaderResourceBindings());
-        QVERIFY(srb1->build());
+        QVERIFY(srb1->create());
 
         QScopedPointer<QRhiShaderResourceBindings> srb2(rhi->newShaderResourceBindings());
         srb2->setBindings({
                               QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage, texture.data(), sampler.data())
                          });
-        QVERIFY(srb2->build());
+        QVERIFY(srb2->create());
 
         QVERIFY(!srb1->isLayoutCompatible(srb2.data()));
         QVERIFY(!srb2->isLayoutCompatible(srb1.data()));
@@ -2302,14 +2409,14 @@ void tst_QRhi::srbLayoutCompatibility()
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, buf.data()),
                               QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, texture.data(), sampler.data())
                          });
-        QVERIFY(srb1->build());
+        QVERIFY(srb1->create());
 
         QScopedPointer<QRhiShaderResourceBindings> srb2(rhi->newShaderResourceBindings());
         srb2->setBindings({
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, buf.data()),
                               QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, texture.data(), sampler.data())
                          });
-        QVERIFY(srb2->build());
+        QVERIFY(srb2->create());
 
         QVERIFY(srb1->isLayoutCompatible(srb2.data()));
         QVERIFY(srb2->isLayoutCompatible(srb1.data()));
@@ -2321,13 +2428,13 @@ void tst_QRhi::srbLayoutCompatibility()
         srb1->setBindings({
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, buf.data()),
                          });
-        QVERIFY(srb1->build());
+        QVERIFY(srb1->create());
 
         QScopedPointer<QRhiShaderResourceBindings> srb2(rhi->newShaderResourceBindings());
         srb2->setBindings({
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, buf.data()),
                          });
-        QVERIFY(srb2->build());
+        QVERIFY(srb2->create());
 
         QVERIFY(!srb1->isLayoutCompatible(srb2.data()));
         QVERIFY(!srb2->isLayoutCompatible(srb1.data()));
@@ -2339,13 +2446,13 @@ void tst_QRhi::srbLayoutCompatibility()
         srb1->setBindings({
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, buf.data()),
                          });
-        QVERIFY(srb1->build());
+        QVERIFY(srb1->create());
 
         QScopedPointer<QRhiShaderResourceBindings> srb2(rhi->newShaderResourceBindings());
         srb2->setBindings({
                               QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::VertexStage, buf.data()),
                          });
-        QVERIFY(srb2->build());
+        QVERIFY(srb2->create());
 
         QVERIFY(!srb1->isLayoutCompatible(srb2.data()));
         QVERIFY(!srb2->isLayoutCompatible(srb1.data()));
@@ -2358,14 +2465,14 @@ void tst_QRhi::srbLayoutCompatibility()
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, buf.data(), rhi->ubufAligned(1), 128),
                               QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, texture.data(), sampler.data())
                          });
-        QVERIFY(srb1->build());
+        QVERIFY(srb1->create());
 
         QScopedPointer<QRhiShaderResourceBindings> srb2(rhi->newShaderResourceBindings());
         srb2->setBindings({
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, buf.data()),
                               QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, texture.data(), sampler.data())
                          });
-        QVERIFY(srb2->build());
+        QVERIFY(srb2->create());
 
         QVERIFY(srb1->isLayoutCompatible(srb2.data()));
         QVERIFY(srb2->isLayoutCompatible(srb1.data()));
@@ -2378,14 +2485,14 @@ void tst_QRhi::srbLayoutCompatibility()
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, otherBuf.data()),
                               QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, texture.data(), otherSampler.data())
                          });
-        QVERIFY(srb1->build());
+        QVERIFY(srb1->create());
 
         QScopedPointer<QRhiShaderResourceBindings> srb2(rhi->newShaderResourceBindings());
         srb2->setBindings({
                               QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, buf.data()),
                               QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, texture.data(), sampler.data())
                          });
-        QVERIFY(srb2->build());
+        QVERIFY(srb2->create());
 
         QVERIFY(srb1->isLayoutCompatible(srb2.data()));
         QVERIFY(srb2->isLayoutCompatible(srb1.data()));
@@ -2415,24 +2522,24 @@ void tst_QRhi::renderPassDescriptorCompatibility()
 
     // tex and tex2 have the same format
     QScopedPointer<QRhiTexture> tex(rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 512), 1, QRhiTexture::RenderTarget));
-    QVERIFY(tex->build());
+    QVERIFY(tex->create());
     QScopedPointer<QRhiTexture> tex2(rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 512), 1, QRhiTexture::RenderTarget));
-    QVERIFY(tex2->build());
+    QVERIFY(tex2->create());
 
     QScopedPointer<QRhiRenderBuffer> ds(rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, QSize(512, 512)));
-    QVERIFY(ds->build());
+    QVERIFY(ds->create());
 
     // two texture rendertargets with tex and tex2 as color0 (compatible)
     {
         QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ tex.data() }));
         QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
         rt->setRenderPassDescriptor(rpDesc.data());
-        QVERIFY(rt->build());
+        QVERIFY(rt->create());
 
         QScopedPointer<QRhiTextureRenderTarget> rt2(rhi->newTextureRenderTarget({ tex2.data() }));
         QScopedPointer<QRhiRenderPassDescriptor> rpDesc2(rt2->newCompatibleRenderPassDescriptor());
         rt2->setRenderPassDescriptor(rpDesc2.data());
-        QVERIFY(rt2->build());
+        QVERIFY(rt2->create());
 
         QVERIFY(rpDesc->isCompatible(rpDesc2.data()));
         QVERIFY(rpDesc2->isCompatible(rpDesc.data()));
@@ -2444,12 +2551,12 @@ void tst_QRhi::renderPassDescriptorCompatibility()
         QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget(desc));
         QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
         rt->setRenderPassDescriptor(rpDesc.data());
-        QVERIFY(rt->build());
+        QVERIFY(rt->create());
 
         QScopedPointer<QRhiTextureRenderTarget> rt2(rhi->newTextureRenderTarget(desc));
         QScopedPointer<QRhiRenderPassDescriptor> rpDesc2(rt2->newCompatibleRenderPassDescriptor());
         rt2->setRenderPassDescriptor(rpDesc2.data());
-        QVERIFY(rt2->build());
+        QVERIFY(rt2->create());
 
         QVERIFY(rpDesc->isCompatible(rpDesc2.data()));
         QVERIFY(rpDesc2->isCompatible(rpDesc.data()));
@@ -2460,12 +2567,12 @@ void tst_QRhi::renderPassDescriptorCompatibility()
         QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ { tex.data() }, ds.data() }));
         QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
         rt->setRenderPassDescriptor(rpDesc.data());
-        QVERIFY(rt->build());
+        QVERIFY(rt->create());
 
         QScopedPointer<QRhiTextureRenderTarget> rt2(rhi->newTextureRenderTarget({ tex.data() }));
         QScopedPointer<QRhiRenderPassDescriptor> rpDesc2(rt2->newCompatibleRenderPassDescriptor());
         rt2->setRenderPassDescriptor(rpDesc2.data());
-        QVERIFY(rt2->build());
+        QVERIFY(rt2->create());
 
         if (impl == QRhi::Vulkan || impl == QRhi::Metal) {
             QVERIFY(!rpDesc->isCompatible(rpDesc2.data()));
@@ -2477,23 +2584,23 @@ void tst_QRhi::renderPassDescriptorCompatibility()
         // resolve attachments (compatible)
         {
             QScopedPointer<QRhiRenderBuffer> msaaRenderBuffer(rhi->newRenderBuffer(QRhiRenderBuffer::Color, QSize(512, 512), 4));
-            QVERIFY(msaaRenderBuffer->build());
+            QVERIFY(msaaRenderBuffer->create());
             QScopedPointer<QRhiRenderBuffer> msaaRenderBuffer2(rhi->newRenderBuffer(QRhiRenderBuffer::Color, QSize(512, 512), 4));
-            QVERIFY(msaaRenderBuffer2->build());
+            QVERIFY(msaaRenderBuffer2->create());
 
             QRhiColorAttachment colorAtt(msaaRenderBuffer.data()); // color0, multisample
             colorAtt.setResolveTexture(tex.data()); // resolved into a non-msaa texture
             QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ colorAtt }));
             QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
             rt->setRenderPassDescriptor(rpDesc.data());
-            QVERIFY(rt->build());
+            QVERIFY(rt->create());
 
             QRhiColorAttachment colorAtt2(msaaRenderBuffer2.data()); // color0, multisample
             colorAtt2.setResolveTexture(tex2.data()); // resolved into a non-msaa texture
             QScopedPointer<QRhiTextureRenderTarget> rt2(rhi->newTextureRenderTarget({ colorAtt2 }));
             QScopedPointer<QRhiRenderPassDescriptor> rpDesc2(rt2->newCompatibleRenderPassDescriptor());
             rt2->setRenderPassDescriptor(rpDesc2.data());
-            QVERIFY(rt2->build());
+            QVERIFY(rt2->create());
 
             QVERIFY(rpDesc->isCompatible(rpDesc2.data()));
             QVERIFY(rpDesc2->isCompatible(rpDesc.data()));
@@ -2502,22 +2609,22 @@ void tst_QRhi::renderPassDescriptorCompatibility()
         // missing resolve for one of them (not compatible)
         {
             QScopedPointer<QRhiRenderBuffer> msaaRenderBuffer(rhi->newRenderBuffer(QRhiRenderBuffer::Color, QSize(512, 512), 4));
-            QVERIFY(msaaRenderBuffer->build());
+            QVERIFY(msaaRenderBuffer->create());
             QScopedPointer<QRhiRenderBuffer> msaaRenderBuffer2(rhi->newRenderBuffer(QRhiRenderBuffer::Color, QSize(512, 512), 4));
-            QVERIFY(msaaRenderBuffer2->build());
+            QVERIFY(msaaRenderBuffer2->create());
 
             QRhiColorAttachment colorAtt(msaaRenderBuffer.data()); // color0, multisample
             colorAtt.setResolveTexture(tex.data()); // resolved into a non-msaa texture
             QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ colorAtt }));
             QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
             rt->setRenderPassDescriptor(rpDesc.data());
-            QVERIFY(rt->build());
+            QVERIFY(rt->create());
 
             QRhiColorAttachment colorAtt2(msaaRenderBuffer2.data()); // color0, multisample
             QScopedPointer<QRhiTextureRenderTarget> rt2(rhi->newTextureRenderTarget({ colorAtt2 }));
             QScopedPointer<QRhiRenderPassDescriptor> rpDesc2(rt2->newCompatibleRenderPassDescriptor());
             rt2->setRenderPassDescriptor(rpDesc2.data());
-            QVERIFY(rt2->build());
+            QVERIFY(rt2->create());
 
             if (impl == QRhi::Vulkan) { // no Metal here
                 QVERIFY(!rpDesc->isCompatible(rpDesc2.data()));
@@ -2530,19 +2637,19 @@ void tst_QRhi::renderPassDescriptorCompatibility()
 
     if (rhi->isTextureFormatSupported(QRhiTexture::RGBA32F)) {
         QScopedPointer<QRhiTexture> tex3(rhi->newTexture(QRhiTexture::RGBA32F, QSize(512, 512), 1, QRhiTexture::RenderTarget));
-        QVERIFY(tex3->build());
+        QVERIFY(tex3->create());
 
         // different texture formats (not compatible)
         {
             QScopedPointer<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({ tex.data() }));
             QScopedPointer<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
             rt->setRenderPassDescriptor(rpDesc.data());
-            QVERIFY(rt->build());
+            QVERIFY(rt->create());
 
             QScopedPointer<QRhiTextureRenderTarget> rt2(rhi->newTextureRenderTarget({ tex3.data() }));
             QScopedPointer<QRhiRenderPassDescriptor> rpDesc2(rt2->newCompatibleRenderPassDescriptor());
             rt2->setRenderPassDescriptor(rpDesc2.data());
-            QVERIFY(rt2->build());
+            QVERIFY(rt2->create());
 
             if (impl == QRhi::Vulkan || impl == QRhi::Metal) {
                 QVERIFY(!rpDesc->isCompatible(rpDesc2.data()));

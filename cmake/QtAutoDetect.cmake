@@ -6,8 +6,7 @@
 # done when initially configuring qtbase.
 
 function(qt_auto_detect_android)
-    if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED QT_AUTODETECT_ANDROID
-            AND NOT QT_BUILD_STANDALONE_TESTS)
+    if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED QT_AUTODETECT_ANDROID)
 
         file(READ ${CMAKE_TOOLCHAIN_FILE} toolchain_file_content OFFSET 0 LIMIT 80)
         string(FIND ${toolchain_file_content} "The Android Open Source Project" find_result REVERSE)
@@ -34,7 +33,7 @@ function(qt_auto_detect_android)
 endfunction()
 
 function(qt_auto_detect_vpckg)
-    if(DEFINED ENV{VCPKG_ROOT} AND NOT QT_BUILD_STANDALONE_TESTS)
+    if(DEFINED ENV{VCPKG_ROOT})
         set(vcpkg_toolchain_file "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
         get_filename_component(vcpkg_toolchain_file "${vcpkg_toolchain_file}" ABSOLUTE)
 
@@ -172,9 +171,26 @@ function(qt_auto_detect_cmake_config)
 
         set(CMAKE_TRY_COMPILE_CONFIGURATION "${QT_MULTI_CONFIG_FIRST_CONFIG}" PARENT_SCOPE)
         if(CMAKE_GENERATOR STREQUAL "Ninja Multi-Config")
+            # Create build-<config>.ninja files for all specified configurations.
             set(CMAKE_CROSS_CONFIGS "all" CACHE STRING "")
+
+            # The configuration that will be considered the main one (for example when
+            # configuring standalone tests with a single-config generator like Ninja).
             set(CMAKE_DEFAULT_BUILD_TYPE "${QT_MULTI_CONFIG_FIRST_CONFIG}" CACHE STRING "")
+
+            # By default when ninja is called without parameters, it will build all configurations.
+            set(CMAKE_DEFAULT_CONFIGS "all" CACHE STRING "")
         endif()
+    endif()
+endfunction()
+
+function(qt_auto_detect_cyclic_toolchain)
+    if(CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "/qt.toolchain.cmake$")
+        message(FATAL_ERROR
+                "Woah there! You can't use the Qt generated qt.toolchain.cmake file to configure "
+                "qtbase, because that will create a toolchain file that includes itself!\n"
+                "Did you accidentally use qt-cmake to configure qtbase? Make sure to remove the "
+                "CMakeCache.txt file, and configure qtbase with 'cmake' instead of 'qt-cmake'.")
     endif()
 endfunction()
 
@@ -223,6 +239,7 @@ function(qt_auto_detect_pch)
     option(BUILD_WITH_PCH "Build Qt using precompiled headers?" "${default_value}")
 endfunction()
 
+qt_auto_detect_cyclic_toolchain()
 qt_auto_detect_cmake_config()
 qt_auto_detect_darwin()
 qt_auto_detect_ios()

@@ -14,6 +14,13 @@ add_cmake_library(tst_qpluginloaderlib
         Qt::Core
 )
 
+# special case begin
+if(WIN32)
+    # CMake sets for Windows-GNU platforms the suffix "lib"
+    set_property(TARGET tst_qpluginloaderlib PROPERTY PREFIX "")
+endif()
+# special case begin
+
 #### Keys ignored in scope 1:.:.:lib.pro:<TRUE>:
 # INSTALLS = "target"
 # TEMPLATE = "lib"
@@ -21,12 +28,6 @@ add_cmake_library(tst_qpluginloaderlib
 
 ## Scopes:
 #####################################################################
-
-#### Keys ignored in scope 6:.:..:../winrt.pri:(CMAKE_BUILD_TYPE STREQUAL Debug):
-# DESTDIR = "../debug/bin"
-
-#### Keys ignored in scope 7:.:..:../winrt.pri:else:
-# DESTDIR = "../release/bin"
 
 extend_target(tst_qpluginloaderlib CONDITION MSVC
     DEFINES

@@ -6,7 +6,7 @@ qt_find_package(JPEG) # special case
 ## QJpegPlugin Plugin:
 #####################################################################
 
-qt_add_plugin(QJpegPlugin
+qt_internal_add_plugin(QJpegPlugin
     OUTPUT_NAME qjpeg
     TYPE imageformats
     SOURCES
@@ -87,10 +87,5 @@ qt_extend_target(QJpegPlugin CONDITION NOT QT_FEATURE_system_jpeg
         ../../../3rdparty/libjpeg/src
 )
 
-qt_extend_target(QJpegPlugin CONDITION WINRT AND NOT QT_FEATURE_system_jpeg
-    DEFINES
-        NO_GETENV
-)
-
-#### Keys ignored in scope 6:.:../../../3rdparty:../../../3rdparty/libjpeg.pri:GCC:
+#### Keys ignored in scope 5:.:../../../3rdparty:../../../3rdparty/libjpeg.pri:GCC:
 # QMAKE_CFLAGS_WARN_ON = "-Wno-unused-parameter" "-Wno-main"

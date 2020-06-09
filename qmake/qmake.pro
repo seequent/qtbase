@@ -10,11 +10,13 @@ DEFINES += \
     PROEVALUATOR_FULL \
     QT_BOOTSTRAPPED \
     QT_BUILD_QMAKE \
+    QT_USE_QSTRINGBUILDER \
     QT_NO_FOREACH \
     $$shell_quote(QT_VERSION_STR=\"$$QT_VERSION\") \
     QT_VERSION_MAJOR=$$QT_MAJOR_VERSION \
     QT_VERSION_MINOR=$$QT_MINOR_VERSION \
-    QT_VERSION_PATCH=$$QT_PATCH_VERSION
+    QT_VERSION_PATCH=$$QT_PATCH_VERSION \
+    PCRE2_DISABLE_JIT
 
 win32: DEFINES += \
     UNICODE \
@@ -102,11 +104,13 @@ INCLUDEPATH += \
 
 VPATH += \
     ../src/corelib/global \
+    ../src/corelib/text \
     ../src/corelib/tools \
     ../src/corelib/kernel \
     ../src/corelib/codecs \
     ../src/corelib/plugin \
     ../src/corelib/io \
+        ../src/corelib/time \
     ../src/corelib/serialization
 
 SOURCES += \
@@ -150,20 +154,20 @@ SOURCES += \
     qmetatype.cpp \
     qnumeric.cpp \
     qregexp.cpp \
+    qregularexpression.cpp \
     qromancalendar.cpp \
     qsettings.cpp \
     qstring.cpp \
+    qstringbuilder.cpp \
+    qstringconverter.cpp \
     qstringlist.cpp \
     qsystemerror.cpp \
     qtemporaryfile.cpp \
     qtextstream.cpp \
-    qutfcodec.cpp \
     quuid.cpp \
     qvariant.cpp \
     qversionnumber.cpp \
     qvsnprintf.cpp \
-    qxmlstream.cpp \
-    qxmlutils.cpp
 
 HEADERS += \
     qabstractfileengine_p.h \
@@ -207,19 +211,22 @@ HEADERS += \
     qmetatype.h \
     qnumeric.h \
     qregexp.h \
+    qregularexpression.h \
     qromancalendar_p.h \
     qstring.h \
+    qstringbuilder.h \
+    qstringconverter_p.h \
+    qstringconverter.h \
     qstringlist.h \
     qstringmatcher.h \
     qsystemerror_p.h \
     qtemporaryfile.h \
     qtextstream.h \
-    qutfcodec_p.h \
     quuid.h \
     qvector.h \
     qversionnumber.h \
-    qxmlstream.h \
-    qxmlutils_p.h
+
+include(../src/3rdparty/pcre2/pcre2.pri)
 
 unix {
     SOURCES += \
@@ -249,8 +256,10 @@ unix {
         qoperatingsystemversion_win.cpp \
         qsettings_win.cpp \
         qsystemlibrary.cpp \
-        registry.cpp
+        library/registry.cpp
     LIBS += -lole32 -ladvapi32 -lkernel32 -lnetapi32
     mingw: LIBS += -luuid
     clang: QMAKE_CXXFLAGS += -fms-compatibility-version=19.00.23506 -Wno-microsoft-enum-value
 }
+
+load(qt_tool)

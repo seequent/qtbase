@@ -33,7 +33,9 @@ import re
 import sys
 from typing import Optional, Set
 from textwrap import dedent
+import os
 
+from special_case_helper import SpecialCaseHandler
 from helper import (
     map_qt_library,
     featureName,
@@ -223,8 +225,28 @@ def parseLib(ctx, lib, data, cm_fh, cmake_find_packages_set):
         # configure.cmake is interested in finding the system library
         # for the purpose of enabling or disabling a system_foo feature.
         find_package_kwargs["use_system_package_name"] = True
+    find_package_kwargs["module"] = ctx["module"]
 
     cm_fh.write(generate_find_package_info(newlib, **find_package_kwargs))
+
+    if "use" in data["libraries"][lib]:
+        use_entry = data["libraries"][lib]["use"]
+        if isinstance(use_entry, str):
+            print(f"1use: {use_entry}")
+            cm_fh.write(f"qt_add_qmake_lib_dependency({newlib.soName} {use_entry})\n")
+        else:
+            for use in use_entry:
+                print(f"2use: {use}")
+                indentation = ""
+                has_condition = False
+                if "condition" in use:
+                    has_condition = True
+                    indentation = "    "
+                    condition = map_condition(use['condition'])
+                    cm_fh.write(f"if({condition})\n")
+                cm_fh.write(f"{indentation}qt_add_qmake_lib_dependency({newlib.soName} {use['lib']})\n")
+                if has_condition:
+                    cm_fh.write("endif()\n")
 
     run_library_test = False
     mapped_library = find_3rd_party_library_mapping(lib)
@@ -862,13 +884,6 @@ def get_feature_mapping():
         "msvc_mp": None,
         "optimize_debug": None,
         "optimize_size": None,
-        # special case to enable implicit feature on WIN32, until ANGLE is ported
-        "opengl-desktop": {"autoDetect": ""},
-        # special case to disable implicit feature on WIN32, until ANGLE is ported
-        "opengl-dynamic": {"autoDetect": "OFF"},
-        "opengles2": {  # special case to disable implicit feature on WIN32, until ANGLE is ported
-            "condition": "NOT WIN32 AND ( NOT WATCHOS AND NOT QT_FEATURE_opengl_desktop AND GLESv2_FOUND )"
-        },
         "simulator_and_device": {"condition": "UIKIT AND NOT QT_UIKIT_SDK"},
         "pkg-config": {"condition": "PKG_CONFIG_FOUND"},
         "posix-libiconv": {
@@ -1359,7 +1374,9 @@ def processJson(path, ctx, data):
 
     ctx = processFiles(ctx, data)
 
-    with open(posixpath.join(path, "configure.cmake"), "w") as cm_fh:
+    destination = posixpath.join(path, "configure.cmake")
+    generated_file = destination + '.gen'
+    with open(generated_file, "w") as cm_fh:
         cm_fh.write("\n\n#### Inputs\n\n")
 
         processInputs(ctx, data, cm_fh)
@@ -1388,6 +1405,16 @@ def processJson(path, ctx, data):
 
     # do this late:
     processSubconfigs(path, ctx, data)
+
+    handler = SpecialCaseHandler(
+        os.path.abspath(destination),
+        os.path.abspath(generated_file),
+        os.path.abspath(path),
+        convertingProFiles=False,
+        debug=False,
+    )
+    if handler.handle_special_cases():
+        os.replace(generated_file, destination)
 
 
 def main():

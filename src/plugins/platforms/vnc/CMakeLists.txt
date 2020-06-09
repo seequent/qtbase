@@ -4,7 +4,7 @@
 ## QVncIntegrationPlugin Plugin:
 #####################################################################
 
-qt_add_plugin(QVncIntegrationPlugin
+qt_internal_add_plugin(QVncIntegrationPlugin
     OUTPUT_NAME qvnc
     TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES vnc # special case
@@ -26,7 +26,6 @@ qt_add_plugin(QVncIntegrationPlugin
         Qt::GuiPrivate
         Qt::Network
         Qt::ServiceSupportPrivate
-        Qt::ThemeSupportPrivate
 )
 
 #### Keys ignored in scope 1:.:.:vnc.pro:<TRUE>:

@@ -37,9 +37,12 @@
 **
 ****************************************************************************/
 
+#include <AppKit/AppKit.h>
+
 #include "qcocoanativeinterface.h"
 #include "qcocoawindow.h"
 #include "qcocoamenu.h"
+#include "qcocoansmenu.h"
 #include "qcocoamenubar.h"
 #include "qcocoahelpers.h"
 #include "qcocoaapplicationdelegate.h"
@@ -59,17 +62,9 @@
 #include <QtGui/qguiapplication.h>
 #include <qdebug.h>
 
-#if !defined(QT_NO_WIDGETS) && defined(QT_PRINTSUPPORT_LIB)
-#include "qcocoaprintersupport.h"
-#include "qprintengine_mac_p.h"
-#include <qpa/qplatformprintersupport.h>
-#endif
-
 #include <QtGui/private/qcoregraphics_p.h>
 
 #include <QtPlatformHeaders/qcocoawindowfunctions.h>
-
-#include <AppKit/AppKit.h>
 
 #if QT_CONFIG(vulkan)
 #include <MoltenVK/mvk_vulkan.h>
@@ -127,10 +122,6 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QCocoaNativeInter
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::qMenuToNSMenu);
     if (resource.toLower() == "qmenubartonsmenu")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::qMenuBarToNSMenu);
-    if (resource.toLower() == "qimagetocgimage")
-        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::qImageToCGImage);
-    if (resource.toLower() == "cgimagetoqimage")
-        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::cgImageToQImage);
     if (resource.toLower() == "registertouchwindow")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::registerTouchWindow);
     if (resource.toLower() == "setembeddedinforeignview")
@@ -149,30 +140,6 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QCocoaNativeInter
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::testContentBorderPosition);
 
     return nullptr;
-}
-
-QPlatformPrinterSupport *QCocoaNativeInterface::createPlatformPrinterSupport()
-{
-#if !defined(QT_NO_WIDGETS) && !defined(QT_NO_PRINTER) && defined(QT_PRINTSUPPORT_LIB)
-    return new QCocoaPrinterSupport();
-#else
-    qFatal("Printing is not supported when Qt is configured with -no-widgets or -no-feature-printer");
-    return nullptr;
-#endif
-}
-
-void *QCocoaNativeInterface::NSPrintInfoForPrintEngine(QPrintEngine *printEngine)
-{
-#if !defined(QT_NO_WIDGETS) && !defined(QT_NO_PRINTER) && defined(QT_PRINTSUPPORT_LIB)
-    QMacPrintEnginePrivate *macPrintEnginePriv = static_cast<QMacPrintEngine *>(printEngine)->d_func();
-    if (macPrintEnginePriv->state == QPrinter::Idle && !macPrintEnginePriv->isPrintSessionInitialized())
-        macPrintEnginePriv->initialize();
-    return macPrintEnginePriv->printInfo;
-#else
-    Q_UNUSED(printEngine);
-    qFatal("Printing is not supported when Qt is configured with -no-widgets or -no-feature-printer");
-    return nullptr;
-#endif
 }
 
 QPixmap QCocoaNativeInterface::defaultBackgroundPixmapForQWizard()
@@ -277,16 +244,6 @@ void *QCocoaNativeInterface::qMenuBarToNSMenu(QPlatformMenuBar *platformMenuBar)
     QCocoaMenuBar *cocoaPlatformMenuBar = static_cast<QCocoaMenuBar *>(platformMenuBar);
     NSMenu *menu = cocoaPlatformMenuBar->nsMenu();
     return reinterpret_cast<void *>(menu);
-}
-
-CGImageRef QCocoaNativeInterface::qImageToCGImage(const QImage &image)
-{
-    return qt_mac_toCGImage(image);
-}
-
-QImage QCocoaNativeInterface::cgImageToQImage(CGImageRef image)
-{
-    return qt_mac_toQImage(image);
 }
 
 void QCocoaNativeInterface::setEmbeddedInForeignView(QPlatformWindow *window, bool embedded)

@@ -618,7 +618,7 @@ static inline int indexOfMethodRelative(const QMetaObject **baseObject,
                         ? (priv(m->d.data)->signalCount) : 0;
 
         for (; i >= end; --i) {
-            int handle = priv(m->d.data)->methodData + 5*i;
+            int handle = priv(m->d.data)->methodData + QMetaObjectPrivate::IntsPerMethod*i;
             if (methodMatch(m, handle, name, argc, types)) {
                 *baseObject = m;
                 return i;
@@ -819,7 +819,7 @@ int QMetaObjectPrivate::indexOfConstructor(const QMetaObject *m, const QByteArra
                                            int argc, const QArgumentType *types)
 {
     for (int i = priv(m->d.data)->constructorCount-1; i >= 0; --i) {
-        int handle = priv(m->d.data)->constructorData + 5*i;
+        int handle = priv(m->d.data)->constructorData + QMetaObjectPrivate::IntsPerMethod*i;
         if (methodMatch(m, handle, name, argc, types))
             return i;
     }
@@ -895,7 +895,7 @@ QMetaMethod QMetaObjectPrivate::signal(const QMetaObject *m, int signal_index)
 
     if (i >= 0 && i < priv(m->d.data)->signalCount) {
         result.mobj = m;
-        result.handle = priv(m->d.data)->methodData + 5*i;
+        result.handle = priv(m->d.data)->methodData + QMetaObjectPrivate::IntsPerMethod*i;
     }
     return result;
 }
@@ -1078,7 +1078,7 @@ QMetaMethod QMetaObject::constructor(int index) const
     Q_ASSERT(priv(d.data)->revision >= 2);
     if (i >= 0 && i < priv(d.data)->constructorCount) {
         result.mobj = this;
-        result.handle = priv(d.data)->constructorData + 5*i;
+        result.handle = priv(d.data)->constructorData + QMetaObjectPrivate::IntsPerMethod*i;
     }
     return result;
 }
@@ -1098,7 +1098,7 @@ QMetaMethod QMetaObject::method(int index) const
     QMetaMethod result;
     if (i >= 0 && i < priv(d.data)->methodCount) {
         result.mobj = this;
-        result.handle = priv(d.data)->methodData + 5*i;
+        result.handle = priv(d.data)->methodData + QMetaObjectPrivate::IntsPerMethod*i;
     }
     return result;
 }
@@ -1574,17 +1574,17 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 */
 
 /*! \fn bool QMetaObject::invokeMethod(QObject *obj, const char *member,
-                             Qt::ConnectionType type,
-                             QGenericArgument val0 = QGenericArgument(0),
-                             QGenericArgument val1 = QGenericArgument(),
-                             QGenericArgument val2 = QGenericArgument(),
-                             QGenericArgument val3 = QGenericArgument(),
-                             QGenericArgument val4 = QGenericArgument(),
-                             QGenericArgument val5 = QGenericArgument(),
-                             QGenericArgument val6 = QGenericArgument(),
-                             QGenericArgument val7 = QGenericArgument(),
-                             QGenericArgument val8 = QGenericArgument(),
-                             QGenericArgument val9 = QGenericArgument())
+                                       Qt::ConnectionType type,
+                                       QGenericArgument val0 = QGenericArgument(0),
+                                       QGenericArgument val1 = QGenericArgument(),
+                                       QGenericArgument val2 = QGenericArgument(),
+                                       QGenericArgument val3 = QGenericArgument(),
+                                       QGenericArgument val4 = QGenericArgument(),
+                                       QGenericArgument val5 = QGenericArgument(),
+                                       QGenericArgument val6 = QGenericArgument(),
+                                       QGenericArgument val7 = QGenericArgument(),
+                                       QGenericArgument val8 = QGenericArgument(),
+                                       QGenericArgument val9 = QGenericArgument())
 
     \threadsafe
     \overload invokeMethod()
@@ -1594,16 +1594,16 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 
 /*!
     \fn bool QMetaObject::invokeMethod(QObject *obj, const char *member,
-                             QGenericArgument val0 = QGenericArgument(0),
-                             QGenericArgument val1 = QGenericArgument(),
-                             QGenericArgument val2 = QGenericArgument(),
-                             QGenericArgument val3 = QGenericArgument(),
-                             QGenericArgument val4 = QGenericArgument(),
-                             QGenericArgument val5 = QGenericArgument(),
-                             QGenericArgument val6 = QGenericArgument(),
-                             QGenericArgument val7 = QGenericArgument(),
-                             QGenericArgument val8 = QGenericArgument(),
-                             QGenericArgument val9 = QGenericArgument())
+                                       QGenericArgument val0 = QGenericArgument(0),
+                                       QGenericArgument val1 = QGenericArgument(),
+                                       QGenericArgument val2 = QGenericArgument(),
+                                       QGenericArgument val3 = QGenericArgument(),
+                                       QGenericArgument val4 = QGenericArgument(),
+                                       QGenericArgument val5 = QGenericArgument(),
+                                       QGenericArgument val6 = QGenericArgument(),
+                                       QGenericArgument val7 = QGenericArgument(),
+                                       QGenericArgument val8 = QGenericArgument(),
+                                       QGenericArgument val9 = QGenericArgument())
 
     \threadsafe
     \overload invokeMethod()
@@ -1844,7 +1844,7 @@ QByteArray QMetaMethodPrivate::tag() const
 int QMetaMethodPrivate::ownMethodIndex() const
 {
     // recompute the methodIndex by reversing the arithmetic in QMetaObject::property()
-    return (handle - priv(mobj->d.data)->methodData) / 5;
+    return (handle - priv(mobj->d.data)->methodData) / QMetaObjectPrivate::IntsPerMethod;
 }
 
 /*!
@@ -1884,13 +1884,30 @@ QByteArray QMetaMethod::name() const
     The return value is one of the types that are registered
     with QMetaType, or QMetaType::UnknownType if the type is not registered.
 
-    \sa parameterType(), QMetaType, typeName()
+    \sa parameterType(), QMetaType, typeName(), returnMetaType()
 */
 int QMetaMethod::returnType() const
  {
      if (!mobj)
          return QMetaType::UnknownType;
-    return QMetaMethodPrivate::get(this)->returnType();
+     return QMetaMethodPrivate::get(this)->returnType();
+}
+
+/*!
+    \since 6.0
+
+    Returns the return type of this method.
+    \sa parameterMetaType(), QMetaType, typeName()
+*/
+QMetaType QMetaMethod::returnMetaType() const
+{
+    if (!mobj || methodType() == QMetaMethod::Constructor)
+        return QMetaType{};
+    auto mt = QMetaType(mobj->d.metaTypes[mobj->d.data[handle + 5]]);
+    if (mt.id() == QMetaType::UnknownType)
+        return QMetaType(QMetaMethodPrivate::get(this)->returnType());
+    else
+        return mt;
 }
 
 /*!
@@ -1915,24 +1932,37 @@ int QMetaMethod::parameterCount() const
     The return value is one of the types that are registered
     with QMetaType, or QMetaType::UnknownType if the type is not registered.
 
-    \sa parameterCount(), returnType(), QMetaType
+    \sa parameterCount(), parameterMetaType(), returnType(), QMetaType
 */
 int QMetaMethod::parameterType(int index) const
 {
+    return parameterMetaType(index).id();
+}
+
+/*!
+    \since 6.0
+
+    Returns the metatype of the parameter at the given \a index.
+
+    If the \a index is smaller than zero or larger than
+    parameterCount(), an invalid QMetaType is returned.
+
+    \sa parameterCount(), returnMetaType(), QMetaType
+*/
+QMetaType QMetaMethod::parameterMetaType(int index) const
+{
     if (!mobj || index < 0)
-        return QMetaType::UnknownType;
-    if (index >= QMetaMethodPrivate::get(this)->parameterCount())
-        return QMetaType::UnknownType;
-
-    int type = QMetaMethodPrivate::get(this)->parameterType(index);
-    if (type != QMetaType::UnknownType)
-        return type;
-
-    void *argv[] = { &type, &index };
-    mobj->static_metacall(QMetaObject::RegisterMethodArgumentMetaType, QMetaMethodPrivate::get(this)->ownMethodIndex(), argv);
-    if (type != -1)
-        return type;
-    return QMetaType::UnknownType;
+        return {};
+    auto priv = QMetaMethodPrivate::get(this);
+    if (index >= priv->parameterCount())
+        return {};
+    // + 1 if there exists a return type
+    auto parameterOffset = index + (methodType() == QMetaMethod::Constructor ? 0 : 1);
+    auto mt = QMetaType(mobj->d.metaTypes[mobj->d.data[handle + 5] + parameterOffset]);
+    if (mt.id() == QMetaType::UnknownType)
+        return QMetaType(QMetaMethodPrivate::get(this)->parameterType(index));
+    else
+        return mt;
 }
 
 /*!
@@ -2055,7 +2085,7 @@ int QMetaMethod::revision() const
         return 0;
     if ((QMetaMethod::Access)(mobj->d.data[handle + 4] & MethodRevisioned)) {
         int offset = priv(mobj->d.data)->methodData
-                     + priv(mobj->d.data)->methodCount * 5
+                     + priv(mobj->d.data)->methodCount * QMetaObjectPrivate::IntsPerMethod
                      + QMetaMethodPrivate::get(this)->ownMethodIndex();
         return mobj->d.data[offset];
     }
@@ -2120,7 +2150,7 @@ QMetaMethod QMetaMethod::fromSignalImpl(const QMetaObject *metaObject, void **si
         m->static_metacall(QMetaObject::IndexOfMethod, 0, args);
         if (i >= 0) {
             result.mobj = m;
-            result.handle = priv(m->d.data)->methodData + 5*i;
+            result.handle = priv(m->d.data)->methodData + QMetaObjectPrivate::IntsPerMethod*i;
             break;
         }
     }
@@ -2419,7 +2449,18 @@ bool QMetaMethod::invoke(QObject *object,
 
     \sa Q_ARG(), Q_RETURN_ARG(), qRegisterMetaType(), QMetaObject::invokeMethod()
 */
-bool QMetaMethod::invokeOnGadget(void* gadget, QGenericReturnArgument returnValue, QGenericArgument val0, QGenericArgument val1, QGenericArgument val2, QGenericArgument val3, QGenericArgument val4, QGenericArgument val5, QGenericArgument val6, QGenericArgument val7, QGenericArgument val8, QGenericArgument val9) const
+bool QMetaMethod::invokeOnGadget(void *gadget,
+                                 QGenericReturnArgument returnValue,
+                                 QGenericArgument val0,
+                                 QGenericArgument val1,
+                                 QGenericArgument val2,
+                                 QGenericArgument val3,
+                                 QGenericArgument val4,
+                                 QGenericArgument val5,
+                                 QGenericArgument val6,
+                                 QGenericArgument val7,
+                                 QGenericArgument val8,
+                                 QGenericArgument val9) const
 {
    if (!gadget || !mobj)
         return false;
@@ -2486,16 +2527,16 @@ bool QMetaMethod::invokeOnGadget(void* gadget, QGenericReturnArgument returnValu
 
 /*!
     \fn bool QMetaMethod::invokeOnGadget(void *gadget,
-            QGenericArgument val0 = QGenericArgument(0),
-            QGenericArgument val1 = QGenericArgument(),
-            QGenericArgument val2 = QGenericArgument(),
-            QGenericArgument val3 = QGenericArgument(),
-            QGenericArgument val4 = QGenericArgument(),
-            QGenericArgument val5 = QGenericArgument(),
-            QGenericArgument val6 = QGenericArgument(),
-            QGenericArgument val7 = QGenericArgument(),
-            QGenericArgument val8 = QGenericArgument(),
-            QGenericArgument val9 = QGenericArgument()) const
+                                         QGenericArgument val0 = QGenericArgument(0),
+                                         QGenericArgument val1 = QGenericArgument(),
+                                         QGenericArgument val2 = QGenericArgument(),
+                                         QGenericArgument val3 = QGenericArgument(),
+                                         QGenericArgument val4 = QGenericArgument(),
+                                         QGenericArgument val5 = QGenericArgument(),
+                                         QGenericArgument val6 = QGenericArgument(),
+                                         QGenericArgument val7 = QGenericArgument(),
+                                         QGenericArgument val8 = QGenericArgument(),
+                                         QGenericArgument val9 = QGenericArgument()) const
 
     \overload
     \since 5.5
@@ -3701,10 +3742,10 @@ const char* QMetaClassInfo::value() const
 int QMetaObjectPrivate::originalClone(const QMetaObject *mobj, int local_method_index)
 {
     Q_ASSERT(local_method_index < get(mobj)->methodCount);
-    int handle = get(mobj)->methodData + 5 * local_method_index;
+    int handle = get(mobj)->methodData + QMetaObjectPrivate::IntsPerMethod * local_method_index;
     while (mobj->d.data[handle + 4] & MethodCloned) {
         Q_ASSERT(local_method_index > 0);
-        handle -= 5;
+        handle -= QMetaObjectPrivate::IntsPerMethod;
         local_method_index--;
     }
     return local_method_index;

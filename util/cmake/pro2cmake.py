@@ -188,7 +188,7 @@ def _parse_commandline():
         "--output-file",
         dest="output_file",
         type=str,
-        help="Specify a file path where the generated content should be written to."
+        help="Specify a file path where the generated content should be written to. "
         "Default is to write to CMakeLists.txt in the same directory as the .pro file.",
     )
 
@@ -371,7 +371,7 @@ def detect_cmake_api_version_used_in_file_content(project_file_path: str) -> Opt
     with open(cmake_project_path, "r") as file_fd:
         contents = file_fd.read()
 
-        new_api_calls = [api_call for api_call in cmake_api_calls[2]]
+        new_api_calls = [cmake_api_calls[2][api_call] for api_call in cmake_api_calls[2]]
         new_api_calls_alternatives = "|".join(new_api_calls)
         match = re.search(new_api_calls_alternatives, contents)
 
@@ -576,6 +576,7 @@ class QmlDir:
     def __init__(self) -> None:
         self.module = ""
         self.plugin_name = ""
+        self.plugin_optional = False
         self.plugin_path = ""
         self.classname = ""
         self.imports: List[str] = []
@@ -589,7 +590,7 @@ class QmlDir:
         imports_line = "    \n".join(self.imports)
         string = f"""\
             module: {self.module}
-            plugin: {self.plugin_name} {self.plugin_path}
+            plugin: {self.plugin_optional} {self.plugin_name} {self.plugin_path}
             classname: {self.classname}
             type_infos:{type_infos_line}
             imports:{imports_line}
@@ -664,6 +665,13 @@ class QmlDir:
             self.plugin_name = entries[1]
             if len(entries) > 2:
                 self.plugin_path = entries[2]
+        elif entries[0] == "optional":
+            if entries[1] != "plugin":
+                raise RuntimeError("Only plugins can be optional in qmldir files")
+            self.plugin_name = entries[2]
+            self.plugin_optional = True
+            if len(entries) > 3:
+                self.plugin_path = entries[3]
         elif entries[0] == "classname":
             self.classname = entries[1]
         elif entries[0] == "typeinfo":
@@ -1311,7 +1319,8 @@ class Scope(object):
         v = self.get(key, inherit=inherit)
         if len(v) == 0:
             return default
-        assert len(v) == 1
+        if len(v) > 1:
+            return ' '.join(v)
         return v[0]
 
     def _map_files(
@@ -2123,6 +2132,10 @@ def write_library_section(
             else:
                 if dep not in public_module_public_deps:
                     public_module_public_deps.append(dep)
+
+        private_module_interface_deps.extend([map_qt_library(q) for q in scope.expand("QT_FOR_PRIVATE")])
+        private_module_interface_deps.extend(_map_libraries_to_cmake(scope.expand("QMAKE_USE_FOR_PRIVATE"), known_libraries))
+
         write_list(cm_fh, public_module_private_deps, "LIBRARIES", indent + 1)
         write_list(cm_fh, public_module_public_deps, "PUBLIC_LIBRARIES", indent + 1)
         write_list(cm_fh, private_module_interface_deps, "PRIVATE_MODULE_INTERFACE", indent + 1)
@@ -2302,7 +2315,10 @@ def expand_resource_glob(cm_fh: IO[str], expression: str) -> str:
     return expanded_var
 
 
-def write_resources(cm_fh: IO[str], target: str, scope: Scope, indent: int = 0, is_example=False):
+def write_resources(cm_fh: IO[str], target: str, scope: Scope, indent: int = 0, is_example=False,
+                    target_ref: str = None):
+    if target_ref is None:
+        target_ref = target
     # vpath = scope.expand('VPATH')
 
     # Handle QRC files by turning them into qt_add_resource:
@@ -2320,7 +2336,7 @@ def write_resources(cm_fh: IO[str], target: str, scope: Scope, indent: int = 0, 
                     cm_fh.write(f"#### Ignored generated resource: {r}")
                     continue
                 qrc_output += process_qrc_file(
-                    target,
+                    target_ref,
                     scope,
                     r,
                     scope.basedir,
@@ -2352,7 +2368,7 @@ def write_resources(cm_fh: IO[str], target: str, scope: Scope, indent: int = 0, 
                     immediate_lang = None
                     immediate_name = f"qmake_{r}"
                     qrc_output += write_add_qt_resource_call(
-                        target=target,
+                        target=target_ref,
                         scope=scope,
                         resource_name=immediate_name,
                         prefix=immediate_prefix,
@@ -2390,7 +2406,7 @@ def write_resources(cm_fh: IO[str], target: str, scope: Scope, indent: int = 0, 
             files = {f: "" for f in standalone_files}
             skip_qtquick_compiler = False
             qrc_output += write_add_qt_resource_call(
-                target=target,
+                target=target_ref,
                 scope=scope,
                 resource_name=name,
                 prefix=prefix,
@@ -2478,7 +2494,9 @@ def expand_project_requirements(scope: Scope, skip_message: bool = False) -> str
     return requirements
 
 
-def write_extend_target(cm_fh: IO[str], target: str, scope: Scope, indent: int = 0):
+def write_extend_target(cm_fh: IO[str], target: str, scope: Scope, indent: int = 0, target_ref: str = None):
+    if target_ref is None:
+        target_ref = target
     ind = spaces(indent)
     extend_qt_io_string = io.StringIO()
     write_sources_section(extend_qt_io_string, scope)
@@ -2490,7 +2508,7 @@ def write_extend_target(cm_fh: IO[str], target: str, scope: Scope, indent: int =
 
     cmake_api_call = get_cmake_api_call("qt_extend_target")
     extend_scope = (
-        f"\n{ind}{cmake_api_call}({target} CONDITION"
+        f"\n{ind}{cmake_api_call}({target_ref} CONDITION"
         f" {condition}\n"
         f"{extend_qt_string}{ind})\n"
     )
@@ -2501,7 +2519,7 @@ def write_extend_target(cm_fh: IO[str], target: str, scope: Scope, indent: int =
     cm_fh.write(extend_scope)
 
     io_string = io.StringIO()
-    write_resources(io_string, target, scope, indent + 1)
+    write_resources(io_string, target, scope, indent + 1, target_ref=target_ref)
     resource_string = io_string.getvalue()
     if len(resource_string) != 0:
         resource_string = resource_string.strip("\n").rstrip(f"\n{spaces(indent + 1)}")
@@ -2887,6 +2905,12 @@ def write_main_part(
                     cm_fh.write(f'{spaces(indent)}list(APPEND test_data "{data}")\n')
             cm_fh.write("\n")
 
+    target_ref = name
+    if typename == "Tool":
+        target_ref = "${target_name}"
+        comment_line = "#" * 69
+        cm_fh.write(f"{spaces(indent)}qt_get_tool_target_name(target_name {name})\n")
+
     # Check for DESTDIR override
     destdir = scope.get_string("DESTDIR")
     if destdir:
@@ -2899,7 +2923,7 @@ def write_main_part(
             destdir = replace_path_constants(destdir, scope)
             extra_lines.append(f'OUTPUT_DIRECTORY "{destdir}"')
 
-    cm_fh.write(f"{spaces(indent)}{cmake_function}({name}\n")
+    cm_fh.write(f"{spaces(indent)}{cmake_function}({target_ref}\n")
     for extra_line in extra_lines:
         cm_fh.write(f"{spaces(indent)}    {extra_line}\n")
 
@@ -2910,7 +2934,7 @@ def write_main_part(
     # Footer:
     cm_fh.write(f"{spaces(indent)})\n")
 
-    write_resources(cm_fh, name, scope, indent)
+    write_resources(cm_fh, name, scope, indent, target_ref=target_ref)
 
     write_statecharts(cm_fh, name, scope, indent)
 
@@ -2946,7 +2970,7 @@ def write_main_part(
         c.reset_visited_keys()
         write_android_part(cm_fh, name, c, indent=indent)
         write_wayland_part(cm_fh, name, c, indent=indent)
-        write_extend_target(cm_fh, name, c, indent=indent)
+        write_extend_target(cm_fh, name, c, target_ref=target_ref, indent=indent)
         write_simd_part(cm_fh, name, c, indent=indent)
 
         ignored_keys_report = write_ignored_keys(c, spaces(indent))
@@ -2960,6 +2984,7 @@ def write_3rdparty_library(cm_fh: IO[str], scope: Scope, *, indent: int = 0) -> 
 
     target_name = re.sub(r"^qt", "", scope.TARGET)
     target_name = target_name.replace("-", "_")
+    qmake_lib_name = target_name
 
     # Capitalize the first letter for a nicer name.
     target_name = target_name.title()
@@ -2973,7 +2998,7 @@ def write_3rdparty_library(cm_fh: IO[str], scope: Scope, *, indent: int = 0) -> 
     else:
         library_type = "STATIC"
 
-    extra_lines = []
+    extra_lines = [f"QMAKE_LIB_NAME {qmake_lib_name}"]
 
     if library_type:
         extra_lines.append(library_type)
@@ -3045,6 +3070,19 @@ def write_generic_library(cm_fh: IO[str], scope: Scope, *, indent: int = 0) -> s
 
     return target_name
 
+def forward_target_info(scope: Scope, extra: [str]):
+    s = scope.get_string("QMAKE_TARGET_PRODUCT")
+    if s:
+        extra.append(f"TARGET_PRODUCT \"{s}\"")
+    s = scope.get_string("QMAKE_TARGET_DESCRIPTION")
+    if s:
+        extra.append(f"TARGET_DESCRIPTION \"{s}\"")
+    s = scope.get_string("QMAKE_TARGET_COMPANY")
+    if s:
+        extra.append(f"TARGET_COMPANY \"{s}\"")
+    s = scope.get_string("QMAKE_TARGET_COPYRIGHT")
+    if s:
+        extra.append(f"TARGET_COPYRIGHT \"{s}\"")
 
 def write_module(cm_fh: IO[str], scope: Scope, *, indent: int = 0) -> str:
     module_name = scope.TARGET
@@ -3088,6 +3126,7 @@ def write_module(cm_fh: IO[str], scope: Scope, *, indent: int = 0) -> str:
     scope._is_public_module = is_public_module
 
     target_name = module_name[2:]
+    forward_target_info(scope, extra)
     write_main_part(
         cm_fh,
         target_name,
@@ -3120,6 +3159,8 @@ def write_tool(cm_fh: IO[str], scope: Scope, *, indent: int = 0) -> str:
     else:
         extra = []
 
+    forward_target_info(scope, extra)
+
     write_main_part(
         cm_fh,
         tool_name,
@@ -3132,7 +3173,7 @@ def write_tool(cm_fh: IO[str], scope: Scope, *, indent: int = 0) -> str:
         extra_keys=["CONFIG"],
     )
 
-    return tool_name
+    return tool_name, "${target_name}"
 
 
 def write_test(cm_fh: IO[str], scope: Scope, gui: bool = False, *, indent: int = 0) -> str:
@@ -3173,7 +3214,6 @@ def write_test(cm_fh: IO[str], scope: Scope, gui: bool = False, *, indent: int =
     )
 
     return test_name
-
 
 def write_binary(cm_fh: IO[str], scope: Scope, gui: bool = False, *, indent: int = 0) -> str:
     binary_name = scope.TARGET
@@ -3283,8 +3323,8 @@ def write_example(
 
     example_install_dir = scope.expandString("target.path")
     if not example_install_dir:
-        example_install_dir = "examples"
-    example_install_dir = example_install_dir.replace("$$[QT_INSTALL_EXAMPLES]", "examples")
+        example_install_dir = "${INSTALL_EXAMPLESDIR}"
+    example_install_dir = example_install_dir.replace("$$[QT_INSTALL_EXAMPLES]", "${INSTALL_EXAMPLESDIR}")
 
     cm_fh.write(
         "cmake_minimum_required(VERSION 3.14)\n"
@@ -3293,6 +3333,9 @@ def write_example(
         "set(CMAKE_AUTOMOC ON)\n"
         "set(CMAKE_AUTORCC ON)\n"
         "set(CMAKE_AUTOUIC ON)\n\n"
+        "if(NOT DEFINED INSTALL_EXAMPLESDIR)\n"
+        "  set(INSTALL_EXAMPLESDIR \"examples\")\n"
+        "endif()\n\n"
         f'set(INSTALL_EXAMPLEDIR "{example_install_dir}")\n\n'
     )
 
@@ -3392,6 +3435,8 @@ def write_example(
                     add_target += f"    IMPORTS\n{qml_dir_imports_line}"
                 if qml_dir_dynamic_imports:
                     add_target += "    IMPORTS ${module_dynamic_qml_imports}\n"
+                if qml_dir.plugin_optional:
+                    add_target += "    PLUGIN_OPTIONAL\n"
 
             add_target += "    INSTALL_LOCATION ${INSTALL_EXAMPLEDIR}\n)\n\n"
             add_target += f"target_sources({binary_name} PRIVATE"
@@ -3545,6 +3590,8 @@ def write_plugin(cm_fh, scope, *, indent: int = 0) -> str:
     if "static" in scope.get("CONFIG"):
         extra.append("STATIC")
 
+    forward_target_info(scope, extra)
+
     write_main_part(
         cm_fh,
         plugin_name,
@@ -3683,6 +3730,8 @@ def write_qml_plugin(
             extra_lines.append("IMPORTS\n        " f"{qml_dir_imports_line}")
         if qml_dir_dynamic_imports:
             extra_lines.append("IMPORTS ${module_dynamic_qml_imports}")
+        if qml_dir.plugin_optional:
+            extra_lines.append("PLUGIN_OPTIONAL")
 
     return qml_dir
 
@@ -3744,6 +3793,7 @@ def handle_app_or_lib(
     is_plugin = "plugin" in config
     is_qt_plugin = any("qt_plugin" == s for s in scope.get("_LOADED")) or is_qml_plugin
     target = ""
+    target_ref = None
     gui = all(val not in config for val in ["console", "cmdline", "-app_bundle"]) and all(
         val not in scope.expand("QT") for val in ["testlib", "testlib-private"]
     )
@@ -3766,13 +3816,16 @@ def handle_app_or_lib(
         target = write_module(cm_fh, scope, indent=indent)
     elif "qt_tool" in scope.get("_LOADED"):
         assert not is_example
-        target = write_tool(cm_fh, scope, indent=indent)
+        target, target_ref = write_tool(cm_fh, scope, indent=indent)
     else:
         if "testcase" in config or "testlib" in config or "qmltestcase" in config:
             assert not is_example
             target = write_test(cm_fh, scope, gui, indent=indent)
         else:
             target = write_binary(cm_fh, scope, gui, indent=indent)
+
+    if target_ref is None:
+        target_ref = target
 
     # ind = spaces(indent)
     cmake_api_call = get_cmake_api_call("qt_add_docs")
@@ -3782,15 +3835,18 @@ def handle_app_or_lib(
         "",
         ["QMAKE_DOCS"],
         indent,
-        header=f"{cmake_api_call}({target}\n",
+        header=f"{cmake_api_call}({target_ref}\n",
         footer=")\n",
     )
 
     # Generate qmltypes instruction for anything that may have CONFIG += qmltypes
     # that is not a qml plugin
     if "qmltypes" in scope.get("CONFIG") and "qml_plugin" not in scope.get("_LOADED"):
-        cm_fh.write(f"\n{spaces(indent)}set_target_properties({target} PROPERTIES\n")
-        cm_fh.write(f"{spaces(indent+1)}QT_QML_MODULE_INSTALL_QMLTYPES TRUE\n")
+        cm_fh.write(f"\n{spaces(indent)}set_target_properties({target_ref} PROPERTIES\n")
+
+        install_dir = scope.expandString("QMLTYPES_INSTALL_DIR")
+        if install_dir:
+            cm_fh.write(f"{spaces(indent+1)}QT_QML_MODULE_INSTALL_QMLTYPES TRUE\n")
 
         import_version = get_qml_import_version(scope, target)
         if import_version:
@@ -3800,17 +3856,20 @@ def handle_app_or_lib(
         if import_name:
             cm_fh.write(f"{spaces(indent+1)}QT_QML_MODULE_URI {import_name}\n")
 
+        json_output_filename = scope.expandString("QMLTYPES_FILENAME")
+        if json_output_filename:
+            cm_fh.write(f"{spaces(indent+1)}QT_QMLTYPES_FILENAME {json_output_filename}\n")
+
         target_path = scope.get("TARGETPATH")
         if target_path:
             cm_fh.write(f"{spaces(indent+1)}QT_QML_MODULE_TARGET_PATH {target_path}\n")
 
-        install_dir = scope.expandString("QMLTYPES_INSTALL_DIR")
         if install_dir:
             install_dir = install_dir.replace("$$[QT_INSTALL_QML]", "${INSTALL_QMLDIR}")
             cm_fh.write(f'{spaces(indent+1)}QT_QML_MODULE_INSTALL_DIR "{install_dir}"\n')
 
         cm_fh.write(f"{spaces(indent)})\n\n")
-        cm_fh.write(f"qt6_qml_type_registration({target})\n")
+        cm_fh.write(f"qt6_qml_type_registration({target_ref})\n")
 
 
 def handle_top_level_repo_project(scope: Scope, cm_fh: IO[str]):
@@ -3838,8 +3897,9 @@ def handle_top_level_repo_project(scope: Scope, cm_fh: IO[str]):
         f"""\
                 cmake_minimum_required(VERSION {cmake_version_string})
 
+                include(.cmake.conf)
                 project({qt_lib}
-                    VERSION 6.0.0
+                    VERSION "${{QT_REPO_MODULE_VERSION}}"
                     DESCRIPTION "Qt {qt_lib_no_prefix} Libraries"
                     HOMEPAGE_URL "https://qt.io/"
                     LANGUAGES CXX C
@@ -3858,6 +3918,15 @@ def handle_top_level_repo_project(scope: Scope, cm_fh: IO[str]):
     )
 
     cm_fh.write(f"{header}{expand_project_requirements(scope)}{build_repo}")
+
+
+def create_top_level_cmake_conf():
+    conf_file_name = ".cmake.conf"
+    try:
+        with open(conf_file_name, 'x') as file:
+            file.write("set(QT_REPO_MODULE_VERSION \"6.0.0\")\n")
+    except FileExistsError as _:
+        pass
 
 
 def find_top_level_repo_project_file(project_file_path: str = "") -> Optional[str]:
@@ -4026,6 +4095,7 @@ def cmakeify_scope(
 
     # Handle top level repo project in a special way.
     if is_top_level_repo_project(scope.file_absolute_path):
+        create_top_level_cmake_conf()
         handle_top_level_repo_project(scope, temp_buffer)
     # Same for top-level tests.
     elif is_top_level_repo_tests_project(scope.file_absolute_path):

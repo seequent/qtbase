@@ -40,13 +40,18 @@
 #ifndef QCOCOADRAG_H
 #define QCOCOADRAG_H
 
-#include <AppKit/AppKit.h>
 #include <QtGui>
 #include <qpa/qplatformdrag.h>
 #include <private/qsimpledrag_p.h>
 
 #include <QtGui/private/qdnd_p.h>
 #include <QtGui/private/qinternalmimedata_p.h>
+
+#include <QtCore/qeventloop.h>
+
+Q_FORWARD_DECLARE_OBJC_CLASS(NSView);
+Q_FORWARD_DECLARE_OBJC_CLASS(NSEvent);
+Q_FORWARD_DECLARE_OBJC_CLASS(NSPasteboard);
 
 QT_BEGIN_NAMESPACE
 
@@ -69,11 +74,15 @@ public:
     void setLastMouseEvent(NSEvent *event, NSView *view);
 
     void setAcceptedAction(Qt::DropAction act);
+    void exitDragLoop();
 private:
     QDrag *m_drag;
     NSEvent *m_lastEvent;
     NSView *m_lastView;
     Qt::DropAction m_executed_drop_action;
+    QEventLoop internalDragLoop;
+
+    bool maybeDragMultipleItems();
 
     QPixmap dragPixmap(QDrag *drag, QPoint &hotSpot) const;
 };

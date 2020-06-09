@@ -38,7 +38,7 @@
 #include <QDir>
 #include <QTime>
 #include <QPointer>
-#include <QRegExp>
+#include <QRegularExpression>
 
 const QString PI_Project(QLS("Project"));
 const QString PI_TestCase(QLS("TestCase"));
@@ -66,11 +66,7 @@ const QString PI_PulseTestrBranch(QLS("PulseTestrBranch"));
 void BaselineProtocol::sysSleep(int ms)
 {
 #if defined(Q_OS_WIN)
-#  ifndef Q_OS_WINRT
     Sleep(DWORD(ms));
-#  else
-    WaitForSingleObjectEx(GetCurrentThread(), ms, false);
-#  endif
 #else
     struct timespec ts = { ms / 1000, (ms % 1000) * 1000 * 1000 };
     nanosleep(&ts, NULL);
@@ -87,7 +83,7 @@ PlatformInfo PlatformInfo::localHostInfo()
     PlatformInfo pi;
     pi.insert(PI_HostName, QHostInfo::localHostName());
     pi.insert(PI_QtVersion, QLS(qVersion()));
-    pi.insert(PI_QMakeSpec, QString(QLS(QMAKESPEC)).remove(QRegExp(QLS("^.*mkspecs/"))));
+    pi.insert(PI_QMakeSpec, QString(QLS(QMAKESPEC)).remove(QRegularExpression(QLS("^.*mkspecs/"))));
 #if QT_VERSION >= 0x050000
     pi.insert(PI_QtBuildMode, QLibraryInfo::isDebugBuild() ? QLS("QtDebug") : QLS("QtRelease"));
 #endif

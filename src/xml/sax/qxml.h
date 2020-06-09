@@ -188,7 +188,7 @@ private:
 };
 
 Q_DECLARE_TYPEINFO(QXmlAttributes::Attribute, Q_MOVABLE_TYPE);
-Q_DECLARE_SHARED_NOT_MOVABLE_UNTIL_QT6(QXmlAttributes)
+Q_DECLARE_SHARED(QXmlAttributes)
 
 //
 // SAX Input Source
@@ -208,8 +208,8 @@ public:
     virtual QChar next();
     virtual void reset();
 
-    static const ushort EndOfData;
-    static const ushort EndOfDocument;
+    static const char16_t EndOfData;
+    static const char16_t EndOfDocument;
 
 protected:
     virtual QString fromRawData(const QByteArray &data, bool beginning = false);

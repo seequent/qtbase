@@ -49,7 +49,6 @@
 #endif
 
 #include "qevent.h"
-#include "qdesktopwidget.h"
 #include <private/qdesktopwidget_p.h>
 #include "qapplication.h"
 #include "qlayout.h"
@@ -884,7 +883,7 @@ void QDialog::adjustPosition(QWidget* w)
     QRect desk;
     if (w) {
         scrn = QDesktopWidgetPrivate::screenNumber(w);
-    } else if (QDesktopWidgetPrivate::isVirtualDesktop()) {
+    } else if (QGuiApplication::primaryScreen()->virtualSiblings().size() > 1) {
         scrn = QDesktopWidgetPrivate::screenNumber(QCursor::pos());
     } else {
         scrn = QDesktopWidgetPrivate::screenNumber(this);

@@ -59,15 +59,15 @@
 #include <qoffscreensurface.h>
 #include <qpa/qplatformoffscreensurface.h>
 
-#include <QtFontDatabaseSupport/private/qcoretextfontdatabase_p.h>
-#include <QtClipboardSupport/private/qmacmime_p.h>
+#include <QtGui/private/qcoretextfontdatabase_p.h>
+#include <QtGui/private/qmacmime_p.h>
 #include <QDir>
 #include <QOperatingSystemVersion>
 
 #import <AudioToolbox/AudioServices.h>
 
 #if QT_CONFIG(opengl)
-#include <QtPlatformCompositorSupport/qpa/qplatformbackingstoreopenglsupport.h>
+#include <QtOpenGL/qpa/qplatformbackingstoreopenglsupport.h>
 #endif
 
 #include <QtDebug>
@@ -191,11 +191,7 @@ QPlatformWindow *QIOSIntegration::createPlatformWindow(QWindow *window) const
 // Used when the QWindow's surface type is set by the client to QSurface::RasterSurface
 QPlatformBackingStore *QIOSIntegration::createPlatformBackingStore(QWindow *window) const
 {
-    auto *backingStore = new QIOSBackingStore(window);
-#if QT_CONFIG(opengl)
-    backingStore->setOpenGLSupport(new QPlatformBackingStoreOpenGLSupport(backingStore));
-#endif
-    return backingStore;
+    return new QIOSBackingStore(window);
 }
 
 // Used when the QWindow's surface type is set by the client to QSurface::OpenGLSurface

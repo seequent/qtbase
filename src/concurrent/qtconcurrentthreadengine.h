@@ -88,7 +88,7 @@ class Q_CONCURRENT_EXPORT ThreadEngineBase: public QRunnable
 {
 public:
     // Public API:
-    ThreadEngineBase();
+    ThreadEngineBase(QThreadPool *pool);
     virtual ~ThreadEngineBase();
     void startSingleThreaded();
     void startBlocking();
@@ -99,13 +99,19 @@ public:
     void setProgressValue(int progress);
     void setProgressRange(int minimum, int maximum);
     void acquireBarrierSemaphore();
+    void reportIfSuspensionDone() const;
 
 protected: // The user overrides these:
     virtual void start() {}
     virtual void finish() {}
     virtual ThreadFunctionResult threadFunction() { return ThreadFinished; }
-    virtual bool shouldStartThread() { return futureInterface ? !futureInterface->isPaused() : true; }
-    virtual bool shouldThrottleThread() { return futureInterface ? futureInterface->isPaused() : false; }
+    virtual bool shouldStartThread() { return !shouldThrottleThread(); }
+    virtual bool shouldThrottleThread()
+    {
+        return futureInterface ? (futureInterface->isSuspending() || futureInterface->isSuspended())
+                               : false;
+    }
+
 private:
     bool startThreadInternal();
     void startThreads();
@@ -126,10 +132,12 @@ protected:
 
 
 template <typename T>
-class ThreadEngine : public virtual ThreadEngineBase
+class ThreadEngine : public ThreadEngineBase
 {
 public:
     typedef T ResultType;
+
+    ThreadEngine(QThreadPool *pool) : ThreadEngineBase(pool) {}
 
     virtual T *result() { return nullptr; }
 

@@ -42,7 +42,6 @@
 #include <qstyle.h>
 #include <qlayout.h>
 #include <qapplication.h>
-#include <qdesktopwidget.h>
 #ifndef QT_NO_ACCESSIBILITY
 # include <qaccessible.h>
 #endif
@@ -355,7 +354,7 @@ void QMenuBarPrivate::popupAction(QAction *action, bool activateFirst)
 
         if(!defaultPopDown || (fitUp && !fitDown))
             pos.setY(qMax(screenRect.y(), q->mapToGlobal(QPoint(0, adjustedActionRect.top()-popup_size.height())).y()));
-        QMenuPrivate::get(activeMenu)->topData()->initialScreenIndex = QGuiApplication::screens().indexOf(popupScreen);
+        QMenuPrivate::get(activeMenu)->topData()->initialScreen = popupScreen;
         activeMenu->popup(pos);
         if(activateFirst)
             activeMenu->d_func()->setFirstActionActive();
@@ -1053,12 +1052,12 @@ void QMenuBar::mousePressEvent(QMouseEvent *e)
 
     d->mouseDown = true;
 
-    QAction *action = d->actionAt(e->pos());
+    QAction *action = d->actionAt(e->position().toPoint());
     if (!action || !d->isVisible(action) || !action->isEnabled()) {
         d->setCurrentAction(nullptr);
 #if QT_CONFIG(whatsthis)
         if (QWhatsThis::inWhatsThisMode())
-            QWhatsThis::showText(e->globalPos(), d->whatsThis, this);
+            QWhatsThis::showText(e->globalPosition().toPoint(), d->whatsThis, this);
 #endif
         return;
     }
@@ -1084,7 +1083,7 @@ void QMenuBar::mouseReleaseEvent(QMouseEvent *e)
         return;
 
     d->mouseDown = false;
-    QAction *action = d->actionAt(e->pos());
+    QAction *action = d->actionAt(e->position().toPoint());
 
     // do noting if the action is hidden
     if (!d->isVisible(action))
@@ -1222,7 +1221,7 @@ void QMenuBar::mouseMoveEvent(QMouseEvent *e)
     }
 
     bool popupState = d->popupState || d->mouseDown;
-    QAction *action = d->actionAt(e->pos());
+    QAction *action = d->actionAt(e->position().toPoint());
     if ((action && d->isVisible(action)) || !popupState)
         d->setCurrentAction(action, popupState);
 }
@@ -1625,7 +1624,7 @@ QSize QMenuBar::minimumSizeHint() const
     int fw = style()->pixelMetric(QStyle::PM_MenuBarPanelWidth, nullptr, this);
     int spaceBelowMenuBar = style()->styleHint(QStyle::SH_MainWindow_SpaceBelowMenuBar, nullptr, this);
     if(as_gui_menubar) {
-        int w = parentWidget() ? parentWidget()->width() : QDesktopWidgetPrivate::width();
+        int w = parentWidget() ? parentWidget()->width() : QGuiApplication::primaryScreen()->virtualGeometry().width();
         d->calcActionRects(w - (2 * fw), 0);
         for (int i = 0; ret.isNull() && i < d->actions.count(); ++i)
             ret = d->actionRects.at(i).size();
@@ -1675,7 +1674,7 @@ QSize QMenuBar::sizeHint() const
     int fw = style()->pixelMetric(QStyle::PM_MenuBarPanelWidth, nullptr, this);
     int spaceBelowMenuBar = style()->styleHint(QStyle::SH_MainWindow_SpaceBelowMenuBar, nullptr, this);
     if(as_gui_menubar) {
-        const int w = parentWidget() ? parentWidget()->width() : QDesktopWidgetPrivate::width();
+        const int w = parentWidget() ? parentWidget()->width() : QGuiApplication::primaryScreen()->virtualGeometry().width();
         d->calcActionRects(w - (2 * fw), 0);
         for (int i = 0; i < d->actionRects.count(); ++i) {
             const QRect &actionRect = d->actionRects.at(i);

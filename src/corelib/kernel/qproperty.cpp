@@ -83,30 +83,37 @@ void QPropertyBase::moveAssign(QPropertyBase &&other, void *propertyDataPtr)
 QPropertyBase::~QPropertyBase()
 {
     QPropertyBasePointer d{this};
-    if (auto observer = d.firstObserver())
+    for (auto observer = d.firstObserver(); observer;) {
+        auto next = observer.nextObserver();
         observer.unlink();
+        observer = next;
+    }
     if (auto binding = d.bindingPtr())
         binding->unlinkAndDeref();
 }
 
-QUntypedPropertyBinding QPropertyBase::setBinding(const QUntypedPropertyBinding &binding, void *propertyDataPtr)
+QUntypedPropertyBinding QPropertyBase::setBinding(const QUntypedPropertyBinding &binding,
+                                                  void *propertyDataPtr,
+                                                  void *staticObserver,
+                                                  void (*staticObserverCallback)(void*))
 {
     QPropertyBindingPrivatePtr oldBinding;
     QPropertyBindingPrivatePtr newBinding = binding.d;
 
     QPropertyBasePointer d{this};
-
-    auto observer = d.firstObserver();
-    if (observer)
-        observer.unlink();
+    QPropertyObserverPointer observer;
 
     if (auto *existingBinding = d.bindingPtr()) {
         if (existingBinding == newBinding.data())
             return QUntypedPropertyBinding(oldBinding.data());
         oldBinding = QPropertyBindingPrivatePtr(existingBinding);
+        observer = oldBinding->takeObservers();
         oldBinding->unlinkAndDeref();
         d_ptr &= FlagMask;
+    } else {
+        observer = d.firstObserver();
     }
+
     if (newBinding) {
         newBinding.data()->ref.ref();
         d_ptr = (d_ptr & FlagMask) | reinterpret_cast<quintptr>(newBinding.data());
@@ -115,8 +122,11 @@ QUntypedPropertyBinding QPropertyBase::setBinding(const QUntypedPropertyBinding 
         newBinding->setProperty(propertyDataPtr);
         if (observer)
             newBinding->prependObserver(observer);
+        newBinding->setStaticObserver(staticObserver, staticObserverCallback);
+    } else if (observer) {
+        d.setObservers(observer.ptr);
     } else {
-        d_ptr &= ~BindingBit;
+        d_ptr &= ~QPropertyBase::BindingBit;
     }
 
     return QUntypedPropertyBinding(oldBinding.data());
@@ -135,6 +145,12 @@ QPropertyBindingPrivate *QPropertyBasePointer::bindingPtr() const
     if (ptr->d_ptr & QPropertyBase::BindingBit)
         return reinterpret_cast<QPropertyBindingPrivate*>(ptr->d_ptr & ~QPropertyBase::FlagMask);
     return nullptr;
+}
+
+void QPropertyBasePointer::setObservers(QPropertyObserver *observer)
+{
+    observer->prev = reinterpret_cast<QPropertyObserver**>(&(ptr->d_ptr));
+    ptr->d_ptr = (reinterpret_cast<quintptr>(observer) & ~QPropertyBase::FlagMask);
 }
 
 void QPropertyBasePointer::addObserver(QPropertyObserver *observer)
@@ -199,18 +215,13 @@ void QPropertyBase::removeBinding()
 {
     QPropertyBasePointer d{this};
 
-    auto observer = d.firstObserver();
-    if (observer)
-        observer.unlink();
-
     if (auto *existingBinding = d.bindingPtr()) {
+        auto observer = existingBinding->takeObservers();
         existingBinding->unlinkAndDeref();
-        d_ptr &= FlagMask;
+        d_ptr &= ExtraBit;
+        if (observer)
+            d.setObservers(observer.ptr);
     }
-    d_ptr &= ~BindingBit;
-
-    if (observer)
-        observer.observeProperty(d);
 }
 
 void QPropertyBase::registerWithCurrentlyEvaluatingBinding() const
@@ -245,6 +256,12 @@ QPropertyObserver::QPropertyObserver(void (*callback)(QPropertyObserver *, void 
 {
     QPropertyObserverPointer d{this};
     d.setChangeHandler(callback);
+}
+
+QPropertyObserver::QPropertyObserver(void *aliasedPropertyPtr)
+{
+    QPropertyObserverPointer d{this};
+    d.setAliasedProperty(aliasedPropertyPtr);
 }
 
 void QPropertyObserver::setSource(QPropertyBase &property)
@@ -296,6 +313,8 @@ QPropertyObserver &QPropertyObserver::operator=(QPropertyObserver &&other)
 
 void QPropertyObserverPointer::unlink()
 {
+    if (ptr->next.tag() & QPropertyObserver::ObserverNotifiesAlias)
+        ptr->aliasedPropertyPtr = 0;
     if (ptr->next)
         ptr->next->prev = ptr->prev;
     if (ptr->prev)
@@ -310,6 +329,12 @@ void QPropertyObserverPointer::setChangeHandler(void (*changeHandler)(QPropertyO
     ptr->next.setTag(QPropertyObserver::ObserverNotifiesChangeHandler);
 }
 
+void QPropertyObserverPointer::setAliasedProperty(void *propertyPtr)
+{
+    ptr->aliasedPropertyPtr = quintptr(propertyPtr);
+    ptr->next.setTag(QPropertyObserver::ObserverNotifiesAlias);
+}
+
 void QPropertyObserverPointer::setBindingToMarkDirty(QPropertyBindingPrivate *binding)
 {
     ptr->bindingToMarkDirty = binding;
@@ -319,12 +344,13 @@ void QPropertyObserverPointer::setBindingToMarkDirty(QPropertyBindingPrivate *bi
 void QPropertyObserverPointer::notify(QPropertyBindingPrivate *triggeringBinding, void *propertyDataPtr)
 {
     bool knownIfPropertyChanged = false;
-    bool propertyChanged =true;
+    bool propertyChanged = true;
 
     auto observer = const_cast<QPropertyObserver*>(ptr);
     while (observer) {
         auto * const next = observer->next.data();
-        if (observer->next.tag() == QPropertyObserver::ObserverNotifiesChangeHandler) {
+        switch (observer->next.tag()) {
+        case QPropertyObserver::ObserverNotifiesChangeHandler:
             if (!knownIfPropertyChanged && triggeringBinding) {
                 knownIfPropertyChanged = true;
 
@@ -337,9 +363,13 @@ void QPropertyObserverPointer::notify(QPropertyBindingPrivate *triggeringBinding
                 handlerToCall(observer, propertyDataPtr);
                 observer->changeHandler = handlerToCall;
             }
-        } else {
+            break;
+        case QPropertyObserver::ObserverNotifiesBinding:
             if (observer->bindingToMarkDirty)
                 observer->bindingToMarkDirty->markDirtyAndNotifyObservers();
+            break;
+        case QPropertyObserver::ObserverNotifiesAlias:
+            break;
         }
         observer = next;
     }
@@ -347,7 +377,8 @@ void QPropertyObserverPointer::notify(QPropertyBindingPrivate *triggeringBinding
 
 void QPropertyObserverPointer::observeProperty(QPropertyBasePointer property)
 {
-    unlink();
+    if (ptr->prev)
+        unlink();
     property.addObserver(ptr);
 }
 
@@ -677,6 +708,230 @@ QPropertyBindingSourceLocation QPropertyBindingError::location() const
 */
 
 /*!
+  \class QNotifiedProperty
+  \inmodule QtCore
+  \brief The QNotifiedProperty class is a template class that enables automatic property bindings
+         and invokes a callback function on the surrounding class when the value changes.
+
+  \ingroup tools
+
+  QNotifiedProperty\<T, Callback\> is a generic container that holds an
+  instance of T and behaves mostly like \l QProperty. The extra template
+  parameter is used to identify the surrounding class and a member function of
+  that class. The member function will be called whenever the value held by the
+  property changes.
+
+  You can use QNotifiedProperty to port code that uses Q_PROPERTY. The getter
+  and setter are trivial to adapt for accessing a \l QProperty rather than the
+  plain value. In order to invoke the change signal on property changes, use
+  QNotifiedProperty and pass the change signal as callback.
+
+  \code
+    class MyClass : public QObject
+    {
+        \Q_OBJECT
+        // Replacing: Q_PROPERTY(int x READ x WRITE setX NOTIFY xChanged)
+    public:
+        int x() const { return xProp; }
+        void setX(int x) { xProp = x; }
+
+    signals:
+        void xChanged();
+
+    private:
+        // Now you can set bindings on xProp and use it in other bindings.
+        QNotifiedProperty<int, &MyClass::xChanged> xProp;
+    };
+  \endcode
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QNotifiedProperty<T, Callback>::QNotifiedProperty()
+
+  Constructs a property with a default constructed instance of T.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> explicit QNotifiedProperty<T, Callback>::QNotifiedProperty(const T &initialValue)
+
+  Constructs a property with the provided \a initialValue.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> explicit QNotifiedProperty<T, Callback>::QNotifiedProperty(T &&initialValue)
+
+  Move-Constructs a property with the provided \a initialValue.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QNotifiedProperty<T, Callback>::QNotifiedProperty(Class *owner, const QPropertyBinding<T> &binding)
+
+  Constructs a property that is tied to the provided \a binding expression. The
+  first time the property value is read, the binding is evaluated. Whenever a
+  dependency of the binding changes, the binding will be re-evaluated the next
+  time the value of this property is read. When the property value changes \a
+  owner is notified via the Callback function.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QNotifiedProperty<T, Callback>::QNotifiedProperty(Class *owner, QPropertyBinding<T> &&binding)
+
+  Constructs a property that is tied to the provided \a binding expression. The
+  first time the property value is read, the binding is evaluated. Whenever a
+  dependency of the binding changes, the binding will be re-evaluated the next
+  time the value of this property is read. When the property value changes \a
+  owner is notified via the Callback function.
+*/
+
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> template <typename Functor> QNotifiedProperty<T, Callback>::QNotifiedProperty(Class *owner, Functor &&f)
+
+  Constructs a property that is tied to the provided binding expression \a f. The
+  first time the property value is read, the binding is evaluated. Whenever a
+  dependency of the binding changes, the binding will be re-evaluated the next
+  time the value of this property is read. When the property value changes \a
+  owner is notified via the Callback function.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QNotifiedProperty<T, Callback>::~QNotifiedProperty()
+
+  Destroys the property.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> T QNotifiedProperty<T, Callback>::value() const
+
+  Returns the value of the property. This may evaluate a binding expression that
+  is tied to this property, before returning the value.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QNotifiedProperty<T, Callback>::operator T() const
+
+  Returns the value of the property. This may evaluate a binding expression that
+  is tied to this property, before returning the value.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> void QNotifiedProperty<T, Callback>::setValue(Class *owner, const T &newValue)
+
+  Assigns \a newValue to this property and removes the property's associated
+  binding, if present. If the property value changes as a result, calls the
+  Callback function on \a owner.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> void QNotifiedProperty<T, Callback>::setValue(Class *owner, T &&newValue)
+  \overload
+
+  Assigns \a newValue to this property and removes the property's associated
+  binding, if present. If the property value changes as a result, calls the
+  Callback function on \a owner.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QPropertyBinding<T> QNotifiedProperty<T, Callback>::setBinding(Class *owner, const QPropertyBinding<T> &newBinding)
+
+  Associates the value of this property with the provided \a newBinding
+  expression and returns the previously associated binding. The first time the
+  property value is read, the binding is evaluated. Whenever a dependency of the
+  binding changes, the binding will be re-evaluated the next time the value of
+  this property is read. When the property value changes \a owner is notified
+  via the Callback function.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> template <typename Functor> QPropertyBinding<T> QNotifiedProperty<T, Callback>::setBinding(Class *owner, Functor f)
+  \overload
+
+  Associates the value of this property with the provided functor \a f and
+  returns the previously associated binding. The first time the property value
+  is read, the binding is evaluated by invoking the call operator () of \a f.
+  Whenever a dependency of the binding changes, the binding will be re-evaluated
+  the next time the value of this property is read. When the property value
+  changes \a owner is notified via the Callback function.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QPropertyBinding<T> QNotifiedProperty<T, Callback>::setBinding(Class *owner, QPropertyBinding<T> &&newBinding)
+  \overload
+
+  Associates the value of this property with the provided \a newBinding
+  expression and returns the previously associated binding. The first time the
+  property value is read, the binding is evaluated. Whenever a dependency of the
+  binding changes, the binding will be re-evaluated the next time the value of
+  this property is read. When the property value changes \a owner is notified
+  via the Callback function.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QPropertyBinding<T> bool QNotifiedProperty<T, Callback>::setBinding(Class *owner, const QUntypedPropertyBinding &newBinding)
+  \overload
+
+  Associates the value of this property with the provided \a newBinding
+  expression. The first time the property value is read, the binding is evaluated.
+  Whenever a dependency of the binding changes, the binding will be re-evaluated
+  the next time the value of this property is read. When the property value
+  changes \a owner is notified via the Callback function.
+
+  Returns true if the type of this property is the same as the type the binding
+  function returns; false otherwise.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> bool QNotifiedProperty<T, Callback>::hasBinding() const
+
+  Returns true if the property is associated with a binding; false otherwise.
+*/
+
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QPropertyBinding<T> QNotifiedProperty<T, Callback>::binding() const
+
+  Returns the binding expression that is associated with this property. A
+  default constructed QPropertyBinding<T> will be returned if no such
+  association exists.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> QPropertyBinding<T> QNotifiedProperty<T, Callback>::takeBinding()
+
+  Disassociates the binding expression from this property and returns it. After
+  calling this function, the value of the property will only change if you
+  assign a new value to it, or when a new binding is set.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> template <typename Functor> QPropertyChangeHandler<T, Functor> QNotifiedProperty<T, Callback>::onValueChanged(Functor f)
+
+  Registers the given functor \a f as a callback that shall be called whenever
+  the value of the property changes.
+
+  The callback \a f is expected to be a type that has a plain call operator () without any
+  parameters. This means that you can provide a C++ lambda expression, an std::function
+  or even a custom struct with a call operator.
+
+  The returned property change handler object keeps track of the registration. When it
+  goes out of scope, the callback is de-registered.
+*/
+
+/*!
+  \fn template <typename T, typename Class, void(Class::*Callback)()> template <typename Functor> QPropertyChangeHandler<T, Functor> QNotifiedProperty<T, Callback>::subscribe(Functor f)
+
+  Subscribes the given functor \a f as a callback that is called immediately and whenever
+  the value of the property changes in the future.
+
+  The callback \a f is expected to be a type that has a plain call operator () without any
+  parameters. This means that you can provide a C++ lambda expression, an std::function
+  or even a custom struct with a call operator.
+
+  The returned property change handler object keeps track of the subscription. When it
+  goes out of scope, the callback is unsubscribed.
+*/
+
+/*!
   \class QPropertyChangeHandler
   \inmodule QtCore
   \brief The QPropertyChangeHandler class controls the lifecycle of change callback installed on a QProperty.
@@ -688,6 +943,229 @@ QPropertyBindingSourceLocation QPropertyBindingError::location() const
   and QProperty::subscribe. As long as the change handler is alive, the callback remains installed.
 
   A handler instance can be transferred between C++ scopes using move semantics.
+*/
+
+/*!
+  \class QPropertyAlias
+  \inmodule QtCore
+  \brief The QPropertyAlias class is a safe alias for a QProperty with same template parameter.
+
+  \ingroup tools
+
+  QPropertyAlias\<T\> wraps a pointer to a QProperty\<T\> and automatically
+  invalidates itself when the QProperty\<T\> is destroyed. It forwards all
+  method invocations to the wrapped property. For example:
+
+  \code
+    QProperty<QString> *name = new QProperty<QString>("John");
+    QProperty<int> age(41);
+
+    QPropertyAlias<QString> nameAlias(name);
+    QPropertyAlias<int> ageAlias(&age);
+
+    QPropertyAlias<QString> fullname;
+    fullname.setBinding([&]() { return nameAlias.value() + " age:" + QString::number(ageAlias.value()); });
+
+    qDebug() << fullname.value(); // Prints "Smith age: 41"
+
+    *name = "Emma"; // Marks binding expression as dirty
+
+    qDebug() << fullname.value(); // Re-evaluates the binding expression and prints "Emma age: 41"
+
+    // Birthday is coming up
+    ageAlias.setValue(age.value() + 1); // Writes the age property through the alias
+
+    qDebug() << fullname.value(); // Re-evaluates the binding expression and prints "Emma age: 42"
+
+    delete name; // Leaves the alias in an invalid, but accessible state
+    nameAlias.setValue("Eve"); // Ignored: nameAlias carries a default-constructed QString now
+
+    ageAlias.setValue(92);
+    qDebug() << fullname.value(); // Re-evaluates the binding expression and prints " age: 92"
+  \endcode
+*/
+
+/*!
+  \fn template <typename T> QPropertyAlias<T>::QPropertyAlias(QProperty<T> *property)
+
+  Constructs a property alias for the given \a property.
+*/
+
+/*!
+  \fn template <typename T> explicit QPropertyAlias<T>::QPropertyAlias(QPropertyAlias<T> *alias)
+
+  Constructs a property alias for the property aliased by \a alias.
+*/
+
+/*!
+  \fn template <typename T> T QPropertyAlias<T>::value() const
+
+  Returns the value of the aliased property. This may evaluate a binding
+  expression that is tied to the property, before returning the value.
+*/
+
+/*!
+  \fn template <typename T> QPropertyAlias<T>::operator T() const
+
+  Returns the value of the aliased property. This may evaluate a binding
+  expression that is tied to the property, before returning the value.
+*/
+
+/*!
+  \fn template <typename T> void QPropertyAlias<T>::setValue(const T &newValue)
+
+  Assigns \a newValue to the aliased property and removes the property's
+  associated binding, if present.
+*/
+
+/*!
+  \fn template <typename T> void QPropertyAlias<T>::setValue(T &&newValue)
+  \overload
+
+  Assigns \a newValue to the aliased property and removes the property's
+  associated binding, if present.
+*/
+
+/*!
+  \fn template <typename T> QPropertyAlias<T> &QPropertyAlias<T>::operator=(const T &newValue)
+
+  Assigns \a newValue to the aliased property and returns a reference to this
+  QPropertyAlias.
+*/
+
+/*!
+  \fn template <typename T> QPropertyAlias<T> &QPropertyAlias<T>::operator=(T &&newValue)
+  \overload
+
+  Assigns \a newValue to the aliased property and returns a reference to this
+  QPropertyAlias.
+*/
+
+/*!
+  \fn template <typename T> QPropertyAlias<T> &QPropertyAlias<T>::operator=(const QPropertyBinding<T> &newBinding)
+  \overload
+
+  Associates the value of the aliased property with the provided \a newBinding
+  expression and returns a reference to this alias. The first time the
+  property value is read, either from the property itself or from any alias, the
+  binding is evaluated. Whenever a dependency of the binding changes, the
+  binding will be re-evaluated the next time the value of this property is read.
+*/
+
+/*!
+  \fn template <typename T> QPropertyBinding<T> QPropertyAlias<T>::setBinding(const QPropertyBinding<T> &newBinding)
+
+  Associates the value of the aliased property with the provided \a newBinding
+  expression and returns any previous binding the associated with the aliased
+  property. The first time the property value is read, either from the property
+  itself or from any alias, the binding is evaluated. Whenever a dependency of
+  the binding changes, the binding will be re-evaluated the next time the value
+  of this property is read.
+
+  Returns any previous binding associated with the property, or a
+  default-constructed QPropertyBinding<T>.
+*/
+
+/*!
+  \fn template <typename T> QPropertyBinding<T> QPropertyAlias<T>::setBinding(QPropertyBinding<T> &&newBinding)
+  \overload
+
+  Associates the value of the aliased property with the provided \a newBinding
+  expression and returns any previous binding the associated with the aliased
+  property. The first time the property value is read, either from the property
+  itself or from any alias, the binding is evaluated. Whenever a dependency of
+  the binding changes, the binding will be re-evaluated the next time the value
+  of this property is read.
+
+  Returns any previous binding associated with the property, or a
+  default-constructed QPropertyBinding<T>.
+*/
+
+/*!
+  \fn template <typename T> QPropertyBinding<T> bool QPropertyAlias<T>::setBinding(const QUntypedPropertyBinding &newBinding)
+  \overload
+
+  Associates the value of the aliased property with the provided \a newBinding
+  expression. The first time the property value is read, either from the
+  property itself or from any alias, the binding is evaluated. Whenever a
+  dependency of the binding changes, the binding will be re-evaluated the next
+  time the value of this property is read.
+
+  Returns true if the type of this property is the same as the type the binding
+  function returns; false otherwise.
+*/
+
+/*!
+  \fn template <typename T> template <typename Functor> QPropertyBinding<T> setBinding(Functor f)
+  \overload
+
+  Associates the value of the aliased property with the provided functor \a f
+  expression. The first time the property value is read, either from the
+  property itself or from any alias, the binding is evaluated. Whenever a
+  dependency of the binding changes, the binding will be re-evaluated the next
+  time the value of this property is read.
+
+  Returns any previous binding associated with the property, or a
+  default-constructed QPropertyBinding<T>.
+*/
+
+/*!
+  \fn template <typename T> bool QPropertyAlias<T>::hasBinding() const
+
+  Returns true if the aliased property is associated with a binding; false
+  otherwise.
+*/
+
+/*!
+  \fn template <typename T> QPropertyBinding<T> QPropertyAlias<T>::binding() const
+
+  Returns the binding expression that is associated with the aliased property. A
+  default constructed QPropertyBinding<T> will be returned if no such
+  association exists.
+*/
+
+/*!
+  \fn template <typename T> QPropertyBinding<T> QPropertyAlias<T>::takeBinding()
+
+  Disassociates the binding expression from the aliased property and returns it.
+  After calling this function, the value of the property will only change if
+  you assign a new value to it, or when a new binding is set.
+*/
+
+/*!
+  \fn template <typename T> template <typename Functor> QPropertyChangeHandler<T, Functor> QPropertyAlias<T>::onValueChanged(Functor f)
+
+  Registers the given functor \a f as a callback that shall be called whenever
+  the value of the aliased property changes.
+
+  The callback \a f is expected to be a type that has a plain call operator () without any
+  parameters. This means that you can provide a C++ lambda expression, an std::function
+  or even a custom struct with a call operator.
+
+  The returned property change handler object keeps track of the registration. When it
+  goes out of scope, the callback is de-registered.
+*/
+
+/*!
+  \fn template <typename T> template <typename Functor> QPropertyChangeHandler<T, Functor> QPropertyAlias<T>::subscribe(Functor f)
+
+  Subscribes the given functor \a f as a callback that is called immediately and whenever
+  the value of the aliased property changes in the future.
+
+  The callback \a f is expected to be a type that has a plain call operator () without any
+  parameters. This means that you can provide a C++ lambda expression, an std::function
+  or even a custom struct with a call operator.
+
+  The returned property change handler object keeps track of the subscription. When it
+  goes out of scope, the callback is unsubscribed.
+*/
+
+/*!
+  \fn template <typename T> bool QPropertyAlias<T>::isValid() const
+
+  Returns true if the aliased property still exists; false otherwise.
+
+  If the aliased property doesn't exist, all other method calls are ignored.
 */
 
 QT_END_NAMESPACE

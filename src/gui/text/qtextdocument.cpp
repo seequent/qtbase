@@ -51,9 +51,6 @@
 #include <qregularexpression.h>
 #endif
 #include <qvarlengtharray.h>
-#if QT_CONFIG(textcodec)
-#include <qtextcodec.h>
-#endif
 #include <qthread.h>
 #include <qcoreapplication.h>
 #include <qmetaobject.h>
@@ -186,15 +183,15 @@ QString Qt::convertFromPlainText(const QString &plain, Qt::WhiteSpaceMode mode)
             col = 0;
         } else {
             if (mode == Qt::WhiteSpacePre && plain[i] == QLatin1Char('\t')){
-                rich += QChar(0x00a0U);
+                rich += QChar::Nbsp;
                 ++col;
                 while (col % 8) {
-                    rich += QChar(0x00a0U);
+                    rich += QChar::Nbsp;
                     ++col;
                 }
             }
             else if (mode == Qt::WhiteSpacePre && plain[i].isSpace())
-                rich += QChar(0x00a0U);
+                rich += QChar::Nbsp;
             else if (plain[i] == QLatin1Char('<'))
                 rich += QLatin1String("&lt;");
             else if (plain[i] == QLatin1Char('>'))
@@ -210,19 +207,6 @@ QString Qt::convertFromPlainText(const QString &plain, Qt::WhiteSpaceMode mode)
         rich += QLatin1String("</p>");
     return rich;
 }
-
-/*!
-    \fn QTextCodec *Qt::codecForHtml(const QByteArray &ba)
-    \internal
-
-    This function is defined in the \c <QTextDocument> header file.
-*/
-#if QT_CONFIG(textcodec)
-QTextCodec *Qt::codecForHtml(const QByteArray &ba)
-{
-    return QTextCodec::codecForHtml(ba);
-}
-#endif
 
 /*!
     \class QTextDocument

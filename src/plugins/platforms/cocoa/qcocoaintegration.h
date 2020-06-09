@@ -40,8 +40,6 @@
 #ifndef QPLATFORMINTEGRATION_COCOA_H
 #define QPLATFORMINTEGRATION_COCOA_H
 
-#include <AppKit/AppKit.h>
-
 #include "qcocoacursor.h"
 #include "qcocoawindow.h"
 #include "qcocoanativeinterface.h"
@@ -57,7 +55,9 @@
 
 #include <QtCore/QScopedPointer>
 #include <qpa/qplatformintegration.h>
-#include <QtFontDatabaseSupport/private/qcoretextfontdatabase_p.h>
+#include <QtGui/private/qcoretextfontdatabase_p.h>
+
+Q_FORWARD_DECLARE_OBJC_CLASS(NSToolbar);
 
 QT_BEGIN_NAMESPACE
 

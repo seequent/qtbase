@@ -141,7 +141,7 @@ QDateTime QSslCertificate::expiryDate() const
     return d->notValidAfter;
 }
 
-#if !defined(Q_OS_WINRT) && !QT_CONFIG(schannel) // implemented in qsslcertificate_{winrt,schannel}.cpp
+#if !QT_CONFIG(schannel) // implemented in qsslcertificate_schannel.cpp
 Qt::HANDLE QSslCertificate::handle() const
 {
     Q_UNIMPLEMENTED();
@@ -346,10 +346,16 @@ bool QSslCertificatePrivate::parse(const QByteArray &data)
         return false;
 
     notValidBefore = elem.toDateTime();
+    if (!notValidBefore.isValid())
+        return false;
+
     if (!elem.read(validityStream) || (elem.type() != QAsn1Element::UtcTimeType && elem.type() != QAsn1Element::GeneralizedTimeType))
         return false;
 
     notValidAfter = elem.toDateTime();
+    if (!notValidAfter.isValid())
+        return false;
+
 
     // subject name
     if (!elem.read(certStream) || elem.type() != QAsn1Element::SequenceType)

@@ -46,9 +46,7 @@
 #include "qvariant.h"
 #include "qbuffer.h"
 #include "qimage.h"
-#if QT_CONFIG(textcodec)
-#include "private/qutfcodec_p.h"
-#endif
+#include "private/qstringconverter_p.h"
 
 #include "private/qguiapplication_p.h"
 #include <qpa/qplatformintegration.h>
@@ -136,17 +134,6 @@ QT_BEGIN_NAMESPACE
     \li Windows and \macos does not have the concept of ownership;
     the clipboard is a fully global resource so all applications are
     notified of changes.
-
-    \endlist
-
-    \section1 Notes for Universal Windows Platform Users
-
-    \list
-
-    \li The Universal Windows Platform only allows to query the
-    clipboard in case the application is active and an application
-    window has focus. Accessing the clipboard data when in background
-    will fail due to access denial.
 
     \endlist
 

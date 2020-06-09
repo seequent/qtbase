@@ -40,7 +40,7 @@
 #ifndef QTEXTCODEC_H
 #define QTEXTCODEC_H
 
-#include <QtCore/qstring.h>
+#include <QtCore/qstringconverter.h>
 #include <QtCore/qlist.h>
 
 QT_REQUIRE_CONFIG(textcodec);
@@ -53,10 +53,17 @@ class QIODevice;
 class QTextDecoder;
 class QTextEncoder;
 
-class Q_CORE_EXPORT QTextCodec
+class Q_CORE_EXPORT QTextCodec : public QStringConverterBase
 {
     Q_DISABLE_COPY(QTextCodec)
 public:
+    using ConversionFlags = QStringConverterBase::Flags;
+    using ConverterState = QStringConverterBase::State;
+
+    static constexpr Flag ConvertInvalidToNull = Flag::ConvertInvalidToNull;
+    static constexpr Flag DefaultConversion = Flag::WriteBom;
+    static constexpr Flag IgnoreHeader = Flag::ConvertInitialBom;
+
     static QTextCodec* codecForName(const QByteArray &name);
     static QTextCodec* codecForName(const char *name) { return codecForName(QByteArray(name)); }
     static QTextCodec* codecForMib(int mib);
@@ -89,26 +96,6 @@ public:
     QByteArray fromUnicode(const QString& uc) const;
 #endif
     QByteArray fromUnicode(QStringView uc) const;
-    enum ConversionFlag {
-        DefaultConversion,
-        ConvertInvalidToNull = 0x80000000,
-        IgnoreHeader = 0x1,
-        FreeFunction = 0x2
-    };
-    Q_DECLARE_FLAGS(ConversionFlags, ConversionFlag)
-
-    struct Q_CORE_EXPORT ConverterState {
-        ConverterState(ConversionFlags f = DefaultConversion)
-            : flags(f), remainingChars(0), invalidChars(0), d(nullptr) { state_data[0] = state_data[1] = state_data[2] = 0; }
-        ~ConverterState();
-        ConversionFlags flags;
-        int remainingChars;
-        int invalidChars;
-        uint state_data[3];
-        void *d;
-    private:
-        Q_DISABLE_COPY(ConverterState)
-    };
 
     QString toUnicode(const char *in, int length, ConverterState *state = nullptr) const
         { return convertToUnicode(in, length, state); }
@@ -130,9 +117,8 @@ protected:
     virtual ~QTextCodec();
 
 private:
-    friend struct QCoreGlobalData;
+    friend struct QTextCodecData;
 };
-Q_DECLARE_OPERATORS_FOR_FLAGS(QTextCodec::ConversionFlags)
 
 class Q_CORE_EXPORT QTextEncoder {
     Q_DISABLE_COPY(QTextEncoder)
@@ -166,6 +152,11 @@ private:
     const QTextCodec *c;
     QTextCodec::ConverterState state;
 };
+
+namespace Qt
+{
+    Q_CORE_EXPORT QTextCodec *codecForHtml(const QByteArray &ba);
+}
 
 QT_END_NAMESPACE
 

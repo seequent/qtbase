@@ -55,8 +55,9 @@
     results in the future.
 
     If the result of one asynchronous computation needs to be passed
-    to another, QFuture provides a convenient way of chaining multiple
-    sequential computations using then(). Additionally, onFailed() can be used
+    to another, QFuture provides a convenient way of chaining multiple sequential
+    computations using then(). onCanceled() can be used for adding a handler to
+    be called if the QFuture is canceled. Additionally, onFailed() can be used
     to handle any failures that occurred in the chain. Note that QFuture relies
     on exceptions for the error handling. If using exceptions is not an option,
     you can still indicate the error state of QFuture, by making the error type
@@ -76,13 +77,38 @@
 
     \snippet code/src_corelib_thread_qfuture.cpp 4
 
+    It's possible to chain multiple continuations and handlers in any order.
+    The first handler that can handle the state of its parent is invoked first.
+    If there's no proper handler, the state is propagated to the next continuation
+    or handler. For example:
+
+    \snippet code/src_corelib_thread_qfuture.cpp 15
+
+    If \c testFuture is successfully fulfilled \c {Block 1} will be called. If
+    it succeeds as well, the next then() (\c {Block 4}) is called. If \c testFuture
+    gets canceled or fails with an exception, either \c {Block 2} or \c {Block 3}
+    will be called respectively. The next then() will be called afterwards, and the
+    story repeats.
+
+    \note If \c {Block 2} is invoked and throws an exception, the following
+    onFailed() (\c {Block 3}) will handle it. If the order of onFailed() and
+    onCanceled() were reversed, the exception state would propagate to the
+    next continuations and eventually would be caught in \c {Block 5}.
+
+    In the next example the first onCanceled() (\c {Block 2}) is removed:
+
+    \snippet code/src_corelib_thread_qfuture.cpp 16
+
+    If \c testFuture gets canceled, its state is propagated to the next then(),
+    which will be also canceled. So in this case \c {Block 6} will be called.
+
     QFuture also offers ways to interact with a runnning computation. For
     instance, the computation can be canceled with the cancel() function. To
-    pause the computation, use the setPaused() function or one of the pause(),
-    resume(), or togglePaused() convenience functions. Be aware that not all
-    running asynchronous computations can be canceled or paused. For example,
-    the future returned by QtConcurrent::run() cannot be canceled; but the
-    future returned by QtConcurrent::mappedReduced() can.
+    suspend or resume the computation, use the setSuspended() function or one of
+    the suspend(), resume(), or toggleSuspended() convenience functions. Be aware
+    that not all running asynchronous computations can be canceled or suspended.
+    For example, the future returned by QtConcurrent::run() cannot be canceled;
+    but the future returned by QtConcurrent::mappedReduced() can.
 
     Progress information is provided by the progressValue(),
     progressMinimum(), progressMaximum(), and progressText() functions. The
@@ -90,8 +116,8 @@
     the computation to finish, ensuring that all results are available.
 
     The state of the computation represented by a QFuture can be queried using
-    the isCanceled(), isStarted(), isFinished(), isRunning(), or isPaused()
-    functions.
+    the isCanceled(), isStarted(), isFinished(), isRunning(), isSuspending()
+    or isSuspended() functions.
 
     QFuture is a lightweight reference counted class that can be passed by
     value.
@@ -103,7 +129,13 @@
 
     To interact with running tasks using signals and slots, use QFutureWatcher.
 
-    \sa QFutureWatcher, {Qt Concurrent}
+    You can also use QtFuture::connect to connect signals to a QFuture object
+    which will be resolved when a signal is emitted. This allows working with
+    signals like with QFuture objects. For example, if you combine it with then(),
+    you can attach multiple continuations to a signal, which are invoked in the
+    same thread or a new thread.
+
+    \sa QtFuture::connect(), QFutureWatcher, {Qt Concurrent}
 */
 
 /*! \fn template <typename T> QFuture<T>::QFuture()
@@ -172,7 +204,12 @@
     function returns \c true. See cancel() for more details.
 */
 
+
+#if QT_DEPRECATED_SINCE(6, 0)
 /*! \fn template <typename T> void QFuture<T>::setPaused(bool paused)
+
+    \obsolete
+    Use setSuspended() instead.
 
     If \a paused is true, this function pauses the asynchronous computation
     represented by the future. If the computation is  already paused, this
@@ -193,16 +230,23 @@
 
 /*! \fn template <typename T> bool QFuture<T>::isPaused() const
 
+    \obsolete
+    Use isSuspending() or isSuspended() instead.
+
     Returns \c true if the asynchronous computation has been paused with the
     pause() function; otherwise returns \c false.
 
     Be aware that the computation may still be running even though this
-    function returns \c true. See setPaused() for more details.
+    function returns \c true. See setPaused() for more details. To check
+    if pause actually took effect, use isSuspended() instead.
 
-    \sa setPaused(), togglePaused()
+    \sa setPaused(), togglePaused(), isSuspended()
 */
 
 /*! \fn template <typename T> void QFuture<T>::pause()
+
+    \obsolete
+    Use suspend() instead.
 
     Pauses the asynchronous computation represented by this future. This is a
     convenience method that simply calls setPaused(true).
@@ -210,15 +254,10 @@
     \sa resume()
 */
 
-/*! \fn template <typename T> void QFuture<T>::resume()
-
-    Resumes the asynchronous computation represented by this future. This is a
-    convenience method that simply calls setPaused(false).
-
-    \sa pause()
-*/
-
 /*! \fn template <typename T> void QFuture<T>::togglePaused()
+
+    \obsolete
+    Use toggleSuspended() instead.
 
     Toggles the paused state of the asynchronous computation. In other words,
     if the computation is currently paused, calling this function resumes it;
@@ -226,6 +265,82 @@
     for calling setPaused(!isPaused()).
 
     \sa setPaused(), pause(), resume()
+*/
+#endif // QT_DEPRECATED_SINCE(6, 0)
+
+/*! \fn template <typename T> void QFuture<T>::setSuspended(bool suspend)
+
+    \since 6.0
+
+    If \a suspend is true, this function suspends the asynchronous computation
+    represented by the future(). If the computation is already suspended, this
+    function does nothing. QFutureWatcher will not immediately stop delivering
+    progress and result ready signals when the future is suspended. At the moment
+    of suspending there may still be computations that are in progress and cannot
+    be stopped. Signals for such computations will still be delivered.
+
+    If \a suspend is false, this function resumes the asynchronous computation.
+    If the computation was not previously suspended, this function does nothing.
+
+    Be aware that not all computations can be suspended. For example, the
+    QFuture returned by QtConcurrent::run() cannot be suspended; but the QFuture
+    returned by QtConcurrent::mappedReduced() can.
+
+    \sa suspend(), resume(), toggleSuspended()
+*/
+
+/*! \fn template <typename T> bool QFuture<T>::isSuspending() const
+
+    \since 6.0
+
+    Returns \c true if the asynchronous computation has been suspended with the
+    suspend() function, but the work is not yet suspended, and computation is still
+    running. Returns \c false otherwise.
+
+    To check if suspension is actually in effect, use isSuspended() instead.
+
+    \sa setSuspended(), toggleSuspended(), isSuspended()
+*/
+
+/*! \fn template <typename T> bool QFuture<T>::isSuspended() const
+
+    \since 6.0
+
+    Returns \c true if a suspension of the asynchronous computation has been
+    requested, and it is in effect, meaning that no more results or progress
+    changes are expected.
+
+    \sa setSuspended(), toggleSuspended(), isSuspending()
+*/
+
+/*! \fn template <typename T> void QFuture<T>::suspend()
+
+    \since 6.0
+
+    Suspends the asynchronous computation represented by this future. This is a
+    convenience method that simply calls setSuspended(true).
+
+    \sa resume()
+*/
+
+/*! \fn template <typename T> void QFuture<T>::resume()
+
+    Resumes the asynchronous computation represented by the future(). This is
+    a convenience method that simply calls setSuspended(false).
+
+    \sa suspend()
+*/
+
+/*! \fn template <typename T> void QFuture<T>::toggleSuspended()
+
+    \since 6.0
+
+    Toggles the suspended state of the asynchronous computation. In other words,
+    if the computation is currently suspending or suspended, calling this
+    function resumes it; if the computation is running, it is suspended. This is a
+    convenience method for calling setSuspended(!(isSuspending() || isSuspended())).
+
+    \sa setSuspended(), suspend(), resume()
 */
 
 /*! \fn template <typename T> bool QFuture<T>::isStarted() const
@@ -799,6 +914,45 @@
 
 */
 
+/*! \fn template<class Sender, class Signal> static QFuture<ArgsType<Signal>> QtFuture::connect(Sender *sender, Signal signal)
+
+    Creates and returns a QFuture which will become available when the \a sender emits
+    the \a signal. If the \a signal takes no arguments, a QFuture<void> is returned. If
+    the \a signal takes a single argument, the resulted QFuture will be filled with the
+    signal's argument value. If the \a signal takes multiple arguments, the resulted QFuture
+    is filled with std::tuple storing the values of signal's arguments. If the \a sender
+    is destroyed before the \a signal is emitted, the resulted QFuture will be canceled.
+
+    For example, let's say we have the following object:
+
+    \snippet code/src_corelib_thread_qfuture.cpp 10
+
+    We can connect its signals to QFuture objects in the following way:
+
+    \snippet code/src_corelib_thread_qfuture.cpp 11
+
+    We can also chain continuations to be run when a signal is emitted:
+
+    \snippet code/src_corelib_thread_qfuture.cpp 12
+
+    You can also start the continuation in a new thread or a custom thread pool
+    using QtFuture::Launch policies. For example:
+
+    \snippet code/src_corelib_thread_qfuture.cpp 13
+
+    Throwing an exception from a slot invoked by Qt's signal-slot connection
+    is considered to be an undefined behavior, if it is not handled within the
+    slot. But with QFuture::connect(), you can throw and handle exceptions from
+    the continuations:
+
+    \snippet code/src_corelib_thread_qfuture.cpp 14
+
+    \note The connected future will be fulfilled only once, when the signal is
+    emitted for the first time.
+
+    \sa QFuture, QFuture::then()
+*/
+
 /*! \fn template<class T> template<class Function> QFuture<typename QFuture<T>::ResultType<Function>> QFuture<T>::then(Function &&function)
 
     \since 6.0
@@ -848,7 +1002,7 @@
     \note If the parent future gets canceled, its continuations will
     also be canceled.
 
-    \sa onFailed()
+    \sa onFailed(), onCanceled()
 */
 
 /*! \fn template<class T> template<class Function> QFuture<typename QFuture<T>::ResultType<Function>> QFuture<T>::then(QtFuture::Launch policy, Function &&function)
@@ -881,7 +1035,7 @@
           .then(QtFuture::Launch::Inherit, [](int res2){ ... });
     \endcode
 
-    \sa onFailed()
+    \sa onFailed(), onCanceled()
 */
 
 /*! \fn template<class T> template<class Function> QFuture<typename QFuture<T>::ResultType<Function>> QFuture<T>::then(QThreadPool *pool, Function &&function)
@@ -894,7 +1048,7 @@
     future finishes, \a function will be invoked in a separate thread taken from the
     QThreadPool \a pool.
 
-    \sa onFailed()
+    \sa onFailed(), onCanceled()
 */
 
 /*! \fn template<class T> template<class Function> QFuture<T> QFuture<T>::onFailed(Function &&handler)
@@ -925,5 +1079,16 @@
     \note You can always attach a handler taking no argument, to handle all exception
     types and avoid writing the try-catch block.
 
-    \sa then()
+    \sa then(), onCanceled()
+*/
+
+/*! \fn template<class T> template<class Function> QFuture<T> QFuture<T>::onCanceled(Function &&handler)
+
+    \since 6.0
+
+    Attaches a cancellation \a handler to this future, to be called when the future is
+    canceled. The \a handler is a callable which doesn't take any arguments. It will be
+    invoked in the same thread in which this future has been running.
+
+    \sa then(), onFailed()
 */

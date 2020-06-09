@@ -13,7 +13,8 @@ function(qt_configure_process_path name default docstring)
     else()
         get_filename_component(given_path_as_abs "${${name}}" ABSOLUTE BASE_DIR
                                "${CMAKE_INSTALL_PREFIX}")
-        file(RELATIVE_PATH rel_path "${CMAKE_INSTALL_PREFIX}" "${given_path_as_abs}")
+        file(RELATIVE_PATH rel_path "${CMAKE_INSTALL_PREFIX}"
+                                    "${given_path_as_abs}")
 
         # If absolute path given, check that it's inside the prefix (error out if not).
         # TODO: Figure out if we need to support paths that are outside the prefix.
@@ -42,12 +43,61 @@ qt_configure_process_path(INSTALL_PLUGINSDIR
                           "${INSTALL_ARCHDATADIR}/plugins"
                           "Plugins [ARCHDATADIR/plugins]")
 
-set(INSTALL_TARGETS_DEFAULT_ARGS
-    RUNTIME DESTINATION "${INSTALL_BINDIR}"
-    LIBRARY DESTINATION "${INSTALL_LIBDIR}"
-    ARCHIVE DESTINATION "${INSTALL_LIBDIR}" COMPONENT Devel
-    INCLUDES DESTINATION "${INSTALL_INCLUDEDIR}"
-)
+# Given CMAKE_CONFIG and ALL_CMAKE_CONFIGS, determines if a directory suffix needs to be appended
+# to each destination, and sets the computed install target destination arguments in OUT_VAR.
+# Defaults used for each of the destination types, and can be configured per destination type.
+function(qt_get_install_target_default_args)
+    qt_parse_all_arguments(arg "qt_get_install_target_default_args"
+                               "" "OUT_VAR;CMAKE_CONFIG;RUNTIME;LIBRARY;ARCHIVE;INCLUDES;BUNDLE"
+                                  "ALL_CMAKE_CONFIGS" ${ARGN})
+
+    if(NOT arg_CMAKE_CONFIG)
+        message(FATAL_ERROR "No value given for CMAKE_CONFIG.")
+    endif()
+    if(NOT arg_ALL_CMAKE_CONFIGS)
+        message(FATAL_ERROR "No value given for ALL_CMAKE_CONFIGS.")
+    endif()
+    list(LENGTH arg_ALL_CMAKE_CONFIGS all_configs_count)
+    list(GET arg_ALL_CMAKE_CONFIGS 0 first_config)
+
+    set(suffix "")
+    if(all_configs_count GREATER 1 AND NOT arg_CMAKE_CONFIG STREQUAL first_config)
+        set(suffix "/${arg_CMAKE_CONFIG}")
+    endif()
+
+    set(runtime "${INSTALL_BINDIR}")
+    if(arg_RUNTIME)
+        set(runtime "${arg_RUNTIME}")
+    endif()
+
+    set(library "${INSTALL_LIBDIR}")
+    if(arg_LIBRARY)
+        set(library "${arg_LIBRARY}")
+    endif()
+
+    set(archive "${INSTALL_LIBDIR}")
+    if(arg_ARCHIVE)
+        set(archive "${arg_ARCHIVE}")
+    endif()
+
+    set(includes "${INSTALL_INCLUDEDIR}")
+    if(arg_INCLUDES)
+        set(includes "${arg_INCLUDES}")
+    endif()
+
+    set(bundle "${INSTALL_BINDIR}")
+    if(arg_BUNDLE)
+        set(bundle "${arg_BUNDLE}")
+    endif()
+
+    set(args
+        RUNTIME DESTINATION  "${runtime}${suffix}"
+        LIBRARY DESTINATION  "${library}${suffix}"
+        ARCHIVE DESTINATION  "${archive}${suffix}" COMPONENT Devel
+        BUNDLE DESTINATION   "${bundle}${suffix}"
+        INCLUDES DESTINATION "${includes}${suffix}")
+    set(${arg_OUT_VAR} "${args}" PARENT_SCOPE)
+endfunction()
 
 if (WIN32)
     set(_default_libexec "${INSTALL_ARCHDATADIR}/bin")
@@ -75,6 +125,59 @@ qt_configure_process_path(INSTALL_DESCRIPTIONSDIR
                          "${INSTALL_DATADIR}/modules"
                           "Module description files directory")
 
+function(qt_internal_set_up_global_paths)
+    # Compute the values of QT_BUILD_DIR, QT_INSTALL_DIR, QT_CONFIG_BUILD_DIR, QT_CONFIG_INSTALL_DIR
+    # taking into account whether the current build is a prefix build or a non-prefix build,
+    # and whether it is a superbuild or non-superbuild.
+    # A third case is when another module or standalone tests are built against a super-built Qt.
+    # The layout for the third case is the same as for non-superbuilds.
+    #
+    # These values should be prepended to file paths in commands or properties,
+    # in order to correctly place generated Config files, generated Targets files,
+    # excutables / libraries, when copying / installing files, etc.
+    #
+    # The build dir variables will always be absolute paths.
+    # The QT_INSTALL_DIR variable will have a relative path in a prefix build,
+    # which means that it can be empty, so use qt_join_path to prevent accidental absolute paths.
+    if(QT_SUPERBUILD)
+        # In this case, we always copy all the build products in qtbase/{bin,lib,...}
+        if(QT_WILL_INSTALL)
+            set(QT_BUILD_DIR "${QtBase_BINARY_DIR}")
+            set(QT_INSTALL_DIR "")
+        else()
+            set(QT_BUILD_DIR "${QtBase_BINARY_DIR}")
+            set(QT_INSTALL_DIR "${QtBase_BINARY_DIR}")
+        endif()
+    else()
+        if(QT_WILL_INSTALL)
+            # In the usual prefix build case, the build dir is the current module build dir,
+            # and the install dir is the prefix, so we don't set it.
+            set(QT_BUILD_DIR "${CMAKE_BINARY_DIR}")
+            set(QT_INSTALL_DIR "")
+        else()
+            # When doing a non-prefix build, both the build dir and install dir are the same,
+            # pointing to the qtbase build dir.
+            set(QT_BUILD_DIR "${CMAKE_INSTALL_PREFIX}")
+            set(QT_INSTALL_DIR "${QT_BUILD_DIR}")
+        endif()
+    endif()
+
+    set(__config_path_part "${INSTALL_LIBDIR}/cmake")
+    set(QT_CONFIG_BUILD_DIR "${QT_BUILD_DIR}/${__config_path_part}")
+    set(QT_CONFIG_INSTALL_DIR "${QT_INSTALL_DIR}")
+    if(QT_CONFIG_INSTALL_DIR)
+        string(APPEND QT_CONFIG_INSTALL_DIR "/")
+    endif()
+    string(APPEND QT_CONFIG_INSTALL_DIR ${__config_path_part})
+
+    set(QT_BUILD_DIR "${QT_BUILD_DIR}" PARENT_SCOPE)
+    set(QT_INSTALL_DIR "${QT_INSTALL_DIR}" PARENT_SCOPE)
+    set(QT_CONFIG_BUILD_DIR "${QT_CONFIG_BUILD_DIR}" PARENT_SCOPE)
+    set(QT_CONFIG_INSTALL_DIR "${QT_CONFIG_INSTALL_DIR}" PARENT_SCOPE)
+endfunction()
+qt_internal_set_up_global_paths()
+qt_get_relocatable_install_prefix(QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX)
+
 # The variables might have already been set in QtBuildInternalsExtra.cmake if the file is included
 # while building a new module and not QtBase. In that case, stop overriding the value.
 if(NOT INSTALL_CMAKE_NAMESPACE)
@@ -94,8 +197,11 @@ if(NOT QT_MKSPECS_DIR)
     if("${QT_BUILD_INTERNALS_PATH}" STREQUAL "")
       get_filename_component(QT_MKSPECS_DIR "${CMAKE_CURRENT_LIST_DIR}/../mkspecs" ABSOLUTE)
     else()
-      # We can rely on CMAKE_INSTALL_PREFIX being set by QtBuildInternalsExtra.cmake
-      get_filename_component(QT_MKSPECS_DIR "${CMAKE_INSTALL_PREFIX}/${INSTALL_MKSPECSDIR}" ABSOLUTE)
+      # We can rely on QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX being set by
+      # QtBuildInternalsExtra.cmake.
+      get_filename_component(
+          QT_MKSPECS_DIR
+          "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_MKSPECSDIR}" ABSOLUTE)
     endif()
     set(QT_MKSPECS_DIR "${QT_MKSPECS_DIR}" CACHE INTERNAL "")
 endif()
@@ -138,10 +244,10 @@ function(qt_setup_tool_path_command)
     if(NOT WIN32)
         return()
     endif()
-    set(bindir "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
+    set(bindir "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
     file(TO_NATIVE_PATH "${bindir}" bindir)
     list(APPEND command COMMAND)
-    list(APPEND command set PATH=${bindir}$<SEMICOLON>%PATH%)
+    list(APPEND command set \"PATH=${bindir}$<SEMICOLON>%PATH%\")
     set(QT_TOOL_PATH_SETUP_COMMAND "${command}" CACHE INTERNAL "internal command prefix for tool invocations" FORCE)
 endfunction()
 qt_setup_tool_path_command()
@@ -162,7 +268,7 @@ if(WIN32)
     endif()
 
     if (MINGW)
-        list(APPEND QT_DEFAULT_PLATFORM_DEFINITIONS _WIN32_WINNT=0x0601)
+        list(APPEND QT_DEFAULT_PLATFORM_DEFINITIONS _WIN32_WINNT=0x0601 MINGW_HAS_SECURE_API=1)
     endif()
 elseif(LINUX)
     if(GCC)
@@ -304,51 +410,6 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
 else()
     set(QT_PATH_SEPARATOR ":")
 endif()
-
-# Compute the values of QT_BUILD_DIR, QT_INSTALL_DIR, QT_CONFIG_BUILD_DIR, QT_CONFIG_INSTALL_DIR
-# taking into account whether the current build is a prefix build or a non-prefix build,
-# and whether it is a superbuild or non-superbuild.
-# A third case is when another module or standalone tests are built against a super-built Qt.
-# The layout for the third case is the same as for non-superbuilds.
-#
-# These values should be prepended to file paths in commands or properties,
-# in order to correctly place generated Config files, generated Targets files,
-# excutables / libraries, when copying / installing files, etc.
-#
-# The build dir variables will always be absolute paths.
-# The QT_INSTALL_DIR variable will have a relative path in a prefix build,
-# which means that it can be empty, so use qt_join_path to prevent accidental absolute paths.
-if(QT_SUPERBUILD)
-    # In this case, we always copy all the build products in qtbase/{bin,lib,...}
-    if(QT_WILL_INSTALL)
-        set(QT_BUILD_DIR "${QtBase_BINARY_DIR}")
-        set(QT_INSTALL_DIR "")
-    else()
-        set(QT_BUILD_DIR "${QtBase_BINARY_DIR}")
-        set(QT_INSTALL_DIR "${QtBase_BINARY_DIR}")
-    endif()
-else()
-    if(QT_WILL_INSTALL)
-        # In the usual prefix build case, the build dir is the current module build dir,
-        # and the install dir is the prefix, so we don't set it.
-        set(QT_BUILD_DIR "${CMAKE_BINARY_DIR}")
-        set(QT_INSTALL_DIR "")
-    else()
-        # When doing a non-prefix build, both the build dir and install dir are the same,
-        # pointing to the qtbase build dir.
-        set(QT_BUILD_DIR "${CMAKE_INSTALL_PREFIX}")
-        set(QT_INSTALL_DIR "${QT_BUILD_DIR}")
-    endif()
-endif()
-
-set(__config_path_part "${INSTALL_LIBDIR}/cmake")
-set(QT_CONFIG_BUILD_DIR "${QT_BUILD_DIR}/${__config_path_part}")
-set(QT_CONFIG_INSTALL_DIR "${QT_INSTALL_DIR}")
-if(QT_CONFIG_INSTALL_DIR)
-    string(APPEND QT_CONFIG_INSTALL_DIR "/")
-endif()
-string(APPEND QT_CONFIG_INSTALL_DIR ${__config_path_part})
-unset(__config_path_part)
 
 # This is used to hold extra cmake code that should be put into QtBuildInternalsExtra.cmake file
 # at the QtPostProcess stage.
@@ -543,11 +604,132 @@ function(qt_is_imported_target target out_var)
     set(${out_var} "${is_imported}" PARENT_SCOPE)
 endfunction()
 
+# Creates a regular expression that exactly matches the given string
+# Found in https://gitlab.kitware.com/cmake/cmake/issues/18580
+function(qt_re_escape out_var str)
+    string(REGEX REPLACE "([][+.*()^])" "\\\\\\1" regex "${str}")
+    set(${out_var} ${regex} PARENT_SCOPE)
+endfunction()
+
+# Extracts the 3rdparty libraries for the module ${module_name}
+# and stores the information in cmake language in
+# ${output_root_dir}/$<CONFIG>/${output_file_name}.
+#
+# This function "follows" INTERFACE_LIBRARY targets to "real" targets
+# and collects defines, include dirs and lib dirs on the way.
+function(qt_generate_qmake_libraries_pri_content module_name output_root_dir output_file_name)
+    set(content "")
+
+    # Set up a regular expression that matches all implicit include dirs
+    set(implicit_include_dirs_regex "")
+    foreach(dir ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+        qt_re_escape(regex "${dir}")
+        list(APPEND implicit_include_dirs_regex ${regex})
+    endforeach()
+    list(JOIN implicit_include_dirs_regex "|" implicit_include_dirs_regex)
+
+    foreach(lib ${QT_QMAKE_LIBS_FOR_${module_name}})
+        set(lib_targets ${QT_QMAKE_LIB_TARGETS_${lib}})
+        string(TOUPPER ${lib} uclib)
+        set(lib_defines "")
+        set(lib_incdir "")
+        set(lib_libdir "")
+        set(lib_libs "")
+        while(lib_targets)
+            list(POP_BACK lib_targets lib_target)
+            if(TARGET ${lib_target})
+                get_target_property(lib_target_type ${lib_target} TYPE)
+                if(lib_target_type STREQUAL "INTERFACE_LIBRARY")
+                    get_target_property(iface_libs ${lib_target} INTERFACE_LINK_LIBRARIES)
+                    if(iface_libs)
+                        list(PREPEND lib_targets ${iface_libs})
+                    endif()
+                else()
+                    list(APPEND lib_libs "$<TARGET_LINKER_FILE:${lib_target}>")
+                endif()
+                list(APPEND lib_libdir  "$<TARGET_PROPERTY:${lib_target},INTERFACE_LINK_DIRECTORIES>")
+                list(APPEND lib_incdir  "$<TARGET_PROPERTY:${lib_target},INTERFACE_INCLUDE_DIRECTORIES>")
+                list(APPEND lib_defines "$<TARGET_PROPERTY:${lib_target},INTERFACE_COMPILE_DEFINITIONS>")
+            else()
+                list(APPEND lib_libs "${lib_target}")
+            endif()
+        endwhile()
+
+        # Wrap in $<REMOVE_DUPLICATES:...> but not the libs, because
+        # we would have to preserve the right order for the linker.
+        foreach(sfx libdir incdir defines)
+            string(PREPEND lib_${sfx} "$<REMOVE_DUPLICATES:")
+            string(APPEND lib_${sfx} ">")
+        endforeach()
+
+        # Filter out implicit include directories
+        string(PREPEND lib_incdir "$<FILTER:")
+        string(APPEND lib_incdir ",EXCLUDE,${implicit_include_dirs_regex}>")
+
+        set(uccfg $<UPPER_CASE:$<CONFIG>>)
+        string(APPEND content "list(APPEND known_libs ${uclib})
+set(QMAKE_LIBS_${uclib}_${uccfg} \"${lib_libs}\")
+set(QMAKE_LIBDIR_${uclib}_${uccfg} \"${lib_libdir}\")
+set(QMAKE_INCDIR_${uclib}_${uccfg} \"${lib_incdir}\")
+set(QMAKE_DEFINES_${uclib}_${uccfg} \"${lib_defines}\")
+")
+        if(QT_QMAKE_LIB_DEPS_${lib})
+            string(APPEND content "set(QMAKE_DEPENDS_${uclib}_CC, ${deps})
+set(QMAKE_DEPENDS_${uclib}_LD, ${deps})
+")
+        endif()
+    endforeach()
+
+    file(GENERATE
+        OUTPUT "${output_root_dir}/$<CONFIG>/${output_file_name}"
+        CONTENT "${content}"
+    )
+endfunction()
+
+# Retrieves the public Qt module dependencies of the given Qt module or Qt Private module.
+function(qt_get_direct_module_dependencies target out_var)
+    set(dependencies "")
+    get_target_property(libs ${target} INTERFACE_LINK_LIBRARIES)
+    if(NOT libs)
+        set(libs "")
+    endif()
+    get_target_property(target_type ${target} TYPE)
+    while(libs)
+        list(POP_FRONT libs lib)
+        string(GENEX_STRIP "${lib}" lib)
+        if(NOT lib OR NOT TARGET "${lib}")
+            continue()
+        endif()
+        get_target_property(lib_type ${lib} TYPE)
+        get_target_property(is_versionless_target ${lib} _qt_is_versionless_target)
+        if (lib_type STREQUAL "INTERFACE_LIBRARY" AND is_versionless_target)
+            # Found a version-less target like Qt::Core outside of qtbase.
+            # Skip this one and use what this target points to, e.g. Qt6::Core.
+            # Make sure to process Private interface libraries as-is.
+            get_target_property(ifacelibs ${lib} INTERFACE_LINK_LIBRARIES)
+            list(PREPEND libs ${ifacelibs})
+            continue()
+        endif()
+        if(lib_type STREQUAL "OBJECT_LIBRARY")
+            # Skip object libraries, because they're already part of ${target}.
+            continue()
+        elseif(lib_type STREQUAL "STATIC_LIBRARY" AND target_type STREQUAL "SHARED_LIBRARY")
+            # Skip static libraries if ${target} is a shared library.
+            continue()
+        endif()
+        get_target_property(lib_config_module_name ${lib} "_qt_config_module_name")
+        if(lib_config_module_name)
+            list(APPEND dependencies ${lib_config_module_name})
+        endif()
+    endwhile()
+    set(${out_var} ${dependencies} PARENT_SCOPE)
+endfunction()
+
 # Generates module .pri files for consumption by qmake
-function(qt_generate_module_pri_file target target_path config_module_name pri_files_var)
+function(qt_generate_module_pri_file target)
     set(flags INTERNAL_MODULE HEADER_MODULE)
     set(options)
-    set(multiopts QMAKE_MODULE_CONFIG)
+    set(multiopts)
     cmake_parse_arguments(arg "${flags}" "${options}" "${multiopts}" ${ARGN})
 
     qt_internal_module_info(module "${target}")
@@ -555,7 +737,7 @@ function(qt_generate_module_pri_file target target_path config_module_name pri_f
 
     set(property_prefix)
     if(arg_HEADER_MODULE)
-        set(property_prefix "interface_")
+        set(property_prefix "INTERFACE_")
     endif()
 
     get_target_property(enabled_features "${target}"
@@ -599,14 +781,48 @@ function(qt_generate_module_pri_file target target_path config_module_name pri_f
 
     list(JOIN module_internal_config " " joined_module_internal_config)
 
-    if(arg_QMAKE_MODULE_CONFIG)
-        string(REPLACE ";" " " module_build_config "${arg_QMAKE_MODULE_CONFIG}")
+    get_target_property(config_module_name ${target} _qt_config_module_name)
+    get_target_property(qmake_module_config ${target} ${property_prefix}QT_QMAKE_MODULE_CONFIG)
+    if(qmake_module_config)
+        string(REPLACE ";" " " module_build_config "${qmake_module_config}")
         set(module_build_config "\nQT.${config_module_name}.CONFIG = ${module_build_config}")
     else()
         set(module_build_config "")
     endif()
 
-    if (NOT ${arg_INTERNAL_MODULE})
+    if(is_fw)
+        set(framework_base_path "$$QT_MODULE_LIB_BASE/${module}.framework/Headers")
+        set(public_module_includes "${framework_base_path}")
+        set(public_module_frameworks "$$QT_MODULE_LIB_BASE")
+        set(private_module_includes "${framework_base_path}/${PROJECT_VERSION} ${framework_base_path}/${PROJECT_VERSION}/${module}")
+        set(module_name_in_pri "${module}")
+    else()
+        set(public_module_includes "$$QT_MODULE_INCLUDE_BASE $$QT_MODULE_INCLUDE_BASE/${module}")
+        set(public_module_frameworks "")
+        set(private_module_includes "$$QT_MODULE_INCLUDE_BASE/${module}/${PROJECT_VERSION} $$QT_MODULE_INCLUDE_BASE/${module}/${PROJECT_VERSION}/${module}")
+        set(module_name_in_pri "${module_versioned}")
+    endif()
+
+    qt_path_join(target_path ${QT_BUILD_DIR} ${INSTALL_MKSPECSDIR}/modules)
+    if (arg_INTERNAL_MODULE)
+        string(PREPEND private_module_includes "${public_module_includes} ")
+        set(private_module_frameworks ${public_module_frameworks})
+    else()
+        unset(private_module_frameworks)
+        if(arg_HEADER_MODULE)
+            set(module_plugin_types "")
+        else()
+            get_target_property(module_plugin_types ${target} MODULE_PLUGIN_TYPES)
+            if(module_plugin_types)
+                list(JOIN module_plugin_types " " module_plugin_types)
+            else()
+                set(module_plugin_types "")
+            endif()
+        endif()
+
+        qt_get_direct_module_dependencies(${target} public_module_dependencies)
+        list(JOIN public_module_dependencies " " public_module_dependencies)
+
         qt_path_join(pri_file_name "${target_path}" "qt_lib_${config_module_name}.pri")
         list(APPEND pri_files "${pri_file_name}")
 
@@ -615,43 +831,169 @@ function(qt_generate_module_pri_file target target_path config_module_name pri_f
             CONTENT
         "QT.${config_module_name}.VERSION = ${PROJECT_VERSION}
 QT.${config_module_name}.name = ${module}
-QT.${config_module_name}.module = ${module_versioned}
+QT.${config_module_name}.module = ${module_name_in_pri}
 QT.${config_module_name}.libs = $$QT_MODULE_LIB_BASE
-QT.${config_module_name}.includes = $$QT_MODULE_INCLUDE_BASE $$QT_MODULE_INCLUDE_BASE/${module}
-QT.${config_module_name}.frameworks =
+QT.${config_module_name}.includes = ${public_module_includes}
+QT.${config_module_name}.frameworks = ${public_module_frameworks}
 QT.${config_module_name}.bins = $$QT_MODULE_BIN_BASE
-QT.${config_module_name}.depends =
+QT.${config_module_name}.plugin_types = ${module_plugin_types}
+QT.${config_module_name}.depends = ${public_module_dependencies}
 QT.${config_module_name}.uses =
 QT.${config_module_name}.module_config = ${joined_module_internal_config}
 QT.${config_module_name}.DEFINES = QT_${module_define}_LIB
 QT.${config_module_name}.enabled_features = ${enabled_features}
 QT.${config_module_name}.disabled_features = ${disabled_features}${module_build_config}
+QT_CONFIG += ${enabled_features}
 QT_MODULES += ${config_module_name}
 "
         )
     endif()
 
-    qt_path_join(private_pri_file "${target_path}" "qt_lib_${config_module_name}_private.pri")
-    list(APPEND pri_files "${private_pri_file}")
+    set(pri_data_cmake_file "qt_lib_${config_module_name}_private.cmake")
+    qt_generate_qmake_libraries_pri_content(${config_module_name} "${CMAKE_CURRENT_BINARY_DIR}"
+        ${pri_data_cmake_file})
 
+    set(private_pri_file_name "qt_lib_${config_module_name}_private.pri")
+
+    set(private_module_dependencies "")
+    if(NOT arg_HEADER_MODULE)
+        qt_get_direct_module_dependencies(${target}Private private_module_dependencies)
+    endif()
+    list(JOIN private_module_dependencies " " private_module_dependencies)
+
+    # Generate a preliminary qt_lib_XXX_private.pri file
     file(GENERATE
-        OUTPUT "${private_pri_file}"
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${private_pri_file_name}"
         CONTENT
         "QT.${config_module_name}_private.VERSION = ${PROJECT_VERSION}
 QT.${config_module_name}_private.name = ${module}
 QT.${config_module_name}_private.module =
 QT.${config_module_name}_private.libs = $$QT_MODULE_LIB_BASE
-QT.${config_module_name}_private.includes = $$QT_MODULE_INCLUDE_BASE/${module}/${PROJECT_VERSION} $$QT_MODULE_INCLUDE_BASE/${module}/${PROJECT_VERSION}/${module}
-QT.${config_module_name}_private.frameworks =
-QT.${config_module_name}_private.depends = ${config_module_name}
+QT.${config_module_name}_private.includes = ${private_module_includes}
+QT.${config_module_name}_private.frameworks = ${private_module_frameworks}
+QT.${config_module_name}_private.depends = ${private_module_dependencies}
 QT.${config_module_name}_private.uses =
 QT.${config_module_name}_private.module_config = ${joined_module_internal_config}
 QT.${config_module_name}_private.enabled_features = ${enabled_private_features}
-QT.${config_module_name}_private.disabled_features = ${disabled_private_features}
-"
+QT.${config_module_name}_private.disabled_features = ${disabled_private_features}"
     )
 
-    set("${pri_files_var}" "${pri_files}" PARENT_SCOPE)
+    if(QT_GENERATOR_IS_MULTI_CONFIG)
+        set(configs ${CMAKE_CONFIGURATION_TYPES})
+    else()
+        set(configs ${CMAKE_BUILD_TYPE})
+    endif()
+    set(inputs "${CMAKE_CURRENT_BINARY_DIR}/${private_pri_file_name}")
+    foreach(cfg ${configs})
+        list(APPEND inputs "${CMAKE_CURRENT_BINARY_DIR}/${cfg}/${pri_data_cmake_file}")
+    endforeach()
+
+    qt_path_join(private_pri_file_path "${target_path}" "${private_pri_file_name}")
+    list(APPEND pri_files "${private_pri_file_path}")
+    add_custom_command(
+        OUTPUT "${private_pri_file_path}"
+        DEPENDS ${inputs}
+        COMMAND ${CMAKE_COMMAND} "-DIN_FILES=${inputs}" "-DOUT_FILE=${private_pri_file_path}"
+                "-DCONFIGS=${configs}"
+                -P "${QT_CMAKE_DIR}/QtGenerateLibPri.cmake"
+        VERBATIM)
+    add_custom_target(${target}_lib_pri DEPENDS "${private_pri_file_path}")
+    if(arg_HEADER_MODULE)
+        add_dependencies(${target}_timestamp ${target}_lib_pri)
+    else()
+        add_dependencies(${target} ${target}_lib_pri)
+    endif()
+    qt_install(FILES "${pri_files}" DESTINATION ${INSTALL_MKSPECSDIR}/modules)
+endfunction()
+
+# Generates qt_ext_XXX.pri files for consumption by qmake
+function(qt_generate_3rdparty_lib_pri_file target lib pri_file_var)
+    if(NOT lib)
+        # Don't write a pri file for projects that don't set QMAKE_LIB_NAME yet.
+        return()
+    endif()
+
+    if(QT_GENERATOR_IS_MULTI_CONFIG)
+        set(configs ${CMAKE_CONFIGURATION_TYPES})
+    else()
+        set(configs ${CMAKE_BUILD_TYPE})
+    endif()
+
+    file(GENERATE
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/qt_ext_${lib}.cmake"
+        CONTENT "set(cfg $<CONFIG>)
+set(incdir $<TARGET_PROPERTY:${target},INTERFACE_INCLUDE_DIRECTORIES>)
+set(defines $<TARGET_PROPERTY:${target},INTERFACE_COMPILE_DEFINITIONS>)
+set(libs $<TARGET_FILE:${target}>)
+")
+
+    set(inputs "")
+    foreach(cfg ${configs})
+        list(APPEND inputs "${CMAKE_CURRENT_BINARY_DIR}/${cfg}/qt_ext_${lib}.cmake")
+    endforeach()
+
+    qt_path_join(pri_target_path ${QT_BUILD_DIR} ${INSTALL_MKSPECSDIR}/modules)
+    qt_path_join(pri_file "${pri_target_path}" "qt_ext_${lib}.pri")
+    qt_path_join(qt_build_libdir ${QT_BUILD_DIR} ${INSTALL_LIBDIR})
+    add_custom_command(
+        OUTPUT "${pri_file}"
+        DEPENDS ${inputs}
+        COMMAND ${CMAKE_COMMAND} "-DIN_FILES=${inputs}" "-DOUT_FILE=${pri_file}" -DLIB=${lib}
+                "-DCONFIGS=${configs}"
+                "-DQT_BUILD_LIBDIR=${qt_build_libdir}"
+                -P "${QT_CMAKE_DIR}/QtGenerateExtPri.cmake"
+        VERBATIM)
+    add_custom_target(${target}_ext_pri DEPENDS "${pri_file}")
+    add_dependencies(${target} ${target}_ext_pri)
+    set(${pri_file_var} ${pri_file} PARENT_SCOPE)
+endfunction()
+
+# Transforms a CMake Qt module name to a qmake Qt module name.
+# Example: Qt6FooPrivate becomes foo_private
+function(qt_get_qmake_module_name result module)
+    string(REGEX REPLACE "^Qt6" "" module "${module}")
+    string(REGEX REPLACE "Private$" "_private" module "${module}")
+    string(REGEX REPLACE "Qpa$" "_qpa_lib_private" module "${module}")
+    string(TOLOWER "${module}" module)
+    set(${result} ${module} PARENT_SCOPE)
+endfunction()
+
+# Generates qt_plugin_XXX.pri files for consumption by qmake
+#
+# QT_PLUGIN.XXX.EXTENDS is set to "-" for the following plugin types:
+#   - generic
+#   - platform, if the plugin is not the default QPA plugin
+# Otherwise, this variable is empty.
+function(qt_generate_plugin_pri_file target pri_file_var)
+    get_target_property(plugin_name ${target} OUTPUT_NAME)
+    get_target_property(plugin_type ${target} QT_PLUGIN_TYPE)
+    get_target_property(default_plugin ${target} QT_DEFAULT_PLUGIN)
+    get_target_property(plugin_class_name ${target} QT_PLUGIN_CLASS_NAME)
+
+    set(plugin_extends "")
+    if(NOT default_plugin AND (plugin_type STREQUAL "generic" OR plugin_type STREQUAL "platforms"))
+        set(plugin_extends "-")
+    endif()
+
+    set(plugin_deps "")
+    get_target_property(target_deps ${target} _qt_target_deps)
+    foreach(dep ${target_deps})
+        list(GET dep 0 dep_name)
+        qt_get_qmake_module_name(dep_name ${dep_name})
+        list(APPEND plugin_deps ${dep_name})
+    endforeach()
+    list(REMOVE_DUPLICATES plugin_deps)
+    list(JOIN plugin_deps " " plugin_deps)
+
+    qt_path_join(pri_target_path ${QT_BUILD_DIR} ${INSTALL_MKSPECSDIR}/modules)
+    qt_path_join(pri_file "${pri_target_path}" "qt_plugin_${plugin_name}.pri")
+    qt_configure_file(OUTPUT "${pri_file}" CONTENT "QT_PLUGIN.${plugin_name}.TYPE = ${plugin_type}
+QT_PLUGIN.${plugin_name}.EXTENDS = ${plugin_extends}
+QT_PLUGIN.${plugin_name}.DEPENDS = ${plugin_deps}
+QT_PLUGIN.${plugin_name}.CLASS_NAME = ${plugin_class_name}
+QT_PLUGINS += ${plugin_name}
+")
+    set(${pri_file_var} "${pri_file}" PARENT_SCOPE)
 endfunction()
 
 function(qt_cmake_build_type_to_qmake_build_config out_var build_type)
@@ -784,7 +1126,7 @@ function(qt_get_build_parts out_var)
         list(APPEND parts "tests")
     endif()
 
-    if(NOT CMAKE_CROSSCOMPILING)
+    if(NOT CMAKE_CROSSCOMPILING OR QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
         list(APPEND parts "tools")
     endif()
 
@@ -793,7 +1135,7 @@ endfunction()
 
 # Creates mkspecs/qmodule.pri which contains private global features among other things.
 function(qt_generate_global_module_pri_file)
-    qt_path_join(qmodule_pri_target_path ${PROJECT_BINARY_DIR} mkspecs)
+    qt_path_join(qmodule_pri_target_path ${PROJECT_BINARY_DIR} ${INSTALL_MKSPECSDIR})
     qt_path_join(qmodule_pri_target_path "${qmodule_pri_target_path}" "qmodule.pri")
 
     get_target_property(enabled_features GlobalConfig INTERFACE_QT_ENABLED_PRIVATE_FEATURES)
@@ -824,11 +1166,36 @@ CONFIG += ${private_config_joined}
     string(REPLACE ";" " " build_parts "${build_parts}")
     string(APPEND content "QT_BUILD_PARTS = ${build_parts}\n")
 
+    set(preliminary_pri_root "${CMAKE_CURRENT_BINARY_DIR}/mkspecs/preliminary")
+    set(pri_data_cmake_file "qmodule.cmake")
+    qt_generate_qmake_libraries_pri_content(global ${preliminary_pri_root} ${pri_data_cmake_file})
+
+    # Generate a preliminary qmodule.pri file
+    set(preliminary_pri_file_path "${preliminary_pri_root}/qmodule.pri")
     file(GENERATE
-        OUTPUT "${qmodule_pri_target_path}"
+        OUTPUT ${preliminary_pri_file_path}
         CONTENT "${content}"
     )
-    qt_install(FILES "${qmodule_pri_target_path}" DESTINATION mkspecs)
+
+    if(QT_GENERATOR_IS_MULTI_CONFIG)
+        set(configs ${CMAKE_CONFIGURATION_TYPES})
+    else()
+        set(configs ${CMAKE_BUILD_TYPE})
+    endif()
+    set(inputs ${preliminary_pri_file_path})
+    foreach(cfg ${configs})
+        list(APPEND inputs "${preliminary_pri_root}/${cfg}/${pri_data_cmake_file}")
+    endforeach()
+
+    add_custom_command(
+        OUTPUT "${qmodule_pri_target_path}"
+        DEPENDS ${inputs}
+        COMMAND ${CMAKE_COMMAND} "-DIN_FILES=${inputs}" "-DOUT_FILE=${qmodule_pri_target_path}"
+                "-DCONFIGS=${configs}"
+                -P "${QT_CMAKE_DIR}/QtGenerateLibPri.cmake"
+        VERBATIM)
+    add_custom_target(qmodule_pri DEPENDS "${qmodule_pri_target_path}")
+    qt_install(FILES "${qmodule_pri_target_path}" DESTINATION ${INSTALL_MKSPECSDIR})
 endfunction()
 
 function(qt_generate_qt_conf)
@@ -840,10 +1207,10 @@ function(qt_generate_qt_conf)
         "[EffectivePaths]
 Prefix=..
 [DevicePaths]
-Prefix=${CMAKE_INSTALL_PREFIX}
+Prefix=${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}
 [Paths]
-Prefix=${CMAKE_INSTALL_PREFIX}
-HostPrefix=${CMAKE_INSTALL_PREFIX}
+Prefix=${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}
+HostPrefix=${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}
 Sysroot=
 SysrootifyPrefix=false
 TargetSpec=${QT_QMAKE_TARGET_MKSPEC}
@@ -876,7 +1243,12 @@ function(qt_internal_export_modern_cmake_config_targets_file)
 
         add_library("${target}Versionless" INTERFACE)
         target_link_libraries("${target}Versionless" INTERFACE "${target}")
-        set_target_properties("${target}Versionless" PROPERTIES EXPORT_NAME "${target}")
+        set_target_properties("${target}Versionless" PROPERTIES
+            EXPORT_NAME "${target}"
+            _qt_is_versionless_target "TRUE")
+        set_property(TARGET "${target}Versionless"
+                     APPEND PROPERTY EXPORT_PROPERTIES _qt_is_versionless_target)
+
         qt_install(TARGETS "${target}Versionless" EXPORT ${export_name})
     endforeach()
     qt_install(EXPORT ${export_name} NAMESPACE Qt:: DESTINATION "${__arg_CONFIG_INSTALL_DIR}")
@@ -1013,7 +1385,7 @@ function(qt_ensure_sync_qt)
         message(STATUS "Using host syncqt found at: ${QT_SYNCQT}")
     else()
         get_filename_component(syncqt_absolute_path
-                               "${CMAKE_INSTALL_PREFIX}/${INSTALL_LIBEXECDIR}/syncqt.pl"
+                               "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_LIBEXECDIR}/syncqt.pl"
                                ABSOLUTE)
         set(QT_SYNCQT "${syncqt_absolute_path}" CACHE FILEPATH "syncqt script")
         message(STATUS "Using installed syncqt found at: ${QT_SYNCQT}")
@@ -1161,6 +1533,8 @@ set(__default_private_args "SOURCES;LIBRARIES;INCLUDE_DIRECTORIES;DEFINES;DBUS_A
 
 set(__default_public_args "PUBLIC_LIBRARIES;PUBLIC_INCLUDE_DIRECTORIES;PUBLIC_DEFINES;PUBLIC_COMPILE_OPTIONS;PUBLIC_LINK_OPTIONS")
 set(__default_private_module_args "PRIVATE_MODULE_INTERFACE")
+set(__default_target_info_args TARGET_VERSION TARGET_PRODUCT TARGET_DESCRIPTION TARGET_COMPANY
+    TARGET_COPYRIGHT)
 
 option(QT_CMAKE_DEBUG_EXTEND_TARGET "Debug extend_target calls in Qt's build system" OFF)
 
@@ -1550,8 +1924,7 @@ function(qt_install_injections target build_dir install_dir)
 endfunction()
 
 
-function(qt_read_headers_pri target resultVarPrefix)
-    qt_internal_module_info(module "${target}")
+function(qt_read_headers_pri module_include_dir resultVarPrefix)
     file(STRINGS "${module_include_dir}/headers.pri" headers_pri_contents)
     foreach(line ${headers_pri_contents})
         if("${line}" MATCHES "SYNCQT.HEADER_FILES = (.*)")
@@ -1729,6 +2102,14 @@ function(qt_finalize_framework_headers_copy target)
     endif()
 endfunction()
 
+function(qt_get_cmake_configurations out_var)
+    set(possible_configs "${CMAKE_BUILD_TYPE}")
+    if(CMAKE_CONFIGURATION_TYPES)
+        set(possible_configs "${CMAKE_CONFIGURATION_TYPES}")
+    endif()
+    set(${out_var} "${possible_configs}" PARENT_SCOPE)
+endfunction()
+
 function(qt_clone_property_for_configs target property configs)
     get_target_property(value "${target}" "${property}")
     foreach(config ${configs})
@@ -1738,10 +2119,7 @@ function(qt_clone_property_for_configs target property configs)
 endfunction()
 
 function(qt_handle_multi_config_output_dirs target)
-    set(possible_configs "${CMAKE_BUILD_TYPE}")
-    if(CMAKE_CONFIGURATION_TYPES)
-        set(possible_configs "${CMAKE_CONFIGURATION_TYPES}")
-    endif()
+    qt_get_cmake_configurations(possible_configs)
     qt_clone_property_for_configs(${target} LIBRARY_OUTPUT_DIRECTORY "${possible_configs}")
     qt_clone_property_for_configs(${target} RUNTIME_OUTPUT_DIRECTORY "${possible_configs}")
     qt_clone_property_for_configs(${target} ARCHIVE_OUTPUT_DIRECTORY "${possible_configs}")
@@ -1762,7 +2140,7 @@ function(qt_add_list_file_finalizer func)
         PROPERTY QT_LIST_FILE_FINALIZER_FUNCS ${func})
     foreach(i RANGE 1 9)
         set(arg "${ARGV${i}}")
-        if(i GREATER_EQUAL ARGC)
+        if(i GREATER_EQUAL ARGC OR "${arg}" STREQUAL "")
             set(arg "IGNORE")
         endif()
         set_property(GLOBAL APPEND
@@ -1803,13 +2181,13 @@ function(qt_watch_current_list_dir variable access value current_list_file stack
             # We've found a file we're looking for. Call the finalizer.
             if(${CMAKE_VERSION} VERSION_LESS "3.18.0")
                 # Make finalizer known functions here:
-                if(func STREQUAL "qt_generate_prl_file")
-                    qt_generate_prl_file(${a1} ${a2} ${a3} ${a4} ${a5} ${a6} ${a7} ${a8} ${a9})
+                if(func STREQUAL "qt_finalize_module")
+                    qt_finalize_module(${a1} ${a2} ${a3} ${a4} ${a5} ${a6} ${a7} ${a8} ${a9})
                 else()
                     message(FATAL_ERROR "qt_watch_current_list_dir doesn't know about ${func}. Consider adding it.")
                 endif()
             else()
-                cmake_command(INVOKE ${func} ${a1} ${a2} ${a3} ${a4} ${a5} ${a6} ${a7} ${a8} ${a9})
+                cmake_language(CALL ${func} ${a1} ${a2} ${a3} ${a4} ${a5} ${a6} ${a7} ${a8} ${a9})
             endif()
             list(REMOVE_AT files ${i})
             list(REMOVE_AT funcs ${i})
@@ -1843,6 +2221,34 @@ function(qt_set_common_target_properties target)
    endif()
 endfunction()
 
+# Set common, informational target properties.
+#
+# On Windows, these properties are used to generate the version information resource.
+function(qt_set_target_info_properties target)
+    cmake_parse_arguments(arg "" "${__default_target_info_args}" "" ${ARGN})
+    if("${arg_TARGET_VERSION}" STREQUAL "")
+        set(arg_TARGET_VERSION "${PROJECT_VERSION}.0")
+    endif()
+    if("${arg_TARGET_PRODUCT}" STREQUAL "")
+        set(arg_TARGET_PRODUCT "Qt6")
+    endif()
+    if("${arg_TARGET_DESCRIPTION}" STREQUAL "")
+        set(arg_TARGET_DESCRIPTION "C++ Application Development Framework")
+    endif()
+    if("${arg_TARGET_COMPANY}" STREQUAL "")
+        set(arg_TARGET_COMPANY "The Qt Company Ltd.")
+    endif()
+    if("${arg_TARGET_COPYRIGHT}" STREQUAL "")
+        set(arg_TARGET_COPYRIGHT "Copyright (C) 2020 The Qt Company Ltd.")
+    endif()
+    set_target_properties(${target} PROPERTIES
+        QT_TARGET_VERSION "${arg_TARGET_VERSION}"
+        QT_TARGET_COMPANY_NAME "${arg_TARGET_COMPANY}"
+        QT_TARGET_DESCRIPTION "${arg_TARGET_DESCRIPTION}"
+        QT_TARGET_COPYRIGHT "${arg_TARGET_COPYRIGHT}"
+        QT_TARGET_PRODUCT_NAME "${arg_TARGET_PRODUCT}")
+endfunction()
+
 # This is the main entry function for creating a Qt module, that typically
 # consists of a library, public header files, private header files and configurable
 # features.
@@ -1859,14 +2265,14 @@ function(qt_add_module target)
     # Process arguments:
     qt_parse_all_arguments(arg "qt_add_module"
         "NO_MODULE_HEADERS;STATIC;DISABLE_TOOLS_EXPORT;EXCEPTIONS;INTERNAL_MODULE;NO_SYNC_QT;NO_PRIVATE_MODULE;HEADER_MODULE;GENERATE_METATYPES;NO_CONFIG_HEADER_FILE;SKIP_DEPENDS_INCLUDE"
-        "CONFIG_MODULE_NAME;PRECOMPILED_HEADER"
+        "MODULE_INCLUDE_NAME;CONFIG_MODULE_NAME;PRECOMPILED_HEADER;${__default_target_info_args}"
         "${__default_private_args};${__default_public_args};${__default_private_module_args};QMAKE_MODULE_CONFIG;EXTRA_CMAKE_FILES;EXTRA_CMAKE_INCLUDES;NO_PCH_SOURCES" ${ARGN})
+
+    qt_internal_add_qt_repo_known_module("${target}")
 
     if(NOT DEFINED arg_CONFIG_MODULE_NAME)
         set(arg_CONFIG_MODULE_NAME "${module_lower}")
     endif()
-
-    qt_internal_add_qt_repo_known_module("${target}")
 
     ### Define Targets:
     set(is_interface_lib 0)
@@ -1883,9 +2289,16 @@ function(qt_add_module target)
         add_library("${target}" STATIC)
     endif()
 
-    if(NOT is_interface_lib)
+    set(property_prefix "INTERFACE_")
+    if(NOT arg_HEADER_MODULE)
         qt_set_common_target_properties(${target})
+        set(property_prefix "")
     endif()
+
+    set_target_properties(${target} PROPERTIES
+        _qt_config_module_name "${arg_CONFIG_MODULE_NAME}"
+        ${property_prefix}QT_QMAKE_MODULE_CONFIG "${arg_QMAKE_MODULE_CONFIG}")
+    set_property(TARGET "${target}" APPEND PROPERTY EXPORT_PROPERTIES _qt_config_module_name)
 
     set(is_framework 0)
     if(QT_FEATURE_framework AND NOT ${arg_HEADER_MODULE} AND NOT ${arg_STATIC})
@@ -1927,6 +2340,10 @@ function(qt_add_module target)
         set(target_private "${target}Private")
         add_library("${target_private}" INTERFACE)
         qt_internal_add_target_aliases("${target_private}")
+        set_target_properties(${target_private} PROPERTIES
+            _qt_config_module_name ${arg_CONFIG_MODULE_NAME}_private)
+        set_property(TARGET "${target_private}" APPEND PROPERTY
+                     EXPORT_PROPERTIES _qt_config_module_name)
     endif()
 
     if(NOT arg_HEADER_MODULE)
@@ -1936,12 +2353,8 @@ function(qt_add_module target)
             ARCHIVE_OUTPUT_DIRECTORY "${QT_BUILD_DIR}/${INSTALL_LIBDIR}"
             VERSION ${PROJECT_VERSION}
             SOVERSION ${PROJECT_VERSION_MAJOR}
-            QT_TARGET_VERSION "${PROJECT_VERSION}.0"
-            QT_TARGET_COMPANY_NAME "The Qt Company Ltd."
-            QT_TARGET_DESCRIPTION "C++ Application Development Framework"
-            QT_TARGET_COPYRIGHT "Copyright (C) 2020 The Qt Company Ltd."
-            QT_TARGET_PRODUCT_NAME "Qt6"
-        )
+            )
+        qt_set_target_info_properties(${target} ${ARGN})
         qt_handle_multi_config_output_dirs("${target}")
 
         if (arg_SKIP_DEPENDS_INCLUDE)
@@ -1966,6 +2379,13 @@ function(qt_add_module target)
     if(${arg_NO_MODULE_HEADERS} OR ${arg_NO_SYNC_QT})
         set_target_properties("${target}" PROPERTIES INTERFACE_MODULE_HAS_HEADERS OFF)
     else()
+        if(arg_MODULE_INCLUDE_NAME)
+            set(module_include_name ${arg_MODULE_INCLUDE_NAME})
+        else()
+            set(module_include_name ${module})
+        endif()
+        set_target_properties("${target}" PROPERTIES INTERFACE_MODULE_INCLUDE_NAME "${module_include_name}")
+
         # Use QT_BUILD_DIR for the syncqt call.
         # So we either write the generated files into the qtbase non-prefix build root, or the
         # module specific build root.
@@ -1973,7 +2393,7 @@ function(qt_add_module target)
         set(syncqt_full_command "${HOST_PERL}" -w "${QT_SYNCQT}"
                                  -quiet
                                  -check-includes
-                                 -module "${module}"
+                                 -module "${module_include_name}"
                                  -version "${PROJECT_VERSION}"
                                  -outdir "${QT_BUILD_DIR}"
                                  -builddir "${PROJECT_BINARY_DIR}"
@@ -1983,7 +2403,8 @@ function(qt_add_module target)
         set_target_properties("${target}" PROPERTIES INTERFACE_MODULE_HAS_HEADERS ON)
 
         ### FIXME: Can we replace headers.pri?
-        qt_read_headers_pri("${target}" "module_headers")
+        set(module_include_dir "${QT_BUILD_DIR}/${INSTALL_INCLUDEDIR}/${module_include_name}")
+        qt_read_headers_pri("${module_include_dir}" "module_headers")
         set(module_depends_header "${module_include_dir}/${module}Depends")
         if(is_framework)
             if(NOT is_interface_lib)
@@ -1997,7 +2418,7 @@ function(qt_add_module target)
             set_property(TARGET ${target} APPEND PROPERTY PRIVATE_HEADER "${module_headers_private}")
         endif()
         if (NOT ${arg_HEADER_MODULE})
-            set_property(TARGET "${target}" PROPERTY MODULE_HEADER "${module_include_dir}/${module}")
+            set_property(TARGET "${target}" PROPERTY MODULE_HEADER "${module_include_dir}/${module_include_name}")
         endif()
 
         if(module_headers_qpa)
@@ -2006,7 +2427,7 @@ function(qt_add_module target)
             else()
                 qt_install(
                     FILES ${module_headers_qpa}
-                    DESTINATION ${INSTALL_INCLUDEDIR}/${module}/${PROJECT_VERSION}/${module}/qpa)
+                    DESTINATION ${INSTALL_INCLUDEDIR}/${module}/${PROJECT_VERSION}/${module_include_name}/qpa)
             endif()
         endif()
     endif()
@@ -2090,6 +2511,14 @@ function(qt_add_module target)
     set(header_module)
     if(arg_HEADER_MODULE)
         set(header_module "HEADER_MODULE")
+
+        # Provide a *_timestamp target that can be used to trigger the build of custom_commands.
+        set(timestamp_file "${CMAKE_CURRENT_BINARY_DIR}/timestamp")
+        add_custom_command(OUTPUT "${timestamp_file}"
+            COMMAND ${CMAKE_COMMAND} -E touch "${timestamp_file}"
+            DEPENDS ${module_headers_public}
+            VERBATIM)
+        add_custom_target(${target}_timestamp ALL DEPENDS "${timestamp_file}")
     endif()
 
     qt_extend_target("${target}"
@@ -2290,16 +2719,6 @@ set(QT_CMAKE_EXPORT_NAMESPACE ${QT_CMAKE_EXPORT_NAMESPACE})")
         unset(arg_INTERNAL_MODULE)
     endif()
 
-    qt_path_join(pri_target_path ${QT_BUILD_DIR} ${INSTALL_MKSPECSDIR}/modules)
-    qt_generate_module_pri_file("${target}" "${pri_target_path}" ${arg_CONFIG_MODULE_NAME}
-        module_pri_files
-        ${arg_INTERNAL_MODULE}
-        ${header_module}
-        QMAKE_MODULE_CONFIG
-            ${arg_QMAKE_MODULE_CONFIG}
-        )
-    qt_install(FILES "${module_pri_files}" DESTINATION ${INSTALL_MKSPECSDIR}/modules)
-
     ### fixme: cmake is missing a built-in variable for this. We want to apply it only to modules and plugins
     # that belong to Qt.
     if(NOT arg_HEADER_MODULE)
@@ -2348,7 +2767,12 @@ set(QT_CMAKE_EXPORT_NAMESPACE ${QT_CMAKE_EXPORT_NAMESPACE})")
     endif()
 
     qt_describe_module(${target})
-    qt_add_list_file_finalizer(qt_generate_prl_file ${target})
+    qt_add_list_file_finalizer(qt_finalize_module ${target} ${arg_INTERNAL_MODULE} ${header_module})
+endfunction()
+
+function(qt_finalize_module target)
+    qt_generate_prl_file(${target})
+    qt_generate_module_pri_file("${target}" ${ARGN})
 endfunction()
 
 # Add libraries to variable ${out_libs_var} in a way that duplicates
@@ -2441,7 +2865,11 @@ function(qt_collect_libs target out_var)
                     endif()
                 endif()
             else()
-                qt_merge_libs(libs "${lib_target}")
+                set(final_lib_name_to_merge "${lib_target}")
+                if(lib_target MATCHES "/([^/]+).framework$")
+                    set(final_lib_name_to_merge "-framework ${CMAKE_MATCH_1}")
+                endif()
+                qt_merge_libs(libs "${final_lib_name_to_merge}")
             endif()
         endforeach()
         set_target_properties(qt_collect_libs_dict PROPERTIES INTERFACE_${target} "${libs}")
@@ -2504,10 +2932,13 @@ QMAKE_PRL_LIBS_FOR_CMAKE = ${prl_libs}
 endfunction()
 
 function(qt_export_tools module_name)
-    # If no tools were defined belonging to this module, don't create a config and targets file.
-    # Guards against the case when doing a cross-build.
+    # Bail out when cross-compiling, unless QT_BUILD_TOOLS_WHEN_CROSSCOMPILING is on.
+    if(CMAKE_CROSSCOMPILING AND NOT QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+        return()
+    endif()
 
-    if(NOT "${module_name}" IN_LIST QT_KNOWN_MODULES_WITH_TOOLS OR CMAKE_CROSSCOMPILING)
+    # If no tools were defined belonging to this module, don't create a config and targets file.
+    if(NOT "${module_name}" IN_LIST QT_KNOWN_MODULES_WITH_TOOLS)
         return()
     endif()
 
@@ -2536,6 +2967,9 @@ function(qt_export_tools module_name)
             list(APPEND package_deps "${extra_packages}")
         endif()
 
+        if (CMAKE_CROSSCOMPILING AND QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+            string(REGEX REPLACE "_native$" "" tool_name ${tool_name})
+        endif()
         set(extra_cmake_statements "${extra_cmake_statements}
 if (NOT QT_NO_CREATE_TARGETS)
     get_property(is_global TARGET ${INSTALL_CMAKE_NAMESPACE}::${tool_name} PROPERTY IMPORTED_GLOBAL)
@@ -2696,6 +3130,7 @@ set(__qt_add_plugin_optional_args
 )
 set(__qt_add_plugin_single_args
     "TYPE;CLASS_NAME;OUTPUT_DIRECTORY;INSTALL_DIRECTORY;ARCHIVE_INSTALL_DIRECTORY;QML_TARGET_PATH;OUTPUT_NAME"
+    ${__default_target_info_args}
 )
 set(__qt_add_plugin_multi_args
     "${__default_private_args};${__default_public_args};DEFAULT_IF"
@@ -2731,8 +3166,12 @@ function(qt_internal_add_plugin target)
     # Derive the class name from the target name if it's not explicitly specified.
     # Don't set it for qml plugins though.
     set(plugin_class_name "")
-    if (NOT arg_CLASS_NAME AND NOT "${plugin_type_escaped}" STREQUAL "qml_plugin")
-        set(plugin_class_name "${target}")
+    if (NOT "${plugin_type_escaped}" STREQUAL "qml_plugin")
+        if (NOT arg_CLASS_NAME)
+            set(plugin_class_name "${target}")
+        else()
+            set(plugin_class_name "${arg_CLASS_NAME}")
+        endif()
     endif()
 
     qt_internal_check_directory_or_type(OUTPUT_DIRECTORY "${arg_OUTPUT_DIRECTORY}" "${arg_TYPE}"
@@ -2754,9 +3193,14 @@ function(qt_internal_add_plugin target)
             # but Qt plugins are actually suffixed with .dylib.
             set_property(TARGET "${target}" PROPERTY SUFFIX ".dylib")
         endif()
+        if(WIN32)
+            # CMake sets for Windows-GNU platforms the suffix "lib"
+            set_property(TARGET "${target}" PROPERTY PREFIX "")
+        endif()
     endif()
 
     qt_set_common_target_properties(${target})
+    qt_set_target_info_properties(${target} ${ARGN} TARGET_VERSION "${arg_VERSION}")
 
     # Make sure the Qt6 plugin library names are like they were in Qt5 qmake land.
     # Whereas the Qt6 CMake target names are like the Qt5 CMake target names.
@@ -2790,6 +3234,7 @@ function(qt_internal_add_plugin target)
         LIBRARY_OUTPUT_DIRECTORY "${output_directory}"
         RUNTIME_OUTPUT_DIRECTORY "${output_directory}"
         ARCHIVE_OUTPUT_DIRECTORY "${output_directory}"
+        QT_PLUGIN_TYPE "${plugin_type_escaped}"
         QT_PLUGIN_CLASS_NAME "${plugin_class_name}")
         qt_handle_multi_config_output_dirs("${target}")
 
@@ -2880,6 +3325,7 @@ function(qt_internal_add_plugin target)
     endforeach()
 
     qt_register_target_dependencies("${target}" "${arg_PUBLIC_LIBRARIES}" "${qt_libs_private}")
+    qt_generate_plugin_pri_file("${target}" pri_file)
 
     if (NOT arg_SKIP_INSTALL)
         # Handle creation of cmake files for consumers of find_package().
@@ -2910,6 +3356,10 @@ function(qt_internal_add_plugin target)
             DESTINATION "${config_install_dir}"
             COMPONENT Devel
         )
+        qt_install(FILES
+            "${pri_file}"
+            DESTINATION "${INSTALL_MKSPECSDIR}/modules"
+        )
 
         # Make the export name of plugins be consistent with modules, so that
         # qt_add_resource adds its additional targets to the same export set in a static Qt build.
@@ -2926,9 +3376,6 @@ function(qt_internal_add_plugin target)
         )
         qt_apply_rpaths(TARGET "${target}" INSTALL_PATH "${install_directory}" RELATIVE_RPATH)
     endif()
-
-    # Store the plug-in type in the target property
-    set_property(TARGET "${target}" PROPERTY QT_PLUGIN_TYPE "${plugin_type_escaped}")
 
     if (NOT arg_ALLOW_UNDEFINED_SYMBOLS)
         ### fixme: cmake is missing a built-in variable for this. We want to apply it only to
@@ -2996,6 +3443,7 @@ set(__qt_add_executable_optional_args
 )
 set(__qt_add_executable_single_args
     "OUTPUT_DIRECTORY;INSTALL_DIRECTORY;VERSION"
+    ${__default_target_info_args}
 )
 set(__qt_add_executable_multi_args
     "EXE_FLAGS;${__default_private_args};${__default_public_args}"
@@ -3050,9 +3498,8 @@ function(qt_add_executable name)
         else()
             message(FATAL_ERROR "Invalid version format")
         endif()
-
-        set_target_properties(${name} PROPERTIES QT_TARGET_VERSION "${arg_VERSION}")
     endif()
+    qt_set_target_info_properties(${name} ${ARGN} TARGET_VERSION "${arg_VERSION}")
 
     if (WIN32)
         qt6_generate_win32_rc_file(${name})
@@ -3119,12 +3566,20 @@ function(qt_add_executable name)
             list(APPEND additional_install_args EXCLUDE_FROM_ALL COMPONENT "ExcludedExecutables")
         endif()
 
-        qt_install(TARGETS "${name}"
-            ${additional_install_args} # Needs to be before the DESTINATIONS.
-            RUNTIME DESTINATION "${arg_INSTALL_DIRECTORY}"
-            LIBRARY DESTINATION "${arg_INSTALL_DIRECTORY}"
-            BUNDLE DESTINATION "${arg_INSTALL_DIRECTORY}"
-            )
+        qt_get_cmake_configurations(cmake_configs)
+        foreach(cmake_config ${cmake_configs})
+            qt_get_install_target_default_args(
+                OUT_VAR install_targets_default_args
+                CMAKE_CONFIG "${cmake_config}"
+                ALL_CMAKE_CONFIGS "${cmake_configs}"
+                RUNTIME "${arg_INSTALL_DIRECTORY}"
+                LIBRARY "${arg_INSTALL_DIRECTORY}"
+                BUNDLE "${arg_INSTALL_DIRECTORY}")
+            qt_install(TARGETS "${name}"
+                       ${additional_install_args} # Needs to be before the DESTINATIONS.
+                       CONFIGURATIONS ${cmake_config}
+                       ${install_targets_default_args})
+        endforeach()
     endif()
 endfunction()
 
@@ -3153,9 +3608,13 @@ function(qt_add_benchmark target)
             ${ARGV}
     )
 
+    if(NOT arg_OUTPUT_DIRECTORY)
+        set(arg_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
+
     qt_add_executable(${target}
         NO_INSTALL # we don't install benchmarks
-        OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" # avoid polluting bin directory
+        OUTPUT_DIRECTORY "${arg_OUTPUT_DIRECTORY}" # avoid polluting bin directory
         ${exec_args}
     )
 
@@ -3186,9 +3645,13 @@ function(qt_add_manual_test target)
             ${ARGV}
     )
 
+    if(NOT arg_OUTPUT_DIRECTORY)
+        set(arg_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
+
     qt_add_executable(${target}
         NO_INSTALL # we don't install benchmarks
-        OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" # avoid polluting bin directory
+        OUTPUT_DIRECTORY "${arg_OUTPUT_DIRECTORY}" # avoid polluting bin directory
         ${exec_args}
     )
 
@@ -3306,17 +3769,48 @@ function(qt_add_test name)
     if (arg_TIMEOUT)
         set_tests_properties(${name} PROPERTIES TIMEOUT ${arg_TIMEOUT})
     endif()
-    # Get path to qtbase/bin, then prepend this path containing the shared libraries to PATH
-    set(INSTALL_PREFIX_BIN "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
-    set(test_env_path "PATH=${CMAKE_CURRENT_BINARY_DIR}${QT_PATH_SEPARATOR}${INSTALL_PREFIX_BIN}${QT_PATH_SEPARATOR}$ENV{PATH}")
+
+    # Add a ${target}/check makefile target, to more easily test one test.
+    if(TEST "${name}")
+        add_custom_target("${name}_check"
+            VERBATIM
+            COMMENT "Running ${CMAKE_CTEST_COMMAND} -V -R \"^${name}$\""
+            COMMAND "${CMAKE_CTEST_COMMAND}" -V -R "^${name}$"
+            )
+        if(TARGET "${name}")
+            add_dependencies("${name}_check" "${name}")
+        endif()
+    endif()
+
+    # Get path to <qt_relocatable_install_prefix>/bin, as well as CMAKE_INSTALL_PREFIX/bin, then
+    # prepend them to the PATH environment variable.
+    # It's needed on Windows to find the shared libraries and plugins.
+    # qt_relocatable_install_prefix is dynamically computed from the location of where the Qt CMake
+    # package is found.
+    # The regular CMAKE_INSTALL_PREFIX can be different for example when building standalone tests.
+    # Any given CMAKE_INSTALL_PREFIX takes priority over qt_relocatable_install_prefix for the
+    # PATH environment variable.
+    set(install_prefixes "${CMAKE_INSTALL_PREFIX}")
+    if(QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX)
+        list(APPEND install_prefixes "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}")
+    endif()
+
+    set(test_env_path "PATH=${CMAKE_CURRENT_BINARY_DIR}")
+    foreach(install_prefix ${install_prefixes})
+        set(test_env_path "${test_env_path}${QT_PATH_SEPARATOR}${install_prefix}/${INSTALL_BINDIR}")
+    endforeach()
+    set(test_env_path "${test_env_path}${QT_PATH_SEPARATOR}$ENV{PATH}")
     string(REPLACE ";" "\;" test_env_path "${test_env_path}")
     set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT "${test_env_path}")
     set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT "QT_TEST_RUNNING_IN_CTEST=1")
 
     # Add the install prefix to list of plugin paths when doing a prefix build
     if(NOT QT_INSTALL_DIR)
-        list(APPEND plugin_paths "${CMAKE_INSTALL_PREFIX}/${INSTALL_PLUGINSDIR}")
+        foreach(install_prefix ${install_prefixes})
+            list(APPEND plugin_paths "${install_prefix}/${INSTALL_PLUGINSDIR}")
+        endforeach()
     endif()
+
     #TODO: Collect all paths from known repositories when performing a super
     # build.
     list(APPEND plugin_paths "${PROJECT_BINARY_DIR}/${INSTALL_PLUGINSDIR}")
@@ -3420,10 +3914,10 @@ endfunction()
 
 # Sets QT_WILL_BUILD_TOOLS if tools will be built.
 function(qt_check_if_tools_will_be_built)
-    if(NOT CMAKE_CROSSCOMPILING AND NOT QT_FORCE_FIND_TOOLS)
-        set(will_build_tools TRUE)
-    else()
+    if(QT_FORCE_FIND_TOOLS OR (CMAKE_CROSSCOMPILING AND NOT QT_BUILD_TOOLS_WHEN_CROSSCOMPILING))
         set(will_build_tools FALSE)
+    else()
+        set(will_build_tools TRUE)
     endif()
     set(QT_WILL_BUILD_TOOLS ${will_build_tools} CACHE INTERNAL "Are tools going to be built" FORCE)
 endfunction()
@@ -3455,6 +3949,10 @@ function(qt_add_cmake_library target)
             # CMake defaults to using .so extensions for loadable modules, aka plugins,
             # but Qt plugins are actually suffixed with .dylib.
             set_property(TARGET "${target}" PROPERTY SUFFIX ".dylib")
+        endif()
+        if(WIN32)
+            # CMake sets for Windows-GNU platforms the suffix "lib"
+            set_property(TARGET "${target}" PROPERTY PREFIX "")
         endif()
     else()
         add_library("${target}")
@@ -3515,8 +4013,8 @@ endfunction()
 function(qt_add_3rdparty_library target)
     # Process arguments:
     qt_parse_all_arguments(arg "qt_add_3rdparty_library"
-        "SHARED;MODULE;STATIC;INTERFACE;EXCEPTIONS;INSTALL"
-        "OUTPUT_DIRECTORY"
+        "SHARED;MODULE;STATIC;INTERFACE;EXCEPTIONS;INSTALL;SKIP_AUTOMOC"
+        "OUTPUT_DIRECTORY;QMAKE_LIB_NAME"
         "${__default_private_args};${__default_public_args}"
         ${ARGN}
     )
@@ -3574,7 +4072,9 @@ function(qt_add_3rdparty_library target)
         OUTPUT_NAME "${INSTALL_CMAKE_NAMESPACE}${target}"
     )
 
-    qt_autogen_tools_initial_setup(${target})
+    if(NOT arg_SKIP_AUTOMOC)
+        qt_autogen_tools_initial_setup(${target})
+    endif()
 
     if(NOT arg_INTERFACE)
         # This property is used for super builds with static libraries. We use
@@ -3589,6 +4089,11 @@ function(qt_add_3rdparty_library target)
 
     if(NOT arg_EXCEPTIONS AND NOT arg_INTERFACE)
         qt_internal_set_no_exceptions_flags("${target}")
+    endif()
+
+    qt_generate_3rdparty_lib_pri_file("${target}" "${arg_QMAKE_LIB_NAME}" pri_file)
+    if(pri_file)
+        qt_install(FILES "${pri_file}" DESTINATION "${INSTALL_MKSPECSDIR}/modules")
     endif()
 
     qt_extend_target("${target}"
@@ -3695,11 +4200,42 @@ function(qt_get_main_cmake_configuration out_var)
     set("${out_var}" "${config}" PARENT_SCOPE)
 endfunction()
 
+# Returns the target name for the tool with the given name.
+#
+# In most cases, the target name is the same as the tool name.
+# If the user specifies to build tools when cross-compiling, then the
+# suffix "_native" is appended.
+function(qt_get_tool_target_name out_var name)
+    if (CMAKE_CROSSCOMPILING AND QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+        set(${out_var} ${name}_native PARENT_SCOPE)
+    else()
+        set(${out_var} ${name} PARENT_SCOPE)
+    endif()
+endfunction()
+
+# Returns the tool name for a given tool target.
+# This is the inverse of qt_get_tool_target_name.
+function(qt_tool_target_to_name out_var target)
+    set(name ${target})
+    if (CMAKE_CROSSCOMPILING AND QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+        string(REGEX REPLACE "_native$" "" name ${target})
+    endif()
+    set(${out_var} ${name} PARENT_SCOPE)
+endfunction()
+
 # This function is used to define a "Qt tool", such as moc, uic or rcc.
 # The BOOTSTRAP option allows building it as standalone program, otherwise
 # it will be linked against QtCore.
-function(qt_add_tool name)
-    qt_parse_all_arguments(arg "qt_add_tool" "BOOTSTRAP;NO_QT;NO_INSTALL" "TOOLS_TARGET"
+#
+# We must pass this function a target name obtained from
+# qt_get_tool_target_name like this:
+#     qt_get_tool_target_name(target_name my_tool)
+#     qt_add_tool(${target_name})
+#
+function(qt_add_tool target_name)
+    qt_tool_target_to_name(name ${target_name})
+    qt_parse_all_arguments(arg "qt_add_tool" "BOOTSTRAP;NO_QT;NO_INSTALL"
+                               "TOOLS_TARGET;${__default_target_info_args}"
                                "${__default_private_args}" ${ARGN})
 
     # Handle case when a tool does not belong to a module and it can't be built either (like
@@ -3710,14 +4246,24 @@ function(qt_add_tool name)
                             " (QT_WILL_BUILD_TOOLS is ${QT_WILL_BUILD_TOOLS}).")
     endif()
 
+    if(CMAKE_CROSSCOMPILING AND QT_BUILD_TOOLS_WHEN_CROSSCOMPILING AND (name STREQUAL target_name))
+        message(FATAL_ERROR
+            "qt_add_tool must be passed a target obtained from qt_get_tool_target_name.")
+    endif()
+
     set(full_name "${QT_CMAKE_EXPORT_NAMESPACE}::${name}")
+    set(imported_tool_target_found FALSE)
     if(TARGET ${full_name})
         get_property(path TARGET ${full_name} PROPERTY LOCATION)
         message(STATUS "Tool '${full_name}' was found at ${path}.")
-        return()
+        set(imported_tool_target_found TRUE)
+        if(CMAKE_CROSSCOMPILING AND NOT QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+            return()
+        endif()
     endif()
 
-    if(arg_TOOLS_TARGET AND NOT QT_WILL_BUILD_TOOLS)
+    if(arg_TOOLS_TARGET AND (NOT QT_WILL_BUILD_TOOLS OR QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+            AND NOT imported_tool_target_found)
         set(tools_package_name "Qt6${arg_TOOLS_TARGET}Tools")
         message(STATUS "Searching for tool '${full_name}' in package ${tools_package_name}.")
 
@@ -3753,7 +4299,9 @@ function(qt_add_tool name)
             qt_internal_append_known_modules_with_tools("${arg_TOOLS_TARGET}")
             get_property(path TARGET ${full_name} PROPERTY LOCATION)
             message(STATUS "${full_name} was found at ${path} using package ${tools_package_name}.")
-            return()
+            if (NOT QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+                return()
+            endif()
         endif()
     endif()
 
@@ -3762,7 +4310,11 @@ function(qt_add_tool name)
                            "${tools_package_name} package. "
                            "Package found: ${${tools_package_name}_FOUND}")
     else()
-        message(STATUS "Tool '${full_name}' will be built from source.")
+        if(QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+            message(STATUS "Tool '${target_name}' will be cross-built from source.")
+        else()
+            message(STATUS "Tool '${full_name}' will be built from source.")
+        endif()
     endif()
 
     set(disable_autogen_tools "${arg_DISABLE_AUTOGEN_TOOLS}")
@@ -3791,15 +4343,10 @@ function(qt_add_tool name)
         set(no_qt NO_QT)
     endif()
 
-    set(no_install "")
-    if(arg_NO_INSTALL)
-        set(no_install NO_INSTALL)
-    endif()
-
-    qt_add_executable("${name}" OUTPUT_DIRECTORY "${QT_BUILD_DIR}/${INSTALL_BINDIR}"
+    qt_add_executable("${target_name}" OUTPUT_DIRECTORY "${QT_BUILD_DIR}/${INSTALL_BINDIR}"
         ${bootstrap}
         ${no_qt}
-        ${no_install}
+        NO_INSTALL
         SOURCES ${arg_SOURCES}
         INCLUDE_DIRECTORIES
             ${arg_INCLUDE_DIRECTORIES}
@@ -3810,13 +4357,25 @@ function(qt_add_tool name)
         LINK_OPTIONS ${arg_LINK_OPTIONS}
         MOC_OPTIONS ${arg_MOC_OPTIONS}
         DISABLE_AUTOGEN_TOOLS ${disable_autogen_tools}
+        TARGET_VERSION "${arg_TARGET_VERSION}"
+        TARGET_PRODUCT "${arg_TARGET_PRODUCT}"
+        TARGET_DESCRIPTION "${arg_TARGET_DESCRIPTION}"
+        TARGET_COMPANY "${arg_TARGET_COMPANY}"
+        TARGET_COPYRIGHT "${arg_TARGET_COPYRIGHT}"
     )
-    qt_internal_add_target_aliases("${name}")
+    qt_internal_add_target_aliases("${target_name}")
+
+    if (NOT target_name STREQUAL name)
+        set_target_properties(${target_name} PROPERTIES
+            OUTPUT_NAME ${name}
+            EXPORT_NAME ${name}
+        )
+    endif()
 
     # If building with a multi-config configuration, the main configuration tool will be placed in
     # ./bin, while the rest will be in <CONFIG> specific subdirectories.
     qt_get_tool_cmake_configuration(tool_cmake_configuration)
-    set_target_properties("${name}" PROPERTIES
+    set_target_properties("${target_name}" PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY_${tool_cmake_configuration} "${QT_BUILD_DIR}/${INSTALL_BINDIR}"
     )
 
@@ -3825,17 +4384,31 @@ function(qt_add_tool name)
         qt_internal_append_known_modules_with_tools("${arg_TOOLS_TARGET}")
 
         # Also append the tool to the module list.
-        qt_internal_append_known_module_tool("${arg_TOOLS_TARGET}" "${name}")
+        qt_internal_append_known_module_tool("${arg_TOOLS_TARGET}" "${target_name}")
 
-        qt_install(TARGETS "${name}"
-                   EXPORT "${INSTALL_CMAKE_NAMESPACE}${arg_TOOLS_TARGET}ToolsTargets"
-                   DESTINATION ${INSTALL_TARGETS_DEFAULT_ARGS})
-        qt_apply_rpaths(TARGET "${name}" INSTALL_PATH "${INSTALL_BINDIR}" RELATIVE_RPATH)
+        qt_get_cmake_configurations(cmake_configs)
+
+        set(install_initial_call_args
+            EXPORT "${INSTALL_CMAKE_NAMESPACE}${arg_TOOLS_TARGET}ToolsTargets")
+
+        foreach(cmake_config ${cmake_configs})
+            qt_get_install_target_default_args(
+                OUT_VAR install_targets_default_args
+                CMAKE_CONFIG "${cmake_config}"
+                ALL_CMAKE_CONFIGS "${cmake_configs}")
+            qt_install(TARGETS "${target_name}"
+                       ${install_initial_call_args}
+                       CONFIGURATIONS ${cmake_config}
+                       ${install_targets_default_args})
+            unset(install_initial_call_args)
+        endforeach()
+
+        qt_apply_rpaths(TARGET "${target_name}" INSTALL_PATH "${INSTALL_BINDIR}" RELATIVE_RPATH)
 
     endif()
 
     if(QT_FEATURE_separate_debug_info AND (UNIX OR MINGW))
-        qt_enable_separate_debug_info(${name} ${INSTALL_BINDIR})
+        qt_enable_separate_debug_info(${target_name} ${INSTALL_BINDIR})
     endif()
 endfunction()
 
@@ -4052,13 +4625,13 @@ function(qt_add_docs)
     endif()
 
     if (NOT QT_SUPERBUILD OR QT_WILL_INSTALL)
-        set(qdoc_bin "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qdoc")
-        set(qtattributionsscanner_bin "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qtattributionsscanner")
-        set(qhelpgenerator_bin "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qhelpgenerator")
+        set(qdoc_bin "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qdoc")
+        set(qtattributionsscanner_bin "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qtattributionsscanner")
+        set(qhelpgenerator_bin "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qhelpgenerator")
     else()
-        set(qdoc_bin "${CMAKE_INSTALL_PREFIX}/qtbase/${INSTALL_BINDIR}/qdoc")
-        set(qtattributionsscanner_bin "${CMAKE_INSTALL_PREFIX}/qtbase/${INSTALL_BINDIR}/qtattributionsscanner")
-        set(qhelpgenerator_bin "${CMAKE_INSTALL_PREFIX}/qtbase/${INSTALL_BINDIR}/qhelpgenerator")
+        set(qdoc_bin "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/qtbase/${INSTALL_BINDIR}/qdoc")
+        set(qtattributionsscanner_bin "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/qtbase/${INSTALL_BINDIR}/qtattributionsscanner")
+        set(qhelpgenerator_bin "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/qtbase/${INSTALL_BINDIR}/qhelpgenerator")
     endif()
 
     get_target_property(target_type ${target} TYPE)
@@ -4091,11 +4664,11 @@ function(qt_add_docs)
         set(qdoc_output_dir "${CMAKE_BINARY_DIR}/${INSTALL_DOCDIR}/${doc_target}")
         set(index_dir "${CMAKE_BINARY_DIR}/${INSTALL_DOCDIR}")
     elseif (QT_SUPERBUILD)
-        set(qdoc_output_dir "${CMAKE_INSTALL_PREFIX}/qtbase/${INSTALL_DOCDIR}/${doc_target}")
-        set(index_dir "${CMAKE_INSTALL_PREFIX}/qtbase/${INSTALL_DOCDIR}")
+        set(qdoc_output_dir "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/qtbase/${INSTALL_DOCDIR}/${doc_target}")
+        set(index_dir "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/qtbase/${INSTALL_DOCDIR}")
     else()
-        set(qdoc_output_dir "${CMAKE_INSTALL_PREFIX}/${INSTALL_DOCDIR}/${doc_target}")
-        set(index_dir "${CMAKE_INSTALL_PREFIX}/${INSTALL_DOCDIR}")
+        set(qdoc_output_dir "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_DOCDIR}/${doc_target}")
+        set(index_dir "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_DOCDIR}")
     endif()
 
     # qtattributionsscanner
@@ -4118,10 +4691,12 @@ function(qt_add_docs)
         "${include_path_args}"
     )
 
-    if (QT_SUPERBUILD AND NOT QT_WILL_INSTALL)
-        set(qt_install_docs_env "${CMAKE_INSTALL_PREFIX}/qtbase/${INSTALL_DOCDIR}")
-    else()
+    if (QT_WILL_INSTALL)
         set(qt_install_docs_env "${CMAKE_INSTALL_PREFIX}/${INSTALL_DOCDIR}")
+    elseif (QT_SUPERBUILD)
+        set(qt_install_docs_env "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/qtbase/${INSTALL_DOCDIR}")
+    else()
+        set(qt_install_docs_env "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_DOCDIR}")
     endif()
 
     set(qdoc_env_args
@@ -4234,7 +4809,7 @@ endfunction()
 macro(qt_find_package)
     # Get the target names we expect to be provided by the package.
     set(options CONFIG NO_MODULE MODULE REQUIRED)
-    set(oneValueArgs)
+    set(oneValueArgs MODULE_NAME QMAKE_LIB)
     set(multiValueArgs PROVIDED_TARGETS COMPONENTS)
     cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -4355,7 +4930,20 @@ macro(qt_find_package)
             endif()
 
         endforeach()
+
+        if(arg_MODULE_NAME AND arg_QMAKE_LIB
+           AND (NOT arg_QMAKE_LIB IN_LIST QT_QMAKE_LIBS_FOR_${arg_MODULE_NAME}))
+            set(QT_QMAKE_LIBS_FOR_${arg_MODULE_NAME}
+                ${QT_QMAKE_LIBS_FOR_${arg_MODULE_NAME}};${arg_QMAKE_LIB} CACHE INTERNAL "")
+            set(QT_QMAKE_LIB_TARGETS_${arg_QMAKE_LIB} ${arg_PROVIDED_TARGETS} CACHE INTERNAL "")
+        endif()
     endif()
+endmacro()
+
+macro(qt_add_qmake_lib_dependency lib dep)
+    string(REPLACE "-" "_" dep ${dep})
+    string(TOUPPER "${dep}" ucdep)
+    list(APPEND QT_QMAKE_LIB_DEPS_${lib} ${ucdep})
 endmacro()
 
 macro(qt_find_apple_system_frameworks)
@@ -4529,19 +5117,22 @@ function(qt_generate_qconfig_cpp)
     # TODO: Clean this up, there's a bunch of unrealistic assumptions here.
     # See qtConfOutput_preparePaths in qtbase/configure.pri.
     if(WIN32)
-        set(lib_location_absolute_path "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
+        set(lib_location_absolute_path
+            "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
     else()
-        set(lib_location_absolute_path "${CMAKE_INSTALL_PREFIX}/${INSTALL_LIBDIR}")
+        set(lib_location_absolute_path
+            "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_LIBDIR}")
     endif()
     file(RELATIVE_PATH from_lib_location_to_prefix
-         "${lib_location_absolute_path}" "${CMAKE_INSTALL_PREFIX}")
+         "${lib_location_absolute_path}" "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}")
 
     if(QT_HOST_PATH)
         set(host_prefix "${QT_HOST_PATH}")
         set(host_bin_dir_absolute_path "${QT_HOST_PATH}/${INSTALL_BINDIR}")
     else()
-        set(host_prefix "${CMAKE_INSTALL_PREFIX}")
-        set(host_bin_dir_absolute_path "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
+        set(host_prefix "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}")
+        set(host_bin_dir_absolute_path
+            "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
     endif()
 
     file(RELATIVE_PATH from_host_bin_dir_to_host_prefix
@@ -4550,7 +5141,7 @@ function(qt_generate_qconfig_cpp)
     # TODO: Fix this to use the equivalent of extprefix on CMake (CMAKE_STAGING_PREFIX?)
     # For now just assume ext prefix is same as regular prefix.
     file(RELATIVE_PATH from_host_bin_dir_to_ext_prefix
-         "${host_bin_dir_absolute_path}" "${CMAKE_INSTALL_PREFIX}")
+         "${host_bin_dir_absolute_path}" "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}")
 
 
     set(QT_CONFIGURE_LIBLOCATION_TO_PREFIX_PATH "${from_lib_location_to_prefix}")
@@ -4587,6 +5178,22 @@ function(qt_enable_msvc_cplusplus_define target visibility)
     # Check qt_config_compile_test for more info.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION GREATER_EQUAL 1913)
         target_compile_options("${target}" ${visibility} "-Zc:__cplusplus")
+    endif()
+endfunction()
+
+function(qt_enable_utf8_sources target)
+    set(utf8_flags "")
+    if(MSVC)
+        list(APPEND utf8_flags "-utf-8")
+    elseif(WIN32 AND ICC)
+        list(APPEND utf8_flags "-Qoption,cpp,--unicode_source_kind,UTF-8")
+    endif()
+
+    if(utf8_flags)
+        # Allow opting out by specifying the QT_NO_UTF8_SOURCE target property.
+        set(genex_condition "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_NO_UTF8_SOURCE>>>")
+        set(utf8_flags "$<${genex_condition}:${utf8_flags}>")
+        target_compile_options("${target}" INTERFACE "${utf8_flags}")
     endif()
 endfunction()
 

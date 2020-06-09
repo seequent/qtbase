@@ -1,12 +1,15 @@
 # Generated from widgets.pro.
 
-add_subdirectory(animation)
+if(NOT TARGET Qt::Widgets)
+    return()
+endif()
+if(QT_FEATURE_animation)
+    add_subdirectory(animation)
+endif()
 add_subdirectory(desktop)
 add_subdirectory(dialogs)
-if(QT_FEATURE_draganddrop) # special case
-   add_subdirectory(draganddrop)
-endif()
 add_subdirectory(effects)
+add_subdirectory(gallery)
 add_subdirectory(gestures)
 add_subdirectory(graphicsview)
 add_subdirectory(itemviews)
@@ -19,15 +22,15 @@ add_subdirectory(tools)
 add_subdirectory(touch)
 add_subdirectory(tutorials)
 add_subdirectory(widgets)
-
-if(TARGET Qt::Gui AND QT_FEATURE_opengl)
-    add_subdirectory(windowcontainer)
+if(QT_FEATURE_draganddrop)
+    add_subdirectory(draganddrop)
 endif()
-
 if(QT_FEATURE_cursor) # special case
     add_subdirectory(mainwindows)
 endif()
-
-if(MACOS)
+if(QT_FEATURE_opengl AND TARGET Qt::Gui)
+    add_subdirectory(windowcontainer)
+endif()
+if(APPLE)
     add_subdirectory(mac)
 endif()

@@ -31,7 +31,10 @@ SOURCES += main.mm \
     qcocoaintrospection.mm \
     qcocoakeymapper.mm \
     qcocoamimetypes.mm \
-    qiosurfacegraphicsbuffer.mm
+    qiosurfacegraphicsbuffer.mm \
+    qcocoacolordialoghelper.mm \
+    qcocoafiledialoghelper.mm \
+    qcocoafontdialoghelper.mm
 
 HEADERS += qcocoaintegration.h \
     qcocoascreen.h \
@@ -63,7 +66,10 @@ HEADERS += qcocoaintegration.h \
     qcocoaintrospection.h \
     qcocoakeymapper.h \
     qiosurfacegraphicsbuffer.h \
-    qcocoamimetypes.h
+    qcocoamimetypes.h \
+    qcocoacolordialoghelper.h \
+    qcocoafiledialoghelper.h \
+    qcocoafontdialoghelper.h
 
 qtConfig(opengl.*) {
     SOURCES += qcocoaglcontext.mm
@@ -76,7 +82,6 @@ qtConfig(vulkan) {
 }
 
 qtConfig(accessibility) {
-    QT += accessibility_support-private
     SOURCES += qcocoaaccessibilityelement.mm \
         qcocoaaccessibility.mm
     HEADERS += qcocoaaccessibilityelement.h \
@@ -90,56 +95,13 @@ qtConfig(sessionmanager) {
 
 RESOURCES += qcocoaresources.qrc
 
-LIBS += -framework AppKit -framework CoreServices -framework Carbon -framework IOKit -framework QuartzCore -framework CoreVideo -framework Metal -framework IOSurface -lcups
+LIBS += -framework AppKit -framework CoreServices -framework Carbon -framework IOKit -framework QuartzCore -framework CoreVideo -framework Metal -framework IOSurface
 
 DEFINES += QT_NO_FOREACH
 
-QT += \
-    core-private gui-private \
-    clipboard_support-private theme_support-private \
-    fontdatabase_support-private graphics_support-private
-
-qtConfig(vulkan): QT += vulkan_support-private
-
-qtHaveModule(platformcompositor_support-private): QT += platformcompositor_support-private
+QT += core-private gui-private
 
 CONFIG += no_app_extension_api_only
-
-qtHaveModule(widgets) {
-    QT_FOR_CONFIG += widgets
-
-    SOURCES += qpaintengine_mac.mm
-    HEADERS += qpaintengine_mac_p.h
-
-    qtHaveModule(printsupport) {
-        QT += printsupport-private
-        SOURCES += \
-            qprintengine_mac.mm \
-            qcocoaprintersupport.mm \
-            qcocoaprintdevice.mm
-        HEADERS += \
-            qcocoaprintersupport.h \
-            qcocoaprintdevice.h \
-            qprintengine_mac_p.h
-    }
-
-    qtConfig(colordialog) {
-        SOURCES += qcocoacolordialoghelper.mm
-        HEADERS += qcocoacolordialoghelper.h
-    }
-
-    qtConfig(filedialog) {
-        SOURCES += qcocoafiledialoghelper.mm
-        HEADERS += qcocoafiledialoghelper.h
-    }
-
-    qtConfig(fontdialog) {
-        SOURCES += qcocoafontdialoghelper.mm
-        HEADERS += qcocoafontdialoghelper.h
-    }
-
-    QT += widgets-private
-}
 
 OTHER_FILES += cocoa.json
 

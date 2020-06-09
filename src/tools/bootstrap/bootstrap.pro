@@ -28,9 +28,6 @@ INCLUDEPATH += \
     $$PWD/../../3rdparty/pcre2/src
 
 SOURCES += \
-           ../../corelib/codecs/qlatincodec.cpp \
-           ../../corelib/codecs/qtextcodec.cpp \
-           ../../corelib/codecs/qutfcodec.cpp \
            ../../corelib/global/qendian.cpp \
            ../../corelib/global/qglobal.cpp \
            ../../corelib/global/qlogging.cpp \
@@ -90,13 +87,12 @@ SOURCES += \
            ../../corelib/text/qbytearraymatcher.cpp \
            ../../corelib/text/qlocale.cpp \
            ../../corelib/text/qlocale_tools.cpp \
-           ../../corelib/text/qregexp.cpp \
            ../../corelib/text/qregularexpression.cpp \
            ../../corelib/text/qstring.cpp \
            ../../corelib/text/qstringbuilder.cpp \
+           ../../corelib/text/qstringconverter.cpp \
            ../../corelib/text/qstring_compat.cpp \
            ../../corelib/text/qstringlist.cpp \
-           ../../corelib/text/qstringview.cpp \
            ../../corelib/text/qvsnprintf.cpp \
            ../../corelib/time/qcalendar.cpp \
            ../../corelib/time/qdatetime.cpp \

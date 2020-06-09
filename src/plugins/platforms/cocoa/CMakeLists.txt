@@ -1,13 +1,12 @@
 # Generated from cocoa.pro.
 
 # special case:
-qt_find_package(Cups PROVIDED_TARGETS Cups::Cups)
 
 #####################################################################
 ## QCocoaIntegrationPlugin Plugin:
 #####################################################################
 
-qt_add_plugin(QCocoaIntegrationPlugin
+qt_internal_add_plugin(QCocoaIntegrationPlugin
     OUTPUT_NAME qcocoa
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES cocoa # special case
     TYPE platforms
@@ -44,6 +43,9 @@ qt_add_plugin(QCocoaIntegrationPlugin
         qnsview.h qnsview.mm
         qnswindow.h qnswindow.mm
         qnswindowdelegate.h qnswindowdelegate.mm
+        qcocoacolordialoghelper.h qcocoacolordialoghelper.mm
+        qcocoafiledialoghelper.h qcocoafiledialoghelper.mm
+        qcocoafontdialoghelper.h qcocoafontdialoghelper.mm
     DEFINES
         QT_NO_FOREACH
     PUBLIC_LIBRARIES
@@ -55,16 +57,15 @@ qt_add_plugin(QCocoaIntegrationPlugin
         ${FWIOSurface}
         ${FWMetal}
         ${FWQuartzCore}
-        Cups::Cups
-        Qt::ClipboardSupportPrivate
         Qt::Core
         Qt::CorePrivate
-        Qt::FontDatabaseSupportPrivate
-        Qt::GraphicsSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
-        Qt::ThemeSupportPrivate
 )
+
+# special case begin
+qt_disable_apple_app_extension_api_only(QCocoaIntegrationPlugin)
+# special case end
 
 # Resources:
 set(qcocoaresources_resource_files
@@ -90,21 +91,19 @@ qt_add_resource(QCocoaIntegrationPlugin "qcocoaresources"
 qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_opengl
     SOURCES
         qcocoaglcontext.h qcocoaglcontext.mm
+    PUBLIC_LIBRARIES
+        Qt::OpenGLPrivate
 )
 
 qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_vulkan
     SOURCES
         qcocoavulkaninstance.h qcocoavulkaninstance.mm
-    PUBLIC_LIBRARIES
-        Qt::VulkanSupportPrivate
 )
 
 qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_accessibility
     SOURCES
         qcocoaaccessibility.h qcocoaaccessibility.mm
         qcocoaaccessibilityelement.h qcocoaaccessibilityelement.mm
-    PUBLIC_LIBRARIES
-        Qt::AccessibilitySupportPrivate
 )
 
 qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_sessionmanager
@@ -112,44 +111,7 @@ qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_sessionmanager
         qcocoasessionmanager.cpp qcocoasessionmanager.h
 )
 
-qt_extend_target(QCocoaIntegrationPlugin CONDITION TARGET Qt::PlatformCompositorSupportPrivate
-    PUBLIC_LIBRARIES
-        Qt::PlatformCompositorSupportPrivate
-)
-
-qt_extend_target(QCocoaIntegrationPlugin CONDITION TARGET Qt::Widgets
-    SOURCES
-        qpaintengine_mac.mm qpaintengine_mac_p.h
-    PUBLIC_LIBRARIES
-        Qt::WidgetsPrivate
-)
-
-#### Keys ignored in scope 8:.:.:cocoa.pro:TARGET Qt::Widgets:
+#### Keys ignored in scope 7:.:.:cocoa.pro:TARGET Qt::Widgets:
 # QT_FOR_CONFIG = "widgets"
-
-qt_extend_target(QCocoaIntegrationPlugin CONDITION TARGET Qt::PrintSupport AND TARGET Qt::Widgets
-    SOURCES
-        qcocoaprintdevice.h qcocoaprintdevice.mm
-        qcocoaprintersupport.h qcocoaprintersupport.mm
-        qprintengine_mac.mm qprintengine_mac_p.h
-    PUBLIC_LIBRARIES
-        Qt::PrintSupportPrivate
-)
-
-qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_colordialog AND TARGET Qt::Widgets
-    SOURCES
-        qcocoacolordialoghelper.h qcocoacolordialoghelper.mm
-)
-
-qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_filedialog AND TARGET Qt::Widgets
-    SOURCES
-        qcocoafiledialoghelper.h qcocoafiledialoghelper.mm
-)
-
-qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_fontdialog AND TARGET Qt::Widgets
-    SOURCES
-        qcocoafontdialoghelper.h qcocoafontdialoghelper.mm
-)
-
-#### Keys ignored in scope 13:.:.:cocoa.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
+#### Keys ignored in scope 12:.:.:cocoa.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
 # PLUGIN_EXTENDS = "-"

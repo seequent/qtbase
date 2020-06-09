@@ -45,6 +45,7 @@
 #include "qiosapplicationdelegate.h"
 #include "qiosviewcontroller.h"
 #include "quiview.h"
+#include "qiostheme.h"
 
 #include <QtCore/private/qcore_mac_p.h>
 
@@ -208,6 +209,18 @@ static QIOSScreen* qtPlatformScreenFor(UIScreen *uiScreen)
     [super sendEvent:event];
 }
 
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
+{
+    [super traitCollectionDidChange:previousTraitCollection];
+
+    if (self.screen == UIScreen.mainScreen) {
+        if (previousTraitCollection.userInterfaceStyle != self.traitCollection.userInterfaceStyle) {
+            QIOSTheme::initializeSystemPalette();
+            QWindowSystemInterface::handleThemeChange<QWindowSystemInterface::SynchronousDelivery>(nullptr);
+        }
+    }
+}
+
 @end
 
 // -------------------------------------------------------------------------
@@ -286,6 +299,8 @@ QIOSScreen::QIOSScreen(UIScreen *screen)
             m_uiWindow.rootViewController = [[[QIOSViewController alloc] initWithQIOSScreen:this] autorelease];
         }
     }
+
+    m_orientationListener = [[QIOSOrientationListener alloc] initWithQIOSScreen:this];
 
     updateProperties();
 
@@ -505,17 +520,6 @@ Qt::ScreenOrientation QIOSScreen::orientation() const
 
     return toQtScreenOrientation(deviceOrientation);
 #endif
-}
-
-void QIOSScreen::setOrientationUpdateMask(Qt::ScreenOrientations mask)
-{
-    if (m_orientationListener && mask == Qt::PrimaryOrientation) {
-        [m_orientationListener release];
-        m_orientationListener = 0;
-    } else if (!m_orientationListener) {
-        m_orientationListener = [[QIOSOrientationListener alloc] initWithQIOSScreen:this];
-        updateProperties();
-    }
 }
 
 QPixmap QIOSScreen::grabWindow(WId window, int x, int y, int width, int height) const

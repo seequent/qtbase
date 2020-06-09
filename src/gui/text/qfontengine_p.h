@@ -364,7 +364,7 @@ public:
 protected:
     explicit QFontEngine(Type type);
 
-    QFixed lastRightBearing(const QGlyphLayout &glyphs, bool round = false);
+    QFixed lastRightBearing(const QGlyphLayout &glyphs);
 
     inline void setUserData(const QVariant &userData) { m_userData = userData; }
     QFixed calculatedCapHeight() const;
@@ -375,8 +375,8 @@ protected:
     mutable bool m_heightMetricsQueried;
 
     virtual void initializeHeightMetrics() const;
-    virtual bool processHheaTable() const;
-    virtual bool processOS2Table() const;
+    bool processHheaTable() const;
+    bool processOS2Table() const;
 
 private:
     struct GlyphCacheEntry {
@@ -410,12 +410,7 @@ inline bool operator ==(const QFontEngine::FaceId &f1, const QFontEngine::FaceId
 inline size_t qHash(const QFontEngine::FaceId &f, size_t seed = 0)
     noexcept(noexcept(qHash(f.filename)))
 {
-    QtPrivate::QHashCombine hash;
-    seed = hash(seed, f.filename);
-    seed = hash(seed, f.uuid);
-    seed = hash(seed, f.index);
-    seed = hash(seed, f.encoding);
-    return seed;
+    return qHashMulti(seed, f.filename, f.uuid, f.index, f.encoding);
 }
 
 

@@ -63,13 +63,11 @@ public:
     Q_DECL_CONSTEXPR inline int column() const noexcept { return c; }
     Q_DECL_CONSTEXPR inline quintptr internalId() const noexcept { return i; }
     inline void *internalPointer() const noexcept { return reinterpret_cast<void*>(i); }
+    inline const void *constInternalPointer() const noexcept { return reinterpret_cast<const void *>(i); }
     inline QModelIndex parent() const;
     inline QModelIndex sibling(int row, int column) const;
     inline QModelIndex siblingAtColumn(int column) const;
     inline QModelIndex siblingAtRow(int row) const;
-#if QT_DEPRECATED_SINCE(5, 8)
-    QT_DEPRECATED_X("Use QAbstractItemModel::index") inline QModelIndex child(int row, int column) const;
-#endif
     inline QVariant data(int role = Qt::DisplayRole) const;
     inline Qt::ItemFlags flags() const;
     Q_DECL_CONSTEXPR inline const QAbstractItemModel *model() const noexcept { return m; }
@@ -86,7 +84,7 @@ public:
                                                   || (i == other.i && std::less<const QAbstractItemModel *>()(m, other.m))))));
         }
 private:
-    inline QModelIndex(int arow, int acolumn, void *ptr, const QAbstractItemModel *amodel) noexcept
+    inline QModelIndex(int arow, int acolumn, const void *ptr, const QAbstractItemModel *amodel) noexcept
         : r(arow), c(acolumn), i(reinterpret_cast<quintptr>(ptr)), m(amodel) {}
     Q_DECL_CONSTEXPR inline QModelIndex(int arow, int acolumn, quintptr id, const QAbstractItemModel *amodel) noexcept
         : r(arow), c(acolumn), i(id), m(amodel) {}
@@ -129,12 +127,10 @@ public:
     int row() const;
     int column() const;
     void *internalPointer() const;
+    const void *constInternalPointer() const;
     quintptr internalId() const;
     QModelIndex parent() const;
     QModelIndex sibling(int row, int column) const;
-#if QT_DEPRECATED_SINCE(5, 8)
-    QT_DEPRECATED_X("Use QAbstractItemModel::index") QModelIndex child(int row, int column) const;
-#endif
     QVariant data(int role = Qt::DisplayRole) const;
     Qt::ItemFlags flags() const;
     const QAbstractItemModel *model() const;
@@ -197,9 +193,7 @@ public:
 
     virtual QMap<int, QVariant> itemData(const QModelIndex &index) const;
     virtual bool setItemData(const QModelIndex &index, const QMap<int, QVariant> &roles);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     virtual bool clearItemData(const QModelIndex &index);
-#endif
 
     virtual QStringList mimeTypes() const;
     virtual QMimeData *mimeData(const QModelIndexList &indexes) const;
@@ -208,12 +202,7 @@ public:
     virtual bool dropMimeData(const QMimeData *data, Qt::DropAction action,
                               int row, int column, const QModelIndex &parent);
     virtual Qt::DropActions supportedDropActions() const;
-
     virtual Qt::DropActions supportedDragActions() const;
-#if QT_DEPRECATED_SINCE(5, 0)
-    QT_DEPRECATED void setSupportedDragActions(Qt::DropActions actions)
-    { doSetSupportedDragActions(actions); }
-#endif
 
     virtual bool insertRows(int row, int count, const QModelIndex &parent = QModelIndex());
     virtual bool insertColumns(int column, int count, const QModelIndex &parent = QModelIndex());
@@ -299,15 +288,12 @@ public Q_SLOTS:
     virtual void revert();
 
 protected Q_SLOTS:
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    virtual
-#endif
-    void resetInternalData();
+    virtual void resetInternalData();
 
 protected:
     QAbstractItemModel(QAbstractItemModelPrivate &dd, QObject *parent = nullptr);
 
-    inline QModelIndex createIndex(int row, int column, void *data = nullptr) const;
+    inline QModelIndex createIndex(int row, int column, const void *data = nullptr) const;
     inline QModelIndex createIndex(int row, int column, quintptr id) const;
 
     void encodeData(const QModelIndexList &indexes, QDataStream &stream) const;
@@ -331,15 +317,6 @@ protected:
     bool beginMoveColumns(const QModelIndex &sourceParent, int sourceFirst, int sourceLast, const QModelIndex &destinationParent, int destinationColumn);
     void endMoveColumns();
 
-
-#if QT_DEPRECATED_SINCE(5,0)
-    QT_DEPRECATED void reset()
-    {
-        beginResetModel();
-        endResetModel();
-    }
-#endif
-
     void beginResetModel();
     void endResetModel();
 
@@ -347,17 +324,7 @@ protected:
     void changePersistentIndexList(const QModelIndexList &from, const QModelIndexList &to);
     QModelIndexList persistentIndexList() const;
 
-#if QT_DEPRECATED_SINCE(5,0)
-    QT_DEPRECATED void setRoleNames(const QHash<int,QByteArray> &theRoleNames)
-    {
-        doSetRoleNames(theRoleNames);
-    }
-#endif
-
 private:
-    void doSetRoleNames(const QHash<int,QByteArray> &roleNames);
-    void doSetSupportedDragActions(Qt::DropActions actions);
-
     Q_DECLARE_PRIVATE(QAbstractItemModel)
     Q_DISABLE_COPY(QAbstractItemModel)
 };
@@ -378,7 +345,7 @@ inline bool QAbstractItemModel::moveRow(const QModelIndex &sourceParent, int sou
 inline bool QAbstractItemModel::moveColumn(const QModelIndex &sourceParent, int sourceColumn,
                                            const QModelIndex &destinationParent, int destinationChild)
 { return moveColumns(sourceParent, sourceColumn, 1, destinationParent, destinationChild); }
-inline QModelIndex QAbstractItemModel::createIndex(int arow, int acolumn, void *adata) const
+inline QModelIndex QAbstractItemModel::createIndex(int arow, int acolumn, const void *adata) const
 { return QModelIndex(arow, acolumn, adata, this); }
 inline QModelIndex QAbstractItemModel::createIndex(int arow, int acolumn, quintptr aid) const
 { return QModelIndex(arow, acolumn, aid, this); }
@@ -449,11 +416,6 @@ inline QModelIndex QModelIndex::siblingAtColumn(int acolumn) const
 
 inline QModelIndex QModelIndex::siblingAtRow(int arow) const
 { return m ? (r == arow) ? *this : m->sibling(arow, c, *this) : QModelIndex(); }
-
-#if QT_DEPRECATED_SINCE(5, 8)
-inline QModelIndex QModelIndex::child(int arow, int acolumn) const
-{ return m ? m->index(arow, acolumn, *this) : QModelIndex(); }
-#endif
 
 inline QVariant QModelIndex::data(int arole) const
 { return m ? m->data(*this, arole) : QVariant(); }

@@ -38,7 +38,7 @@
 ****************************************************************************/
 
 #include "qurl.h"
-#include "private/qutfcodec_p.h"
+#include "private/qstringconverter_p.h"
 #include "private/qtools_p.h"
 #include "private/qsimd_p.h"
 
@@ -268,7 +268,7 @@ struct QUrlUtf8Traits : public QUtf8BaseTraitsNoAscii
         *ptr++ = encodeNibble(b & 0xf);
     }
 
-    static uchar peekByte(const ushort *ptr, int n = 0)
+    static uchar peekByte(const ushort *ptr, qsizetype n = 0)
     {
         // decodePercentEncoding returns ushort(-1) if it can't decode,
         // which means we return 0xff, which is not a valid continuation byte.
@@ -481,7 +481,7 @@ non_trivial:
  * needs to be decoded.
  */
 #ifdef __SSE2__
-static bool simdCheckNonEncoded(ushort *&output, const ushort *&input, const ushort *end)
+static bool simdCheckNonEncoded(QChar *&output, const char16_t *&input, const char16_t *end)
 {
 #  ifdef __AVX2__
     const __m256i percents256 = _mm256_broadcastw_epi16(_mm_cvtsi32_si128('%'));
@@ -561,8 +561,8 @@ static bool simdCheckNonEncoded(...)
     \since 5.0
     \internal
 
-    This function decodes a percent-encoded string located from \a begin to \a
-    end, by appending each character to \a appendTo. It returns the number of
+    This function decodes a percent-encoded string located in \a in
+    by appending each character to \a appendTo. It returns the number of
     characters appended. Each percent-encoded sequence is decoded as follows:
 
     \list
@@ -578,18 +578,22 @@ static bool simdCheckNonEncoded(...)
     The input should also be a valid percent-encoded sequence (the output of
     qt_urlRecode is always valid).
 */
-static int decode(QString &appendTo, const ushort *begin, const ushort *end)
+static qsizetype decode(QString &appendTo, QStringView in)
 {
+    const char16_t *begin = in.utf16();
+    const char16_t *end = begin + in.size();
+
     // fast check whether there's anything to be decoded in the first place
-    const ushort *input = QtPrivate::qustrchr(QStringView(begin, end), '%');
+    const char16_t *input = QtPrivate::qustrchr(in, '%');
+
     if (Q_LIKELY(input == end))
         return 0;           // nothing to do, it was already decoded!
 
     // detach
     const int origSize = appendTo.size();
     appendTo.resize(origSize + (end - begin));
-    ushort *output = reinterpret_cast<ushort *>(appendTo.begin()) + origSize;
-    memcpy(static_cast<void *>(output), static_cast<const void *>(begin), (input - begin) * sizeof(ushort));
+    QChar *output = appendTo.data() + origSize;
+    memcpy(static_cast<void *>(output), static_cast<const void *>(begin), (input - begin) * sizeof(QChar));
     output += input - begin;
 
     while (input != end) {
@@ -604,15 +608,15 @@ static int decode(QString &appendTo, const ushort *begin, const ushort *end)
         }
 
         ++input;
-        *output++ = decodeNibble(input[0]) << 4 | decodeNibble(input[1]);
-        if (output[-1] >= 0x80)
+        *output++ = QChar::fromUcs2(decodeNibble(input[0]) << 4 | decodeNibble(input[1]));
+        if (output[-1].unicode() >= 0x80)
             output[-1] = QChar::ReplacementCharacter;
         input += 2;
 
         // search for the next percent, copying from input to output
         if (simdCheckNonEncoded(output, input, end)) {
             while (input != end) {
-                ushort uc = *input;
+                const char16_t uc = *input;
                 if (uc == '%')
                     break;
                 *output++ = uc;
@@ -621,7 +625,7 @@ static int decode(QString &appendTo, const ushort *begin, const ushort *end)
         }
     }
 
-    int len = output - reinterpret_cast<ushort *>(appendTo.begin());
+    const qsizetype len = output - appendTo.begin();
     appendTo.truncate(len);
     return len - origSize;
 }
@@ -667,13 +671,13 @@ static void maskTable(uchar (&table)[N], const uchar (&mask)[N])
     meaning "%25" (all percents in the same content).
  */
 
-Q_AUTOTEST_EXPORT int
-qt_urlRecode(QString &appendTo, const QChar *begin, const QChar *end,
+Q_AUTOTEST_EXPORT qsizetype
+qt_urlRecode(QString &appendTo, QStringView in,
              QUrl::ComponentFormattingOptions encoding, const ushort *tableModifications)
 {
     uchar actionTable[sizeof defaultActionTable];
     if (encoding == QUrl::FullyDecoded) {
-        return decode(appendTo, reinterpret_cast<const ushort *>(begin), reinterpret_cast<const ushort *>(end));
+        return int(decode(appendTo, in));
     }
 
     memcpy(actionTable, defaultActionTable, sizeof actionTable);
@@ -687,7 +691,7 @@ qt_urlRecode(QString &appendTo, const QChar *begin, const QChar *end,
             actionTable[uchar(*p) - ' '] = *p >> 8;
     }
 
-    return recode(appendTo, reinterpret_cast<const ushort *>(begin), reinterpret_cast<const ushort *>(end),
+    return recode(appendTo, reinterpret_cast<const ushort *>(in.begin()), reinterpret_cast<const ushort *>(in.end()),
                   encoding, actionTable, false);
 }
 

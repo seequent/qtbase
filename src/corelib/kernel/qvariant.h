@@ -53,6 +53,8 @@
 #include <QtCore/qbytearraylist.h>
 #endif
 
+#include <memory>
+
 #if __has_include(<variant>) && __cplusplus >= 201703L
 #include <variant>
 #elif defined(Q_CLANG_QDOC)
@@ -81,9 +83,6 @@ class QSize;
 class QSizeF;
 class QRect;
 class QRectF;
-#ifndef QT_NO_REGEXP
-class QRegExp;
-#endif // QT_NO_REGEXP
 #if QT_CONFIG(regularexpression)
 class QRegularExpression;
 #endif // QT_CONFIG(regularexpression)
@@ -160,7 +159,6 @@ class Q_CORE_EXPORT QVariant
         LineF = QMetaType::QLineF,
         Point = QMetaType::QPoint,
         PointF = QMetaType::QPointF,
-        RegExp = QMetaType::QRegExp,
 #if QT_CONFIG(regularexpression)
         RegularExpression = QMetaType::QRegularExpression,
 #endif
@@ -252,9 +250,6 @@ class Q_CORE_EXPORT QVariant
     QVariant(const QRectF &rect);
 #endif
     QVariant(const QLocale &locale);
-#ifndef QT_NO_REGEXP
-    QVariant(const QRegExp &regExp);
-#endif // QT_NO_REGEXP
 #if QT_CONFIG(regularexpression)
     QVariant(const QRegularExpression &re);
 #endif // QT_CONFIG(regularexpression)
@@ -278,7 +273,7 @@ class Q_CORE_EXPORT QVariant
     inline QVariant(QVariant &&other) noexcept : d(other.d)
     { other.d = Private(); }
     inline QVariant &operator=(QVariant &&other) noexcept
-    { qSwap(d, other.d); return *this; }
+    { QVariant moved(std::move(other)); swap(moved); return *this; }
 
     inline void swap(QVariant &other) noexcept { qSwap(d, other.d); }
 
@@ -329,9 +324,6 @@ class Q_CORE_EXPORT QVariant
     QRectF toRectF() const;
 #endif
     QLocale toLocale() const;
-#ifndef QT_NO_REGEXP
-    QRegExp toRegExp() const;
-#endif // QT_NO_REGEXP
 #if QT_CONFIG(regularexpression)
     QRegularExpression toRegularExpression() const;
 #endif // QT_CONFIG(regularexpression)
@@ -372,7 +364,7 @@ class Q_CORE_EXPORT QVariant
     template<typename T>
     static inline QVariant fromValue(const T &value)
     {
-        return QVariant(QMetaType::fromType<T>(), &value);
+        return QVariant(QMetaType::fromType<T>(), std::addressof(value));
     }
 
 #if (__has_include(<variant>) && __cplusplus >= 201703L) || defined(Q_CLANG_QDOC)
@@ -456,23 +448,13 @@ class Q_CORE_EXPORT QVariant
     };
  public:
     typedef bool (*f_null)(const Private *);
-#ifndef QT_NO_DATASTREAM
-    typedef void (*f_load)(Private *, QDataStream &);
-    typedef void (*f_save)(const Private *, QDataStream &);
-#endif
     typedef bool (*f_compare)(const Private *, const Private *);
     typedef bool (*f_convert)(const QVariant::Private *d, int t, void *, bool *);
-    typedef bool (*f_canConvert)(const QVariant::Private *d, int t);
     typedef void (*f_debugStream)(QDebug, const QVariant &);
     struct Handler {
         f_null isNull;
-#ifndef QT_NO_DATASTREAM
-        f_load load;
-        f_save save;
-#endif
         f_compare compare;
         f_convert convert;
-        f_canConvert canConvert;
         f_debugStream debugStream;
     };
 

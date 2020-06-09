@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
@@ -1248,10 +1248,14 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
     }
 
     if (d->statusMonitor.isEnabled()) {
+        if (!d->statusMonitor.isMonitoring() && !d->statusMonitor.start())
+            qWarning(lcNetMon, "failed to start network status monitoring");
+
         // See the code in ctor - QNetworkStatusMonitor allows us to
         // immediately set 'networkAccessible' even before we start
-        // the monitor.
-        if (!d->networkAccessible && !isLocalFile) {
+        // the monitor. If the monitor is unable to monitor then let's
+        // assume there's something wrong with the monitor and keep going.
+        if (d->statusMonitor.isMonitoring() && !d->networkAccessible && !isLocalFile) {
             QHostAddress dest;
             QString host = req.url().host().toLower();
             if (!(dest.setAddress(host) && dest.isLoopback())
@@ -1260,9 +1264,6 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
                 return new QDisabledNetworkReply(this, req, op);
             }
         }
-
-        if (!d->statusMonitor.isMonitoring() && !d->statusMonitor.start())
-            qWarning(lcNetMon, "failed to start network status monitoring");
     }
 #endif
     QNetworkRequest request = req;
@@ -1531,17 +1532,15 @@ void QNetworkAccessManagerPrivate::_q_replySslErrors(const QList<QSslError> &err
 #endif
 }
 
+#ifndef QT_NO_SSL
 void QNetworkAccessManagerPrivate::_q_replyPreSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator *authenticator)
 {
-#ifndef QT_NO_SSL
     Q_Q(QNetworkAccessManager);
     QNetworkReply *reply = qobject_cast<QNetworkReply *>(q->sender());
     if (reply)
     emit q->preSharedKeyAuthenticationRequired(reply, authenticator);
-#else
-    Q_UNUSED(authenticator);
-#endif
 }
+#endif
 
 QNetworkReply *QNetworkAccessManagerPrivate::postProcess(QNetworkReply *reply)
 {

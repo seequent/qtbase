@@ -44,7 +44,7 @@
 #include <qdebug.h>
 #include "qjsonparser_p.h"
 #include "qjson_p.h"
-#include "private/qutfcodec_p.h"
+#include "private/qstringconverter_p.h"
 #include "private/qcborvalue_p.h"
 #include "private/qnumeric_p.h"
 
@@ -922,12 +922,7 @@ bool Parser::parseString()
                 return false;
             }
         }
-        if (QChar::requiresSurrogates(ch)) {
-            ucs4.append(QChar::highSurrogate(ch));
-            ucs4.append(QChar::lowSurrogate(ch));
-        } else {
-            ucs4.append(QChar(ushort(ch)));
-        }
+        ucs4.append(QChar::fromUcs4(ch));
     }
     ++json;
 

@@ -200,7 +200,11 @@ public:
         Float,
         UNormByte4,
         UNormByte2,
-        UNormByte
+        UNormByte,
+        UInt4,
+        UInt3,
+        UInt2,
+        UInt
     };
 
     QRhiVertexInputAttribute() = default;
@@ -654,8 +658,9 @@ public:
 
     virtual Type resourceType() const = 0;
 
-    virtual void release() = 0;
-    void releaseAndDestroyLater();
+    virtual void destroy() = 0;
+
+    void deleteLater();
 
     QByteArray name() const;
     void setName(const QByteArray &name);
@@ -704,7 +709,7 @@ public:
     int size() const { return m_size; }
     void setSize(int sz) { m_size = sz; }
 
-    virtual bool build() = 0;
+    virtual bool create() = 0;
 
     virtual NativeBuffer nativeBuffer();
 
@@ -727,7 +732,8 @@ public:
         sRGB = 1 << 4,
         UsedAsTransferSource = 1 << 5,
         UsedWithGenerateMips = 1 << 6,
-        UsedWithLoadStore = 1 << 7
+        UsedWithLoadStore = 1 << 7,
+        UsedAsCompressedAtlas = 1 << 8
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 
@@ -737,6 +743,7 @@ public:
         RGBA8,
         BGRA8,
         R8,
+        RG8,
         R16,
         RED_OR_ALPHA8,
 
@@ -777,7 +784,7 @@ public:
     };
 
     struct NativeTexture {
-        const void *object;
+        quint64 object;
         int layout;
     };
 
@@ -795,9 +802,9 @@ public:
     int sampleCount() const { return m_sampleCount; }
     void setSampleCount(int s) { m_sampleCount = s; }
 
-    virtual bool build() = 0;
+    virtual bool create() = 0;
     virtual NativeTexture nativeTexture();
-    virtual bool buildFrom(NativeTexture src);
+    virtual bool createFrom(NativeTexture src);
     virtual void setNativeLayout(int layout);
 
 protected:
@@ -860,7 +867,7 @@ public:
     CompareOp textureCompareOp() const { return m_compareOp; }
     void setTextureCompareOp(CompareOp op) { m_compareOp = op; }
 
-    virtual bool build() = 0;
+    virtual bool create() = 0;
 
 protected:
     QRhiSampler(QRhiImplementation *rhi,
@@ -902,17 +909,18 @@ public:
     Flags flags() const { return m_flags; }
     void setFlags(Flags h) { m_flags = h; }
 
-    virtual bool build() = 0;
+    virtual bool create() = 0;
 
     virtual QRhiTexture::Format backingFormat() const = 0;
 
 protected:
     QRhiRenderBuffer(QRhiImplementation *rhi, Type type_, const QSize &pixelSize_,
-                     int sampleCount_, Flags flags_);
+                     int sampleCount_, Flags flags_, QRhiTexture::Format backingFormatHint_);
     Type m_type;
     QSize m_pixelSize;
     int m_sampleCount;
     Flags m_flags;
+    QRhiTexture::Format m_backingFormatHint;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QRhiRenderBuffer::Flags)
@@ -965,7 +973,7 @@ public:
 
     virtual QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() = 0;
 
-    virtual bool build() = 0;
+    virtual bool create() = 0;
 
 protected:
     QRhiTextureRenderTarget(QRhiImplementation *rhi, const QRhiTextureRenderTargetDescription &desc_, Flags flags_);
@@ -994,7 +1002,7 @@ public:
 
     bool isLayoutCompatible(const QRhiShaderResourceBindings *other) const;
 
-    virtual bool build() = 0;
+    virtual bool create() = 0;
 
 protected:
     QRhiShaderResourceBindings(QRhiImplementation *rhi);
@@ -1195,7 +1203,7 @@ public:
     QRhiRenderPassDescriptor *renderPassDescriptor() const { return m_renderPassDesc; }
     void setRenderPassDescriptor(QRhiRenderPassDescriptor *desc) { m_renderPassDesc = desc; }
 
-    virtual bool build() = 0;
+    virtual bool create() = 0;
 
 protected:
     QRhiGraphicsPipeline(QRhiImplementation *rhi);
@@ -1262,7 +1270,7 @@ public:
     virtual QRhiRenderTarget *currentFrameRenderTarget() = 0;
     virtual QSize surfacePixelSize() = 0;
     virtual QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() = 0;
-    virtual bool buildOrResize() = 0;
+    virtual bool createOrResize() = 0;
 
 protected:
     QRhiSwapChain(QRhiImplementation *rhi);
@@ -1280,7 +1288,7 @@ class Q_GUI_EXPORT QRhiComputePipeline : public QRhiResource
 {
 public:
     QRhiResource::Type resourceType() const override;
-    virtual bool build() = 0;
+    virtual bool create() = 0;
 
     QRhiShaderStage shaderStage() const { return m_shaderStage; }
     void setShaderStage(const QRhiShaderStage &stage) { m_shaderStage = stage; }
@@ -1447,7 +1455,8 @@ public:
         ReadBackNonUniformBuffer,
         ReadBackNonBaseMipLevel,
         TexelFetch,
-        RenderToNonBaseMipLevel
+        RenderToNonBaseMipLevel,
+        UIntAttributes
     };
 
     enum BeginFrameFlag {
@@ -1493,7 +1502,8 @@ public:
     QRhiRenderBuffer *newRenderBuffer(QRhiRenderBuffer::Type type,
                                       const QSize &pixelSize,
                                       int sampleCount = 1,
-                                      QRhiRenderBuffer::Flags flags = QRhiRenderBuffer::Flags());
+                                      QRhiRenderBuffer::Flags flags = QRhiRenderBuffer::Flags(),
+                                      QRhiTexture::Format backingFormatHint = QRhiTexture::UnknownFormat);
 
     QRhiTexture *newTexture(QRhiTexture::Format format,
                             const QSize &pixelSize,

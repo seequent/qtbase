@@ -36,6 +36,10 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include <AppKit/AppKit.h>
+#include <QuartzCore/QuartzCore.h>
+
 #include "qcocoawindow.h"
 #include "qcocoaintegration.h"
 #include "qcocoascreen.h"
@@ -56,9 +60,6 @@
 #include <qpa/qplatformscreen.h>
 #include <QtGui/private/qcoregraphics_p.h>
 #include <QtGui/private/qhighdpiscaling_p.h>
-
-#include <AppKit/AppKit.h>
-#include <QuartzCore/QuartzCore.h>
 
 #include <QDebug>
 
@@ -149,7 +150,7 @@ QCocoaWindow::QCocoaWindow(QWindow *win, WId nativeHandle)
     , m_registerTouchCount(0)
     , m_resizableTransientParent(false)
     , m_alertRequest(NoAlertRequest)
-    , monitor(nil)
+    , m_monitor(nil)
     , m_drawContentBorderGradient(false)
     , m_topContentBorderThickness(0)
     , m_bottomContentBorderThickness(0)
@@ -368,8 +369,18 @@ void QCocoaWindow::setVisible(bool visible)
                 } else if (window()->modality() == Qt::ApplicationModal) {
                     // Show the window as application modal
                     eventDispatcher()->beginModalSession(window());
-                } else if (m_view.window.canBecomeKeyWindow && !eventDispatcher()->hasModalSession()) {
-                    [m_view.window makeKeyAndOrderFront:nil];
+                } else if (m_view.window.canBecomeKeyWindow) {
+                    bool shouldBecomeKeyNow = !NSApp.modalWindow || m_view.window.worksWhenModal;
+
+                    // Panels with becomesKeyOnlyIfNeeded set should not activate until a view
+                    // with needsPanelToBecomeKey, for example a line edit, is clicked.
+                    if ([m_view.window isKindOfClass:[NSPanel class]])
+                        shouldBecomeKeyNow &= !(static_cast<NSPanel*>(m_view.window).becomesKeyOnlyIfNeeded);
+
+                    if (shouldBecomeKeyNow)
+                        [m_view.window makeKeyAndOrderFront:nil];
+                    else
+                        [m_view.window orderFront:nil];
                 } else {
                     [m_view.window orderFront:nil];
                 }
@@ -379,7 +390,7 @@ void QCocoaWindow::setVisible(bool visible)
                     removeMonitor();
                     NSEventMask eventMask = NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
                                           | NSEventMaskOtherMouseDown | NSEventMaskMouseMoved;
-                    monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:eventMask handler:^(NSEvent *e) {
+                    m_monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:eventMask handler:^(NSEvent *e) {
                         const auto button = cocoaButton2QtButton(e);
                         const auto buttons = currentlyPressedMouseButtons();
                         const auto eventType = cocoaEvent2QtMouseEvent(e);
@@ -891,10 +902,13 @@ void QCocoaWindow::setWindowIcon(const QIcon &icon)
 
     QMacAutoReleasePool pool;
 
-    if (icon.isNull())
+    if (icon.isNull()) {
         iconButton.image = [NSWorkspace.sharedWorkspace iconForFile:m_view.window.representedFilename];
-    else
-        iconButton.image = [NSImage imageFromQIcon:icon];
+    } else {
+        // Fall back to a size that looks good on the highest resolution screen available
+        auto fallbackSize = iconButton.frame.size.height * qGuiApp->devicePixelRatio();
+        iconButton.image = [NSImage imageFromQIcon:icon withSize:fallbackSize];
+    }
 }
 
 void QCocoaWindow::setAlertState(bool enabled)
@@ -1199,7 +1213,8 @@ void QCocoaWindow::windowDidBecomeKey()
     }
 
     if (!windowIsPopupType())
-        QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(window());
+        QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(
+            window(), Qt::ActiveWindowFocusReason);
 }
 
 void QCocoaWindow::windowDidResignKey()
@@ -1217,7 +1232,8 @@ void QCocoaWindow::windowDidResignKey()
     if (!keyWindow || keyWindow == m_view.window) {
         // No new key window, go ahead and set the active window to zero
         if (!windowIsPopupType())
-            QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(0);
+            QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(
+                nullptr, Qt::ActiveWindowFocusReason);
     }
 }
 
@@ -1663,10 +1679,10 @@ bool QCocoaWindow::alwaysShowToolWindow() const
 
 void QCocoaWindow::removeMonitor()
 {
-    if (!monitor)
+    if (!m_monitor)
         return;
-    [NSEvent removeMonitor:monitor];
-    monitor = nil;
+    [NSEvent removeMonitor:m_monitor];
+    m_monitor = nil;
 }
 
 bool QCocoaWindow::setWindowModified(bool modified)
@@ -1812,8 +1828,17 @@ void QCocoaWindow::updateNSToolbar()
 
 bool QCocoaWindow::testContentBorderAreaPosition(int position) const
 {
-    return isContentView() && m_drawContentBorderGradient &&
-            0 <= position && position < [m_view.window contentBorderThicknessForEdge:NSMaxYEdge];
+    if (!m_drawContentBorderGradient || !isContentView())
+        return false;
+
+    // Determine if the given y postion (relative to the content area) is inside the
+    // unified toolbar area. Note that the value returned by contentBorderThicknessForEdge
+    // includes the title bar height; subtract it.
+    const int contentBorderThickness = [m_view.window contentBorderThicknessForEdge:NSMaxYEdge];
+    const NSRect frameRect = m_view.window.frame;
+    const NSRect contentRect = [m_view.window contentRectForFrameRect:frameRect];
+    const CGFloat titlebarHeight = frameRect.size.height - contentRect.size.height;
+    return 0 <= position && position < (contentBorderThickness - titlebarHeight);
 }
 
 qreal QCocoaWindow::devicePixelRatio() const

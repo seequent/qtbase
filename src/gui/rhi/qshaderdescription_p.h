@@ -69,7 +69,9 @@ public:
 
     bool isValid() const;
 
+#if QT_CONFIG(cborstreamwriter)
     QByteArray toCbor() const;
+#endif
     void serialize(QDataStream *stream) const;
     QByteArray toJson() const;
 
@@ -209,7 +211,7 @@ public:
     // Optional data (like decorations) usually default to an otherwise invalid value (-1 or 0). This is intentional.
 
     struct InOutVariable {
-        QString name;
+        QByteArray name;
         VariableType type = Unknown;
         int location = -1;
         int binding = -1;
@@ -220,7 +222,7 @@ public:
     };
 
     struct BlockVariable {
-        QString name;
+        QByteArray name;
         VariableType type = Unknown;
         int offset = 0;
         int size = 0;
@@ -232,8 +234,8 @@ public:
     };
 
     struct UniformBlock {
-        QString blockName;
-        QString structName; // instanceName
+        QByteArray blockName;
+        QByteArray structName; // instanceName
         int size = 0;
         int binding = -1;
         int descriptorSet = -1;
@@ -241,14 +243,14 @@ public:
     };
 
     struct PushConstantBlock {
-        QString name;
+        QByteArray name;
         int size = 0;
         QVector<BlockVariable> members;
     };
 
     struct StorageBlock {
-        QString blockName;
-        QString instanceName;
+        QByteArray blockName;
+        QByteArray instanceName;
         int knownSize = 0;
         int binding = -1;
         int descriptorSet = -1;

@@ -64,6 +64,9 @@ namespace QtPrivate {
 template<typename Function, typename ResultType, typename ParentResultType>
 class Continuation;
 
+template<class Function, class ResultType>
+class CanceledHandler;
+
 #ifndef QT_NO_EXCEPTIONS
 template<class Function, class ResultType>
 class FailureHandler;
@@ -74,15 +77,16 @@ class Q_CORE_EXPORT QFutureInterfaceBase
 {
 public:
     enum State {
-        NoState   = 0x00,
-        Running   = 0x01,
-        Started   = 0x02,
-        Finished  = 0x04,
-        Canceled  = 0x08,
-        Paused    = 0x10,
-        Throttled = 0x20,
+        NoState    = 0x00,
+        Running    = 0x01,
+        Started    = 0x02,
+        Finished   = 0x04,
+        Canceled   = 0x08,
+        Suspending = 0x10,
+        Suspended  = 0x20,
+        Throttled  = 0x40,
         // Pending means that the future depends on another one, which is not finished yet
-        Pending   = 0x40
+        Pending    = 0x80,
     };
 
     QFutureInterfaceBase(State initialState = NoState);
@@ -121,20 +125,34 @@ public:
     bool isStarted() const;
     bool isCanceled() const;
     bool isFinished() const;
+#if QT_DEPRECATED_SINCE(6, 0)
+    QT_DEPRECATED_VERSION_X_6_0("Use isSuspending() or isSuspended() instead.")
     bool isPaused() const;
+
+    QT_DEPRECATED_VERSION_X_6_0("Use setSuspended() instead.")
+    void setPaused(bool paused) { setSuspended(paused); }
+
+    QT_DEPRECATED_VERSION_X_6_0("Use toggleSuspended() instead.")
+    void togglePaused() { toggleSuspended(); }
+#endif
+    bool isSuspending() const;
+    bool isSuspended() const;
     bool isThrottled() const;
     bool isResultReadyAt(int index) const;
     bool isValid() const;
+    int loadState() const;
 
     void cancel();
-    void setPaused(bool paused);
-    void togglePaused();
+    void setSuspended(bool suspend);
+    void toggleSuspended();
+    void reportSuspended() const;
     void setThrottled(bool enable);
 
     void waitForFinished();
     bool waitForNextResult();
     void waitForResult(int resultIndex);
     void waitForResume();
+    void suspendIfRequested();
 
     QMutex &mutex() const;
     QtPrivate::ExceptionStore &exceptionStore();
@@ -162,6 +180,9 @@ private:
 
     template<typename Function, typename ResultType, typename ParentResultType>
     friend class QtPrivate::Continuation;
+
+    template<class Function, class ResultType>
+    friend class QtPrivate::CanceledHandler;
 
 #ifndef QT_NO_EXCEPTIONS
     template<class Function, class ResultType>
@@ -214,6 +235,7 @@ public:
 
     inline void reportResult(const T *result, int index = -1);
     inline void reportAndMoveResult(T &&result, int index = -1);
+    inline void reportResult(T &&result, int index = -1);
     inline void reportResult(const T &result, int index = -1);
     inline void reportResults(const QVector<T> &results, int beginIndex = -1, int count = -1);
     inline void reportFinished(const T *result);
@@ -264,6 +286,12 @@ void QFutureInterface<T>::reportAndMoveResult(T &&result, int index)
     const int insertIndex = store.moveResult(index, std::forward<T>(result));
     if (!store.filterMode() || oldResultCount < store.count()) // Let's make sure it's not in pending results.
         reportResultsReady(insertIndex, store.count());
+}
+
+template<typename T>
+void QFutureInterface<T>::reportResult(T &&result, int index)
+{
+    reportAndMoveResult(std::move(result), index);
 }
 
 template <typename T>

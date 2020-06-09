@@ -58,7 +58,7 @@
 
 Q_DECLARE_METATYPE(QAbstractItemDelegate::EndEditHint)
 
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN)
 #include <windows.h>
 #define Q_CHECK_PAINTEVENTS \
     if (::SwitchDesktop(::GetThreadDesktop(::GetCurrentThreadId())) == 0) \
@@ -1605,7 +1605,9 @@ void tst_QItemDelegate::dateTextForRole_data()
     // Ensure we exercise every time-spec variant:
     QTest::newRow("local") << QDateTime(date, time, Qt::LocalTime);
     QTest::newRow("UTC") << QDateTime(date, time, Qt::UTC);
+#if QT_CONFIG(timezone)
     QTest::newRow("zone") << QDateTime(date, time, QTimeZone("Europe/Dublin"));
+#endif
     QTest::newRow("offset") << QDateTime(date, time, Qt::OffsetFromUTC, 36000);
 #endif
 }

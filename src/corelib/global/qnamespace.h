@@ -235,10 +235,6 @@ namespace Qt {
         // Ensures that the longest variant is always used when computing the
         // size of a multi-variant string.
         TextLongestVariant = 0x80000
-
-#if QT_DEPRECATED_SINCE(5, 11) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-        , TextBypassShaping = 0x100000
-#endif
     };
 
     enum TextElideMode {
@@ -491,24 +487,17 @@ namespace Qt {
 
     enum ApplicationAttribute
     {
-        AA_ImmediateWidgetCreation = 0,
-#if QT_DEPRECATED_SINCE(5, 14)
-        AA_MSWindowsUseDirect3DByDefault Q_DECL_ENUMERATOR_DEPRECATED = 1,
-#endif
+        // AA_ImmediateWidgetCreation = 0,
+        // AA_MSWindowsUseDirect3DByDefault = 1,
         AA_DontShowIconsInMenus = 2,
         AA_NativeWindows = 3,
         AA_DontCreateNativeWidgetSiblings = 4,
         AA_PluginApplication = 5,
-#if QT_DEPRECATED_SINCE(5, 13) // ### Qt 6: remove me
-        AA_MacPluginApplication Q_DECL_ENUMERATOR_DEPRECATED = AA_PluginApplication,
-#endif
         AA_DontUseNativeMenuBar = 6,
         AA_MacDontSwapCtrlAndMeta = 7,
         AA_Use96Dpi = 8,
         AA_DisableNativeVirtualKeyboard = 9,
-#if QT_DEPRECATED_SINCE(5, 14)
-        AA_X11InitThreads Q_DECL_ENUMERATOR_DEPRECATED = 10,
-#endif
+        // AA_X11InitThreads = 10,
         AA_SynthesizeTouchForUnhandledMouseEvents = 11,
         AA_SynthesizeMouseForUnhandledTouchEvents = 12,
         AA_UseHighDpiPixmaps = 13,
@@ -1249,15 +1238,6 @@ namespace Qt {
     enum DateFormat {
         TextDate,      // default Qt
         ISODate,       // ISO 8601
-#if QT_DEPRECATED_SINCE(5, 15)
-        SystemLocaleDate Q_DECL_ENUMERATOR_DEPRECATED_X("Use QLocale"),
-        LocalDate Q_DECL_ENUMERATOR_DEPRECATED_X("Use QLocale") = 2, // i.e. SystemLocaleDate
-        LocaleDate Q_DECL_ENUMERATOR_DEPRECATED_X("Use QLocale"),
-        SystemLocaleShortDate Q_DECL_ENUMERATOR_DEPRECATED_X("Use QLocale"),
-        SystemLocaleLongDate Q_DECL_ENUMERATOR_DEPRECATED_X("Use QLocale"),
-        DefaultLocaleShortDate Q_DECL_ENUMERATOR_DEPRECATED_X("Use QLocale"),
-        DefaultLocaleLongDate Q_DECL_ENUMERATOR_DEPRECATED_X("Use QLocale"),
-#endif
         RFC2822Date = 8, // RFC 2822 (+ 850 and 1036 during parsing)
         ISODateWithMs
     };

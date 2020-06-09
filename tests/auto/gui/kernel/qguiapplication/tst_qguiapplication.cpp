@@ -374,9 +374,6 @@ public:
 
 void tst_QGuiApplication::changeFocusWindow()
 {
-#ifdef Q_OS_WINRT
-    QSKIP("WinRt does not support multiple native windows.");
-#endif
     int argc = 0;
     QGuiApplication app(argc, nullptr);
 
@@ -635,9 +632,6 @@ public:
 
 void tst_QGuiApplication::modalWindow()
 {
-#ifdef Q_OS_WINRT
-    QSKIP("WinRt does not support multiple native windows.");
-#endif
     int argc = 0;
     QGuiApplication app(argc, nullptr);
     const QRect screenGeometry = QGuiApplication::primaryScreen()->availableVirtualGeometry();
@@ -982,8 +976,6 @@ public:
     TestPlugin()
     {
         QScreen* screen = QGuiApplication::primaryScreen();
-        // Make sure the orientation we want to send doesn't get filtered out.
-        screen->setOrientationUpdateMask(screen->orientationUpdateMask() | testOrientationToSend);
         QWindowSystemInterface::handleScreenOrientationChange(screen, testOrientationToSend);
     }
 };

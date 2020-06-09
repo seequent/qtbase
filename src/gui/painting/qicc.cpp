@@ -225,7 +225,7 @@ static bool isValidIccProfile(const ICCProfileHeader &header)
     }
 
     // Don't overflow 32bit integers:
-    if (header.tagCount >= INT32_MAX / sizeof(TagTableEntry)) {
+    if (header.tagCount >= (INT32_MAX - sizeof(ICCProfileHeader)) / sizeof(TagTableEntry)) {
         qCWarning(lcIcc, "Failed tag count sanity");
         return false;
     }
@@ -606,14 +606,19 @@ bool parseDesc(const QByteArray &data, const TagEntry &tagEntry, QString &descNa
     // The given length shouldn't include 0-termination, but might.
     if (stringLen > 1 && unicodeString[stringLen - 1] == 0)
         --stringLen;
-    QVarLengthArray<quint16> utf16hostendian(stringLen);
-    qFromBigEndian<ushort>(unicodeString, stringLen, utf16hostendian.data());
+    QVarLengthArray<char16_t> utf16hostendian(stringLen);
+    qFromBigEndian<char16_t>(unicodeString, stringLen, utf16hostendian.data());
     descName = QString::fromUtf16(utf16hostendian.data(), stringLen);
     return true;
 }
 
 bool fromIccProfile(const QByteArray &data, QColorSpace *colorSpace)
 {
+    Q_ASSERT((reinterpret_cast<qintptr>(data.constData()) & 0x3) == 0);
+    if (reinterpret_cast<qintptr>(data.constData()) & 0x3) {
+        qCWarning(lcIcc) << "fromIccProfile: Unaligned profile data";
+        return false;
+    }
     if (data.size() < qsizetype(sizeof(ICCProfileHeader))) {
         qCWarning(lcIcc) << "fromIccProfile: failed size sanity 1";
         return false;
@@ -629,6 +634,7 @@ bool fromIccProfile(const QByteArray &data, QColorSpace *colorSpace)
     // Read tag index
     const TagTableEntry *tagTable = (const TagTableEntry *)(data.constData() + sizeof(ICCProfileHeader));
     const qsizetype offsetToData = sizeof(ICCProfileHeader) + header->tagCount * sizeof(TagTableEntry);
+    Q_ASSERT(offsetToData > 0);
     if (offsetToData > data.size()) {
         qCWarning(lcIcc) << "fromIccProfile: failed index size sanity";
         return false;

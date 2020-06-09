@@ -212,8 +212,7 @@ static bool isBypassed(const QString &host, const QStringList &bypassList)
             return true;        // excluded
         } else {
             // do wildcard matching
-            QRegularExpression rx(QRegularExpression::wildcardToRegularExpression(entry),
-                                  QRegularExpression::CaseInsensitiveOption);
+            auto rx = QRegularExpression::fromWildcard(entry, Qt::CaseInsensitive);
             if (rx.match(host).hasMatch())
                 return true;
         }
@@ -368,7 +367,6 @@ static QList<QNetworkProxy> parseServerList(const QNetworkProxyQuery &query, con
     return removeDuplicateProxies(result);
 }
 
-#if !defined(Q_OS_WINRT)
 namespace {
 class QRegistryWatcher {
     Q_DISABLE_COPY_MOVE(QRegistryWatcher)
@@ -422,7 +420,6 @@ private:
     QVector<HKEY> m_registryHandles;
 };
 } // namespace
-#endif // !defined(Q_OS_WINRT)
 
 class QWindowsSystemProxy
 {
@@ -442,9 +439,7 @@ public:
     QStringList proxyServerList;
     QStringList proxyBypass;
     QList<QNetworkProxy> defaultResult;
-#if !defined(Q_OS_WINRT)
     QRegistryWatcher proxySettingsWatcher;
-#endif
     bool initialized;
     bool functional;
     bool isAutoConfig;
@@ -478,9 +473,7 @@ void QWindowsSystemProxy::reset()
 void QWindowsSystemProxy::init()
 {
     bool proxySettingsChanged = false;
-#if !defined(Q_OS_WINRT)
     proxySettingsChanged = proxySettingsWatcher.hasChanged();
-#endif
 
     if (initialized && !proxySettingsChanged)
         return;
@@ -488,12 +481,10 @@ void QWindowsSystemProxy::init()
 
     reset();
 
-#if !defined(Q_OS_WINRT)
     proxySettingsWatcher.clear(); // needs reset to trigger a new detection
     proxySettingsWatcher.addLocation(HKEY_CURRENT_USER,  QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"));
     proxySettingsWatcher.addLocation(HKEY_LOCAL_MACHINE, QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"));
     proxySettingsWatcher.addLocation(HKEY_LOCAL_MACHINE, QStringLiteral("Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"));
-#endif
 
     // load the winhttp.dll library
     QSystemLibrary lib(L"winhttp");

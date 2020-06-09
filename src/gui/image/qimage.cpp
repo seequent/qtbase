@@ -56,9 +56,9 @@
 #include <limits.h>
 #include <qpa/qplatformpixmap.h>
 #include <private/qcolortransform_p.h>
-#include <private/qdrawhelper_p.h>
 #include <private/qmemrotate_p.h>
 #include <private/qimagescale_p.h>
+#include <private/qpixellayout_p.h>
 #include <private/qsimd_p.h>
 
 #include <qhash.h>
@@ -2122,12 +2122,7 @@ static QImage convertWithPalette(const QImage &src, QImage::Format format,
     QImage dest(src.size(), format);
     dest.setColorTable(clut);
 
-    QString textsKeys = src.text();
-    const auto textKeyList = textsKeys.splitRef(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    for (const auto &textKey : textKeyList) {
-        const auto textKeySplitted = textKey.split(QLatin1String(": "));
-        dest.setText(textKeySplitted[0].toString(), textKeySplitted[1].toString());
-    }
+    QImageData::get(dest)->text = QImageData::get(src)->text;
 
     int h = src.height();
     int w = src.width();
@@ -4319,99 +4314,6 @@ void QImage::setAlphaChannel(const QImage &alphaChannel)
     painter.drawImage(rect(), sourceImage);
 }
 
-
-#if QT_DEPRECATED_SINCE(5, 15)
-/*!
-    \obsolete
-
-    Returns the alpha channel of the image as a new grayscale QImage in which
-    each pixel's red, green, and blue values are given the alpha value of the
-    original image. The color depth of the returned image is 8-bit.
-
-    You can see an example of use of this function in QPixmap's
-    \l{QPixmap::}{alphaChannel()}, which works in the same way as
-    this function on QPixmaps.
-
-    Most usecases for this function can be replaced with QPainter and
-    using composition modes.
-
-    Note this returns a color-indexed image if you want the alpha channel in
-    the alpha8 format instead use convertToFormat(Format_Alpha8) on the source
-    image.
-
-    \warning This is an expensive function.
-
-    \sa setAlphaChannel(), hasAlphaChannel(), convertToFormat(),
-    {QPixmap#Pixmap Information}{Pixmap},
-    {QImage#Image Transformations}{Image Transformations}
-*/
-
-QImage QImage::alphaChannel() const
-{
-    if (!d)
-        return QImage();
-
-    int w = d->width;
-    int h = d->height;
-
-    QImage image(w, h, Format_Indexed8);
-    image.setColorCount(256);
-
-    // set up gray scale table.
-    for (int i=0; i<256; ++i)
-        image.setColor(i, qRgb(i, i, i));
-
-    if (!hasAlphaChannel()) {
-        image.fill(255);
-        return image;
-    }
-
-    if (d->format == Format_Indexed8) {
-        const uchar *src_data = d->data;
-        uchar *dest_data = image.d->data;
-        for (int y=0; y<h; ++y) {
-            const uchar *src = src_data;
-            uchar *dest = dest_data;
-            for (int x=0; x<w; ++x) {
-                *dest = qAlpha(d->colortable.at(*src));
-                ++dest;
-                ++src;
-            }
-            src_data += d->bytes_per_line;
-            dest_data += image.d->bytes_per_line;
-        }
-    } else if (d->format == Format_Alpha8) {
-        const uchar *src_data = d->data;
-        uchar *dest_data = image.d->data;
-        memcpy(dest_data, src_data, d->bytes_per_line * h);
-    } else {
-        QImage alpha32 = *this;
-        bool canSkipConversion = (d->format == Format_ARGB32 || d->format == Format_ARGB32_Premultiplied);
-#if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
-        canSkipConversion = canSkipConversion || (d->format == Format_RGBA8888 || d->format == Format_RGBA8888_Premultiplied);
-#endif
-        if (!canSkipConversion)
-            alpha32 = convertToFormat(Format_ARGB32);
-
-        const uchar *src_data = alpha32.d->data;
-        uchar *dest_data = image.d->data;
-        for (int y=0; y<h; ++y) {
-            const QRgb *src = (const QRgb *) src_data;
-            uchar *dest = dest_data;
-            for (int x=0; x<w; ++x) {
-                *dest = qAlpha(*src);
-                ++dest;
-                ++src;
-            }
-            src_data += alpha32.d->bytes_per_line;
-            dest_data += image.d->bytes_per_line;
-        }
-    }
-
-    return image;
-}
-#endif
-
 /*!
     Returns \c true if the image has a format that respects the alpha
     channel, otherwise returns \c false.
@@ -4884,15 +4786,16 @@ void QImage::applyColorTransform(const QColorTransform &transform)
         };
     }
 
-#if QT_CONFIG(thread)
+#if QT_CONFIG(thread) && !defined(Q_OS_WASM)
     int segments = sizeInBytes() / (1<<16);
     segments = std::min(segments, height());
-    if (segments > 1) {
+    QThreadPool *threadPool = QThreadPool::globalInstance();
+    if (segments > 1 && !threadPool->contains(QThread::currentThread())) {
         QSemaphore semaphore;
         int y = 0;
         for (int i = 0; i < segments; ++i) {
             int yn = (height() - y) / (segments - i);
-            QThreadPool::globalInstance()->start([&, y, yn]() {
+            threadPool->start([&, y, yn]() {
                 transformSegment(y, y + yn);
                 semaphore.release(1);
             });

@@ -5,6 +5,7 @@
 #####################################################################
 
 qt_add_3rdparty_library(BundledPcre2
+    QMAKE_LIB_NAME pcre2
     STATIC
     SOURCES
         src/config.h
@@ -51,7 +52,7 @@ qt_set_symbol_visibility_hidden(BundledPcre2)
 ## Scopes:
 #####################################################################
 
-qt_extend_target(BundledPcre2 CONDITION QNX OR UIKIT OR WINRT
+qt_extend_target(BundledPcre2 CONDITION QNX OR UIKIT
     DEFINES
         PCRE2_DISABLE_JIT
 )
@@ -70,3 +71,6 @@ qt_extend_target(BundledPcre2 CONDITION WIN32
     PUBLIC_DEFINES
         PCRE2_STATIC
 )
+
+#### Keys ignored in scope 7:.:.:pcre2.pri:QT_FEATURE_intelcet:
+# QMAKE_CFLAGS = "$$QMAKE_CFLAGS_SHSTK"

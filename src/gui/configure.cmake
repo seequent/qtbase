@@ -26,110 +26,115 @@ set_property(CACHE INPUT_libpng PROPERTY STRINGS undefined no qt system)
 
 #### Libraries
 
-qt_find_package(ATSPI2 PROVIDED_TARGETS PkgConfig::ATSPI2)
-qt_find_package(DirectFB PROVIDED_TARGETS PkgConfig::DirectFB)
-qt_find_package(Libdrm PROVIDED_TARGETS Libdrm::Libdrm)
-qt_find_package(EGL PROVIDED_TARGETS EGL::EGL)
-qt_find_package(WrapSystemFreetype PROVIDED_TARGETS WrapSystemFreetype::WrapSystemFreetype)
+qt_find_package(ATSPI2 PROVIDED_TARGETS PkgConfig::ATSPI2 MODULE_NAME gui QMAKE_LIB atspi)
+qt_find_package(DirectFB PROVIDED_TARGETS PkgConfig::DirectFB MODULE_NAME gui QMAKE_LIB directfb)
+qt_find_package(Libdrm PROVIDED_TARGETS Libdrm::Libdrm MODULE_NAME gui QMAKE_LIB drm)
+qt_find_package(EGL PROVIDED_TARGETS EGL::EGL MODULE_NAME gui QMAKE_LIB egl)
+qt_find_package(WrapSystemFreetype PROVIDED_TARGETS WrapSystemFreetype::WrapSystemFreetype MODULE_NAME gui QMAKE_LIB freetype)
 set_package_properties(WrapFreetype PROPERTIES TYPE REQUIRED)
-qt_find_package(Fontconfig PROVIDED_TARGETS Fontconfig::Fontconfig)
-qt_find_package(gbm PROVIDED_TARGETS gbm::gbm)
-qt_find_package(WrapSystemHarfbuzz PROVIDED_TARGETS WrapSystemHarfbuzz::WrapSystemHarfbuzz)
-qt_find_package(Libinput PROVIDED_TARGETS Libinput::Libinput)
-qt_find_package(JPEG PROVIDED_TARGETS JPEG::JPEG)
-qt_find_package(WrapSystemPNG PROVIDED_TARGETS WrapSystemPNG::WrapSystemPNG)
-qt_find_package(Mtdev PROVIDED_TARGETS PkgConfig::Mtdev)
-qt_find_package(OpenGL PROVIDED_TARGETS OpenGL::GL)
-qt_find_package(GLESv2 PROVIDED_TARGETS GLESv2::GLESv2)
-qt_find_package(Tslib PROVIDED_TARGETS PkgConfig::Tslib)
-qt_find_package(Vulkan PROVIDED_TARGETS Vulkan::Vulkan)
+if(QT_FEATURE_system_zlib)
+    qt_add_qmake_lib_dependency(freetype zlib)
+endif()
+qt_find_package(Fontconfig PROVIDED_TARGETS Fontconfig::Fontconfig MODULE_NAME gui QMAKE_LIB fontconfig)
+qt_add_qmake_lib_dependency(fontconfig freetype)
+qt_find_package(gbm PROVIDED_TARGETS gbm::gbm MODULE_NAME gui QMAKE_LIB gbm)
+qt_find_package(WrapSystemHarfbuzz PROVIDED_TARGETS WrapSystemHarfbuzz::WrapSystemHarfbuzz MODULE_NAME gui QMAKE_LIB harfbuzz)
+qt_find_package(Libinput PROVIDED_TARGETS Libinput::Libinput MODULE_NAME gui QMAKE_LIB libinput)
+qt_find_package(JPEG PROVIDED_TARGETS JPEG::JPEG MODULE_NAME gui QMAKE_LIB libjpeg)
+qt_find_package(WrapSystemPNG PROVIDED_TARGETS WrapSystemPNG::WrapSystemPNG MODULE_NAME gui QMAKE_LIB libpng)
+if(QT_FEATURE_system_zlib)
+    qt_add_qmake_lib_dependency(libpng zlib)
+endif()
+qt_find_package(Mtdev PROVIDED_TARGETS PkgConfig::Mtdev MODULE_NAME gui QMAKE_LIB mtdev)
+qt_find_package(OpenGL PROVIDED_TARGETS OpenGL::GL MODULE_NAME gui QMAKE_LIB opengl)
+qt_find_package(GLESv2 PROVIDED_TARGETS GLESv2::GLESv2 MODULE_NAME gui QMAKE_LIB opengl_es2)
+qt_find_package(Tslib PROVIDED_TARGETS PkgConfig::Tslib MODULE_NAME gui QMAKE_LIB tslib)
+qt_find_package(Vulkan PROVIDED_TARGETS Vulkan::Vulkan MODULE_NAME gui QMAKE_LIB vulkan)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(Wayland PROVIDED_TARGETS Wayland::Server)
+    qt_find_package(Wayland PROVIDED_TARGETS Wayland::Server MODULE_NAME gui QMAKE_LIB wayland_server)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(X11 PROVIDED_TARGETS X11::X11)
+    qt_find_package(X11 PROVIDED_TARGETS X11::X11 MODULE_NAME gui QMAKE_LIB xlib)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(X11 PROVIDED_TARGETS ${X11_SM_LIB} ${X11_ICE_LIB})
+    qt_find_package(X11 PROVIDED_TARGETS ${X11_SM_LIB} ${X11_ICE_LIB} MODULE_NAME gui QMAKE_LIB x11sm)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB 1.9 PROVIDED_TARGETS XCB::XCB)
+    qt_find_package(XCB 1.9 PROVIDED_TARGETS XCB::XCB MODULE_NAME gui QMAKE_LIB xcb)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS ICCCM PROVIDED_TARGETS XCB::ICCCM)
+    qt_find_package(XCB COMPONENTS ICCCM PROVIDED_TARGETS XCB::ICCCM MODULE_NAME gui QMAKE_LIB xcb_icccm)
+endif()
+qt_add_qmake_lib_dependency(xcb_icccm xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS IMAGE PROVIDED_TARGETS XCB::IMAGE MODULE_NAME gui QMAKE_LIB xcb_image)
+endif()
+qt_add_qmake_lib_dependency(xcb_image xcb_shm xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS KEYSYMS PROVIDED_TARGETS XCB::KEYSYMS MODULE_NAME gui QMAKE_LIB xcb_keysyms)
+endif()
+qt_add_qmake_lib_dependency(xcb_keysyms xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS RENDERUTIL PROVIDED_TARGETS XCB::RENDERUTIL MODULE_NAME gui QMAKE_LIB xcb_renderutil)
+endif()
+qt_add_qmake_lib_dependency(xcb_renderutil xcb xcb_render)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS RANDR PROVIDED_TARGETS XCB::RANDR MODULE_NAME gui QMAKE_LIB xcb_randr)
+endif()
+qt_add_qmake_lib_dependency(xcb_randr xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS SHAPE PROVIDED_TARGETS XCB::SHAPE MODULE_NAME gui QMAKE_LIB xcb_shape)
+endif()
+qt_add_qmake_lib_dependency(xcb_shape xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS SHM PROVIDED_TARGETS XCB::SHM MODULE_NAME gui QMAKE_LIB xcb_shm)
+endif()
+qt_add_qmake_lib_dependency(xcb_shm xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS SYNC PROVIDED_TARGETS XCB::SYNC MODULE_NAME gui QMAKE_LIB xcb_sync)
+endif()
+qt_add_qmake_lib_dependency(xcb_sync xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS XFIXES PROVIDED_TARGETS XCB::XFIXES MODULE_NAME gui QMAKE_LIB xcb_xfixes)
+endif()
+qt_add_qmake_lib_dependency(xcb_xfixes xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS XINERAMA PROVIDED_TARGETS XCB::XINERAMA MODULE_NAME gui QMAKE_LIB xcb_xinerama)
+endif()
+qt_add_qmake_lib_dependency(xcb_xinerama xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(X11_XCB PROVIDED_TARGETS X11::XCB MODULE_NAME gui QMAKE_LIB xcb_xlib)
+endif()
+qt_add_qmake_lib_dependency(xcb_xlib xcb xlib)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS XKB PROVIDED_TARGETS XCB::XKB MODULE_NAME gui QMAKE_LIB xcb_xkb)
+endif()
+qt_add_qmake_lib_dependency(xcb_xkb xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS RENDER PROVIDED_TARGETS XCB::RENDER MODULE_NAME gui QMAKE_LIB xcb_render)
+endif()
+qt_add_qmake_lib_dependency(xcb_render xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS GLX PROVIDED_TARGETS XCB::GLX MODULE_NAME gui QMAKE_LIB xcb_glx)
+endif()
+qt_add_qmake_lib_dependency(xcb_glx xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XCB COMPONENTS XINPUT PROVIDED_TARGETS XCB::XINPUT MODULE_NAME gui QMAKE_LIB xcb_xinput)
+endif()
+qt_add_qmake_lib_dependency(xcb_xinput xcb)
+if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    qt_find_package(XKB 0.4.1 PROVIDED_TARGETS XKB::XKB MODULE_NAME gui QMAKE_LIB xkbcommon)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS IMAGE PROVIDED_TARGETS XCB::IMAGE)
+    qt_find_package(XKB_COMMON_X11 0.4.1 PROVIDED_TARGETS PkgConfig::XKB_COMMON_X11 MODULE_NAME gui QMAKE_LIB xkbcommon_x11)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS KEYSYMS PROVIDED_TARGETS XCB::KEYSYMS)
+    qt_find_package(XRender PROVIDED_TARGETS PkgConfig::XRender MODULE_NAME gui QMAKE_LIB xrender)
 endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS RENDERUTIL PROVIDED_TARGETS XCB::RENDERUTIL)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS RANDR PROVIDED_TARGETS XCB::RANDR)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS SHAPE PROVIDED_TARGETS XCB::SHAPE)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS SHM PROVIDED_TARGETS XCB::SHM)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS SYNC PROVIDED_TARGETS XCB::SYNC)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS XFIXES PROVIDED_TARGETS XCB::XFIXES)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS XINERAMA PROVIDED_TARGETS XCB::XINERAMA)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(X11_XCB PROVIDED_TARGETS X11::XCB)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS XKB PROVIDED_TARGETS XCB::XKB)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS RENDER PROVIDED_TARGETS XCB::RENDER)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS GLX PROVIDED_TARGETS XCB::GLX)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS XINPUT PROVIDED_TARGETS XCB::XINPUT)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XKB 0.4.1 PROVIDED_TARGETS XKB::XKB)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XKB_COMMON_X11 0.4.1 PROVIDED_TARGETS PkgConfig::XKB_COMMON_X11)
-endif()
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XRender PROVIDED_TARGETS PkgConfig::XRender)
-endif()
+qt_add_qmake_lib_dependency(xrender xlib)
 
 
 #### Tests
-
-# angle_d3d11_qdtd
-qt_config_compile_test(angle_d3d11_qdtd
-    LABEL "D3D11_QUERY_DATA_TIMESTAMP_DISJOINT"
-    CODE
-"
-#include <d3d11.h>
-
-int main(int argc, char **argv)
-{
-    (void)argc; (void)argv;
-    /* BEGIN TEST: */
-D3D11_QUERY_DATA_TIMESTAMP_DISJOINT qdtd;
-(void) qdtd;
-    /* END TEST: */
-    return 0;
-}
-")
 
 # drm_atomic
 qt_config_compile_test(drm_atomic
@@ -536,20 +541,6 @@ qt_feature("accessibility-atspi-bridge" PUBLIC PRIVATE
     CONDITION QT_FEATURE_accessibility AND QT_FEATURE_xcb AND QT_FEATURE_dbus AND ATSPI2_FOUND
 )
 qt_feature_definition("accessibility-atspi-bridge" "QT_NO_ACCESSIBILITY_ATSPI_BRIDGE" NEGATE VALUE "1")
-qt_feature("angle" PUBLIC
-    LABEL "ANGLE"
-    AUTODETECT QT_FEATURE_opengles2 OR QT_FEATURE_opengl_dynamic
-    CONDITION NOT QT_FEATURE_opengl_desktop AND QT_FEATURE_dxguid AND tests.fxc AND ( QT_FEATURE_direct3d9 OR ( WINRT AND QT_FEATURE_direct3d11 AND libs.d3dcompiler ) ) OR FIXME
-)
-qt_feature("angle_d3d11_qdtd" PRIVATE
-    LABEL "D3D11_QUERY_DATA_TIMESTAMP_DISJOINT"
-    CONDITION QT_FEATURE_angle AND TEST_angle_d3d11_qdtd
-)
-qt_feature("combined-angle-lib" PUBLIC
-    LABEL "Combined ANGLE Library"
-    AUTODETECT OFF
-    CONDITION QT_FEATURE_angle
-)
 qt_feature("directfb" PRIVATE
     SECTION "Platform plugins"
     LABEL "DirectFB"
@@ -576,33 +567,9 @@ qt_feature("directwrite2" PRIVATE
     CONDITION QT_FEATURE_directwrite1 AND libs.dwrite_2 OR FIXME
     EMIT_IF WIN32
 )
-qt_feature("dxguid" PRIVATE
-    LABEL "DirectX GUID"
-    CONDITION WIN32 AND libs.dxguid OR FIXME
-)
-qt_feature("direct3d9" PRIVATE
-    LABEL "Direct 3D 9"
-    CONDITION WIN32 AND NOT WINRT AND libs.d3d9 OR FIXME
-)
-qt_feature("dxgi" PRIVATE
-    LABEL "DirectX GI"
-    CONDITION WIN32 AND libs.dxgi OR FIXME
-)
-qt_feature("dxgi1_2" PRIVATE
-    LABEL "DirectX GI 1.2"
-    CONDITION QT_FEATURE_dxgi AND libs.dxgi1_2 OR FIXME
-)
-qt_feature("direct3d11" PRIVATE
-    LABEL "Direct 3D 11"
-    CONDITION QT_FEATURE_dxgi AND libs.d3d11 OR FIXME
-)
-qt_feature("direct3d11_1" PRIVATE
-    LABEL "Direct 3D 11.1"
-    CONDITION QT_FEATURE_direct3d11 AND QT_FEATURE_dxgi1_2 AND libs.d3d11_1 OR FIXME
-)
 qt_feature("direct2d" PRIVATE
     LABEL "Direct 2D"
-    CONDITION WIN32 AND NOT WINRT AND QT_FEATURE_direct3d11 AND libs.d2d1 OR FIXME
+    CONDITION WIN32 AND libs.d2d1 OR FIXME
 )
 qt_feature("direct2d1_1" PRIVATE
     LABEL "Direct 2D 1.1"
@@ -705,14 +672,14 @@ qt_feature("mtdev" PRIVATE
 )
 qt_feature("opengles2" PUBLIC
     LABEL "OpenGL ES 2.0"
-    CONDITION NOT WIN32 AND ( NOT WATCHOS AND NOT QT_FEATURE_opengl_desktop AND GLESv2_FOUND )
-    ENABLE INPUT_opengl STREQUAL 'es2' OR INPUT_angle STREQUAL 'yes'
+    CONDITION NOT WIN32 AND NOT WATCHOS AND NOT QT_FEATURE_opengl_desktop AND GLESv2_FOUND
+    ENABLE INPUT_opengl STREQUAL 'es2'
     DISABLE INPUT_opengl STREQUAL 'desktop' OR INPUT_opengl STREQUAL 'dynamic' OR INPUT_opengl STREQUAL 'no'
 )
 qt_feature_config("opengles2" QMAKE_PUBLIC_QT_CONFIG)
 qt_feature("opengles3" PUBLIC
     LABEL "OpenGL ES 3.0"
-    CONDITION QT_FEATURE_opengles2 AND NOT QT_FEATURE_angle AND TEST_opengles3
+    CONDITION QT_FEATURE_opengles2 AND TEST_opengles3
 )
 qt_feature("opengles31" PUBLIC
     LABEL "OpenGL ES 3.1"
@@ -724,20 +691,20 @@ qt_feature("opengles32" PUBLIC
 )
 qt_feature("opengl-desktop"
     LABEL "Desktop OpenGL"
-    CONDITION ( WIN32 AND NOT WINRT AND NOT QT_FEATURE_opengles2 AND ( MSVC OR OpenGL_OpenGL_FOUND ) ) OR ( NOT WATCHOS AND NOT WIN32 AND NOT WASM AND OpenGL_OpenGL_FOUND )
+    AUTODETECT NOT WIN32
+    CONDITION ( WIN32 AND ( MSVC OR OpenGL_FOUND ) ) OR ( NOT WATCHOS AND NOT WIN32 AND NOT WASM AND OpenGL_FOUND )
     ENABLE INPUT_opengl STREQUAL 'desktop'
     DISABLE INPUT_opengl STREQUAL 'es2' OR INPUT_opengl STREQUAL 'dynamic' OR INPUT_opengl STREQUAL 'no'
 )
 qt_feature("opengl-dynamic"
     LABEL "Dynamic OpenGL"
-    AUTODETECT OFF
-    CONDITION WIN32 AND NOT WINRT
-    DISABLE INPUT_angle STREQUAL 'yes' OR INPUT_opengl STREQUAL 'no' OR INPUT_opengl STREQUAL 'desktop'
+    CONDITION WIN32
+    DISABLE INPUT_opengl STREQUAL 'no' OR INPUT_opengl STREQUAL 'desktop'
 )
 qt_feature("dynamicgl" PUBLIC
     LABEL "Dynamic OpenGL: dynamicgl"
     CONDITION QT_FEATURE_opengl_dynamic
-    DISABLE INPUT_angle STREQUAL 'yes' OR INPUT_opengl STREQUAL 'no' OR INPUT_opengl STREQUAL 'desktop'
+    DISABLE INPUT_opengl STREQUAL 'no' OR INPUT_opengl STREQUAL 'desktop'
 )
 qt_feature_definition("opengl-dynamic" "QT_OPENGL_DYNAMIC")
 qt_feature("opengl" PUBLIC
@@ -759,7 +726,7 @@ qt_feature("openvg" PUBLIC
 )
 qt_feature("egl" PUBLIC PRIVATE
     LABEL "EGL"
-    CONDITION ( QT_FEATURE_opengl OR QT_FEATURE_openvg ) AND ( QT_FEATURE_angle OR EGL_FOUND ) AND ( QT_FEATURE_dlopen OR NOT UNIX OR INTEGRITY )
+    CONDITION ( QT_FEATURE_opengl OR QT_FEATURE_openvg ) AND EGL_FOUND AND ( QT_FEATURE_dlopen OR NOT UNIX OR INTEGRITY )
 )
 qt_feature_definition("egl" "QT_NO_EGL" NEGATE VALUE "1")
 qt_feature("egl_x11" PRIVATE
@@ -1185,14 +1152,6 @@ qt_configure_end_summary_section() # end of "Text formats" section
 qt_configure_add_summary_entry(ARGS "egl")
 qt_configure_add_summary_entry(ARGS "openvg")
 qt_configure_add_summary_section(NAME "OpenGL")
-qt_configure_add_summary_entry(
-    ARGS "angle"
-    CONDITION WIN32
-)
-qt_configure_add_summary_entry(
-    ARGS "combined-angle-lib"
-    CONDITION QT_FEATURE_angle
-)
 qt_configure_add_summary_entry(ARGS "opengl-desktop")
 qt_configure_add_summary_entry(
     ARGS "opengl-dynamic"
@@ -1279,11 +1238,6 @@ qt_configure_add_report_entry(
     TYPE WARNING
     MESSAGE "No QPA platform plugin enabled! This will produce a Qt that cannot run GUI applications.  See \"Platform backends\" in the output of --help."
     CONDITION QT_FEATURE_gui AND LINUX AND NOT ANDROID AND NOT QT_FEATURE_xcb AND NOT QT_FEATURE_eglfs AND NOT QT_FEATURE_directfb AND NOT QT_FEATURE_linuxfb
-)
-qt_configure_add_report_entry(
-    TYPE WARNING
-    MESSAGE "Using OpenGL ES 2.0 on Windows without ANGLE.  The build will most likely fail.  Specify -opengl desktop to use regular OpenGL."
-    CONDITION WIN32 AND ( QT_FEATURE_opengles2 OR QT_FEATURE_opengl_dynamic ) AND NOT QT_FEATURE_angle
 )
 qt_configure_add_report_entry(
     TYPE WARNING

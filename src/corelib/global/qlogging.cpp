@@ -226,10 +226,6 @@ static bool isDefaultCategory(const char *category)
 */
 static bool systemHasStderr()
 {
-#if defined(Q_OS_WINRT)
-    return false; // WinRT has no stderr
-#endif
-
     return true;
 }
 
@@ -268,7 +264,7 @@ static bool stderrHasConsoleAttached()
         if (qEnvironmentVariableIntValue("QT_ASSUME_STDERR_HAS_CONSOLE"))
             return true;
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
         return GetConsoleWindow();
 #elif defined(Q_OS_UNIX)
 #       ifndef _PATH_TTY
@@ -1210,7 +1206,7 @@ void QMessagePattern::setPattern(const QString &pattern)
                 static const QRegularExpression separatorRx(QStringLiteral(" separator=(?|\"([^\"]*)\"|([^ }]*))"));
                 QRegularExpressionMatch m = depthRx.match(lexeme);
                 if (m.hasMatch()) {
-                    int depth = m.capturedRef(1).toInt();
+                    int depth = m.capturedView(1).toInt();
                     if (depth <= 0)
                         error += QLatin1String("QT_MESSAGE_PATTERN: %{backtrace} depth must be a number greater than 0\n");
                     else
@@ -1695,7 +1691,7 @@ static bool win_message_handler(QtMsgType type, const QMessageLogContext &contex
     if (shouldLogToStderr())
         return false; // Leave logging up to stderr handler
 
-    const QString formattedMessage = qFormatLogMessage(type, context, message).append('\n');
+    const QString formattedMessage = qFormatLogMessage(type, context, message).append(QLatin1Char('\n'));
     win_outputDebugString_helper(formattedMessage);
 
     return true; // Prevent further output to stderr
@@ -1851,10 +1847,7 @@ static void qt_message_print(QtMsgType msgType, const QMessageLogContext &contex
 
 static void qt_message_print(const QString &message)
 {
-#if defined(Q_OS_WINRT)
-    win_outputDebugString_helper(message);
-    return;
-#elif defined(Q_OS_WIN) && !defined(QT_BOOTSTRAPPED)
+#if defined(Q_OS_WIN) && !defined(QT_BOOTSTRAPPED)
     if (!shouldLogToStderr()) {
         win_outputDebugString_helper(message);
         return;

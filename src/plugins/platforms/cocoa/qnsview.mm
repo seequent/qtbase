@@ -39,6 +39,9 @@
 
 #include <QtGui/qtguiglobal.h>
 
+#include <AppKit/AppKit.h>
+#include <MetalKit/MetalKit.h>
+
 #include "qnsview.h"
 #include "qcocoawindow.h"
 #include "qcocoahelpers.h"
@@ -308,7 +311,7 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSViewMouseMoveHelper);
     if ([self isTransparentForUserInput])
         return NO;
     if (!m_platformWindow->windowIsPopupType())
-        QWindowSystemInterface::handleWindowActivated([self topLevelWindow]);
+        QWindowSystemInterface::handleWindowActivated([self topLevelWindow], Qt::ActiveWindowFocusReason);
     return YES;
 }
 

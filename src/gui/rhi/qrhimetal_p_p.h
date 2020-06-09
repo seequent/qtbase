@@ -63,8 +63,8 @@ struct QMetalBuffer : public QRhiBuffer
 {
     QMetalBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, int size);
     ~QMetalBuffer();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
     QRhiBuffer::NativeBuffer nativeBuffer() override;
 
     QMetalBufferData *d;
@@ -79,10 +79,11 @@ struct QMetalRenderBufferData;
 struct QMetalRenderBuffer : public QRhiRenderBuffer
 {
     QMetalRenderBuffer(QRhiImplementation *rhi, Type type, const QSize &pixelSize,
-                       int sampleCount, QRhiRenderBuffer::Flags flags);
+                       int sampleCount, QRhiRenderBuffer::Flags flags,
+                       QRhiTexture::Format backingFormatHint);
     ~QMetalRenderBuffer();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
     QRhiTexture::Format backingFormat() const override;
 
     QMetalRenderBufferData *d;
@@ -99,12 +100,12 @@ struct QMetalTexture : public QRhiTexture
     QMetalTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize,
                   int sampleCount, Flags flags);
     ~QMetalTexture();
-    void release() override;
-    bool build() override;
-    bool buildFrom(NativeTexture src) override;
+    void destroy() override;
+    bool create() override;
+    bool createFrom(NativeTexture src) override;
     NativeTexture nativeTexture() override;
 
-    bool prepareBuild(QSize *adjustedSize = nullptr);
+    bool prepareCreate(QSize *adjustedSize = nullptr);
 
     QMetalTextureData *d;
     int mipLevelCount = 0;
@@ -123,8 +124,8 @@ struct QMetalSampler : public QRhiSampler
     QMetalSampler(QRhiImplementation *rhi, Filter magFilter, Filter minFilter, Filter mipmapMode,
                   AddressMode u, AddressMode v, AddressMode w);
     ~QMetalSampler();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     QMetalSamplerData *d;
     uint generation = 0;
@@ -137,7 +138,7 @@ struct QMetalRenderPassDescriptor : public QRhiRenderPassDescriptor
 {
     QMetalRenderPassDescriptor(QRhiImplementation *rhi);
     ~QMetalRenderPassDescriptor();
-    void release() override;
+    void destroy() override;
     bool isCompatible(const QRhiRenderPassDescriptor *other) const override;
 
     // there is no MTLRenderPassDescriptor here as one will be created for each pass in beginPass()
@@ -156,7 +157,7 @@ struct QMetalReferenceRenderTarget : public QRhiRenderTarget
 {
     QMetalReferenceRenderTarget(QRhiImplementation *rhi);
     ~QMetalReferenceRenderTarget();
-    void release() override;
+    void destroy() override;
 
     QSize pixelSize() const override;
     float devicePixelRatio() const override;
@@ -169,14 +170,14 @@ struct QMetalTextureRenderTarget : public QRhiTextureRenderTarget
 {
     QMetalTextureRenderTarget(QRhiImplementation *rhi, const QRhiTextureRenderTargetDescription &desc, Flags flags);
     ~QMetalTextureRenderTarget();
-    void release() override;
+    void destroy() override;
 
     QSize pixelSize() const override;
     float devicePixelRatio() const override;
     int sampleCount() const override;
 
     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
-    bool build() override;
+    bool create() override;
 
     QMetalRenderTargetData *d;
     friend class QRhiMetal;
@@ -186,8 +187,8 @@ struct QMetalShaderResourceBindings : public QRhiShaderResourceBindings
 {
     QMetalShaderResourceBindings(QRhiImplementation *rhi);
     ~QMetalShaderResourceBindings();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     QVarLengthArray<QRhiShaderResourceBinding, 8> sortedBindings;
     int maxBinding = -1;
@@ -233,8 +234,8 @@ struct QMetalGraphicsPipeline : public QRhiGraphicsPipeline
 {
     QMetalGraphicsPipeline(QRhiImplementation *rhi);
     ~QMetalGraphicsPipeline();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     QMetalGraphicsPipelineData *d;
     uint generation = 0;
@@ -248,8 +249,8 @@ struct QMetalComputePipeline : public QRhiComputePipeline
 {
     QMetalComputePipeline(QRhiImplementation *rhi);
     ~QMetalComputePipeline();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     QMetalComputePipelineData *d;
     uint generation = 0;
@@ -264,7 +265,7 @@ struct QMetalCommandBuffer : public QRhiCommandBuffer
 {
     QMetalCommandBuffer(QRhiImplementation *rhi);
     ~QMetalCommandBuffer();
-    void release() override;
+    void destroy() override;
 
     QMetalCommandBufferData *d = nullptr;
     QRhiMetalCommandBufferNativeHandles nativeHandlesStruct;
@@ -306,7 +307,7 @@ struct QMetalSwapChain : public QRhiSwapChain
 {
     QMetalSwapChain(QRhiImplementation *rhi);
     ~QMetalSwapChain();
-    void release() override;
+    void destroy() override;
 
     QRhiCommandBuffer *currentFrameCommandBuffer() override;
     QRhiRenderTarget *currentFrameRenderTarget() override;
@@ -314,7 +315,7 @@ struct QMetalSwapChain : public QRhiSwapChain
 
     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
 
-    bool buildOrResize() override;
+    bool createOrResize() override;
 
     void chooseFormats();
 
@@ -349,7 +350,8 @@ public:
     QRhiRenderBuffer *createRenderBuffer(QRhiRenderBuffer::Type type,
                                          const QSize &pixelSize,
                                          int sampleCount,
-                                         QRhiRenderBuffer::Flags flags) override;
+                                         QRhiRenderBuffer::Flags flags,
+                                         QRhiTexture::Format backingFormatHint) override;
     QRhiTexture *createTexture(QRhiTexture::Format format,
                                const QSize &pixelSize,
                                int sampleCount,

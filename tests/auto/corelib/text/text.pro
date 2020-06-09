@@ -15,9 +15,11 @@ SUBDIRS = \
     qstring_no_cast_from_bytearray \
     qstringapisymmetry \
     qstringbuilder \
+    qstringconverter \
     qstringiterator \
     qstringlist \
     qstringmatcher \
     qstringref \
+    qstringtokenizer \
     qstringview \
     qtextboundaryfinder

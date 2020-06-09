@@ -785,7 +785,7 @@ void QListView::mouseMoveEvent(QMouseEvent *e)
         && d->showElasticBand
         && d->selectionMode != SingleSelection
         && d->selectionMode != NoSelection) {
-        QRect rect(d->pressedPosition, e->pos() + QPoint(horizontalOffset(), verticalOffset()));
+        QRect rect(d->pressedPosition, e->position().toPoint() + QPoint(horizontalOffset(), verticalOffset()));
         rect = rect.normalized();
         d->viewport->update(d->mapToViewport(rect.united(d->elasticBand)));
         d->elasticBand = rect;
@@ -909,10 +909,50 @@ void QListView::dragLeaveEvent(QDragLeaveEvent *e)
 /*!
   \reimp
 */
-void QListView::dropEvent(QDropEvent *e)
+void QListView::dropEvent(QDropEvent *event)
 {
-    if (!d_func()->commonListView->filterDropEvent(e))
-        QAbstractItemView::dropEvent(e);
+    Q_D(QListView);
+
+    if (event->source() == this && (event->dropAction() == Qt::MoveAction ||
+                                    dragDropMode() == QAbstractItemView::InternalMove)) {
+        QModelIndex topIndex;
+        bool topIndexDropped = false;
+        int col = -1;
+        int row = -1;
+        if (d->dropOn(event, &row, &col, &topIndex)) {
+            const QVector<QModelIndex> selIndexes = selectedIndexes();
+            QVector<QPersistentModelIndex> persIndexes;
+            persIndexes.reserve(selIndexes.count());
+
+            for (const auto &index : selIndexes) {
+                persIndexes.append(index);
+                if (index == topIndex) {
+                    topIndexDropped = true;
+                    break;
+                }
+            }
+
+            if (!topIndexDropped) {
+                std::sort(persIndexes.begin(), persIndexes.end()); // The dropped items will remain in the same visual order.
+
+                QPersistentModelIndex dropRow = model()->index(row, col, topIndex);
+
+                int r = row == -1 ? model()->rowCount() : (dropRow.row() >= 0 ? dropRow.row() : row);
+                for (int i = 0; i < persIndexes.count(); ++i) {
+                    const QPersistentModelIndex &pIndex = persIndexes.at(i);
+                    model()->moveRow(QModelIndex(), pIndex.row(), QModelIndex(), r);
+                    r = pIndex.row() + 1;   // Dropped items are inserted contiguously and in the right order.
+                }
+
+                event->accept();
+                // Don't want QAbstractItemView to delete it because it was "moved" we already did it
+                event->setDropAction(Qt::CopyAction);
+            }
+        }
+    }
+
+    if (!d->commonListView->filterDropEvent(event))
+        QAbstractItemView::dropEvent(event);
 }
 
 /*!
@@ -2095,7 +2135,7 @@ void QListModeViewBase::dragMoveEvent(QDragMoveEvent *event)
     event->ignore();
 
     // can't use indexAt, doesn't account for spacing.
-    QPoint p = event->pos();
+    QPoint p = event->position().toPoint();
     QRect rect(p.x() + horizontalOffset(), p.y() + verticalOffset(), 1, 1);
     rect.adjust(-dd->spacing(), -dd->spacing(), dd->spacing(), dd->spacing());
     const QVector<QModelIndex> intersectVector = dd->intersectingSet(rect);
@@ -2107,7 +2147,7 @@ void QListModeViewBase::dragMoveEvent(QDragMoveEvent *event)
 
         if (index.isValid() && dd->showDropIndicator) {
             QRect rect = qq->visualRect(index);
-            dd->dropIndicatorPosition = position(event->pos(), rect, index);
+            dd->dropIndicatorPosition = position(event->position().toPoint(), rect, index);
             // if spacing, should try to draw between items, not just next to item.
             switch (dd->dropIndicatorPosition) {
             case QAbstractItemView::AboveItem:
@@ -2151,7 +2191,7 @@ void QListModeViewBase::dragMoveEvent(QDragMoveEvent *event)
         dd->viewport->update();
     } // can drop
 
-    if (dd->shouldAutoScroll(event->pos()))
+    if (dd->shouldAutoScroll(event->position().toPoint()))
         qq->startAutoScroll();
 }
 
@@ -2172,9 +2212,9 @@ bool QListModeViewBase::dropOn(QDropEvent *event, int *dropRow, int *dropCol, QM
         return false;
 
     QModelIndex index;
-    if (dd->viewport->rect().contains(event->pos())) {
+    if (dd->viewport->rect().contains(event->position().toPoint())) {
         // can't use indexAt, doesn't account for spacing.
-        QPoint p = event->pos();
+        QPoint p = event->position().toPoint();
         QRect rect(p.x() + horizontalOffset(), p.y() + verticalOffset(), 1, 1);
         rect.adjust(-dd->spacing(), -dd->spacing(), dd->spacing(), dd->spacing());
         const QVector<QModelIndex> intersectVector = dd->intersectingSet(rect);
@@ -2189,7 +2229,7 @@ bool QListModeViewBase::dropOn(QDropEvent *event, int *dropRow, int *dropCol, QM
         int row = -1;
         int col = -1;
         if (index != dd->root) {
-            dd->dropIndicatorPosition = position(event->pos(), qq->visualRect(index), index);
+            dd->dropIndicatorPosition = position(event->position().toPoint(), qq->visualRect(index), index);
             switch (dd->dropIndicatorPosition) {
             case QAbstractItemView::AboveItem:
                 row = index.row();
@@ -2856,7 +2896,7 @@ bool QIconModeViewBase::filterDropEvent(QDropEvent *e)
 
     const QSize contents = contentsSize;
     QPoint offset(horizontalOffset(), verticalOffset());
-    QPoint end = e->pos() + offset;
+    QPoint end = e->position().toPoint() + offset;
     if (qq->acceptDrops()) {
         const Qt::ItemFlags dropableFlags = Qt::ItemIsDropEnabled|Qt::ItemIsEnabled;
         const QVector<QModelIndex> &dropIndices = intersectingSet(QRect(end, QSize(1, 1)));
@@ -2917,17 +2957,17 @@ bool QIconModeViewBase::filterDragMoveEvent(QDragMoveEvent *e)
     QRect itemsRect = this->itemsRect(draggedItems);
     viewport()->update(itemsRect.translated(draggedItemsDelta()));
     // update position
-    draggedItemsPos = e->pos();
+    draggedItemsPos = e->position().toPoint();
     // get new items rect
     viewport()->update(itemsRect.translated(draggedItemsDelta()));
     // set the item under the cursor to current
     QModelIndex index;
     if (movement() == QListView::Snap) {
-        QRect rect(snapToGrid(e->pos() + offset()), gridSize());
+        QRect rect(snapToGrid(e->position().toPoint() + offset()), gridSize());
         const QVector<QModelIndex> intersectVector = intersectingSet(rect);
         index = intersectVector.count() > 0 ? intersectVector.last() : QModelIndex();
     } else {
-        index = qq->indexAt(e->pos());
+        index = qq->indexAt(e->position().toPoint());
     }
     // check if we allow drops here
     if (draggedItems.contains(index))
@@ -2938,7 +2978,7 @@ bool QIconModeViewBase::filterDragMoveEvent(QDragMoveEvent *e)
         e->accept(); // allow dropping in empty areas
 
     // the event was treated. do autoscrolling
-    if (dd->shouldAutoScroll(e->pos()))
+    if (dd->shouldAutoScroll(e->position().toPoint()))
         dd->startAutoScroll();
     return true;
 }

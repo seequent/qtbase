@@ -165,7 +165,6 @@
 #include <QPainter>
 #include <QFontMetrics>
 #include <QStyleOption>
-#include <QDesktopWidget>
 #include <private/qdesktopwidget_p.h>
 #include <QDebug>
 #include <qmath.h>
@@ -589,7 +588,7 @@ void QMdiAreaTabBar::mousePressEvent(QMouseEvent *event)
         return;
     }
 
-    QMdiSubWindow *subWindow = subWindowFromIndex(tabAt(event->pos()));
+    QMdiSubWindow *subWindow = subWindowFromIndex(tabAt(event->position().toPoint()));
     if (!subWindow) {
         event->ignore();
         return;
@@ -1733,7 +1732,7 @@ QMdiArea::~QMdiArea()
 */
 QSize QMdiArea::sizeHint() const
 {
-    // Calculate a proper scale factor for QDesktopWidget::size().
+    // Calculate a proper scale factor for the desktop's size.
     // This also takes into account that we can have nested workspaces.
     int nestedCount = 0;
     QWidget *widget = this->parentWidget();
@@ -1744,7 +1743,7 @@ QSize QMdiArea::sizeHint() const
     }
     const int scaleFactor = 3 * (nestedCount + 1);
 
-    QSize desktopSize = QDesktopWidgetPrivate::size();
+    QSize desktopSize = QGuiApplication::primaryScreen()->virtualSize();
     QSize size(desktopSize.width() * 2 / scaleFactor, desktopSize.height() * 2 / scaleFactor);
     for (QMdiSubWindow *child : d_func()->childWindows) {
         if (!sanityCheck(child, "QMdiArea::sizeHint"))

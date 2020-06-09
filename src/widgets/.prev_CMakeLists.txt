@@ -12,7 +12,7 @@ qt_add_module(Widgets
         itemviews/qfileiconprovider.cpp itemviews/qfileiconprovider.h itemviews/qfileiconprovider_p.h
         kernel/qapplication.cpp kernel/qapplication.h kernel/qapplication_p.h
         kernel/qboxlayout.cpp kernel/qboxlayout.h
-        kernel/qdesktopwidget.cpp kernel/qdesktopwidget.h kernel/qdesktopwidget_p.h
+        kernel/qdesktopwidget.cpp kernel/qdesktopwidget_p.h
         kernel/qgesture.cpp kernel/qgesture.h kernel/qgesture_p.h
         kernel/qgesturemanager.cpp kernel/qgesturemanager_p.h
         kernel/qgesturerecognizer.cpp kernel/qgesturerecognizer.h
@@ -306,7 +306,7 @@ qt_extend_target(Widgets CONDITION MACOS
         z
 )
 
-qt_extend_target(Widgets CONDITION WIN32 AND NOT WINRT
+qt_extend_target(Widgets CONDITION WIN32
     LIBRARIES
         dwmapi
         shell32
@@ -715,11 +715,6 @@ qt_extend_target(Widgets CONDITION QT_FEATURE_columnview
 qt_extend_target(Widgets CONDITION QT_FEATURE_datawidgetmapper
     SOURCES
         itemviews/qdatawidgetmapper.cpp itemviews/qdatawidgetmapper.h
-)
-
-qt_extend_target(Widgets CONDITION QT_FEATURE_dirmodel
-    SOURCES
-        itemviews/qdirmodel.cpp itemviews/qdirmodel.h
 )
 
 qt_extend_target(Widgets CONDITION QT_FEATURE_listview

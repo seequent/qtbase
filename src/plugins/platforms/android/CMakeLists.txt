@@ -4,7 +4,7 @@
 ## QAndroidIntegrationPlugin Plugin:
 #####################################################################
 
-qt_add_plugin(QAndroidIntegrationPlugin
+qt_internal_add_plugin(QAndroidIntegrationPlugin
     OUTPUT_NAME qtforandroid
     TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES android # special case
@@ -44,12 +44,10 @@ qt_add_plugin(QAndroidIntegrationPlugin
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${QT_SOURCE_TREE}/src/3rdparty/android
     PUBLIC_LIBRARIES
-        Qt::AccessibilitySupportPrivate
         Qt::Core
         Qt::CorePrivate
         Qt::EglSupportPrivate
         Qt::EventDispatcherSupportPrivate
-        Qt::FontDatabaseSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
         android
@@ -70,17 +68,10 @@ qt_add_plugin(QAndroidIntegrationPlugin
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_vulkan
-    SOURCES
-        qandroidplatformvulkaninstance.cpp qandroidplatformvulkaninstance.h
-        qandroidplatformvulkanwindow.cpp qandroidplatformvulkanwindow.h
-    PUBLIC_LIBRARIES
-        Qt::VulkanSupportPrivate
-)
 
-qt_extend_target(QAndroidIntegrationPlugin CONDITION TARGET Qt::PlatformCompositorSupportPrivate
+qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_opengl
     PUBLIC_LIBRARIES
-        Qt::PlatformCompositorSupportPrivate
+        Qt::OpenGLPrivate
 )
 
 qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_android_style_assets
@@ -91,4 +82,10 @@ qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_android_style_as
 qt_extend_target(QAndroidIntegrationPlugin CONDITION NOT QT_FEATURE_android_style_assets
     SOURCES
         extract-dummy.cpp
+)
+
+qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_vulkan
+    SOURCES
+        qandroidplatformvulkaninstance.cpp qandroidplatformvulkaninstance.h
+        qandroidplatformvulkanwindow.cpp qandroidplatformvulkanwindow.h
 )

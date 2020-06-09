@@ -80,9 +80,9 @@ QT_FOR_EACH_STATIC_TYPE(RETURN_METATYPENAME_STRING)
     return nullptr;
  }
 
-Generator::Generator(ClassDef *classDef, const QVector<QByteArray> &metaTypes, const QHash<QByteArray, QByteArray> &knownQObjectClasses, const QHash<QByteArray, QByteArray> &knownGadgets, FILE *outfile)
+Generator::Generator(ClassDef *classDef, const QVector<QByteArray> &metaTypes, const QHash<QByteArray, QByteArray> &knownQObjectClasses, const QHash<QByteArray, QByteArray> &knownGadgets, FILE *outfile, bool requireCompleteTypes)
     : out(outfile), cdef(classDef), metaTypes(metaTypes), knownQObjectClasses(knownQObjectClasses)
-    , knownGadgets(knownGadgets)
+    , knownGadgets(knownGadgets), requireCompleteTypes(requireCompleteTypes)
 {
     if (cdef->superclassList.size())
         purestSuperClass = cdef->superclassList.constFirst().first;
@@ -350,7 +350,7 @@ void Generator::generateCode()
 
     int methodCount = cdef->signalList.count() + cdef->slotList.count() + cdef->methodList.count();
     fprintf(out, "    %4d, %4d, // methods\n", methodCount, methodCount ? index : 0);
-    index += methodCount * 5;
+    index += methodCount * QMetaObjectPrivate::IntsPerMethod;
     if (cdef->revisionedMethods)
         index += methodCount;
     int paramsIndex = index;
@@ -391,20 +391,22 @@ void Generator::generateCode()
 //
     generateClassInfos();
 
+    int initialMetaTypeOffset = cdef->propertyList.count();
+
 //
 // Build signals array first, otherwise the signal indices would be wrong
 //
-    generateFunctions(cdef->signalList, "signal", MethodSignal, paramsIndex);
+    generateFunctions(cdef->signalList, "signal", MethodSignal, paramsIndex, initialMetaTypeOffset);
 
 //
 // Build slots array
 //
-    generateFunctions(cdef->slotList, "slot", MethodSlot, paramsIndex);
+    generateFunctions(cdef->slotList, "slot", MethodSlot, paramsIndex, initialMetaTypeOffset);
 
 //
 // Build method array
 //
-    generateFunctions(cdef->methodList, "method", MethodMethod, paramsIndex);
+    generateFunctions(cdef->methodList, "method", MethodMethod, paramsIndex, initialMetaTypeOffset);
 
 //
 // Build method version arrays
@@ -438,7 +440,7 @@ void Generator::generateCode()
 // Build constructors array
 //
     if (isConstructible)
-        generateFunctions(cdef->constructorList, "constructor", MethodConstructor, paramsIndex);
+        generateFunctions(cdef->constructorList, "constructor", MethodConstructor, paramsIndex, initialMetaTypeOffset);
 
 //
 // Terminate data array
@@ -553,14 +555,48 @@ void Generator::generateCode()
     else
         fprintf(out, "    qt_meta_extradata_%s,\n", qualifiedClassNameIdentifier.constData());
 
-    if (cdef->propertyList.isEmpty()) {
+    bool constructorListContainsArgument = false;
+    for (int i = 0; i< cdef->constructorList.count(); ++i) {
+        const FunctionDef& fdef = cdef->constructorList.at(i);
+        if (fdef.arguments.count()) {
+            constructorListContainsArgument = true;
+            break;
+        }
+    }
+    if (cdef->propertyList.isEmpty() && cdef->signalList.isEmpty() && cdef->slotList.isEmpty() && cdef->methodList.isEmpty() && !constructorListContainsArgument) {
         fprintf(out, "    nullptr,\n");
     } else {
-        fprintf(out, "qt_metaTypeArray<\n");
+        bool needsComma = false;
+        if (!requireCompleteTypes) {
+            fprintf(out, "qt_incomplete_metaTypeArray<qt_meta_stringdata_%s_t\n", qualifiedClassNameIdentifier.constData());
+            needsComma = true;
+        } else {
+            fprintf(out, "qt_metaTypeArray<\n");
+        }
         for (int i = 0; i < cdef->propertyList.count(); ++i) {
             const PropertyDef &p = cdef->propertyList.at(i);
-            fprintf(out, "%s%s", i == 0 ? "" : ", ", p.type.data());
+            fprintf(out, "%s%s", needsComma ? ", " : "", p.type.data());
+            needsComma = true;
         }
+        for (const QVector<FunctionDef> &methodContainer: {cdef->signalList, cdef->slotList, cdef->methodList} ) {
+            for (int i = 0; i< methodContainer.count(); ++i) {
+                const FunctionDef& fdef = methodContainer.at(i);
+                fprintf(out, "%s%s", needsComma ? ", " : "", fdef.type.name.data());
+                needsComma = true;
+                for (const auto &argument: fdef.arguments) {
+                    fprintf(out, ", %s", argument.type.name.data());
+                }
+            }
+            fprintf(out, "\n");
+        }
+        for (int i = 0; i< cdef->constructorList.count(); ++i) {
+            const FunctionDef& fdef = cdef->constructorList.at(i);
+            for (const auto &argument: fdef.arguments) {
+                fprintf(out, "%s%s", needsComma ? ", " : "", argument.type.name.data());
+                needsComma = true;
+            }
+        }
+        fprintf(out, "\n");
         fprintf(out, ">,\n");
     }
 
@@ -571,6 +607,7 @@ void Generator::generateCode()
 
     fprintf(out, "\nconst QMetaObject *%s::metaObject() const\n{\n    return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;\n}\n",
             cdef->qualified.constData());
+
 
 //
 // Generate smart cast function
@@ -614,6 +651,11 @@ void Generator::generateCode()
 //
     for (int signalindex = 0; signalindex < cdef->signalList.size(); ++signalindex)
         generateSignal(&cdef->signalList[signalindex], signalindex);
+
+//
+// Generate QProperty forwarding API
+//
+    generateQPropertyApi();
 
 //
 // Generate plugin meta data
@@ -683,11 +725,11 @@ void Generator::registerByteArrayVector(const QVector<QByteArray> &list)
         strreg(ba);
 }
 
-void Generator::generateFunctions(const QVector<FunctionDef>& list, const char *functype, int type, int &paramsIndex)
+void Generator::generateFunctions(const QVector<FunctionDef>& list, const char *functype, int type, int &paramsIndex, int &initialMetatypeOffset)
 {
     if (list.isEmpty())
         return;
-    fprintf(out, "\n // %ss: name, argc, parameters, tag, flags\n", functype);
+    fprintf(out, "\n // %ss: name, argc, parameters, tag, flags, initial metatype offsets\n", functype);
 
     for (int i = 0; i < list.count(); ++i) {
         const FunctionDef &f = list.at(i);
@@ -722,10 +764,12 @@ void Generator::generateFunctions(const QVector<FunctionDef>& list, const char *
         }
 
         int argc = f.arguments.count();
-        fprintf(out, "    %4d, %4d, %4d, %4d, 0x%02x /* %s */,\n",
-            stridx(f.name), argc, paramsIndex, stridx(f.tag), flags, comment.constData());
+        fprintf(out, "    %4d, %4d, %4d, %4d, 0x%02x, %4d /* %s */,\n",
+            stridx(f.name), argc, paramsIndex, stridx(f.tag), flags, initialMetatypeOffset, comment.constData());
 
         paramsIndex += 1 + argc * 2;
+        // constructors don't have a return type
+        initialMetatypeOffset += (f.isConstructor ? 0 : 1) + argc;
     }
 }
 
@@ -1504,8 +1548,12 @@ void Generator::generateStaticMetacall()
                 const PropertyDef &p = cdef->propertyList.at(propindex);
                 if (!p.isQProperty)
                     continue;
-                fprintf(out, "        case %d: observer->setSource(_t->%s); break;\n",
-                        propindex, p.name.constData());
+                QByteArray prefix = "_t->";
+                if (p.inPrivateClass.size()) {
+                    prefix += p.inPrivateClass + "->";
+                }
+                fprintf(out, "        case %d: observer->setSource(%s%s); break;\n",
+                        propindex, prefix.constData(), p.name.constData());
             }
             fprintf(out, "        default: break;\n");
             fprintf(out, "        }\n");
@@ -1521,8 +1569,12 @@ void Generator::generateStaticMetacall()
                 const PropertyDef &p = cdef->propertyList.at(propindex);
                 if (!p.isQProperty)
                     continue;
-                fprintf(out, "        case %d: _t->%s.setBinding(*reinterpret_cast<QPropertyBinding<%s> *>(_a[0])); break;\n",
-                        propindex, p.name.constData(), p.type.constData());
+                QByteArray prefix = "_t->";
+                if (p.inPrivateClass.size()) {
+                    prefix += p.inPrivateClass + "->";
+                }
+                fprintf(out, "        case %d: %s%s.setBinding(*reinterpret_cast<QPropertyBinding<%s> *>(_a[0])); break;\n",
+                        propindex, prefix.constData(), p.name.constData(), p.type.constData());
             }
             fprintf(out, "        default: break;\n");
             fprintf(out, "        }\n");
@@ -1611,6 +1663,106 @@ void Generator::generateSignal(FunctionDef *def,int index)
     if (def->normalizedType != "void")
         fprintf(out, "    return _t0;\n");
     fprintf(out, "}\n");
+}
+
+void Generator::generateQPropertyApi()
+{
+    for (const PrivateQPropertyDef &property: cdef->privateQProperties) {
+        auto printAccessor = [this, property](bool constAccessor = false) {
+            const char *constOrNot = constAccessor ? "const " : " ";
+            fprintf(out, "    const size_t propertyMemberOffset = reinterpret_cast<size_t>(&(static_cast<%s *>(nullptr)->%s));\n", cdef->qualified.constData(), property.name.constData());
+            fprintf(out, "    %sauto *thisPtr = reinterpret_cast<%s%s *>(reinterpret_cast<%schar *>(this) - propertyMemberOffset);\n", constOrNot, constOrNot, cdef->qualified.constData(), constOrNot);
+        };
+
+        // property accessor
+        fprintf(out, "\n%s %s::_qt_property_api_%s::value() const\n{\n",
+                property.type.name.constData(),
+                cdef->qualified.constData(),
+                property.name.constData());
+        printAccessor(/*const*/true);
+        fprintf(out, "    return thisPtr->%s->%s.value();\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // property value setter
+        fprintf(out, "\nvoid %s::_qt_property_api_%s::setValue(const %s &value)\n{\n",
+                cdef->qualified.constData(),
+                property.name.constData(),
+                property.type.name.constData());
+        printAccessor();
+        fprintf(out, "    return thisPtr->%s->%s.setValue(value);\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // property value move setter
+        fprintf(out, "\nvoid %s::_qt_property_api_%s::setValue(%s &&value)\n{\n",
+                cdef->qualified.constData(),
+                property.name.constData(),
+                property.type.name.constData());
+        printAccessor();
+        fprintf(out, "    return thisPtr->%s->%s.setValue(std::move(value));\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // binding setter
+        fprintf(out, "\nQPropertyBinding<%s> %s::_qt_property_api_%s::setBinding(const QPropertyBinding<%s> &binding)\n{\n",
+                property.type.name.constData(),
+                cdef->qualified.constData(),
+                property.name.constData(),
+                property.type.name.constData());
+        printAccessor();
+        fprintf(out, "    return thisPtr->%s->%s.setBinding(binding);\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // binding move setter
+        fprintf(out, "\nQPropertyBinding<%s> %s::_qt_property_api_%s::setBinding(QPropertyBinding<%s> &&binding)\n{\n",
+                property.type.name.constData(),
+                cdef->qualified.constData(),
+                property.name.constData(),
+                property.type.name.constData());
+        printAccessor();
+        fprintf(out, "    return thisPtr->%s->%s.setBinding(std::move(binding));\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // untyped binding setter
+        fprintf(out, "\nbool %s::_qt_property_api_%s::setBinding(const QUntypedPropertyBinding &binding)\n{\n",
+                cdef->qualified.constData(),
+                property.name.constData());
+        printAccessor();
+        fprintf(out, "    return thisPtr->%s->%s.setBinding(binding);\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // binding bool getter
+        fprintf(out, "\nbool %s::_qt_property_api_%s::hasBinding() const\n{\n",
+                cdef->qualified.constData(),
+                property.name.constData());
+        printAccessor(/*const*/true);
+        fprintf(out, "    return thisPtr->%s->%s.hasBinding();\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // binding getter
+        fprintf(out, "\nQPropertyBinding<%s> %s::_qt_property_api_%s::binding() const\n{\n",
+                property.type.name.constData(),
+                cdef->qualified.constData(),
+                property.name.constData());
+        printAccessor(/*const*/true);
+        fprintf(out, "    return thisPtr->%s->%s.binding();\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // binding taker
+        fprintf(out, "\nQPropertyBinding<%s> %s::_qt_property_api_%s::takeBinding()\n{\n",
+                property.type.name.constData(),
+                cdef->qualified.constData(),
+                property.name.constData());
+        printAccessor();
+        fprintf(out, "    return thisPtr->%s->%s.takeBinding();\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n");
+
+        // property setter function
+        fprintf(out, "\nvoid %s::%s(const %s &value)\n{\n",
+                cdef->qualified.constData(),
+                property.setter.constData(),
+                property.type.name.constData());
+        fprintf(out, "    %s->%s.setValue(value);\n", property.accessor.constData(), property.name.constData());
+        fprintf(out, "}\n\n");
+    }
 }
 
 static CborError jsonValueToCbor(CborEncoder *parent, const QJsonValue &v);

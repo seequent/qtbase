@@ -113,9 +113,6 @@ src_3rdparty_freetype.target = sub-3rdparty-freetype
 src_3rdparty_gradle.subdir = $$PWD/3rdparty/gradle
 src_3rdparty_gradle.target = sub-3rdparty-gradle
 
-src_angle.subdir = $$PWD/angle
-src_angle.target = sub-angle
-
 src_gui.subdir = $$PWD/gui
 src_gui.target = sub-gui
 src_gui.depends = src_corelib src_tools_rcc
@@ -162,7 +159,7 @@ src_android.subdir = $$PWD/android
     }
 }
 SUBDIRS += src_tools_bootstrap src_tools_moc src_tools_rcc src_tools_tracegen
-qtConfig(regularexpression):pcre2 {
+qtConfig(regularexpression):!qtConfig(system-pcre2):pcre2 {
     SUBDIRS += src_3rdparty_pcre2
     src_corelib.depends += src_3rdparty_pcre2
 }
@@ -176,16 +173,10 @@ qtConfig(network) {
 qtConfig(sql) {
     SUBDIRS += src_sql
     src_plugins.depends += src_sql
-
-    contains(QT_CONFIG, private_tests) {
-        src_sql_doc_snippets.subdir = sql/doc/snippets
-        src_sql_doc_snippets.target = sub-sql-doc-snippets
-        src_sql_doc_snippets.depends = src_sql
-        SUBDIRS += src_sql_doc_snippets
-    }
 }
 qtConfig(xml): SUBDIRS += src_xml
 qtConfig(testlib): SUBDIRS += src_testlib
+
 qtConfig(dbus) {
     force_dbus_bootstrap|qtConfig(private_tests): \
         SUBDIRS += src_tools_bootstrap_dbus
@@ -209,10 +200,6 @@ qtConfig(gui) {
         SUBDIRS += src_3rdparty_harfbuzzng
         src_gui.depends += src_3rdparty_harfbuzzng
     }
-    qtConfig(angle) {
-        SUBDIRS += src_angle
-        src_gui.depends += src_angle
-    }
     qtConfig(png):!qtConfig(system-png) {
         SUBDIRS += src_3rdparty_libpng
         src_3rdparty_freetype.depends += src_3rdparty_libpng
@@ -220,7 +207,7 @@ qtConfig(gui) {
     }
     qtConfig(freetype):!qtConfig(system-freetype) {
         SUBDIRS += src_3rdparty_freetype
-        src_platformsupport.depends += src_3rdparty_freetype
+        src_gui.depends += src_3rdparty_freetype
     }
     qtConfig(vkgen) {
         SUBDIRS += src_tools_qvkgen
@@ -245,9 +232,7 @@ qtConfig(gui) {
             SUBDIRS += src_printsupport
             src_plugins.depends += src_printsupport
         }
-        qtConfig(opengl) {
-            SUBDIRS += src_openglwidgets
-        }
+        qtConfig(opengl): SUBDIRS += src_openglwidgets
     }
 }
 SUBDIRS += src_plugins
@@ -255,6 +240,36 @@ SUBDIRS += src_plugins
 nacl: SUBDIRS -= src_network src_testlib
 
 android:!android-embedded: SUBDIRS += src_android src_3rdparty_gradle
+
+qtConfig(private_tests) {
+     qtConfig(network):qtConfig(gui) {
+        src_network_doc_snippets.subdir = network/doc/snippets
+        src_network_doc_snippets.target = sub-network-doc-snippets
+        src_network_doc_snippets.depends = src_network src_gui
+        SUBDIRS += src_network_doc_snippets
+    }
+
+    qtConfig(sql) {
+        src_sql_doc_snippets.subdir = sql/doc/snippets
+        src_sql_doc_snippets.target = sub-sql-doc-snippets
+        src_sql_doc_snippets.depends = src_sql
+        SUBDIRS += src_sql_doc_snippets
+    }
+
+    qtConfig(testlib):qtConfig(widgets):qtConfig(sql) {
+        src_testlib_doc_snippets.subdir = testlib/doc/snippets
+        src_testlib_doc_snippets.target = sub-testlib-doc-snippets
+        src_testlib_doc_snippets.depends = src_testlib src_widgets src_sql
+        SUBDIRS += src_testlib_doc_snippets
+    }
+
+    qtConfig(widgets):qtConfig(printer):qtConfig(opengl) {
+        src_widgets_doc_snippets.subdir = widgets/doc/snippets
+        src_widgets_doc_snippets.target = sub-widgets-doc-snippets
+        src_widgets_doc_snippets.depends = src_widgets src_printsupport src_opengl
+        SUBDIRS += src_widgets_doc_snippets
+    }
+}
 
 TR_EXCLUDE = \
     src_tools_bootstrap src_tools_moc src_tools_rcc src_tools_uic src_tools_qlalr \

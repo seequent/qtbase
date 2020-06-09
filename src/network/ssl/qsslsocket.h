@@ -109,6 +109,7 @@ class QSslSocketPrivate;
 class Q_NETWORK_EXPORT QSslSocket : public QTcpSocket
 {
     Q_OBJECT
+    Q_MOC_INCLUDE(<QtNetwork/qsslpresharedkeyauthenticator.h>)
 public:
     enum SslMode {
         UnencryptedMode,
@@ -230,9 +231,6 @@ public:
     bool waitForBytesWritten(int msecs = 30000) override;
     bool waitForDisconnected(int msecs = 30000) override;
 
-#if QT_DEPRECATED_SINCE(5, 15)
-    QT_DEPRECATED_X("Use sslHandshakeErrors()") QList<QSslError> sslErrors() const;
-#endif // QT_DEPRECATED_SINCE(5, 15)
     QList<QSslError> sslHandshakeErrors() const;
 
     static bool supportsSsl();
@@ -281,7 +279,7 @@ private:
     Q_PRIVATE_SLOT(d_func(), void _q_flushWriteBuffer())
     Q_PRIVATE_SLOT(d_func(), void _q_flushReadBuffer())
     Q_PRIVATE_SLOT(d_func(), void _q_resumeImplementation())
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) && !QT_CONFIG(schannel)
+#if defined(Q_OS_WIN) && !QT_CONFIG(schannel)
     Q_PRIVATE_SLOT(d_func(), void _q_caRootLoaded(QSslCertificate,QSslCertificate))
 #endif
     friend class QSslSocketBackendPrivate;

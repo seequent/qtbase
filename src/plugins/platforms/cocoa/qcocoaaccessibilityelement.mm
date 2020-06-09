@@ -36,6 +36,9 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include <AppKit/AppKit.h>
+
 #include "qcocoaaccessibilityelement.h"
 #include "qcocoaaccessibility.h"
 #include "qcocoahelpers.h"
@@ -43,10 +46,8 @@
 #include "qcocoascreen.h"
 
 #include <QtGui/private/qaccessiblecache_p.h>
-#include <QtAccessibilitySupport/private/qaccessiblebridgeutils_p.h>
+#include <QtGui/private/qaccessiblebridgeutils_p.h>
 #include <QtGui/qaccessible.h>
-
-#import <AppKit/NSAccessibility.h>
 
 QT_USE_NAMESPACE
 

@@ -78,9 +78,7 @@ public:
     bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
     bool setItemData(const QModelIndex& index, const QMap<int, QVariant> &roles) override;
     bool setHeaderData(int section, Qt::Orientation orientation, const QVariant &value, int role = Qt::EditRole) override;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     bool clearItemData(const QModelIndex &index) override;
-#endif
 
     QModelIndex buddy(const QModelIndex &index) const override;
     bool canFetchMore(const QModelIndex &parent) const override;
@@ -98,16 +96,10 @@ public:
     QStringList mimeTypes() const override;
     Qt::DropActions supportedDragActions() const override;
     Qt::DropActions supportedDropActions() const override;
+    QHash<int, QByteArray> roleNames() const override;
 
 Q_SIGNALS:
     void sourceModelChanged(QPrivateSignal);
-
-protected Q_SLOTS:
-    void resetInternalData()
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    override
-#endif
-    ;
 
 protected:
     QAbstractProxyModel(QAbstractProxyModelPrivate &, QObject *parent);

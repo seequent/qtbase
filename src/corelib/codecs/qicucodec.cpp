@@ -43,7 +43,6 @@
 #include "qutfcodec_p.h"
 #include "qlatincodec_p.h"
 #include "qsimplecodec_p.h"
-#include "private/qcoreglobaldata_p.h"
 #include "qdebug.h"
 
 #include "unicode/ucnv.h"
@@ -60,7 +59,7 @@ typedef QList<QByteArray>::ConstIterator ByteArrayListConstIt;
 
 static void qIcuCodecStateFree(QTextCodec::ConverterState *state)
 {
-    ucnv_close(static_cast<UConverter *>(state->d));
+    ucnv_close(static_cast<UConverter *>(state->d[0]));
 }
 
 bool qTextCodecNameMatch(const char *n, const char *h)
@@ -436,7 +435,7 @@ QList<int> QIcuCodec::availableMibs()
 
 QTextCodec *QIcuCodec::defaultCodecUnlocked()
 {
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     if (!globalData)
         return nullptr;
     QTextCodec *c = globalData->codecForLocale.loadAcquire();
@@ -491,7 +490,7 @@ QTextCodec *QIcuCodec::codecForNameUnlocked(const char *name)
             standardName = "windows-949";
     }
 
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     QTextCodecCache *cache = &globalData->codecCache;
 
     QTextCodec *codec;
@@ -569,18 +568,17 @@ UConverter *QIcuCodec::getConverter(QTextCodec::ConverterState *state) const
 {
     UConverter *conv = nullptr;
     if (state) {
-        if (!state->d) {
+        if (!state->d[0]) {
             // first time
-            state->flags |= QTextCodec::FreeFunction;
-            QTextCodecUnalignedPointer::encode(state->state_data, qIcuCodecStateFree);
+            state->clearFn = qIcuCodecStateFree;
             UErrorCode error = U_ZERO_ERROR;
-            state->d = ucnv_open(m_name, &error);
-            ucnv_setSubstChars(static_cast<UConverter *>(state->d),
+            state->d[0] = ucnv_open(m_name, &error);
+            ucnv_setSubstChars(static_cast<UConverter *>(state->d[0]),
                                state->flags & QTextCodec::ConvertInvalidToNull ? "\0" : "?", 1, &error);
             if (U_FAILURE(error))
                 qDebug("getConverter(state) ucnv_open failed %s %s", m_name, u_errorName(error));
         }
-        conv = static_cast<UConverter *>(state->d);
+        conv = static_cast<UConverter *>(state->d[0]);
     }
     if (!conv) {
         // stateless conversion
@@ -614,6 +612,9 @@ QString QIcuCodec::convertToUnicode(const char *chars, int length, QTextCodec::C
             qDebug("convertToUnicode failed: %s", u_errorName(error));
             break;
         }
+        // flag the state if we have incomplete input
+        if (error == U_TRUNCATED_CHAR_FOUND)
+            state->remainingChars = 1;
 
         convertedChars = uc - (UChar *)string.data();
         if (chars >= end)
@@ -649,6 +650,10 @@ QByteArray QIcuCodec::convertFromUnicode(const QChar *unicode, int length, QText
                          nullptr, false, &error);
         if (!U_SUCCESS(error))
             qDebug("convertFromUnicode failed: %s", u_errorName(error));
+        // flag the state if we have incomplete input
+        if (error == U_TRUNCATED_CHAR_FOUND)
+            state->remainingChars = 1;
+
         convertedChars = ch - string.data();
         if (uc >= end)
             break;

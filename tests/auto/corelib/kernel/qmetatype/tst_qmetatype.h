@@ -136,6 +136,12 @@ template<> struct TestValueFactory<QMetaType::Short> {
 template<> struct TestValueFactory<QMetaType::Char> {
     static char *create() { return new char('c'); }
 };
+template<> struct TestValueFactory<QMetaType::Char16> {
+    static char16_t *create() { return new char16_t('c'); }
+};
+template<> struct TestValueFactory<QMetaType::Char32> {
+    static char32_t *create() { return new char32_t('c'); }
+};
 template<> struct TestValueFactory<QMetaType::ULong> {
     static ulong *create() { return new ulong(ULONG_MAX); }
 };
@@ -222,16 +228,6 @@ template<> struct TestValueFactory<QMetaType::QPersistentModelIndex> {
 };
 template<> struct TestValueFactory<QMetaType::Nullptr> {
     static std::nullptr_t *create() { return new std::nullptr_t; }
-};
-template<> struct TestValueFactory<QMetaType::QRegExp> {
-    static QRegExp *create()
-    {
-#ifndef QT_NO_REGEXP
-        return new QRegExp("A*");
-#else
-        return 0;
-#endif
-    }
 };
 template<> struct TestValueFactory<QMetaType::QRegularExpression> {
     static QRegularExpression *create()

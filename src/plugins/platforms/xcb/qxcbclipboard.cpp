@@ -138,13 +138,13 @@ protected:
         for (int i = 0; i < size; ++i)
             atoms.append(targets[i]);
 
-        QByteArray encoding;
-        xcb_atom_t fmtatom = mimeAtomForFormat(m_clipboard->connection(), fmt, requestedType, atoms, &encoding);
+        bool hasUtf8 = false;
+        xcb_atom_t fmtatom = mimeAtomForFormat(m_clipboard->connection(), fmt, requestedType, atoms, &hasUtf8);
 
         if (fmtatom == 0)
             return QVariant();
 
-        return mimeConvertToFormat(m_clipboard->connection(), fmtatom, m_clipboard->getDataInFormat(modeAtom, fmtatom), fmt, requestedType, encoding);
+        return mimeConvertToFormat(m_clipboard->connection(), fmtatom, m_clipboard->getDataInFormat(modeAtom, fmtatom), fmt, requestedType, hasUtf8);
     }
 private:
 
@@ -417,7 +417,7 @@ xcb_window_t QXcbClipboard::requestor() const
                           XCB_WINDOW_CLASS_INPUT_OUTPUT,         // window class
                           platformScreen->screen()->root_visual, // visual
                           0,                                     // value mask
-                          nullptr);                                    // value list
+                          nullptr);                              // value list
 
         QXcbWindow::setWindowTitle(connection(), window,
                                    QStringLiteral("Qt Clipboard Requestor Window"));

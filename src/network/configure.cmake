@@ -6,8 +6,8 @@
 
 #### Libraries
 
-qt_find_package(Libproxy PROVIDED_TARGETS PkgConfig::Libproxy)
-qt_find_package(WrapOpenSSLHeaders PROVIDED_TARGETS WrapOpenSSLHeaders::WrapOpenSSLHeaders)
+qt_find_package(Libproxy PROVIDED_TARGETS PkgConfig::Libproxy MODULE_NAME network QMAKE_LIB libproxy)
+qt_find_package(WrapOpenSSLHeaders PROVIDED_TARGETS WrapOpenSSLHeaders::WrapOpenSSLHeaders MODULE_NAME network QMAKE_LIB openssl_headers)
 # openssl_headers
 qt_config_compile_test(openssl_headers
     LIBRARIES
@@ -16,11 +16,11 @@ qt_config_compile_test(openssl_headers
 "
 #include <openssl/ssl.h>
 #include <openssl/opensslv.h>
-#if !defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER-0 < 0x10100000L
-#  error OpenSSL >= 1.1.0 is required
+#if !defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER-0 < 0x10101000L
+#  error OpenSSL >= 1.1.1 is required
 #endif
 #if !defined(OPENSSL_NO_EC) && !defined(SSL_CTRL_SET_CURVES)
-#  error OpenSSL was reported as >= 1.1.0 but is missing required features, possibly it's libressl which is unsupported
+#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it's libressl which is unsupported
 #endif
 int main(int argc, char **argv)
 {
@@ -32,7 +32,7 @@ int main(int argc, char **argv)
 }
 ")
 
-qt_find_package(WrapOpenSSL PROVIDED_TARGETS WrapOpenSSL::WrapOpenSSL)
+qt_find_package(WrapOpenSSL PROVIDED_TARGETS WrapOpenSSL::WrapOpenSSL MODULE_NAME network QMAKE_LIB openssl)
 # openssl
 qt_config_compile_test(openssl
     LIBRARIES
@@ -41,11 +41,11 @@ qt_config_compile_test(openssl
 "
 #include <openssl/ssl.h>
 #include <openssl/opensslv.h>
-#if !defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER-0 < 0x10100000L
-#  error OpenSSL >= 1.1.0 is required
+#if !defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER-0 < 0x10101000L
+#  error OpenSSL >= 1.1.1 is required
 #endif
 #if !defined(OPENSSL_NO_EC) && !defined(SSL_CTRL_SET_CURVES)
-#  error OpenSSL was reported as >= 1.1.0 but is missing required features, possibly it's libressl which is unsupported
+#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it's libressl which is unsupported
 #endif
 int main(int argc, char **argv)
 {
@@ -57,7 +57,7 @@ SSL_free(SSL_new(0));
 }
 ")
 
-qt_find_package(GSSAPI PROVIDED_TARGETS GSSAPI::GSSAPI)
+qt_find_package(GSSAPI PROVIDED_TARGETS GSSAPI::GSSAPI MODULE_NAME network QMAKE_LIB gssapi)
 
 
 #### Tests
@@ -264,7 +264,7 @@ qt_feature("openssl" PRIVATE
 qt_feature_definition("openssl" "QT_NO_OPENSSL" NEGATE)
 qt_feature_config("openssl" QMAKE_PUBLIC_QT_CONFIG)
 qt_feature("openssl-runtime"
-    AUTODETECT NOT WINRT AND NOT WASM
+    AUTODETECT NOT WASM
     CONDITION NOT QT_FEATURE_securetransport AND NOT QT_FEATURE_schannel AND TEST_openssl_headers
     ENABLE INPUT_openssl STREQUAL 'yes' OR INPUT_openssl STREQUAL 'runtime'
     DISABLE INPUT_openssl STREQUAL 'no' OR INPUT_openssl STREQUAL 'linked' OR INPUT_ssl STREQUAL 'no'
@@ -284,13 +284,13 @@ qt_feature("securetransport" PUBLIC
 qt_feature_definition("securetransport" "QT_SECURETRANSPORT")
 qt_feature("schannel" PUBLIC
     LABEL "Schannel"
-    CONDITION INPUT_schannel STREQUAL 'yes' AND WIN32 AND NOT WINRT AND ( INPUT_openssl STREQUAL '' OR INPUT_openssl STREQUAL 'no' )
+    CONDITION INPUT_schannel STREQUAL 'yes' AND WIN32 AND ( INPUT_openssl STREQUAL '' OR INPUT_openssl STREQUAL 'no' )
     DISABLE INPUT_schannel STREQUAL 'no' OR INPUT_ssl STREQUAL 'no'
 )
 qt_feature_definition("schannel" "QT_SCHANNEL")
 qt_feature("ssl" PUBLIC
     LABEL "SSL"
-    CONDITION WINRT OR QT_FEATURE_securetransport OR QT_FEATURE_openssl OR QT_FEATURE_schannel
+    CONDITION QT_FEATURE_securetransport OR QT_FEATURE_openssl OR QT_FEATURE_schannel
 )
 qt_feature_definition("ssl" "QT_NO_SSL" NEGATE VALUE "1")
 qt_feature("dtls" PUBLIC
@@ -389,7 +389,7 @@ qt_feature("sspi" PUBLIC
     SECTION "Networking"
     LABEL "SSPI"
     PURPOSE "Enable NTLM/SPNEGO authentication through SSPI"
-    CONDITION WIN32 AND NOT WINRT
+    CONDITION WIN32
 )
 qt_feature_definition("sspi" "QT_NO_SSPI" NEGATE VALUE "1")
 qt_feature("netlistmgr" PRIVATE
@@ -421,7 +421,7 @@ qt_configure_add_summary_entry(
 )
 qt_configure_add_summary_entry(
     ARGS "schannel"
-    CONDITION WIN32 AND NOT WINRT
+    CONDITION WIN32
 )
 qt_configure_add_summary_entry(ARGS "openssl")
 qt_configure_add_summary_entry(ARGS "openssl-linked")

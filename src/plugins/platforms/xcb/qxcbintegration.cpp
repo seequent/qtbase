@@ -62,7 +62,7 @@
 #include <QtFontDatabaseSupport/private/qgenericunixfontdatabase_p.h>
 #include <QtServiceSupport/private/qgenericunixservices_p.h>
 #if QT_CONFIG(opengl)
-#include <QtPlatformCompositorSupport/qpa/qplatformbackingstoreopenglsupport.h>
+#include <QtOpenGL/qpa/qplatformbackingstoreopenglsupport.h>
 #endif
 
 #include <stdio.h>
@@ -304,9 +304,6 @@ QPlatformBackingStore *QXcbIntegration::createPlatformBackingStore(QWindow *wind
         backingStore = new QXcbBackingStore(window);
     }
     Q_ASSERT(backingStore);
-#ifndef QT_NO_OPENGL
-    backingStore->setOpenGLSupport(new QPlatformBackingStoreOpenGLSupport(backingStore));
-#endif
     return backingStore;
 }
 

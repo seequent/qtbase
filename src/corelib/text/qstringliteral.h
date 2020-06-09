@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
+** Copyright (C) 2020 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -68,19 +68,15 @@ Q_STATIC_ASSERT_X(sizeof(qunicodechar) == 2,
             Q_BASIC_ATOMIC_INITIALIZER(-1), QArrayData::StaticDataFlags, 0 \
         }; \
         QStringPrivate holder = {  \
-            static_cast<QTypedArrayData<ushort> *>(const_cast<QArrayData *>(&qstring_literal)), \
-            reinterpret_cast<ushort *>(const_cast<qunicodechar *>(QT_UNICODE_LITERAL(str))), \
+            static_cast<QTypedArrayData<char16_t> *>(const_cast<QArrayData *>(&qstring_literal)), \
+            const_cast<qunicodechar *>(QT_UNICODE_LITERAL(str)), \
             Size \
         }; \
         return QString(holder); \
     }()) \
     /**/
 
-#if QT_DEPRECATED_SINCE(5, 14)
-# define QStringViewLiteral(str) QStringView(QT_UNICODE_LITERAL(str), QtPrivate::Deprecated)
-#endif
-
-using QStringPrivate = QArrayDataPointer<ushort>;
+using QStringPrivate = QArrayDataPointer<char16_t>;
 
 QT_END_NAMESPACE
 

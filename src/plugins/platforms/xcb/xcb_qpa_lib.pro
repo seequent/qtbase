@@ -9,13 +9,10 @@ QT += \
     edid_support-private \
     xkbcommon_support-private
 
-qtHaveModule(platformcompositor_support-private): \
-    QT += platformcompositor_support-private
+qtConfig(opengl): QT += opengl-private
 
 qtHaveModule(linuxaccessibility_support-private): \
     QT += linuxaccessibility_support-private
-
-qtConfig(vulkan): QT += vulkan_support-private
 
 qtConfig(glib) : QMAKE_USE_PRIVATE += glib
 

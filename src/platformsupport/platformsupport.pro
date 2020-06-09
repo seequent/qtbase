@@ -5,10 +5,12 @@ SUBDIRS = \
     edid \
     eventdispatchers \
     devicediscovery \
-    fbconvenience \
-    themes
+    fbconvenience
 
-qtConfig(freetype)|darwin|win32: \
+if(unix:!uikit:!macos)|qtConfig(xcb): \
+    SUBDIRS += themes
+
+if(qtConfig(freetype):!darwin)|win32: \
     SUBDIRS += fontdatabases
 
 qtConfig(evdev)|qtConfig(tslib)|qtConfig(libinput)|qtConfig(integrityhid)|qtConfig(xkbcommon) {
@@ -19,8 +21,6 @@ qtConfig(evdev)|qtConfig(tslib)|qtConfig(libinput)|qtConfig(integrityhid)|qtConf
 if(unix:!uikit)|qtConfig(xcb): \
     SUBDIRS += services
 
-qtConfig(opengl): \
-    SUBDIRS += platformcompositor
 qtConfig(egl): \
     SUBDIRS += eglconvenience
 qtConfig(xlib):qtConfig(opengl):!qtConfig(opengles2): \
@@ -29,22 +29,10 @@ qtConfig(kms): \
     SUBDIRS += kmsconvenience
 
 qtConfig(accessibility) {
-    SUBDIRS += accessibility
     qtConfig(accessibility-atspi-bridge) {
         SUBDIRS += linuxaccessibility
-        linuxaccessibility.depends += accessibility
     }
-    win32:!winrt: SUBDIRS += windowsuiautomation
 }
-
-darwin {
-    SUBDIRS += \
-        clipboard \
-        graphics
-}
-
-qtConfig(vulkan): \
-    SUBDIRS += vkconvenience
 
 !android:linux*:qtHaveModule(dbus) \
     SUBDIRS += linuxofono

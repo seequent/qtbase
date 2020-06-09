@@ -62,8 +62,8 @@ struct QD3D11Buffer : public QRhiBuffer
 {
     QD3D11Buffer(QRhiImplementation *rhi, Type type, UsageFlags usage, int size);
     ~QD3D11Buffer();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
     QRhiBuffer::NativeBuffer nativeBuffer() override;
 
     ID3D11UnorderedAccessView *unorderedAccessView();
@@ -79,10 +79,11 @@ struct QD3D11Buffer : public QRhiBuffer
 struct QD3D11RenderBuffer : public QRhiRenderBuffer
 {
     QD3D11RenderBuffer(QRhiImplementation *rhi, Type type, const QSize &pixelSize,
-                       int sampleCount, QRhiRenderBuffer::Flags flags);
+                       int sampleCount, QRhiRenderBuffer::Flags flags,
+                       QRhiTexture::Format backingFormatHint);
     ~QD3D11RenderBuffer();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
     QRhiTexture::Format backingFormat() const override;
 
     ID3D11Texture2D *tex = nullptr;
@@ -98,13 +99,13 @@ struct QD3D11Texture : public QRhiTexture
     QD3D11Texture(QRhiImplementation *rhi, Format format, const QSize &pixelSize,
                   int sampleCount, Flags flags);
     ~QD3D11Texture();
-    void release() override;
-    bool build() override;
-    bool buildFrom(NativeTexture src) override;
+    void destroy() override;
+    bool create() override;
+    bool createFrom(NativeTexture src) override;
     NativeTexture nativeTexture() override;
 
-    bool prepareBuild(QSize *adjustedSize = nullptr);
-    bool finishBuild();
+    bool prepareCreate(QSize *adjustedSize = nullptr);
+    bool finishCreate();
     ID3D11UnorderedAccessView *unorderedAccessViewForLevel(int level);
 
     ID3D11Texture2D *tex = nullptr;
@@ -123,8 +124,8 @@ struct QD3D11Sampler : public QRhiSampler
     QD3D11Sampler(QRhiImplementation *rhi, Filter magFilter, Filter minFilter, Filter mipmapMode,
                   AddressMode u, AddressMode v, AddressMode w);
     ~QD3D11Sampler();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     ID3D11SamplerState *samplerState = nullptr;
     uint generation = 0;
@@ -135,7 +136,7 @@ struct QD3D11RenderPassDescriptor : public QRhiRenderPassDescriptor
 {
     QD3D11RenderPassDescriptor(QRhiImplementation *rhi);
     ~QD3D11RenderPassDescriptor();
-    void release() override;
+    void destroy() override;
     bool isCompatible(const QRhiRenderPassDescriptor *other) const override;
 };
 
@@ -163,7 +164,7 @@ struct QD3D11ReferenceRenderTarget : public QRhiRenderTarget
 {
     QD3D11ReferenceRenderTarget(QRhiImplementation *rhi);
     ~QD3D11ReferenceRenderTarget();
-    void release() override;
+    void destroy() override;
 
     QSize pixelSize() const override;
     float devicePixelRatio() const override;
@@ -176,14 +177,14 @@ struct QD3D11TextureRenderTarget : public QRhiTextureRenderTarget
 {
     QD3D11TextureRenderTarget(QRhiImplementation *rhi, const QRhiTextureRenderTargetDescription &desc, Flags flags);
     ~QD3D11TextureRenderTarget();
-    void release() override;
+    void destroy() override;
 
     QSize pixelSize() const override;
     float devicePixelRatio() const override;
     int sampleCount() const override;
 
     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
-    bool build() override;
+    bool create() override;
 
     QD3D11RenderTargetData d;
     bool ownsRtv[QD3D11RenderTargetData::MAX_COLOR_ATTACHMENTS];
@@ -197,8 +198,8 @@ struct QD3D11ShaderResourceBindings : public QRhiShaderResourceBindings
 {
     QD3D11ShaderResourceBindings(QRhiImplementation *rhi);
     ~QD3D11ShaderResourceBindings();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     QVarLengthArray<QRhiShaderResourceBinding, 8> sortedBindings;
     uint generation = 0;
@@ -268,8 +269,8 @@ struct QD3D11GraphicsPipeline : public QRhiGraphicsPipeline
 {
     QD3D11GraphicsPipeline(QRhiImplementation *rhi);
     ~QD3D11GraphicsPipeline();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     ID3D11DepthStencilState *dsState = nullptr;
     ID3D11BlendState *blendState = nullptr;
@@ -292,8 +293,8 @@ struct QD3D11ComputePipeline : public QRhiComputePipeline
 {
     QD3D11ComputePipeline(QRhiImplementation *rhi);
     ~QD3D11ComputePipeline();
-    void release() override;
-    bool build() override;
+    void destroy() override;
+    bool create() override;
 
     struct {
         ID3D11ComputeShader *shader = nullptr;
@@ -309,7 +310,7 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
 {
     QD3D11CommandBuffer(QRhiImplementation *rhi);
     ~QD3D11CommandBuffer();
-    void release() override;
+    void destroy() override;
 
     struct Command {
         enum Cmd {
@@ -515,7 +516,7 @@ struct QD3D11SwapChain : public QRhiSwapChain
 {
     QD3D11SwapChain(QRhiImplementation *rhi);
     ~QD3D11SwapChain();
-    void release() override;
+    void destroy() override;
 
     QRhiCommandBuffer *currentFrameCommandBuffer() override;
     QRhiRenderTarget *currentFrameRenderTarget() override;
@@ -523,7 +524,7 @@ struct QD3D11SwapChain : public QRhiSwapChain
     QSize surfacePixelSize() override;
 
     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
-    bool buildOrResize() override;
+    bool createOrResize() override;
 
     void releaseBuffers();
     bool newColorBuffer(const QSize &size, DXGI_FORMAT format, DXGI_SAMPLE_DESC sampleDesc,
@@ -567,7 +568,8 @@ public:
     QRhiRenderBuffer *createRenderBuffer(QRhiRenderBuffer::Type type,
                                          const QSize &pixelSize,
                                          int sampleCount,
-                                         QRhiRenderBuffer::Flags flags) override;
+                                         QRhiRenderBuffer::Flags flags,
+                                         QRhiTexture::Format backingFormatHint) override;
     QRhiTexture *createTexture(QRhiTexture::Format format,
                                const QSize &pixelSize,
                                int sampleCount,

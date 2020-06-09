@@ -47,6 +47,7 @@ HEADERS += \
         painting/qpdf_p.h \
         painting/qpdfwriter.h \
         painting/qpen.h \
+        painting/qpixellayout_p.h \
         painting/qpolygon.h \
         painting/qpolygonclipper_p.h \
         painting/qrangecollection.h \
@@ -100,6 +101,7 @@ SOURCES += \
         painting/qpdf.cpp \
         painting/qpdfwriter.cpp \
         painting/qpen.cpp \
+        painting/qpixellayout.cpp \
         painting/qpolygon.cpp \
         painting/qrangecollection.cpp \
         painting/qrasterizer.cpp \
@@ -116,8 +118,12 @@ RESOURCES += \
         painting/qpdf.qrc \
 
 darwin {
-    HEADERS += painting/qcoregraphics_p.h
-    SOURCES += painting/qcoregraphics.mm
+    HEADERS += \
+        painting/qcoregraphics_p.h \
+        painting/qrasterbackingstore_p.h
+    SOURCES += \
+        painting/qcoregraphics.mm \
+        painting/qrasterbackingstore.cpp
 }
 
 qtConfig(cssparser) {

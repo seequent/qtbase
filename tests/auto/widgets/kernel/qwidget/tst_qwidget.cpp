@@ -44,7 +44,6 @@
 #include <qstyle.h>
 #include <qwidget.h>
 #include <qstylefactory.h>
-#include <qdesktopwidget.h>
 #include <private/qwidget_p.h>
 #include <private/qwidgetrepaintmanager_p.h>
 #include <private/qapplication_p.h>
@@ -84,7 +83,7 @@
 
 using namespace QTestPrivate;
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 #  include <QtCore/qt_windows.h>
 #  include <QtGui/private/qguiapplication_p.h>
 #include <qpa/qplatformnativeinterface.h>
@@ -106,7 +105,7 @@ static HWND winHandleOf(const QWidget *w)
     if (::SwitchDesktop(::GetThreadDesktop(::GetCurrentThreadId())) == 0) \
         QSKIP("desktop is not visible, this test would fail");
 
-#else // Q_OS_WIN && !Q_OS_WINRT
+#else // Q_OS_WIN
 #  define Q_CHECK_PAINTEVENTS
 #endif
 
@@ -121,7 +120,7 @@ bool macHasAccessToWindowsServer()
 }
 #endif
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 static inline void setWindowsAnimationsEnabled(bool enabled)
 {
     ANIMATIONINFO animation = { sizeof(ANIMATIONINFO), enabled };
@@ -134,10 +133,10 @@ static inline bool windowsAnimationsEnabled()
     SystemParametersInfo(SPI_GETANIMATION, 0, &animation, 0);
     return animation.iMinAnimate;
 }
-#else // Q_OS_WIN  && !Q_OS_WINRT
+#else // Q_OS_WIN
 inline void setWindowsAnimationsEnabled(bool) {}
 static inline bool windowsAnimationsEnabled() { return false; }
-#endif // !Q_OS_WIN || Q_OS_WINRT
+#endif // !Q_OS_WIN
 
 template <class T>
 static QByteArray msgComparisonFailed(T v1, const char *op, T v2)
@@ -192,7 +191,7 @@ private slots:
     void appFocusWidgetWithFocusProxyLater();
     void appFocusWidgetWhenLosingFocusProxy();
     void explicitTabOrderWithComplexWidget();
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     void activation();
 #endif
     void reparent();
@@ -269,7 +268,7 @@ private slots:
 
     void subtractOpaqueSiblings();
 
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN)
     void setGeometry_win();
 #endif
 
@@ -339,7 +338,7 @@ private slots:
     void quitOnCloseAttribute();
     void moveRect();
 
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN)
     void gdiPainting();
     void paintOnScreenPossible();
 #endif
@@ -417,6 +416,9 @@ private slots:
 
     void winIdAfterClose();
     void receivesLanguageChangeEvent();
+    void receivesApplicationFontChangeEvent();
+    void receivesApplicationPaletteChangeEvent();
+    void deleteWindowInCloseEvent();
 
 private:
     bool ensureScreenSize(int width, int height);
@@ -574,7 +576,7 @@ void tst_QWidget::getSetCheck()
     QCOMPARE(true, obj1.autoFillBackground());
 
     var1.reset();
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN)
     obj1.setWindowFlags(Qt::FramelessWindowHint | Qt::WindowSystemMenuHint);
     const HWND handle = reinterpret_cast<HWND>(obj1.winId());   // explicitly create window handle
     QVERIFY(GetWindowLong(handle, GWL_STYLE) & LONG(WS_POPUP));
@@ -1381,7 +1383,7 @@ void tst_QWidget::visible_setWindowOpacity()
 
     QVERIFY( !testWidget->isVisible() );
     testWidget->setWindowOpacity(0.5);
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     QVERIFY(!::IsWindowVisible(winHandleOf(testWidget.data())));
 #endif
     testWidget->setWindowOpacity(1.0);
@@ -1571,7 +1573,7 @@ void tst_QWidget::mapFromAndTo()
     subWindow2->setGeometry(75, 75, 100, 100);
     subSubWindow->setGeometry(10, 10, 10, 10);
 
-#if !defined(Q_OS_QNX) && !defined(Q_OS_WINRT)
+#if !defined(Q_OS_QNX)
     //update visibility
     if (windowMinimized) {
         if (!windowHidden) {
@@ -2235,12 +2237,16 @@ void tst_QWidget::appFocusWidgetWhenLosingFocusProxy()
     QApplication::setActiveWindow(&window);
     QVERIFY(QTest::qWaitForWindowActive(&window));
     QCOMPARE(QApplication::focusWidget(), lineEditFocusProxy);
+    QVERIFY(lineEdit->hasFocus());
+    QVERIFY(lineEditFocusProxy->hasFocus());
 
     // When unsetting the focus proxy
     lineEdit->setFocusProxy(nullptr);
 
-    // Then the application focus widget should be back to the lineedit
-    QCOMPARE(QApplication::focusWidget(), lineEdit);
+    // then the focus widget should not change
+    QCOMPARE(QApplication::focusWidget(), lineEditFocusProxy);
+    QVERIFY(!lineEdit->hasFocus());
+    QVERIFY(lineEditFocusProxy->hasFocus());
 }
 
 void tst_QWidget::explicitTabOrderWithComplexWidget()
@@ -2269,7 +2275,7 @@ void tst_QWidget::explicitTabOrderWithComplexWidget()
     QTRY_COMPARE(QApplication::focusWidget(), lineEditOne);
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 void tst_QWidget::activation()
 {
     Q_CHECK_PAINTEVENTS
@@ -2314,8 +2320,7 @@ void tst_QWidget::windowState()
     QPoint pos;
     QSize size = m_testWidgetSize;
     if (QGuiApplicationPrivate::platformIntegration()->defaultWindowState(Qt::Widget)
-                                                       == Qt::WindowFullScreen
-        || m_platform == QStringLiteral("winrt")) {
+                                                       == Qt::WindowFullScreen) {
         size = QGuiApplication::primaryScreen()->size();
     } else {
         pos = QPoint(10, 10);
@@ -2519,8 +2524,6 @@ void tst_QWidget::showFullScreen()
     QSKIP("QTBUG-52974");
 #endif
 
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT: This fails. QTBUG-68297");
     QWidget plain;
     QHBoxLayout *layout;
     QWidget layouted;
@@ -2644,8 +2647,6 @@ void tst_QWidget::resizeEvent()
         wTopLevel.resize(m_testWidgetSize);
         wTopLevel.show();
         QVERIFY(QTest::qWaitForWindowExposed(&wTopLevel));
-        if (m_platform == QStringLiteral("winrt"))
-            QEXPECT_FAIL("", "WinRT does not support resize", Abort);
         QCOMPARE (wTopLevel.m_resizeEventCount, 1); // initial resize event before paint for toplevels
         wTopLevel.hide();
         QSize safeSize(640,480);
@@ -2676,9 +2677,6 @@ void tst_QWidget::showMinimized()
     plain.showMinimized();
     QVERIFY(plain.isMinimized());
     QVERIFY(plain.isVisible());
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "Winrt does not support move and resize", Abort);
-#endif
     QVERIFY2(HighDpi::fuzzyCompare(plain.pos(), pos, m_fuzz),
              qPrintable(HighDpi::msgPointMismatch(plain.pos(), pos)));
 
@@ -2838,15 +2836,11 @@ void tst_QWidget::showMinimizedKeepsFocus()
 #ifdef Q_OS_MACOS
         if (!macHasAccessToWindowsServer())
             QEXPECT_FAIL("", "When not having WindowServer access, we lose focus.", Continue);
-#elif defined(Q_OS_WINRT)
-        QEXPECT_FAIL("", "Winrt fails here - QTBUG-68297", Continue);
 #endif
         QTRY_COMPARE(window.focusWidget(), firstchild);
 #ifdef Q_OS_MACOS
         if (!macHasAccessToWindowsServer())
             QEXPECT_FAIL("", "When not having WindowServer access, we lose focus.", Continue);
-#elif defined(Q_OS_WINRT)
-        QEXPECT_FAIL("", "Winrt fails here - QTBUG-68297", Continue);
 #endif
         QTRY_COMPARE(QApplication::focusWidget(), firstchild);
     }
@@ -2877,9 +2871,6 @@ void tst_QWidget::reparent()
 
     parent.show();
     childTLW.show();
-#ifdef Q_OS_WINRT
-    QEXPECT_FAIL("", "WinRT does not support more than 1 top level widget", Abort);
-#endif
     QVERIFY(QTest::qWaitForWindowExposed(&parent));
 
     parent.move(parentPosition);
@@ -2977,8 +2968,6 @@ void tst_QWidget::normalGeometry()
 
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
-    else if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT: This fails. Figure out why - QTBUG-68297.");
     QWidget parent;
     parent.setWindowTitle("NormalGeometry parent");
     QWidget *child = new QWidget(&parent);
@@ -3091,8 +3080,6 @@ void tst_QWidget::setGeometry()
     tlw.setGeometry(tr);
     child.setGeometry(cr);
     tlw.showNormal();
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT does not support setGeometry", Abort);
     QTRY_COMPARE(tlw.geometry().size(), tr.size());
     QCOMPARE(child.geometry(), cr);
 
@@ -3599,8 +3586,6 @@ void tst_QWidget::saveRestoreGeometry()
         QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QApplication::processEvents();
 
-        if (m_platform == QStringLiteral("winrt"))
-            QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
         QTRY_VERIFY2(HighDpi::fuzzyCompare(widget.pos(), position, m_fuzz),
                      qPrintable(HighDpi::msgPointMismatch(widget.pos(), position)));
         QCOMPARE(widget.size(), size);
@@ -3778,9 +3763,6 @@ void tst_QWidget::restoreVersion1Geometry()
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
     QTest::qWait(100);
 
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT does not support restoreGeometry", Abort);
-
     if (expectedWindowState == Qt::WindowNoState) {
         QTRY_COMPARE(widget.size(), expectedSize);
         QCOMPARE(widget.geometry(), expectedNormalGeometry);
@@ -3826,8 +3808,6 @@ void tst_QWidget::widgetAt()
         QSKIP("Wayland: This fails. Figure out why.");
     if (m_platform == QStringLiteral("offscreen"))
         QSKIP("Platform offscreen does not support lower()/raise() or WindowMasks");
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT does not support more than 1 top level widget");
 
     Q_CHECK_PAINTEVENTS
 
@@ -4129,8 +4109,6 @@ void tst_QWidget::optimizedResizeMove()
     staticWidget.gotPaintEvent = false;
     staticWidget.move(staticWidget.pos() + QPoint(10, 10));
     QTest::qWait(20);
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
     QCOMPARE(staticWidget.gotPaintEvent, false);
 
     staticWidget.gotPaintEvent = false;
@@ -4234,8 +4212,6 @@ void tst_QWidget::optimizedResize_topLevel()
     QTRY_VERIFY(topLevel.gotPaintEvent);
     if (m_platform == QStringLiteral("xcb") || m_platform == QStringLiteral("offscreen"))
         QSKIP("QTBUG-26424");
-    else if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
     QCOMPARE(topLevel.partial, true);
     QCOMPARE(topLevel.paintedRegion, expectedUpdateRegion);
 }
@@ -4342,8 +4318,6 @@ void tst_QWidget::setFixedSize()
     QVERIFY(QTest::qWaitForWindowActive(&w));
     if (m_platform == QStringLiteral("xcb"))
         QSKIP("QTBUG-26424");
-    else if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
     QCOMPARE(w.size(), defaultSize + QSize(150,150));
 }
 
@@ -4593,8 +4567,6 @@ void tst_QWidget::transientParent()
 
 void tst_QWidget::showNativeChild()
 {
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT does not support setGeometry");
     QWidget topLevel;
     topLevel.setGeometry(QRect(m_availableTopLeft + QPoint(100, 100), m_testWidgetSize));
     topLevel.setWindowTitle(__FUNCTION__);
@@ -4773,8 +4745,6 @@ void tst_QWidget::update()
 
     // widgets are transparent by default, so both should get repaints
     {
-        if (m_platform == QStringLiteral("winrt"))
-            QEXPECT_FAIL("", "WinRT does not support setGeometry", Abort);
         QApplication::processEvents();
         QApplication::processEvents();
         QCOMPARE(child.numPaintEvents, 1);
@@ -4983,6 +4953,7 @@ void tst_QWidget::isOpaque()
         QVERIFY(!::isOpaque(&widget));
 
         QApplication::setPalette(old);
+        QApplication::sendPostedEvents(&widget, QEvent::ApplicationPaletteChange);
         QCOMPARE(::isOpaque(&widget), old.color(QPalette::Window).alpha() == 255);
     }
 #endif
@@ -5015,8 +4986,6 @@ void tst_QWidget::scroll()
         QCoreApplication::processEvents();
         QRegion dirty(QRect(0, 0, w, 10));
         dirty += QRegion(QRect(0, 10, 10, h - 10));
-        if (m_platform == QStringLiteral("winrt"))
-            QEXPECT_FAIL("", "WinRT does not support move/resize", Abort);
         QTRY_COMPARE(updateWidget.paintedRegion, dirty);
     }
 
@@ -5178,8 +5147,6 @@ void tst_QWidget::setWindowGeometry()
 {
     if (m_platform == QStringLiteral("xcb"))
          QSKIP("X11: Skip this test due to Window manager positioning issues.");
-    else if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT does not support setWindowGeometry");
 
     QFETCH(Rects, rects);
     QFETCH(int, windowFlags);
@@ -5311,7 +5278,7 @@ void tst_QWidget::setWindowGeometry()
     }
 }
 
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN)
 void tst_QWidget::setGeometry_win()
 {
     QWidget widget;
@@ -5332,7 +5299,7 @@ void tst_QWidget::setGeometry_win()
     QVERIFY2(rt.top <= m_availableTopLeft.y(),
              msgComparisonFailed(int(rt.top), "<=", m_availableTopLeft.y()));
 }
-#endif // defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
+#endif // defined (Q_OS_WIN)
 
 // Since X11 WindowManager operation are all async, and we have no way to know if the window
 // manager has finished playing with the window geometry, this test can't be reliable on X11.
@@ -5348,8 +5315,6 @@ void tst_QWidget::windowMoveResize()
          QSKIP("X11: Skip this test due to Window manager positioning issues.");
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT does not support move/resize");
 
     QFETCH(Rects, rects);
     QFETCH(int, windowFlags);
@@ -5673,8 +5638,6 @@ void tst_QWidget::moveChild()
     QTRY_COMPARE(parent.r, QRegion(parent.rect()) - child.geometry());
     QTRY_COMPARE(child.r, QRegion(child.rect()));
 
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT does not support setGeometry (and we cannot use QEXPECT_FAIL because of VERIFY_COLOR)");
     VERIFY_COLOR(child, child.rect(),
                  child.color);
     VERIFY_COLOR(parent, QRegion(parent.rect()) - child.geometry(), parent.color);
@@ -5731,8 +5694,6 @@ void tst_QWidget::showAndMoveChild()
     child.move(desktopDimensions.width()/2, desktopDimensions.height()/2);
     QCoreApplication::processEvents();
 
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT does not support setGeometry (and we cannot use QEXPECT_FAIL because of VERIFY_COLOR)");
     VERIFY_COLOR(child, child.rect(), Qt::blue);
     VERIFY_COLOR(parent, QRegion(parent.rect()) - child.geometry(), Qt::red);
 }
@@ -5823,8 +5784,6 @@ void tst_QWidget::multipleToplevelFocusCheck()
 
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
         QSKIP("Window activation is not supported");
-    else if (m_platform == QStringLiteral("winrt"))
-        QSKIP("Winrt: Sometimes crashes in QTextLayout. - QTBUG-68297");
     TopLevelFocusCheck w1;
     TopLevelFocusCheck w2;
 
@@ -5983,8 +5942,6 @@ void tst_QWidget::setFocus()
             testWidget->clearFocus();
 
         child1.setFocus();
-        if (m_platform == QStringLiteral("winrt"))
-            QEXPECT_FAIL("", "WinRT fails here - QTBUG-68297", Abort);
         QVERIFY(!child1.hasFocus());
         QCOMPARE(window.focusWidget(), &child1);
         QCOMPARE(QApplication::focusWidget(), nullptr);
@@ -6684,8 +6641,6 @@ QByteArray EventRecorder::msgEventListMismatch(const EventList &expected, const 
 
 void tst_QWidget::childEvents()
 {
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT: This fails. QTBUG-68297.");
     EventRecorder::EventList expected;
 
     // Move away the cursor; otherwise it might result in an enter event if it's
@@ -7084,8 +7039,6 @@ void tst_QWidget::renderInvisible()
 {
     if (m_platform == QStringLiteral("xcb"))
         QSKIP("QTBUG-26424");
-    if (m_platform == QStringLiteral("winrt"))
-        QSKIP("WinRT: This fails. QTBUG-68297.");
 
     QScopedPointer<QCalendarWidget> calendar(new QCalendarWidget);
     calendar->move(m_availableTopLeft + QPoint(100, 100));
@@ -8034,8 +7987,6 @@ void tst_QWidget::hideOpaqueChildWhileHidden()
     child.hide();
     child2.hide();
 
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_COMPARE(w.r, QRegion(child.geometry()));
 
     child.show();
@@ -8074,8 +8025,6 @@ void tst_QWidget::updateWhileMinimized()
     // Make sure update requests are discarded until the widget is shown again.
     widget.update(0, 0, 50, 50);
     QTest::qWait(10);
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     int count = 0;
     // mutter/GNOME Shell doesn't unmap when minimizing window.
     // More details at https://gitlab.gnome.org/GNOME/mutter/issues/185
@@ -8647,8 +8596,6 @@ void tst_QWidget::doubleRepaint()
 #if defined(Q_OS_QNX)
     QEXPECT_FAIL("", "Platform does not support showMinimized()", Continue);
 #endif
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
    QCOMPARE(widget.numPaintEvents, 0);
    widget.numPaintEvents = 0;
 
@@ -8773,8 +8720,6 @@ void tst_QWidget::setMaskInResizeEvent()
 
     QRegion expectedParentUpdate(0, 0, 100, 10); // Old testWidget area.
     expectedParentUpdate += testWidget.geometry(); // New testWidget area.
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_COMPARE(w.paintedRegion, expectedParentUpdate);
     QTRY_COMPARE(testWidget.paintedRegion, testWidget.mask());
 
@@ -9007,7 +8952,7 @@ void tst_QWidget::moveRect()
     child.move(10, 10); // Don't crash.
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 class GDIWidget : public QDialog
 {
     Q_OBJECT
@@ -9074,7 +9019,7 @@ void tst_QWidget::paintOnScreenPossible()
     w2.setAttribute(Qt::WA_PaintOnScreen);
     QVERIFY(w2.testAttribute(Qt::WA_PaintOnScreen));
 }
-#endif // Q_OS_WIN && !Q_OS_WINRT
+#endif // Q_OS_WIN
 
 void tst_QWidget::reparentStaticWidget()
 {
@@ -9224,7 +9169,7 @@ void tst_QWidget::translucentWidget()
     QPixmap widgetSnapshot;
 
 #ifdef Q_OS_WIN
-    QWidget *desktopWidget = QApplication::desktop()->screen(0);
+    QWidget *desktopWidget = QApplication::desktop();
     widgetSnapshot = grabWindow(desktopWidget->windowHandle(), labelPos.x(), labelPos.y(), label.width(), label.height());
 #else
     widgetSnapshot = label.grab(QRect(QPoint(0, 0), label.size()));
@@ -9232,8 +9177,6 @@ void tst_QWidget::translucentWidget()
     const QImage actual = widgetSnapshot.toImage().convertToFormat(QImage::Format_RGB32);
     QImage expected = pm.toImage().scaled(label.devicePixelRatioF() * pm.size());
     expected.setDevicePixelRatio(label.devicePixelRatioF());
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QCOMPARE(actual.size(),expected.size());
     QCOMPARE(actual,expected);
 
@@ -9955,8 +9898,6 @@ void tst_QWidget::rectOutsideCoordinatesLimit_task144779()
     correct.fill(Qt::green);
     const QPixmap mainPixmap = grabFromWidget(&main, QRect(QPoint(0, 0), QSize(-1, -1)));
 
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_COMPARE(mainPixmap.toImage().convertToFormat(QImage::Format_RGB32),
                  correct.toImage().convertToFormat(QImage::Format_RGB32));
 #ifndef QT_NO_CURSOR
@@ -10050,8 +9991,6 @@ void tst_QWidget::activateWindow()
     QCoreApplication::processEvents();
 
     QTRY_VERIFY(mainwindow->isActiveWindow());
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QTRY_VERIFY(!mainwindow2->isActiveWindow());
 }
 
@@ -10089,6 +10028,7 @@ void tst_QWidget::openModal_taskQTBUG_5804()
 void tst_QWidget::focusProxy()
 {
     QWidget window;
+    window.setFocusPolicy(Qt::StrongFocus);
     class Container : public QWidget
     {
     public:
@@ -10136,25 +10076,40 @@ void tst_QWidget::focusProxy()
     layout->addWidget(container2);
     window.setLayout(layout);
 
+    window.setFocus();
     window.show();
     window.activateWindow();
     if (!QTest::qWaitForWindowExposed(&window) || !QTest::qWaitForWindowActive(&window))
         QSKIP("Window activation failed");
 
-    QCOMPARE(container1->focusInCount, 1);
+    // given a widget without focus proxy
+    QVERIFY(window.hasFocus());
+    QCOMPARE(&window, QApplication::focusWidget());
+    QVERIFY(!container1->hasFocus());
+    QVERIFY(!container2->hasFocus());
+    QCOMPARE(container1->focusInCount, 0);
     QCOMPARE(container1->focusOutCount, 0);
 
-    // given a widget with a nested focus proxy
+    // setting a (nested) focus proxy moves focus
     window.setFocusProxy(container1);
     QCOMPARE(window.focusWidget(), container1->edit);
     QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(window.hasFocus()); // and redirects hasFocus correctly
     QVERIFY(container1->edit->hasFocus());
     QCOMPARE(container1->focusInCount, 1);
 
-    // changing the focus proxy should move focus to the new proxy
+    // changing the focus proxy should not move focus
     window.setFocusProxy(container2);
+    QCOMPARE(window.focusWidget(), container1->edit);
+    QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(!window.hasFocus());
+    QCOMPARE(container1->focusOutCount, 0);
+
+    // but setting focus again does
+    window.setFocus();
     QCOMPARE(window.focusWidget(), container2->edit);
     QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(window.hasFocus());
     QVERIFY(!container1->edit->hasFocus());
     QVERIFY(container2->edit->hasFocus());
     QCOMPARE(container1->focusInCount, 1);
@@ -10162,13 +10117,22 @@ void tst_QWidget::focusProxy()
     QCOMPARE(container2->focusInCount, 1);
     QCOMPARE(container2->focusOutCount, 0);
 
-    // clearing the focus proxy moves focus
+    // clearing the focus proxy does not move focus
     window.setFocusProxy(nullptr);
-    QCOMPARE(window.focusWidget(), &window);
+    QCOMPARE(window.focusWidget(), container2->edit);
     QCOMPARE(window.focusWidget(), QApplication::focusWidget());
+    QVERIFY(!window.hasFocus());
     QCOMPARE(container1->focusInCount, 1);
     QCOMPARE(container1->focusOutCount, 1);
     QCOMPARE(container2->focusInCount, 1);
+    QCOMPARE(container2->focusOutCount, 0);
+
+    // but clearing focus does
+    window.focusWidget()->clearFocus();
+    QCOMPARE(QApplication::focusWidget(), nullptr);
+    QVERIFY(!window.hasFocus());
+    QVERIFY(!container2->hasFocus());
+    QVERIFY(!container2->edit->hasFocus());
     QCOMPARE(container2->focusOutCount, 1);
 }
 
@@ -10524,7 +10488,7 @@ protected:
         case QEvent::MouseMove:
         case QEvent::MouseButtonRelease: {
             QMouseEvent *me = static_cast<QMouseEvent *>(e);
-            m_log->push_back(mouseEventLogEntry(objectName(), me->type(), me->pos(), me->buttons()));
+            m_log->push_back(mouseEventLogEntry(objectName(), me->type(), me->position().toPoint(), me->buttons()));
             me->accept();
             return true;
         }
@@ -10648,7 +10612,7 @@ protected:
         case QEvent::MouseMove:
         case QEvent::MouseButtonRelease:
             ++m_mouseEventCount;
-            m_lastMouseEventPos = static_cast<QMouseEvent *>(e)->localPos();
+            m_lastMouseEventPos = static_cast<QMouseEvent *>(e)->position();
             if (m_acceptMouse)
                 e->accept();
             else
@@ -11330,8 +11294,6 @@ void tst_QWidget::resizeStaticContentsChildWidget_QTBUG35282()
 
     widget.showNormal();
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
-    if (m_platform == QStringLiteral("winrt"))
-        QEXPECT_FAIL("", "WinRT: This fails. QTBUG-68297.", Abort);
     QCOMPARE(childWidget.numPaintEvents, 0);
     childWidget.reset();
 
@@ -11626,30 +11588,42 @@ void tst_QWidget::winIdAfterClose()
     delete spy;
 }
 
-class LanguageChangeEventWidget : public QWidget
+class ChangeEventWidget : public QWidget
 {
 public:
-    LanguageChangeEventWidget(QWidget *parent = nullptr) : QWidget(parent) {}
+    ChangeEventWidget(QWidget *parent = nullptr) : QWidget(parent) {}
     int languageChangeCount = 0;
+    int applicationFontChangeCount = 0;
+    int applicationPaletteChangeCount = 0;
 protected:
     bool event(QEvent *e) override
     {
         if (e->type() == QEvent::LanguageChange)
             languageChangeCount++;
+        else if (e->type() == QEvent::ApplicationFontChange)
+            applicationFontChangeCount++;
+        else if (e->type() == QEvent::ApplicationPaletteChange)
+            applicationPaletteChangeCount++;
         return QWidget::event(e);
     }
 };
 
-class LanguageChangeEventWindow : public QWindow
+class ChangeEventWindow : public QWindow
 {
 public:
-    LanguageChangeEventWindow(QWindow *parent = nullptr) : QWindow(parent) {}
+    ChangeEventWindow(QWindow *parent = nullptr) : QWindow(parent) {}
     int languageChangeCount = 0;
+    int applicationFontChangeCount = 0;
+    int applicationPaletteChangeCount = 0;
 protected:
     bool event(QEvent *e) override
     {
         if (e->type() == QEvent::LanguageChange)
             languageChangeCount++;
+        else if (e->type() == QEvent::ApplicationFontChange)
+            applicationFontChangeCount++;
+        else if (e->type() == QEvent::ApplicationPaletteChange)
+            applicationPaletteChangeCount++;
         return QWindow::event(e);
     }
 };
@@ -11658,14 +11632,14 @@ void tst_QWidget::receivesLanguageChangeEvent()
 {
     // Confirm that any QWindow or QWidget only gets a single
     // LanguageChange event when a translator is installed
-    LanguageChangeEventWidget topLevel;
-    auto childWidget = new LanguageChangeEventWidget(&topLevel);
+    ChangeEventWidget topLevel;
+    auto childWidget = new ChangeEventWidget(&topLevel);
     topLevel.show();
     QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
-    LanguageChangeEventWindow ww;
+    ChangeEventWindow ww;
     ww.show();
     QVERIFY(QTest::qWaitForWindowExposed(&ww));
-    LanguageChangeEventWidget topLevelNotShown;
+    ChangeEventWidget topLevelNotShown;
     QTranslator t;
     QVERIFY(t.load("hellotr_la.qm", ":/"));
     QVERIFY(qApp->installTranslator(&t));
@@ -11674,6 +11648,78 @@ void tst_QWidget::receivesLanguageChangeEvent()
     QCOMPARE(topLevelNotShown.languageChangeCount, 1);
     QCOMPARE(childWidget->languageChangeCount, 1);
     QCOMPARE(ww.languageChangeCount, 1);
+}
+
+void tst_QWidget::receivesApplicationFontChangeEvent()
+{
+    // Confirm that any QWindow or top level QWidget only gets a single
+    // ApplicationFontChange event when the font is changed
+    const QFont origFont = QApplication::font();
+
+    ChangeEventWidget topLevel;
+    auto childWidget = new ChangeEventWidget(&topLevel);
+    topLevel.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
+    ChangeEventWindow ww;
+    ww.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&ww));
+    ChangeEventWidget topLevelNotShown;
+    QFont changedFont = origFont;
+    changedFont.setPointSize(changedFont.pointSize() + 2);
+    QApplication::setFont(changedFont);
+    QCoreApplication::sendPostedEvents(0, QEvent::ApplicationFontChange);
+    QCOMPARE(topLevel.applicationFontChangeCount, 1);
+    QCOMPARE(topLevelNotShown.applicationFontChangeCount, 1);
+    // QWidget should not be passing the event on automatically
+    QCOMPARE(childWidget->applicationFontChangeCount, 0);
+    QCOMPARE(ww.applicationFontChangeCount, 1);
+
+    QApplication::setFont(origFont);
+}
+
+void tst_QWidget::receivesApplicationPaletteChangeEvent()
+{
+    // Confirm that any QWindow or top level QWidget only gets a single
+    // ApplicationPaletteChange event when the font is changed
+    const QPalette origPalette = QApplication::palette();
+
+    ChangeEventWidget topLevel;
+    auto childWidget = new ChangeEventWidget(&topLevel);
+    topLevel.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
+    ChangeEventWindow ww;
+    ww.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&ww));
+    ChangeEventWidget topLevelNotShown;
+    QPalette changedPalette = origPalette;
+    changedPalette.setColor(QPalette::Base, Qt::red);
+    QApplication::setPalette(changedPalette);
+    QCoreApplication::sendPostedEvents(0, QEvent::ApplicationPaletteChange);
+    QCOMPARE(topLevel.applicationPaletteChangeCount, 1);
+    QCOMPARE(topLevelNotShown.applicationPaletteChangeCount, 1);
+    // QWidget should not be passing the event on automatically
+    QCOMPARE(childWidget->applicationPaletteChangeCount, 0);
+    QCOMPARE(ww.applicationPaletteChangeCount, 1);
+
+    QApplication::setPalette(origPalette);
+}
+
+class DeleteOnCloseEventWidget : public QWidget
+{
+protected:
+    virtual void closeEvent(QCloseEvent *e) override
+    {
+        e->accept();
+        delete this;
+    }
+};
+
+void tst_QWidget::deleteWindowInCloseEvent()
+{
+    // Just checking if closing this widget causes a crash
+    auto widget = new DeleteOnCloseEventWidget;
+    widget->close();
+    QVERIFY(true);
 }
 
 QTEST_MAIN(tst_QWidget)

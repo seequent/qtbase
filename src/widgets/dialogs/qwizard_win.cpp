@@ -52,7 +52,6 @@
 #include <QtCore/QDebug>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QWindow>
-#include <QtWidgets/QDesktopWidget>
 
 #include <uxtheme.h>
 #include <vssym32.h>
@@ -339,11 +338,7 @@ void QVistaHelper::setTitleBarIconAndCaptionVisible(bool visible)
         SetWindowThemeAttribute(handle, WTA_NONCLIENT, &opt, sizeof(WTA_OPTIONS));
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 bool QVistaHelper::winEvent(MSG* msg, qintptr *result)
-#else
-bool QVistaHelper::winEvent(MSG* msg, long* result)
-#endif
 {
     switch (msg->message) {
     case WM_NCHITTEST: {
@@ -405,11 +400,7 @@ void QVistaHelper::mouseEvent(QEvent *event)
     }
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 bool QVistaHelper::handleWinEvent(MSG *message, qintptr *result)
-#else
-bool QVistaHelper::handleWinEvent(MSG *message, long *result)
-#endif
 {
     if (message->message == WM_THEMECHANGED || message->message == WM_DWMCOMPOSITIONCHANGED)
         cachedVistaState = Dirty;
@@ -517,11 +508,7 @@ bool QVistaHelper::eventFilter(QObject *obj, QEvent *event)
 
     if (event->type() == QEvent::MouseMove) {
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         qintptr result;
-#else
-        long result;
-#endif
         MSG msg;
         msg.message = WM_NCHITTEST;
         msg.wParam  = 0;
@@ -535,11 +522,7 @@ bool QVistaHelper::eventFilter(QObject *obj, QEvent *event)
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
 
         if (mouseEvent->button() == Qt::LeftButton) {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
             qintptr result;
-#else
-            long result;
-#endif
             MSG msg;
             msg.message = WM_NCHITTEST;
             msg.wParam  = 0;
@@ -554,11 +537,7 @@ bool QVistaHelper::eventFilter(QObject *obj, QEvent *event)
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
 
         if (mouseEvent->button() == Qt::LeftButton) {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
             qintptr result;
-#else
-            long result;
-#endif
             MSG msg;
             msg.message = WM_NCHITTEST;
             msg.wParam  = 0;

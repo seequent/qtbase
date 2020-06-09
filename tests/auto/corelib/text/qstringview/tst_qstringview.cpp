@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
+** Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -27,13 +27,25 @@
 ****************************************************************************/
 
 #include <QStringView>
+#include <QStringTokenizer>
 #include <QString>
 #include <QChar>
 #include <QStringRef>
+#include <QVarLengthArray>
+#include <QVector>
 
 #include <QTest>
 
 #include <string>
+#include <string_view>
+#include <array>
+#include <vector>
+#include <algorithm>
+#include <memory>
+
+// for negative testing (can't convert from)
+#include <deque>
+#include <list>
 
 template <typename T>
 using CanConvert = std::is_convertible<T, QStringView>;
@@ -77,29 +89,38 @@ Q_STATIC_ASSERT(CanConvert<ushort[123]>::value);
 Q_STATIC_ASSERT(CanConvert<      ushort*>::value);
 Q_STATIC_ASSERT(CanConvert<const ushort*>::value);
 
+static_assert(CanConvert<QVector<ushort>>::value);
+static_assert(CanConvert<QVarLengthArray<ushort>>::value);
+static_assert(CanConvert<std::vector<ushort>>::value);
+static_assert(CanConvert<std::array<ushort, 123>>::value);
+static_assert(!CanConvert<std::deque<ushort>>::value);
+static_assert(!CanConvert<std::list<ushort>>::value);
 
 //
 // char16_t
 //
-
-#if defined(Q_COMPILER_UNICODE_STRINGS)
 
 Q_STATIC_ASSERT(!CanConvert<char16_t>::value);
 
 Q_STATIC_ASSERT(CanConvert<      char16_t*>::value);
 Q_STATIC_ASSERT(CanConvert<const char16_t*>::value);
 
-#endif
-
-#if defined(Q_STDLIB_UNICODE_STRINGS)
-
 Q_STATIC_ASSERT(CanConvert<      std::u16string >::value);
 Q_STATIC_ASSERT(CanConvert<const std::u16string >::value);
 Q_STATIC_ASSERT(CanConvert<      std::u16string&>::value);
 Q_STATIC_ASSERT(CanConvert<const std::u16string&>::value);
 
-#endif
+static_assert(CanConvert<      std::u16string_view >::value);
+static_assert(CanConvert<const std::u16string_view >::value);
+static_assert(CanConvert<      std::u16string_view&>::value);
+static_assert(CanConvert<const std::u16string_view&>::value);
 
+static_assert(CanConvert<QVector<char16_t>>::value);
+static_assert(CanConvert<QVarLengthArray<char16_t>>::value);
+static_assert(CanConvert<std::vector<char16_t>>::value);
+static_assert(CanConvert<std::array<char16_t, 123>>::value);
+static_assert(!CanConvert<std::deque<char16_t>>::value);
+static_assert(!CanConvert<std::list<char16_t>>::value);
 
 //
 // wchar_t
@@ -123,6 +144,17 @@ Q_STATIC_ASSERT(CanConvert<const std::wstring >::value == CanConvertFromWCharT);
 Q_STATIC_ASSERT(CanConvert<      std::wstring&>::value == CanConvertFromWCharT);
 Q_STATIC_ASSERT(CanConvert<const std::wstring&>::value == CanConvertFromWCharT);
 
+static_assert(CanConvert<      std::wstring_view >::value == CanConvertFromWCharT);
+static_assert(CanConvert<const std::wstring_view >::value == CanConvertFromWCharT);
+static_assert(CanConvert<      std::wstring_view&>::value == CanConvertFromWCharT);
+static_assert(CanConvert<const std::wstring_view&>::value == CanConvertFromWCharT);
+
+static_assert(CanConvert<QVector<wchar_t>>::value == CanConvertFromWCharT);
+static_assert(CanConvert<QVarLengthArray<wchar_t>>::value == CanConvertFromWCharT);
+static_assert(CanConvert<std::vector<wchar_t>>::value == CanConvertFromWCharT);
+static_assert(CanConvert<std::array<wchar_t, 123>>::value == CanConvertFromWCharT);
+static_assert(!CanConvert<std::deque<wchar_t>>::value);
+static_assert(!CanConvert<std::list<wchar_t>>::value);
 
 class tst_QStringView : public QObject
 {
@@ -153,11 +185,7 @@ private Q_SLOTS:
 
     void fromChar16TStar() const
     {
-#if defined(Q_COMPILER_UNICODE_STRINGS)
         fromLiteral(u"Hello, World!");
-#else
-        QSKIP("This test requires C++11 char16_t support enabled in the compiler");
-#endif
     }
 
     void fromWCharTStar() const
@@ -183,12 +211,8 @@ private Q_SLOTS:
 
     void fromChar16TRange() const
     {
-#if defined(Q_COMPILER_UNICODE_STRINGS)
         const char16_t str[] = { 'H', 'e', 'l', 'l', 'o', ',', ' ', 'W', 'o', 'r', 'l', 'd', '!' };
         fromRange(std::begin(str), std::end(str));
-#else
-        QSKIP("This test requires C++11 char16_t support enabled in the compiler");
-#endif
     }
 
     void fromWCharTRange() const
@@ -212,16 +236,39 @@ private Q_SLOTS:
     }
     void fromStdStringChar16T() const
     {
-#ifdef Q_STDLIB_UNICODE_STRINGS
         fromStdString<char16_t>();
+    }
+
+    void fromUShortContainers() const
+    {
+        fromContainers<ushort>();
+    }
+
+    void fromQCharContainers() const
+    {
+        fromContainers<QChar>();
+    }
+
+    void fromChar16TContainers() const
+    {
+        fromContainers<char16_t>();
+    }
+
+    void fromWCharTContainers() const
+    {
+#ifdef Q_OS_WIN
+        fromContainers<wchar_t>();
 #else
-        QSKIP("This test requires C++11 char16_t support enabled in compiler & stdlib");
+        QSKIP("This is a Windows-only test");
 #endif
     }
 
     void comparison();
 
     void overloadResolution();
+
+    void tokenize_data() const;
+    void tokenize() const;
 
 private:
     template <typename String>
@@ -232,6 +279,8 @@ private:
     void fromRange(const Char *first, const Char *last) const;
     template <typename Char, typename Container>
     void fromContainer() const;
+    template <typename Char>
+    void fromContainers() const;
     template <typename Char>
     void fromStdString() const { fromContainer<Char, std::basic_string<Char> >(); }
 };
@@ -285,7 +334,6 @@ void tst_QStringView::constExpr() const
         Q_STATIC_ASSERT(!sv2.empty());
         Q_STATIC_ASSERT(sv2.size() == 5);
     }
-#if !defined(Q_OS_WIN) || defined(Q_COMPILER_UNICODE_STRINGS)
     {
         Q_STATIC_ASSERT(QStringView(u"Hello").size() == 5);
         constexpr QStringView sv = u"Hello";
@@ -314,36 +362,6 @@ void tst_QStringView::constExpr() const
         Q_STATIC_ASSERT(sv3.isEmpty());
         Q_STATIC_ASSERT(sv3.size() == 0);
     }
-#else // storage_type is wchar_t
-    {
-        Q_STATIC_ASSERT(QStringView(L"Hello").size() == 5);
-        constexpr QStringView sv = L"Hello";
-        Q_STATIC_ASSERT(sv.size() == 5);
-        Q_STATIC_ASSERT(!sv.empty());
-        Q_STATIC_ASSERT(!sv.isEmpty());
-        Q_STATIC_ASSERT(!sv.isNull());
-        Q_STATIC_ASSERT(*sv.utf16() == 'H');
-        Q_STATIC_ASSERT(sv[0]      == QLatin1Char('H'));
-        Q_STATIC_ASSERT(sv.at(0)   == QLatin1Char('H'));
-        Q_STATIC_ASSERT(sv.front() == QLatin1Char('H'));
-        Q_STATIC_ASSERT(sv.first() == QLatin1Char('H'));
-        Q_STATIC_ASSERT(sv[4]      == QLatin1Char('o'));
-        Q_STATIC_ASSERT(sv.at(4)   == QLatin1Char('o'));
-        Q_STATIC_ASSERT(sv.back()  == QLatin1Char('o'));
-        Q_STATIC_ASSERT(sv.last()  == QLatin1Char('o'));
-
-        constexpr QStringView sv2(sv.utf16(), sv.utf16() + sv.size());
-        Q_STATIC_ASSERT(!sv2.isNull());
-        Q_STATIC_ASSERT(!sv2.empty());
-        Q_STATIC_ASSERT(sv2.size() == 5);
-
-        constexpr wchar_t *null = nullptr;
-        constexpr QStringView sv3(null);
-        Q_STATIC_ASSERT(sv3.isNull());
-        Q_STATIC_ASSERT(sv3.isEmpty());
-        Q_STATIC_ASSERT(sv3.size() == 0);
-    }
-#endif
 #endif
 }
 
@@ -364,17 +382,10 @@ void tst_QStringView::basics() const
 
 void tst_QStringView::literals() const
 {
-#if !defined(Q_OS_WIN) || defined(Q_COMPILER_UNICODE_STRINGS)
     const char16_t hello[] = u"Hello";
     const char16_t longhello[] =
             u"Hello World. This is a much longer message, to exercise qustrlen.";
     const char16_t withnull[] = u"a\0zzz";
-#else // storage_type is wchar_t
-    const wchar_t hello[] = L"Hello";
-    const wchar_t longhello[] =
-            L"Hello World. This is a much longer message, to exercise qustrlen.";
-    const wchar_t withnull[] = L"a\0zzz";
-#endif
     Q_STATIC_ASSERT(sizeof(longhello) >= 16);
 
     QCOMPARE(QStringView(hello).size(), 5);
@@ -497,6 +508,165 @@ void tst_QStringView::fromQStringRef() const
     conversion_tests(QString("Hello World!").midRef(6));
 }
 
+void tst_QStringView::tokenize_data() const
+{
+    // copied from tst_QString
+    QTest::addColumn<QString>("str");
+    QTest::addColumn<QString>("sep");
+    QTest::addColumn<QStringList>("result");
+
+    QTest::newRow("1") << "a,b,c" << "," << (QStringList() << "a" << "b" << "c");
+    QTest::newRow("2") << QString("-rw-r--r--  1 0  0  519240 Jul  9  2002 bigfile")
+                       << " "
+                       << (QStringList() << "-rw-r--r--" << "" << "1" << "0" << "" << "0" << ""
+                                         << "519240" << "Jul" << "" << "9" << "" << "2002"
+                                         << "bigfile");
+    QTest::newRow("one-empty") << "" << " " << (QStringList() << "");
+    QTest::newRow("two-empty") << " " << " " << (QStringList() << "" << "");
+    QTest::newRow("three-empty") << "  " << " " << (QStringList() << "" << "" << "");
+
+    QTest::newRow("all-empty") << "" << "" << (QStringList() << "" << "");
+    QTest::newRow("sep-empty") << "abc" << "" << (QStringList() << "" << "a" << "b" << "c" << "");
+}
+
+void tst_QStringView::tokenize() const
+{
+    QFETCH(const QString, str);
+    QFETCH(const QString, sep);
+    QFETCH(const QStringList, result);
+
+    // lvalue QString
+#ifdef __cpp_deduction_guides
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringTokenizer{str, sep})
+            QCOMPARE(sv, *rit++);
+    }
+#endif
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringView{str}.tokenize(sep))
+            QCOMPARE(sv, *rit++);
+    }
+
+    // rvalue QString
+#ifdef __cpp_deduction_guides
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringTokenizer{str, QString{sep}})
+            QCOMPARE(sv, *rit++);
+    }
+#endif
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringView{str}.tokenize(QString{sep}))
+            QCOMPARE(sv, *rit++);
+    }
+
+    // (rvalue) QStringRef
+#ifdef __cpp_deduction_guides
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringTokenizer{str, sep.midRef(0)})
+            QCOMPARE(sv, *rit++);
+    }
+#endif
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringView{str}.tokenize(sep.midRef(0)))
+            QCOMPARE(sv, *rit++);
+    }
+
+    // (rvalue) QChar
+#ifdef __cpp_deduction_guides
+    if (sep.size() == 1) {
+        auto rit = result.cbegin();
+        for (auto sv : QStringTokenizer{str, sep.front()})
+            QCOMPARE(sv, *rit++);
+    }
+#endif
+    if (sep.size() == 1) {
+        auto rit = result.cbegin();
+        for (auto sv : QStringView{str}.tokenize(sep.front()))
+            QCOMPARE(sv, *rit++);
+    }
+
+    // (rvalue) char16_t
+#ifdef __cpp_deduction_guides
+    if (sep.size() == 1) {
+        auto rit = result.cbegin();
+        for (auto sv : QStringTokenizer{str, *qToStringViewIgnoringNull(sep).utf16()})
+            QCOMPARE(sv, *rit++);
+    }
+#endif
+    if (sep.size() == 1) {
+        auto rit = result.cbegin();
+        for (auto sv : QStringView{str}.tokenize(*qToStringViewIgnoringNull(sep).utf16()))
+            QCOMPARE(sv, *rit++);
+    }
+
+    // char16_t literal
+    const auto make_literal = [](const QString &sep) {
+        auto literal = std::make_unique<char16_t[]>(sep.size() + 1);
+        const auto to_char16_t = [](QChar c) { return char16_t{c.unicode()}; };
+        std::transform(sep.cbegin(), sep.cend(), literal.get(), to_char16_t);
+        return literal;
+    };
+    const std::unique_ptr<const char16_t[]> literal = make_literal(sep);
+#ifdef __cpp_deduction_guides
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringTokenizer{str, literal.get()})
+            QCOMPARE(sv, *rit++);
+    }
+#endif
+    {
+        auto rit = result.cbegin();
+        for (auto sv : QStringView{str}.tokenize(literal.get()))
+            QCOMPARE(sv, *rit++);
+    }
+
+#ifdef __cpp_deduction_guides
+#ifdef __cpp_lib_ranges
+    // lvalue QString
+    {
+        QStringList actual;
+        const QStringTokenizer tok{str, sep};
+        std::ranges::transform(tok, std::back_inserter(actual),
+                               [](auto sv) { return sv.toString(); });
+        QCOMPARE(result, actual);
+    }
+
+    // rvalue QString
+    {
+        QStringList actual;
+        const QStringTokenizer tok{str, QString{sep}};
+        std::ranges::transform(tok, std::back_inserter(actual),
+                               [](auto sv) { return sv.toString(); });
+        QCOMPARE(result, actual);
+    }
+
+    // (rvalue) QStringRef
+    {
+        QStringList actual;
+        const QStringTokenizer tok{str, sep.midRef(0)};
+        std::ranges::transform(tok, std::back_inserter(actual),
+                               [](auto sv) { return sv.toString(); });
+        QCOMPARE(result, actual);
+    }
+
+    // (rvalue) QChar
+    if (sep.size() == 1) {
+        QStringList actual;
+        const QStringTokenizer tok{str, sep.front()};
+        std::ranges::transform(tok, std::back_inserter(actual),
+                               [](auto sv) { return sv.toString(); });
+        QCOMPARE(result, actual);
+    }
+#endif // __cpp_lib_ranges
+#endif // __cpp_deduction_guides
+}
+
 template <typename Char>
 void tst_QStringView::fromLiteral(const Char *arg) const
 {
@@ -551,6 +721,14 @@ void tst_QStringView::fromContainer() const
     conversion_tests(std::move(c));
 }
 
+template <typename Char>
+void tst_QStringView::fromContainers() const
+{
+    fromContainer<Char, QVector<Char>>();
+    fromContainer<Char, QVarLengthArray<Char>>();
+    fromContainer<Char, std::vector<Char>>();
+}
+
 namespace help {
 template <typename T>
 size_t size(const T &t) { return size_t(t.size()); }
@@ -575,22 +753,22 @@ size_t size(const QChar *t)
 }
 
 template <typename T>
-typename T::const_iterator cbegin(const T &t) { return t.cbegin(); }
+decltype(auto)             cbegin(const T &t) { return t.begin(); }
 template <typename T>
 const T *                  cbegin(const T *t) { return t; }
 
 template <typename T>
-typename T::const_iterator cend(const T &t) { return t.cend(); }
+decltype(auto)             cend(const T &t) { return t.end(); }
 template <typename T>
 const T *                  cend(const T *t) { return t + size(t); }
 
 template <typename T>
-typename T::const_reverse_iterator crbegin(const T &t) { return t.crbegin(); }
+decltype(auto)                     crbegin(const T &t) { return t.rbegin(); }
 template <typename T>
 std::reverse_iterator<const T*>    crbegin(const T *t) { return std::reverse_iterator<const T*>(cend(t)); }
 
 template <typename T>
-typename T::const_reverse_iterator crend(const T &t) { return t.crend(); }
+decltype(auto)                     crend(const T &t) { return t.rend(); }
 template <typename T>
 std::reverse_iterator<const T*>    crend(const T *t) { return std::reverse_iterator<const T*>(cbegin(t)); }
 
@@ -717,23 +895,19 @@ void tst_QStringView::overloadResolution()
     }
 #endif
 
-#if defined(Q_COMPILER_UNICODE_STRINGS)
     {
         char16_t char16Array[] = u"test";
         QStringViewOverloadResolution::test(char16Array);
         char16_t *char16Pointer = char16Array;
         QStringViewOverloadResolution::test(char16Pointer);
     }
-#endif
 
-#if defined(Q_STDLIB_UNICODE_STRINGS)
     {
         std::u16string string;
         QStringViewOverloadResolution::test(string);
         QStringViewOverloadResolution::test(qAsConst(string));
         QStringViewOverloadResolution::test(std::move(string));
     }
-#endif
 }
 
 QTEST_APPLESS_MAIN(tst_QStringView)

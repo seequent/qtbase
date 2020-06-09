@@ -53,7 +53,6 @@
 #if !defined(QT_BOOTSTRAPPED)
 #include <private/qcoreapplication_p.h>
 #endif
-#include "private/qcoreglobaldata_p.h"
 
 #include "qutfcodec_p.h"
 #include "qlatincodec_p.h"
@@ -102,6 +101,28 @@ typedef QList<QTextCodec*>::ConstIterator TextCodecListConstIt;
 typedef QList<QByteArray>::ConstIterator ByteArrayListConstIt;
 
 Q_GLOBAL_STATIC(QRecursiveMutex, textCodecsMutex);
+
+Q_GLOBAL_STATIC(QTextCodecData, textCodecData)
+
+QTextCodecData::QTextCodecData()
+    : codecForLocale(nullptr)
+{
+}
+
+QTextCodecData::~QTextCodecData()
+{
+    codecForLocale = nullptr;
+    QList<QTextCodec *> tmp = allCodecs;
+    allCodecs.clear();
+    codecCache.clear();
+    for (QList<QTextCodec *>::const_iterator it = tmp.constBegin(); it != tmp.constEnd(); ++it)
+        delete *it;
+}
+
+QTextCodecData *QTextCodecData::instance()
+{
+    return textCodecData();
+}
 
 class TextCodecsMutexLocker
 {
@@ -166,7 +187,7 @@ static void setup();
 // setCodecForLocale(0) is called at the same time.
 static QTextCodec *setupLocaleMapper()
 {
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
 
     QTextCodec *locale = nullptr;
 
@@ -339,17 +360,6 @@ static void setup() {}
 */
 
 /*!
-    Destroys the ConverterState object.
-*/
-QTextCodec::ConverterState::~ConverterState()
-{
-    if (flags & FreeFunction)
-        (QTextCodecUnalignedPointer::decode(state_data))(this);
-    else if (d)
-        free(d);
-}
-
-/*!
     \class QTextCodec
     \inmodule QtCore
     \brief The QTextCodec class provides conversions between text encodings.
@@ -488,7 +498,7 @@ QTextCodec::QTextCodec()
 {
     const TextCodecsMutexLocker locker;
 
-    QCoreGlobalData *globalInstance = QCoreGlobalData::instance();
+    QTextCodecData *globalInstance = QTextCodecData::instance();
     if (globalInstance->allCodecs.isEmpty())
         setup();
 
@@ -504,7 +514,7 @@ QTextCodec::QTextCodec()
 */
 QTextCodec::~QTextCodec()
 {
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     if (!globalData)
         return;
 
@@ -545,7 +555,7 @@ QTextCodec *QTextCodec::codecForName(const QByteArray &name)
 
     const TextCodecsMutexLocker locker;
 
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     if (!globalData)
         return nullptr;
     setup();
@@ -589,7 +599,7 @@ QTextCodec* QTextCodec::codecForMib(int mib)
 {
     const TextCodecsMutexLocker locker;
 
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     if (!globalData)
         return nullptr;
     if (globalData->allCodecs.isEmpty())
@@ -635,7 +645,7 @@ QList<QByteArray> QTextCodec::availableCodecs()
 {
     const TextCodecsMutexLocker locker;
 
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     if (globalData->allCodecs.isEmpty())
         setup();
 
@@ -667,7 +677,7 @@ QList<int> QTextCodec::availableMibs()
 #else
     const TextCodecsMutexLocker locker;
 
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     if (globalData->allCodecs.isEmpty())
         setup();
 
@@ -694,7 +704,7 @@ QList<int> QTextCodec::availableMibs()
 */
 void QTextCodec::setCodecForLocale(QTextCodec *c)
 {
-    QCoreGlobalData::instance()->codecForLocale.storeRelease(c);
+    QTextCodecData::instance()->codecForLocale.storeRelease(c);
 }
 
 /*!
@@ -708,7 +718,7 @@ void QTextCodec::setCodecForLocale(QTextCodec *c)
 
 QTextCodec* QTextCodec::codecForLocale()
 {
-    QCoreGlobalData *globalData = QCoreGlobalData::instance();
+    QTextCodecData *globalData = QTextCodecData::instance();
     if (!globalData)
         return nullptr;
 
@@ -1066,7 +1076,7 @@ QString QTextDecoder::toUnicode(const char *chars, int len)
 }
 
 // in qstring.cpp:
-void qt_from_latin1(ushort *dst, const char *str, size_t size) noexcept;
+void qt_from_latin1(char16_t *dst, const char *str, size_t size) noexcept;
 
 /*! \overload
 
@@ -1081,7 +1091,7 @@ void QTextDecoder::toUnicode(QString *target, const char *chars, int len)
         break;
     case 4: // latin1
         target->resize(len);
-        qt_from_latin1((ushort*)target->data(), chars, len);
+        qt_from_latin1((char16_t*)target->data(), chars, len);
         break;
     default:
         *target = c->toUnicode(chars, len, &state);
@@ -1273,6 +1283,17 @@ bool QTextDecoder::hasFailure() const
 bool QTextDecoder::needsMoreData() const
 {
     return state.remainingChars;
+}
+
+/*!
+    \fn QTextCodec *Qt::codecForHtml(const QByteArray &ba)
+    \internal
+
+    This function is defined in the \c <QTextCodec> header file.
+*/
+QTextCodec *Qt::codecForHtml(const QByteArray &ba)
+{
+    return QTextCodec::codecForHtml(ba);
 }
 
 QT_END_NAMESPACE

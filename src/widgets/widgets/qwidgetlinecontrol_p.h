@@ -70,6 +70,7 @@
 #include "qplatformdefs.h"
 
 #include <vector>
+#include <memory>
 
 #ifdef DrawText
 #  undef DrawText
@@ -110,9 +111,7 @@ public:
         // password data to stay in the process memory, therefore we need
         // to zero it out
         if (m_echoMode != QLineEdit::Normal)
-            m_text.fill('\0');
-
-        delete [] m_maskData;
+            m_text.fill(u'\0');
     }
 
     void setAccessibleObject(QObject *object)
@@ -465,7 +464,7 @@ private:
     };
     QString m_inputMask;
     QChar m_blank;
-    MaskInputData *m_maskData;
+    std::unique_ptr<MaskInputData[]> m_maskData;
 
     // undo/redo handling
     enum CommandType { Separator, Insert, Remove, Delete, RemoveSelection, DeleteSelection, SetSelection };

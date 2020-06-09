@@ -48,7 +48,6 @@
 #include "qstyleoption.h"
 #include "qlayout.h"
 #include "qdebug.h"
-#include <QDesktopWidget>
 
 #include <private/qwidget_p.h>
 #include <private/qdesktopwidget_p.h>
@@ -279,7 +278,7 @@ void QSizeGrip::mousePressEvent(QMouseEvent * e)
 
     Q_D(QSizeGrip);
     QWidget *tlw = qt_sizegrip_topLevelWidget(this);
-    d->p = e->globalPos();
+    d->p = e->globalPosition().toPoint();
     d->gotMousePress = true;
     d->r = tlw->geometry();
 
@@ -304,7 +303,7 @@ void QSizeGrip::mousePressEvent(QMouseEvent * e)
     bool hasVerticalSizeConstraint = true;
     bool hasHorizontalSizeConstraint = true;
     if (tlw->isWindow())
-        availableGeometry = QDesktopWidgetPrivate::availableGeometry(tlw);
+        availableGeometry = QWidgetPrivate::availableScreenGeometry(tlw);
     else {
         const QWidget *tlwParent = tlw->parentWidget();
         // Check if tlw is inside QAbstractScrollArea/QScrollArea.
@@ -373,7 +372,7 @@ void QSizeGrip::mouseMoveEvent(QMouseEvent * e)
     if (!d->gotMousePress || tlw->testAttribute(Qt::WA_WState_ConfigPending))
         return;
 
-    QPoint np(e->globalPos());
+    QPoint np(e->globalPosition().toPoint());
 
     // Don't extend beyond the available geometry; bound to dyMax and dxMax.
     QSize ns;

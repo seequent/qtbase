@@ -53,12 +53,14 @@
 
 #include <QtCore/private/qglobal_p.h>
 #include <string.h>
+#include <qhash.h>
+#if QT_CONFIG(textcodec)
+#include "qtextcodec.h"
+#endif
 
 QT_BEGIN_NAMESPACE
 
 #if QT_CONFIG(textcodec)
-
-#include "qtextcodec.h"
 
 #if defined(Q_OS_MAC) || defined(Q_OS_ANDROID) || defined(Q_OS_QNX) || defined(Q_OS_WASM)
 #define QT_LOCALE_IS_UTF8
@@ -66,19 +68,18 @@ QT_BEGIN_NAMESPACE
 
 typedef void (*QTextCodecStateFreeFunction)(QTextCodec::ConverterState*);
 
-struct QTextCodecUnalignedPointer
+typedef QHash<QByteArray, QTextCodec *> QTextCodecCache;
+
+struct QTextCodecData
 {
-    static inline QTextCodecStateFreeFunction decode(const uint *src)
-    {
-        quintptr data;
-        memcpy(&data, src, sizeof(data));
-        return reinterpret_cast<QTextCodecStateFreeFunction>(data);
-    }
-    static inline void encode(uint *dst, QTextCodecStateFreeFunction fn)
-    {
-        quintptr data = reinterpret_cast<quintptr>(fn);
-        memcpy(dst, &data, sizeof(data));
-    }
+    QTextCodecData();
+    ~QTextCodecData();
+
+    QList<QTextCodec*> allCodecs;
+    QAtomicPointer<QTextCodec> codecForLocale;
+    QTextCodecCache codecCache;
+
+    static QTextCodecData *instance();
 };
 
 bool qTextCodecNameMatch(const char *a, const char *b);

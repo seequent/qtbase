@@ -456,9 +456,6 @@
 #ifndef QT_NO_OPENSSL
 #include "qsslsocket_openssl_p.h"
 #endif
-#ifdef Q_OS_WINRT
-#include "qsslsocket_winrt_p.h"
-#endif
 #ifdef QT_SECURETRANSPORT
 #include "qsslsocket_mac_p.h"
 #endif
@@ -1111,8 +1108,10 @@ void QSslSocket::setSslConfiguration(const QSslConfiguration &configuration)
     // if the CA certificates were set explicitly (either via
     // QSslConfiguration::setCaCertificates() or QSslSocket::setCaCertificates(),
     // we cannot load the certificates on demand
-    if (!configuration.d->allowRootCertOnDemandLoading)
+    if (!configuration.d->allowRootCertOnDemandLoading) {
         d->allowRootCertOnDemandLoading = false;
+        d->configuration.allowRootCertOnDemandLoading = false;
+    }
 }
 
 /*!
@@ -1901,25 +1900,6 @@ bool QSslSocket::waitForDisconnected(int msecs)
     return retVal;
 }
 
-#if QT_DEPRECATED_SINCE(5, 15)
-/*!
-    \deprecated
-
-    Use sslHandshakeErrors() instead.
-
-    Returns a list of the last SSL errors that occurred. This is the
-    same list as QSslSocket passes via the sslErrors() signal. If the
-    connection has been encrypted with no errors, this function will
-    return an empty list.
-
-    \sa connectToHostEncrypted(), sslHandshakeErrors()
-*/
-QList<QSslError> QSslSocket::sslErrors() const
-{
-    return sslHandshakeErrors();
-}
-#endif // QT_DEPRECATED_SINCE(5, 15)
-
 /*!
     \since 5.15
 
@@ -2324,6 +2304,7 @@ void QSslSocketPrivate::init()
     writeBuffer.clear();
     configuration.peerCertificate.clear();
     configuration.peerCertificateChain.clear();
+    fetchAuthorityInformation = false;
 }
 
 /*!
@@ -2465,6 +2446,8 @@ void QSslSocketPrivate::addDefaultCaCertificate(const QSslCertificate &cert)
 {
     QSslSocketPrivate::ensureInitialized();
     QMutexLocker locker(&globalData()->mutex);
+    if (globalData()->config->caCertificates.contains(cert))
+        return;
     globalData()->config.detach();
     globalData()->config->caCertificates += cert;
     globalData()->dtlsConfig.detach();

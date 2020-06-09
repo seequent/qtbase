@@ -42,9 +42,6 @@ qt_extend_target(Bootstrap
         ../../3rdparty/pcre2/src/pcre2_ucp.h
         ../../3rdparty/pcre2/src/pcre2_valid_utf.c
         ../../3rdparty/pcre2/src/pcre2_xclass.c
-        ../../corelib/codecs/qlatincodec.cpp
-        ../../corelib/codecs/qtextcodec.cpp
-        ../../corelib/codecs/qutfcodec.cpp
         ../../corelib/global/qendian.cpp
         ../../corelib/global/qglobal.cpp
         ../../corelib/global/qlogging.cpp
@@ -104,13 +101,12 @@ qt_extend_target(Bootstrap
         ../../corelib/text/qbytearraymatcher.cpp
         ../../corelib/text/qlocale.cpp
         ../../corelib/text/qlocale_tools.cpp
-        ../../corelib/text/qregexp.cpp
         ../../corelib/text/qregularexpression.cpp
         ../../corelib/text/qstring.cpp
         ../../corelib/text/qstring_compat.cpp
         ../../corelib/text/qstringbuilder.cpp
+        ../../corelib/text/qstringconverter.cpp
         ../../corelib/text/qstringlist.cpp
-        ../../corelib/text/qstringview.cpp
         ../../corelib/text/qvsnprintf.cpp
         ../../corelib/time/qcalendar.cpp
         ../../corelib/time/qdatetime.cpp
@@ -147,6 +143,7 @@ qt_extend_target(Bootstrap
         QT_NO_FOREACH
     INCLUDE_DIRECTORIES
         ..
+        ../../3rdparty/pcre2/src
         ../../3rdparty/tinycbor/src
     PUBLIC_INCLUDE_DIRECTORIES  # special case
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/pcre2/src>
@@ -255,10 +252,13 @@ qt_extend_target(Bootstrap CONDITION QT_FEATURE_system_zlib AND NOT CMAKE_CROSSC
         ZLIB::ZLIB
 )
 
-qt_extend_target(Bootstrap CONDITION WIN32 AND mingw
+qt_extend_target(Bootstrap CONDITION MINGW AND WIN32
     PUBLIC_LIBRARIES
         uuid
 )
+
+#### Keys ignored in scope 22:.:../../3rdparty/pcre2:../../3rdparty/pcre2/pcre2.pri:QT_FEATURE_intelcet:
+# QMAKE_CFLAGS = "$$QMAKE_CFLAGS_SHSTK"
 
 # special case begin
 qt_internal_add_link_flags_gc_sections(Bootstrap PUBLIC)

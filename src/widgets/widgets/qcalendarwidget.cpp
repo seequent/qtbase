@@ -186,7 +186,7 @@ QDate QCalendarDayValidator::applyToDate(QDate date, QCalendar cal) const
     auto parts = cal.partsFromDate(date);
     if (!parts.isValid())
         return QDate();
-    parts.day = qMin(qMax(1, m_day), cal.daysInMonth(parts.year, parts.month));
+    parts.day = qMin(qMax(1, m_day), cal.daysInMonth(parts.month, parts.year));
     return cal.dateFromParts(parts);
 }
 
@@ -292,7 +292,7 @@ QDate QCalendarMonthValidator::applyToDate(QDate date, QCalendar cal) const
     if (!parts.isValid())
         return QDate();
     parts.month = qMin(qMax(1, m_month), cal.monthsInYear(parts.year));
-    parts.day = qMin(parts.day, cal.daysInMonth(parts.year, m_month)); // m_month or parts.month ?
+    parts.day = qMin(parts.day, cal.daysInMonth(m_month, parts.year)); // m_month or parts.month ?
     return cal.dateFromParts(parts);
 }
 
@@ -401,7 +401,7 @@ QDate QCalendarYearValidator::applyToDate(QDate date, QCalendar cal) const
         return QDate();
     // This widget does not support negative years (some calendars may support)
     parts.year = qMax(1, m_year);
-    parts.day = qMin(parts.day, cal.daysInMonth(parts.year, parts.month));
+    parts.day = qMin(parts.day, cal.daysInMonth(parts.month, parts.year));
     return cal.dateFromParts(parts);
 }
 
@@ -1397,7 +1397,7 @@ QModelIndex QCalendarView::moveCursor(CursorAction cursorAction, Qt::KeyboardMod
         case QAbstractItemView::MoveEnd: {
             auto parts = cal.partsFromDate(currentDate);
             if (parts.isValid()) {
-                parts.day = cal.daysInMonth(parts.year, parts.month);
+                parts.day = cal.daysInMonth(parts.month, parts.year);
                 currentDate = cal.dateFromParts(parts);
             }
         }
@@ -1485,7 +1485,7 @@ QDate QCalendarView::handleMouseEvent(QMouseEvent *event)
     if (!calendarModel)
         return QDate();
 
-    QPoint pos = event->pos();
+    QPoint pos = event->position().toPoint();
     QModelIndex index = indexAt(pos);
     QDate date = calendarModel->dateForCell(index.row(), index.column());
     if (date.isValid() && date >= calendarModel->m_minimumDate
@@ -2395,7 +2395,7 @@ void QCalendarWidget::setCurrentPage(int year, int month)
     QDate currentDate = d->getCurrentDate();
     QCalendar cal = d->m_model->m_calendar;
     int day = currentDate.day(cal);
-    int daysInMonths = cal.daysInMonth(year, month);
+    int daysInMonths = cal.daysInMonth(month, year);
     if (day > daysInMonths)
         day = daysInMonths;
 
@@ -3145,7 +3145,7 @@ bool QCalendarWidget::eventFilter(QObject *watched, QEvent *event)
         if (!widget || widget->window() != tlw)
             return QWidget::eventFilter(watched, event);
 
-        QPoint mousePos = widget->mapTo(tlw, static_cast<QMouseEvent *>(event)->pos());
+        QPoint mousePos = widget->mapTo(tlw, static_cast<QMouseEvent *>(event)->position().toPoint());
         QRect geom = QRect(d->yearEdit->mapTo(tlw, QPoint(0, 0)), d->yearEdit->size());
         if (!geom.contains(mousePos)) {
             event->accept();

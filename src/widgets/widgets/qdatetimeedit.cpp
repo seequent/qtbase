@@ -42,7 +42,6 @@
 #include <qabstractspinbox.h>
 #include <qapplication.h>
 #include <qdatetimeedit.h>
-#include <qdesktopwidget.h>
 #include <private/qdesktopwidget_p.h>
 #include <qdebug.h>
 #include <qevent.h>
@@ -198,18 +197,9 @@ QDateTimeEdit::QDateTimeEdit(QTime time, QWidget *parent)
     d->init(time.isValid() ? time : QDATETIMEEDIT_TIME_MIN);
 }
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 /*!
   \internal
 */
-QDateTimeEdit::QDateTimeEdit(const QVariant &var, QVariant::Type parserType, QWidget *parent)
-    : QDateTimeEdit(var, QMetaType::Type(parserType), parent)
-{ }
-/*!
-  \internal
-*/
-#endif
-
 QDateTimeEdit::QDateTimeEdit(const QVariant &var, QMetaType::Type parserType, QWidget *parent)
     : QAbstractSpinBox(*new QDateTimeEditPrivate, parent)
 {
@@ -1537,7 +1527,7 @@ void QDateTimeEdit::mousePressEvent(QMouseEvent *event)
         QAbstractSpinBox::mousePressEvent(event);
         return;
     }
-    d->updateHoverControl(event->pos());
+    d->updateHoverControl(event->position().toPoint());
     if (d->hoverControl == QStyle::SC_ComboBoxArrow) {
         event->accept();
         if (d->readOnly) {
@@ -1737,9 +1727,12 @@ QDateTime QDateTimeEditPrivate::convertTimeSpec(const QDateTime &datetime)
         return datetime.toLocalTime();
     case Qt::OffsetFromUTC:
         return datetime.toOffsetFromUtc(value.toDateTime().offsetFromUtc());
-#if QT_CONFIG(timezone)
     case Qt::TimeZone:
+#if QT_CONFIG(timezone)
         return datetime.toTimeZone(value.toDateTime().timeZone());
+#else
+        qWarning("QDateTimeEdit: Internal: enable timezone feature to support Qt::TimeZone");
+        return datetime;
 #endif
     }
     Q_UNREACHABLE();
@@ -2718,7 +2711,7 @@ void QCalendarPopup::mousePressEvent(QMouseEvent *event)
         QRect arrowRect = dateTime->style()->subControlRect(QStyle::CC_ComboBox, &opt,
                                                             QStyle::SC_ComboBoxArrow, dateTime);
         arrowRect.moveTo(dateTime->mapToGlobal(arrowRect .topLeft()));
-        if (arrowRect.contains(event->globalPos()) || rect().contains(event->pos()))
+        if (arrowRect.contains(event->globalPosition().toPoint()) || rect().contains(event->position().toPoint()))
             setAttribute(Qt::WA_NoMouseReplay);
     }
     QWidget::mousePressEvent(event);

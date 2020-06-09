@@ -55,6 +55,7 @@
 #include <qplatformdefs.h>
 #include <qendian.h>
 #include "private/qabstractfileengine_p.h"
+#include "private/qduplicatetracker_p.h"
 #include "private/qnumeric_p.h"
 #include "private/qsimd_p.h"
 #include "private/qtools_p.h"
@@ -417,25 +418,22 @@ QResourcePrivate::ensureChildren() const
     QString path = absoluteFilePath, k;
     if(path.startsWith(QLatin1Char(':')))
         path = path.mid(1);
-    QSet<QString> kids;
+    QDuplicateTracker<QString> kids;
+    kids.reserve(related.size());
     QString cleaned = cleanPath(path);
     for(int i = 0; i < related.size(); ++i) {
         QResourceRoot *res = related.at(i);
         if(res->mappingRootSubdir(path, &k) && !k.isEmpty()) {
-            if(!kids.contains(k)) {
+            if (!kids.hasSeen(k))
                 children += k;
-                kids.insert(k);
-            }
         } else {
             const int node = res->findNode(cleaned);
             if(node != -1) {
                 QStringList related_children = res->children(node);
                 for(int kid = 0; kid < related_children.size(); ++kid) {
                     k = related_children.at(kid);
-                    if(!kids.contains(k)) {
+                    if (!kids.hasSeen(k))
                         children += k;
-                        kids.insert(k);
-                    }
                 }
             }
         }
@@ -816,8 +814,8 @@ void
 QResource::addSearchPath(const QString &path)
 {
     if (!path.startsWith(QLatin1Char('/'))) {
-        qWarning("QResource::addResourceSearchPath: Search paths must be absolute (start with /) [%s]",
-                 path.toLocal8Bit().data());
+        qWarning("QResource::addResourceSearchPath: Search paths must be absolute (start with /) [%ls]",
+                 qUtf16Printable(path));
         return;
     }
     const auto locker = qt_scoped_lock(resourceMutex());
@@ -1316,8 +1314,8 @@ QResource::registerResource(const QString &rccFilename, const QString &resourceR
 {
     QString r = qt_resource_fixResourceRoot(resourceRoot);
     if(!r.isEmpty() && r[0] != QLatin1Char('/')) {
-        qWarning("QDir::registerResource: Registering a resource [%s] must be rooted in an absolute path (start with /) [%s]",
-                 rccFilename.toLocal8Bit().data(), resourceRoot.toLocal8Bit().data());
+        qWarning("QDir::registerResource: Registering a resource [%ls] must be rooted in an absolute path (start with /) [%ls]",
+                 qUtf16Printable(rccFilename), qUtf16Printable(resourceRoot));
         return false;
     }
 
@@ -1387,8 +1385,8 @@ QResource::registerResource(const uchar *rccData, const QString &resourceRoot)
 {
     QString r = qt_resource_fixResourceRoot(resourceRoot);
     if(!r.isEmpty() && r[0] != QLatin1Char('/')) {
-        qWarning("QDir::registerResource: Registering a resource [%p] must be rooted in an absolute path (start with /) [%s]",
-                 rccData, resourceRoot.toLocal8Bit().data());
+        qWarning("QDir::registerResource: Registering a resource [%p] must be rooted in an absolute path (start with /) [%ls]",
+                 rccData, qUtf16Printable(resourceRoot));
         return false;
     }
 

@@ -350,7 +350,7 @@ void QFontEngine::getGlyphPositions(const QGlyphLayout &glyphs, const QTransform
             glyphs_out[current] = glyphs.glyphs[i];
             ++current;
             if (glyphs.justifications[i].nKashidas) {
-                QChar ch(0x640); // Kashida character
+                QChar ch = u'\x640'; // Kashida character
 
                 glyph_t kashidaGlyph = glyphIndex(ch.unicode());
                 QFixed kashidaWidth;
@@ -450,13 +450,14 @@ bool QFontEngine::processHheaTable() const
 
 void QFontEngine::initializeHeightMetrics() const
 {
-    if (!processHheaTable()) {
-        qWarning() << "Cannot determine metrics for font" << fontDef.family;
-        m_ascent = m_descent = m_leading = 1;
-    }
+    bool hasEmbeddedBitmaps = !getSfntTable(MAKE_TAG('E', 'B', 'L', 'C')).isEmpty() || !getSfntTable(MAKE_TAG('C', 'B', 'L', 'C')).isEmpty();
+    if (!hasEmbeddedBitmaps) {
+        // Get HHEA table values if available
+        processHheaTable();
 
-    // Allow OS/2 metrics to override if present
-    processOS2Table();
+        // Allow OS/2 metrics to override if present
+        processOS2Table();
+    }
 
     m_heightMetricsQueried = true;
 }
@@ -494,7 +495,7 @@ QFixed QFontEngine::leading() const
     if (!m_heightMetricsQueried)
         initializeHeightMetrics();
 
-    return (fontDef.styleStrategy & QFont::ForceIntegerMetrics) ? m_leading.round() : m_leading;
+    return m_leading;
 }
 
 QFixed QFontEngine::ascent() const
@@ -502,7 +503,7 @@ QFixed QFontEngine::ascent() const
     if (!m_heightMetricsQueried)
         initializeHeightMetrics();
 
-    return (fontDef.styleStrategy & QFont::ForceIntegerMetrics) ? m_ascent.round() : m_ascent;
+    return m_ascent;
 }
 
 QFixed QFontEngine::descent() const
@@ -510,7 +511,7 @@ QFixed QFontEngine::descent() const
     if (!m_heightMetricsQueried)
         initializeHeightMetrics();
 
-    return (fontDef.styleStrategy & QFont::ForceIntegerMetrics) ? m_descent.round() : m_descent;
+    return m_descent;
 }
 
 qreal QFontEngine::minLeftBearing() const
@@ -1482,13 +1483,13 @@ bool QFontEngine::hasUnreliableGlyphOutline() const
     return glyphFormat == QFontEngine::Format_ARGB;
 }
 
-QFixed QFontEngine::lastRightBearing(const QGlyphLayout &glyphs, bool round)
+QFixed QFontEngine::lastRightBearing(const QGlyphLayout &glyphs)
 {
     if (glyphs.numGlyphs >= 1) {
         glyph_t glyph = glyphs.glyphs[glyphs.numGlyphs - 1];
         glyph_metrics_t gi = boundingBox(glyph);
         if (gi.isValid())
-            return round ? qRound(gi.rightBearing()) : gi.rightBearing();
+            return gi.rightBearing();
     }
     return 0;
 }
@@ -1834,12 +1835,12 @@ bool QFontEngineMulti::stringToCMap(const QChar *str, int len,
 
     int lastFallback = -1;
     while (it.hasNext()) {
-        const uint ucs4 = it.peekNext();
+        const char32_t ucs4 = it.peekNext();
 
         // If we applied a fallback font to previous glyph, and the current is either
         // ZWJ or ZWNJ, we should also try applying the same fallback font to that, in order
         // to get the correct shaping rules applied.
-        if (lastFallback >= 0 && (ucs4 == QChar(0x200d) || ucs4 == QChar(0x200c))) {
+        if (lastFallback >= 0 && (ucs4 == 0x200d || ucs4 == 0x200c)) {
             QFontEngine *engine = m_engines.at(lastFallback);
             glyph_t glyph = engine->glyphIndex(ucs4);
             if (glyph != 0) {

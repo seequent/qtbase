@@ -193,7 +193,7 @@ QDebug operator<<(QDebug dbg, CFStringRef stringRef)
         return dbg << "CFStringRef(0x0)";
 
     if (const UniChar *chars = CFStringGetCharactersPtr(stringRef))
-        dbg << QString::fromRawData(reinterpret_cast<const QChar *>(chars), CFStringGetLength(stringRef));
+        dbg << QStringView(reinterpret_cast<const QChar *>(chars), CFStringGetLength(stringRef));
     else
         dbg << QString::fromCFString(stringRef);
 
@@ -638,6 +638,20 @@ void qt_apple_check_os_version()
 Q_CONSTRUCTOR_FUNCTION(qt_apple_check_os_version);
 
 // -------------------------------------------------------------------------
+
+void QMacNotificationObserver::remove()
+{
+    if (observer)
+        [[NSNotificationCenter defaultCenter] removeObserver:observer];
+    observer = nullptr;
+}
+
+// -------------------------------------------------------------------------
+
+QMacKeyValueObserver::QMacKeyValueObserver(const QMacKeyValueObserver &other)
+    : QMacKeyValueObserver(other.object, other.keyPath, *other.callback.get())
+{
+}
 
 void QMacKeyValueObserver::addObserver(NSKeyValueObservingOptions options)
 {

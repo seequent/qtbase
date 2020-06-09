@@ -45,16 +45,14 @@
 #include <qpa/qplatformwindow.h>
 #include <qpa/qwindowsysteminterface.h>
 
-#include <QtFontDatabaseSupport/private/qfreetypefontdatabase_p.h>
-#if defined(Q_OS_WINRT)
-#  include <QtFontDatabaseSupport/private/qwinrtfontdatabase_p.h>
-#elif defined(Q_OS_WIN)
+#include <QtGui/private/qfreetypefontdatabase_p.h>
+#if defined(Q_OS_WIN)
 #  include <QtFontDatabaseSupport/private/qwindowsfontdatabase_p.h>
 #  if QT_CONFIG(freetype)
 #    include <QtFontDatabaseSupport/private/qwindowsfontdatabase_ft_p.h>
 #  endif
 #elif defined(Q_OS_DARWIN)
-#  include <QtFontDatabaseSupport/private/qcoretextfontdatabase_p.h>
+#  include <QtGui/private/qcoretextfontdatabase_p.h>
 #endif
 
 #if QT_CONFIG(fontconfig)
@@ -63,13 +61,11 @@
 #endif
 
 #if QT_CONFIG(freetype)
-#include <QtFontDatabaseSupport/private/qfontengine_ft_p.h>
+#include <QtGui/private/qfontengine_ft_p.h>
 #endif
 
 #if !defined(Q_OS_WIN)
 #include <QtEventDispatcherSupport/private/qgenericunixeventdispatcher_p.h>
-#elif defined(Q_OS_WINRT)
-#include <QtCore/private/qeventdispatcher_winrt_p.h>
 #else
 #include <QtCore/private/qeventdispatcher_win_p.h>
 #endif
@@ -139,9 +135,7 @@ public:
 QPlatformFontDatabase *QMinimalIntegration::fontDatabase() const
 {
     if (!m_fontDatabase && (m_options & EnableFonts)) {
-#if defined(Q_OS_WINRT)
-        m_fontDatabase = new QWinRTFontDatabase;
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
         if (m_options & FreeTypeFontDatabase) {
 #  if QT_CONFIG(freetype)
             m_fontDatabase = new QWindowsFontDatabaseFT;
@@ -190,11 +184,7 @@ QPlatformBackingStore *QMinimalIntegration::createPlatformBackingStore(QWindow *
 QAbstractEventDispatcher *QMinimalIntegration::createEventDispatcher() const
 {
 #ifdef Q_OS_WIN
-#ifndef Q_OS_WINRT
     return new QEventDispatcherWin32;
-#else // !Q_OS_WINRT
-    return new QEventDispatcherWinRT;
-#endif // Q_OS_WINRT
 #else
     return createUnixEventDispatcher();
 #endif

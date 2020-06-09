@@ -57,9 +57,7 @@
 #ifdef Q_OS_WIN
 #  include <QtCore/QVarLengthArray>
 #  include <qt_windows.h>
-#  ifndef Q_OS_WINRT
-#      include <shlobj.h>
-#  endif
+#  include <shlobj.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -122,10 +120,9 @@ QT_BEGIN_NAMESPACE
     is called.  This will prevent any unnecessary querying on the file system
     until that point such as listing the drives on Windows.
 
-    Unlike QDirModel, QFileSystemModel uses a separate thread to populate
-    itself so it will not cause the main thread to hang as the file system
-    is being queried.  Calls to rowCount() will return 0 until the model
-    populates a directory.
+    QFileSystemModel uses a separate thread to populate itself so it will not
+    cause the main thread to hang as the file system is being queried.
+    Calls to rowCount() will return 0 until the model populates a directory.
 
     QFileSystemModel keeps a cache with file information. The cache is
     automatically kept up to date using the QFileSystemWatcher.
@@ -1267,6 +1264,20 @@ Qt::DropActions QFileSystemModel::supportedDropActions() const
 }
 
 /*!
+    \reimp
+*/
+QHash<int, QByteArray> QFileSystemModel::roleNames() const
+{
+    auto ret = QAbstractItemModel::roleNames();
+    ret.insert(QFileSystemModel::FileIconRole,
+               QByteArrayLiteral("fileIcon")); // == Qt::decoration
+    ret.insert(QFileSystemModel::FilePathRole, QByteArrayLiteral("filePath"));
+    ret.insert(QFileSystemModel::FileNameRole, QByteArrayLiteral("fileName"));
+    ret.insert(QFileSystemModel::FilePermissions, QByteArrayLiteral("filePermissions"));
+    return ret;
+}
+
+/*!
     \enum QFileSystemModel::Option
     \since 5.14
 
@@ -1778,7 +1789,7 @@ void QFileSystemModelPrivate::_q_directoryChanged(const QString &directory, cons
         removeNode(parentNode, toRemove[i]);
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
 static QString volumeName(const QString &path)
 {
     IShellItem *item = nullptr;
@@ -1797,7 +1808,7 @@ static QString volumeName(const QString &path)
     item->Release();
     return result;
 }
-#endif // Q_OS_WIN && !Q_OS_WINRT
+#endif // Q_OS_WIN
 
 /*!
     \internal
@@ -1815,7 +1826,7 @@ QFileSystemModelPrivate::QFileSystemNode* QFileSystemModelPrivate::addNode(QFile
 #else
     Q_UNUSED(info)
 #endif
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN)
     //The parentNode is "" so we are listing the drives
     if (parentNode->fileName.isEmpty())
         node->volumeName = volumeName(fileName);
@@ -2078,12 +2089,6 @@ void QFileSystemModelPrivate::init()
                q, SIGNAL(directoryLoaded(QString)));
 #endif // filesystemwatcher
     q->connect(&delayedSortTimer, SIGNAL(timeout()), q, SLOT(_q_performDelayedSort()), Qt::QueuedConnection);
-
-    roleNames.insert(QFileSystemModel::FileIconRole,
-                     QByteArrayLiteral("fileIcon")); // == Qt::decoration
-    roleNames.insert(QFileSystemModel::FilePathRole, QByteArrayLiteral("filePath"));
-    roleNames.insert(QFileSystemModel::FileNameRole, QByteArrayLiteral("fileName"));
-    roleNames.insert(QFileSystemModel::FilePermissions, QByteArrayLiteral("filePermissions"));
 }
 
 /*!
@@ -2148,12 +2153,10 @@ bool QFileSystemModelPrivate::passNameFilters(const QFileSystemNode *node) const
 
     // Check the name regularexpression filters
     if (!(node->isDir() && (filters & QDir::AllDirs))) {
-        const QRegularExpression::PatternOptions options =
-            (filters & QDir::CaseSensitive) ? QRegularExpression::NoPatternOption
-                                            : QRegularExpression::CaseInsensitiveOption;
+        auto cs = (filters & QDir::CaseSensitive) ? Qt::CaseSensitive : Qt::CaseInsensitive;
 
         for (const auto &nameFilter : nameFilters) {
-            QRegularExpression rx(QRegularExpression::wildcardToRegularExpression(nameFilter), options);
+            auto rx = QRegularExpression::fromWildcard(nameFilter, cs);
             QRegularExpressionMatch match = rx.match(node->fileName);
             if (match.hasMatch())
                 return true;

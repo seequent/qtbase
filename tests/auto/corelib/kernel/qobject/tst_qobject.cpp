@@ -1862,8 +1862,6 @@ void tst_QObject::moveToThread()
         thread.wait();
     }
 
-    // WinRT does not allow connection to localhost
-#ifndef Q_OS_WINRT
     {
         // make sure socket notifiers are moved with the object
         MoveToThreadThread thread;
@@ -1899,7 +1897,6 @@ void tst_QObject::moveToThread()
         QMetaObject::invokeMethod(socket, "deleteLater", Qt::QueuedConnection);
         thread.wait();
     }
-#endif
 }
 
 
@@ -5278,6 +5275,8 @@ void tst_QObject::connectForwardDeclare()
     QVERIFY(connect(&ob, &ForwardDeclareArguments::mySignal, &ob, &ForwardDeclareArguments::mySlot, Qt::QueuedConnection));
 }
 
+class ForwardDeclared {}; // complete definition for moc
+
 class NoDefaultConstructor
 {
     Q_GADGET
@@ -6775,8 +6774,10 @@ public:
     explicit CountedExceptionThrower(bool throwException, QObject *parent = nullptr)
         : QObject(parent)
     {
+#ifndef QT_NO_EXCEPTIONS
         if (throwException)
             throw ObjectException();
+#endif
         ++counter;
     }
 

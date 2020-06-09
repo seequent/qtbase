@@ -121,7 +121,7 @@ public:
                                   MatchType matchType       = NormalMatch,
                                   MatchOptions matchOptions = NoMatchOption) const;
 
-    QRegularExpressionMatch match(const QStringRef &subjectRef,
+    QRegularExpressionMatch match(QStringView subjectView,
                                   int offset                = 0,
                                   MatchType matchType       = NormalMatch,
                                   MatchOptions matchOptions = NoMatchOption) const;
@@ -131,7 +131,7 @@ public:
                                                 MatchType matchType       = NormalMatch,
                                                 MatchOptions matchOptions = NoMatchOption) const;
 
-    QRegularExpressionMatchIterator globalMatch(const QStringRef &subjectRef,
+    QRegularExpressionMatchIterator globalMatch(QStringView subjectView,
                                                 int offset                = 0,
                                                 MatchType matchType       = NormalMatch,
                                                 MatchOptions matchOptions = NoMatchOption) const;
@@ -164,6 +164,9 @@ public:
     static QString escape(QStringView str);
     static QString wildcardToRegularExpression(QStringView str, WildcardConversionOptions options = DefaultWildcardConversion);
     static QString anchoredPattern(QStringView expression);
+
+    static QRegularExpression fromWildcard(QStringView str, Qt::CaseSensitivity cs = Qt::CaseInsensitive,
+                                           WildcardConversionOptions options = DefaultWildcardConversion);
 
     bool operator==(const QRegularExpression &re) const;
     inline bool operator!=(const QRegularExpression &re) const { return !operator==(re); }
@@ -218,16 +221,13 @@ public:
     int lastCapturedIndex() const;
 
     QString captured(int nth = 0) const;
-    QStringRef capturedRef(int nth = 0) const;
     QStringView capturedView(int nth = 0) const;
 
 #if QT_STRINGVIEW_LEVEL < 2
     QString captured(const QString &name) const;
-    QStringRef capturedRef(const QString &name) const;
 #endif
 
     QString captured(QStringView name) const;
-    QStringRef capturedRef(QStringView name) const;
     QStringView capturedView(QStringView name) const;
 
     QStringList capturedTexts() const;

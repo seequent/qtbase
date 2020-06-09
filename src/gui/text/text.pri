@@ -123,3 +123,11 @@ qtConfig(cssparser) {
     SOURCES += \
         text/qcssparser.cpp
 }
+
+qtConfig(freetype) {
+    include($$PWD/freetype/freetype.pri)
+}
+
+darwin {
+    include($$PWD/coretext/coretext.pri)
+}

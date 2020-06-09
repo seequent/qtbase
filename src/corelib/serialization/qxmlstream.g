@@ -151,15 +151,16 @@
 /.
 
 #include <QtCore/private/qglobal_p.h>
+#include <qstringconverter.h>
 
 template <typename T> class QXmlStreamSimpleStack {
     T *data;
-    int tos, cap;
+    qsizetype tos, cap;
 public:
-    inline QXmlStreamSimpleStack():data(0), tos(-1), cap(0){}
+    inline QXmlStreamSimpleStack():data(nullptr), tos(-1), cap(0){}
     inline ~QXmlStreamSimpleStack(){ if (data) free(data); }
 
-    inline void reserve(int extraCapacity) {
+    inline void reserve(qsizetype extraCapacity) {
         if (tos + extraCapacity + 1 > cap) {
             cap = qMax(tos + extraCapacity + 1, cap << 1 );
             void *ptr = realloc(static_cast<void *>(data), cap * sizeof(T));
@@ -173,12 +174,21 @@ public:
     inline const T &top() const { return data[tos]; }
     inline T &top() { return data[tos]; }
     inline T &pop() { return data[tos--]; }
-    inline T &operator[](int index) { return data[index]; }
-    inline const T &at(int index) const { return data[index]; }
-    inline int size() const { return tos + 1; }
-    inline void resize(int s) { tos = s - 1; }
+    inline T &operator[](qsizetype index) { return data[index]; }
+    inline const T &at(qsizetype index) const { return data[index]; }
+    inline qsizetype size() const { return tos + 1; }
+    inline void resize(qsizetype s) { tos = s - 1; }
     inline bool isEmpty() const { return tos < 0; }
     inline void clear() { tos = -1; }
+
+    using const_iterator = const T*;
+    using iterator = T*;
+    T *begin() { return data; }
+    const T *begin() const { return data; }
+    const T *cbegin() const { return begin(); }
+    T *end() { return data + size(); }
+    const T *end() const { return data + size(); }
+    const T *cend() const { return end(); }
 };
 
 
@@ -201,7 +211,7 @@ public:
         QStringRef qualifiedName;
         NamespaceDeclaration namespaceDeclaration;
         int tagStackStringStorageSize;
-        int namespaceDeclarationsSize;
+        qsizetype namespaceDeclarationsSize;
     };
 
 
@@ -309,10 +319,7 @@ public:
 
     QIODevice *device;
     bool deleteDevice;
-#if QT_CONFIG(textcodec)
-    QTextCodec *codec;
-    QTextDecoder *decoder;
-#endif
+    QStringDecoder decoder;
     bool atEnd;
 
     /*!
@@ -488,10 +495,10 @@ public:
     inline uint peekChar();
     inline void putChar(uint c) { putStack.push() = c; }
     inline void putChar(QChar c) { putStack.push() =  c.unicode(); }
-    void putString(const QString &s, int from = 0);
-    void putStringLiteral(const QString &s);
-    void putReplacement(const QString &s);
-    void putReplacementInAttributeValue(const QString &s);
+    void putString(QStringView s, qsizetype from = 0);
+    void putStringLiteral(QStringView s);
+    void putReplacement(QStringView s);
+    void putReplacementInAttributeValue(QStringView s);
     uint getChar_helper();
 
     bool scanUntil(const char *str, short tokenToInject = -1);
@@ -502,7 +509,7 @@ public:
 
     QString resolveUndeclaredEntity(const QString &name);
     void parseEntity(const QString &value);
-    QXmlStreamReaderPrivate *entityParser;
+    std::unique_ptr<QXmlStreamReaderPrivate> entityParser;
 
     bool scanAfterLangleBang();
     bool scanPublicOrSystem();
@@ -602,13 +609,11 @@ bool QXmlStreamReaderPrivate::parse()
         lockEncoding = true;
         documentVersion.clear();
         documentEncoding.clear();
-#if QT_CONFIG(textcodec)
-        if (decoder && decoder->hasFailure()) {
+        if (decoder.isValid() && decoder.hasError()) {
             raiseWellFormedError(QXmlStream::tr("Encountered incorrectly encoded content."));
             readBuffer.clear();
             return false;
         }
-#endif
         Q_FALLTHROUGH();
     default:
         clearTextBuffer();
@@ -1642,8 +1647,8 @@ entity_ref ::= AMPERSAND name SEMICOLON;
         case $rule_number: {
             sym(1).len += sym(2).len + 1;
             QStringView reference = symView(2);
-            if (entityHash.contains(reference)) {
-                Entity &entity = entityHash[reference];
+            if (const auto it = entityHash.find(reference); it != entityHash.end()) {
+                Entity &entity = *it;
                 if (entity.unparsed) {
                     raiseWellFormedError(QXmlStream::tr("Reference to unparsed entity '%1'.").arg(reference));
                 } else {
@@ -1684,9 +1689,9 @@ pereference ::= PERCENT name SEMICOLON;
         case $rule_number: {
             sym(1).len += sym(2).len + 1;
             QStringView reference = symView(2);
-            if (parameterEntityHash.contains(reference)) {
+            if (const auto it = parameterEntityHash.find(reference); it != parameterEntityHash.end()) {
                 referenceToParameterEntityDetected = true;
-                Entity &entity = parameterEntityHash[reference];
+                Entity &entity = *it;
                 if (entity.unparsed || entity.external) {
                     referenceToUnparsedEntityDetected = true;
                 } else {
@@ -1715,8 +1720,8 @@ entity_ref_in_attribute_value ::= AMPERSAND name SEMICOLON;
         case $rule_number: {
             sym(1).len += sym(2).len + 1;
             QStringView reference = symView(2);
-            if (entityHash.contains(reference)) {
-                Entity &entity = entityHash[reference];
+            if (const auto it = entityHash.find(reference); it != entityHash.end()) {
+                Entity &entity = *it;
                 if (entity.unparsed || entity.value.isNull()) {
                     raiseWellFormedError(QXmlStream::tr("Reference to external entity '%1' in attribute value.").arg(reference));
                     break;
@@ -1752,12 +1757,8 @@ entity_ref_in_attribute_value ::= AMPERSAND name SEMICOLON;
 char_ref ::= AMPERSAND HASH char_ref_value SEMICOLON;
 /.
         case $rule_number: {
-            if (uint s = resolveCharRef(3)) {
-                if (s >= 0xffff)
-                    putStringLiteral(QString::fromUcs4(&s, 1));
-                else
-                    putChar((LETTER << 16) | s);
-
+            if (char32_t s = resolveCharRef(3)) {
+                putStringLiteral(QChar::fromUcs4(s));
                 textBuffer.chop(3 + sym(3).len);
                 clearSym();
             } else {
