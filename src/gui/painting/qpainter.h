@@ -218,7 +218,6 @@ public:
 
     // Clip functions
     QRegion clipRegion() const;
-	QRegion clipRegionF() const;
     QPainterPath clipPath() const;
 	QPainterPath clipPathF() const;
 
