@@ -2691,8 +2691,6 @@ QPainterPath QPainter::clipPathF() const
 {
     Q_D(const QPainter);
 
-    // ### Since we do not support path intersections and path unions yet,
-    // we just use clipRegion() here...
     if (!d->engine) {
         qWarning("QPainter::clipPath: Painter not active");
         return QPainterPath();
