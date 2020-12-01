@@ -3468,6 +3468,7 @@ void QPainter::setClipPath(const QPainterPath &path, Qt::ClipOperation op)
 
     if (d->state->clipOperation == Qt::NoClip && op == Qt::IntersectClip)
         op = Qt::ReplaceClip;
+
     d->state->clipPath = path;
     d->state->clipOperation = op;
     if (op == Qt::NoClip || op == Qt::ReplaceClip)
