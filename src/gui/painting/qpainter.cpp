@@ -2756,11 +2756,11 @@ QPainterPath QPainter::clipPathF() const
                         if (lastWasNothing) {
                             QPainterPath tempPath;
                             tempPath.addRect(info.rect);
+
                             path = path + tempPath;
                             lastWasNothing = false;
                             continue;
                         } 
-                        
                         if (info.operation == Qt::IntersectClip) {
                             QPainterPath tempPath;
                             tempPath.addRect(info.rect);
@@ -2785,6 +2785,7 @@ QPainterPath QPainter::clipPathF() const
                         if (lastWasNothing) {
                             QPainterPath tempPath;
                             tempPath.addRect(info.rectf.toRect());
+
                             path = tempPath * matrix;
                             lastWasNothing = false;
                             continue;
@@ -2794,10 +2795,12 @@ QPainterPath QPainter::clipPathF() const
                             if (matrix.type() <= QTransform::TxScale) {
                                 QPainterPath tempPath;
                                 tempPath.addRect(matrix.mapRect(info.rectf.toRect()));
+
                                 path &= tempPath;
                             } else {
                                 QPainterPath tempPath;
                                 tempPath.addRegion(matrix.map(QRegion(info.rectf.toRect())));
+
                                 path &= tempPath;
                             }
                         } else if (info.operation == Qt::NoClip) {
@@ -2806,6 +2809,7 @@ QPainterPath QPainter::clipPathF() const
                         } else {
                             QPainterPath tempPath;
                             tempPath.addRect(info.rectf.toRect());
+
                             path = tempPath * matrix;
                         }
                         break;
@@ -2816,6 +2820,7 @@ QPainterPath QPainter::clipPathF() const
                         if (lastWasNothing) {
                             QPainterPath tempPath;
                             tempPath.addRegion(info.region * matrix);
+
                             path &= tempPath;
                             lastWasNothing = false;
                             continue;
@@ -2823,6 +2828,7 @@ QPainterPath QPainter::clipPathF() const
                         if (info.operation == Qt::IntersectClip) {
                             QPainterPath tempPath;
                             tempPath.addRegion(info.region * matrix);
+
                             path &= tempPath;
                         }
                         else if (info.operation == Qt::NoClip) {
@@ -2831,12 +2837,13 @@ QPainterPath QPainter::clipPathF() const
                         } else {
                             QPainterPath tempPath;
                             tempPath.addRegion(info.region * matrix);
+
                             path = tempPath;
                         }
                         break;
                     }
                     default:
-                        log error 
+                        throw std::logic_error("Fatal! Custom code from LF-37399 is now broken and requires expansion for an additional type");
                 }
             }
             return path;
