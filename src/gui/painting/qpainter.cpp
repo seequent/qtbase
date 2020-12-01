@@ -37,6 +37,7 @@
 **
 ****************************************************************************/
 
+
 // QtCore
 #include <qdebug.h>
 #include <qmath.h>
@@ -2561,6 +2562,7 @@ QRegion QPainter::clipRegion() const
                 continue;
             }
             if (info.operation == Qt::IntersectClip) {
+                // shit hits the fan here
                 region &= QRegion((info.path * matrix).toFillPolygon().toPolygon(),
                                   info.path.fillRule());
             } else if (info.operation == Qt::NoClip) {
@@ -2634,6 +2636,8 @@ extern QPainterPath qt_regionToPath(const QRegion &region);
 
     \sa setClipPath(), clipRegion(), setClipping()
 */
+
+
 QPainterPath QPainter::clipPath() const
 {
     Q_D(const QPainter);
@@ -2669,6 +2673,177 @@ QPainterPath QPainter::clipPath() const
         } else {
             // Fallback to clipRegion() for now, since we don't have isect/unite for paths
             return qt_regionToPath(clipRegion());
+        }
+    }
+}
+
+/*!
+    Returns the current clip path in logical coordinates, unrounded.
+
+    The main purpose for this function is inside QSvgGenerator,
+    where we do not want any points to be rounded during the
+    creation of the file.
+
+    \warning QPainter does not store the combined clip explicitly as
+    this is handled by the underlying QPaintEngine, so the path is
+    recreated on demandand transformed to the current logical
+    coordinate system.This is potentially an expensive operation.
+
+    \sa setClipPath(), clipRegion(), setClipping()
+*/
+QPainterPath QPainter::clipPathF() const
+{
+    Q_D(const QPainter);
+
+    // ### Since we do not support path intersections and path unions yet,
+    // we just use clipRegion() here...
+    if (!d->engine) {
+        qWarning("QPainter::clipPath: Painter not active");
+        return QPainterPath();
+    }
+
+    // No clip, return empty
+    if (d->state->clipInfo.isEmpty()) {
+        return QPainterPath();
+    } else {
+
+        // Update inverse matrix, used below.
+        if (!d->txinv)
+            const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
+
+        // For the simple case avoid conversion.
+        if (d->state->clipInfo.size() == 1
+            && d->state->clipInfo.at(0).clipType == QPainterClipInfo::PathClip) {
+            QTransform matrix = (d->state->clipInfo.at(0).matrix * d->invMatrix);
+            return d->state->clipInfo.at(0).path * matrix;
+
+        } else if (d->state->clipInfo.size() == 1
+                   && d->state->clipInfo.at(0).clipType == QPainterClipInfo::RectClip) {
+            QTransform matrix = (d->state->clipInfo.at(0).matrix * d->invMatrix);
+            QPainterPath path;
+            path.addRect(d->state->clipInfo.at(0).rect);
+            return path * matrix;
+        } else {
+            /*
+            * Modified version of "clipRegion" that is used in ::clipPath
+            * as "return qt_regionToPath(clipRegion());" that prevents rounding of values,
+            * placing them directly into a QPainterPath.
+            */
+            QPainterPath path;
+            bool lastWasNothing = true;
+            if (!d->txinv)
+                const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
+            // ### Falcon: Use QPainterPath
+            for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
+                switch (info.clipType) {
+
+                    case QPainterClipInfo::PathClip: {
+                        QTransform matrix = (info.matrix * d->invMatrix);
+                        if (lastWasNothing) {
+                            path = info.path * matrix;
+                            lastWasNothing = false;
+                            continue;
+                        }
+                        if (info.operation == Qt::IntersectClip) {
+                            path &= (info.path * matrix);
+                        } else if (info.operation == Qt::NoClip) {
+                            lastWasNothing = true;
+                            path = QPainterPath();
+                        } else {
+                            path = info.path * matrix;
+                        }
+                        break;
+                    }
+
+                    case QPainterClipInfo::RectClip: {
+                        QTransform matrix = (info.matrix * d->invMatrix);
+                        if (lastWasNothing) {
+                            QPainterPath tempPath;
+                            tempPath.addRect(info.rect);
+                            path = path + tempPath;
+                            lastWasNothing = false;
+                            continue;
+                        } 
+                        
+                        if (info.operation == Qt::IntersectClip) {
+                            QPainterPath tempPath;
+                            tempPath.addRect(info.rect);
+                            tempPath = tempPath * matrix;
+
+                            path &= tempPath;
+                        } else if (info.operation == Qt::NoClip) {
+                            lastWasNothing = true;
+                            path = QPainterPath();
+                        } else {
+                            QPainterPath tempPath;
+                            tempPath.addRect(info.rect);
+                            tempPath = tempPath * matrix;
+
+                            path = tempPath;
+                        }
+                        break;
+                    }   
+                    
+                    case QPainterClipInfo::RectFClip: {
+                        QTransform matrix = (info.matrix * d->invMatrix);
+                        if (lastWasNothing) {
+                            QPainterPath tempPath;
+                            tempPath.addRect(info.rectf.toRect());
+                            path = tempPath * matrix;
+                            lastWasNothing = false;
+                            continue;
+                        }
+                        if (info.operation == Qt::IntersectClip) {
+                            // Use rect intersection if possible.
+                            if (matrix.type() <= QTransform::TxScale) {
+                                QPainterPath tempPath;
+                                tempPath.addRect(matrix.mapRect(info.rectf.toRect()));
+                                path &= tempPath;
+                            } else {
+                                QPainterPath tempPath;
+                                tempPath.addRegion(matrix.map(QRegion(info.rectf.toRect())));
+                                path &= tempPath;
+                            }
+                        } else if (info.operation == Qt::NoClip) {
+                            lastWasNothing = true;
+                            path = QPainterPath();
+                        } else {
+                            QPainterPath tempPath;
+                            tempPath.addRect(info.rectf.toRect());
+                            path = tempPath * matrix;
+                        }
+                        break;
+                    }
+
+                    case QPainterClipInfo::RegionClip: {
+                        QTransform matrix = (info.matrix * d->invMatrix);
+                        if (lastWasNothing) {
+                            QPainterPath tempPath;
+                            tempPath.addRegion(info.region * matrix);
+                            path &= tempPath;
+                            lastWasNothing = false;
+                            continue;
+                        }
+                        if (info.operation == Qt::IntersectClip) {
+                            QPainterPath tempPath;
+                            tempPath.addRegion(info.region * matrix);
+                            path &= tempPath;
+                        }
+                        else if (info.operation == Qt::NoClip) {
+                            lastWasNothing = true;
+                            path = QPainterPath();
+                        } else {
+                            QPainterPath tempPath;
+                            tempPath.addRegion(info.region * matrix);
+                            path = tempPath;
+                        }
+                        break;
+                    }
+                    default:
+                        log error 
+                }
+            }
+            return path;
         }
     }
 }
@@ -2763,8 +2938,9 @@ void QPainter::setClipRect(const QRectF &rect, Qt::ClipOperation op)
         QVectorPath vp(pts, 4, 0, QVectorPath::RectangleHint);
         d->state->clipEnabled = true;
         d->extended->clip(vp, op);
-        if (op == Qt::ReplaceClip || op == Qt::NoClip)
-            d->state->clipInfo.clear();
+        if (op == Qt::ReplaceClip || op == Qt::NoClip) {
+			d->state->clipInfo.clear();
+		}
         d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
@@ -2809,11 +2985,13 @@ void QPainter::setClipRect(const QRect &rect, Qt::ClipOperation op)
     if (simplifyClipOp && (!d->state->clipEnabled && op != Qt::NoClip))
         op = Qt::ReplaceClip;
 
+
     if (d->extended) {
         d->state->clipEnabled = true;
         d->extended->clip(rect, op);
-        if (op == Qt::ReplaceClip || op == Qt::NoClip)
-            d->state->clipInfo.clear();
+		if (op == Qt::ReplaceClip || op == Qt::NoClip) {
+			d->state->clipInfo.clear();
+		}
         d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
@@ -2824,8 +3002,9 @@ void QPainter::setClipRect(const QRect &rect, Qt::ClipOperation op)
 
     d->state->clipRegion = rect;
     d->state->clipOperation = op;
-    if (op == Qt::NoClip || op == Qt::ReplaceClip)
-        d->state->clipInfo.clear();
+	if (op == Qt::NoClip || op == Qt::ReplaceClip) {
+		d->state->clipInfo.clear();
+	}
     d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipRegion | QPaintEngine::DirtyClipEnabled;
@@ -2871,8 +3050,9 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
     if (d->extended) {
         d->state->clipEnabled = true;
         d->extended->clip(r, op);
-        if (op == Qt::NoClip || op == Qt::ReplaceClip)
-            d->state->clipInfo.clear();
+		if (op == Qt::NoClip || op == Qt::ReplaceClip) {
+			d->state->clipInfo.clear();
+		}
         d->state->clipInfo.append(QPainterClipInfo(r, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
@@ -2883,8 +3063,9 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
 
     d->state->clipRegion = r;
     d->state->clipOperation = op;
-    if (op == Qt::NoClip || op == Qt::ReplaceClip)
-        d->state->clipInfo.clear();
+	if (op == Qt::NoClip || op == Qt::ReplaceClip) {
+		d->state->clipInfo.clear();
+	}
     d->state->clipInfo.append(QPainterClipInfo(r, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipRegion | QPaintEngine::DirtyClipEnabled;
@@ -3281,20 +3462,23 @@ void QPainter::setClipPath(const QPainterPath &path, Qt::ClipOperation op)
     if (d->extended) {
         d->state->clipEnabled = true;
         d->extended->clip(path, op);
-        if (op == Qt::NoClip || op == Qt::ReplaceClip)
-            d->state->clipInfo.clear();
+		if (op == Qt::NoClip || op == Qt::ReplaceClip) {
+			d->state->clipInfo.clear();
+		}
         d->state->clipInfo.append(QPainterClipInfo(path, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
+
 
     if (d->state->clipOperation == Qt::NoClip && op == Qt::IntersectClip)
         op = Qt::ReplaceClip;
 
     d->state->clipPath = path;
     d->state->clipOperation = op;
-    if (op == Qt::NoClip || op == Qt::ReplaceClip)
-        d->state->clipInfo.clear();
+	if (op == Qt::NoClip || op == Qt::ReplaceClip) {
+		d->state->clipInfo.clear();
+	}
     d->state->clipInfo.append(QPainterClipInfo(path, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipPath | QPaintEngine::DirtyClipEnabled;
