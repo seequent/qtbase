@@ -2782,7 +2782,7 @@ QPainterPath QPainter::clipPathF() const
                         QTransform matrix = (info.matrix * d->invMatrix);
                         if (lastWasNothing) {
                             QPainterPath tempPath;
-                            tempPath.addRect(info.rectf.toRect());
+                            tempPath.addRect(info.rectf);
 
                             path = tempPath * matrix;
                             lastWasNothing = false;
@@ -2792,7 +2792,7 @@ QPainterPath QPainter::clipPathF() const
                             // Use rect intersection if possible.
                             if (matrix.type() <= QTransform::TxScale) {
                                 QPainterPath tempPath;
-                                tempPath.addRect(matrix.mapRect(info.rectf.toRect()));
+                                tempPath.addRect(matrix.mapRect(info.rectf));
 
                                 path &= tempPath;
                             } else {
@@ -2806,7 +2806,7 @@ QPainterPath QPainter::clipPathF() const
                             path = QPainterPath();
                         } else {
                             QPainterPath tempPath;
-                            tempPath.addRect(info.rectf.toRect());
+                            tempPath.addRect(info.rectf);
 
                             path = tempPath * matrix;
                         }
