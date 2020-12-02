@@ -2819,7 +2819,7 @@ QPainterPath QPainter::clipPathF() const
                             QPainterPath tempPath;
                             tempPath.addRegion(info.region * matrix);
 
-                            path &= tempPath;
+                            path = tempPath;
                             lastWasNothing = false;
                             continue;
                         }
