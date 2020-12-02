@@ -2828,8 +2828,7 @@ QPainterPath QPainter::clipPathF() const
                             tempPath.addRegion(info.region * matrix);
 
                             path &= tempPath;
-                        }
-                        else if (info.operation == Qt::NoClip) {
+                        } else if (info.operation == Qt::NoClip) {
                             lastWasNothing = true;
                             path = QPainterPath();
                         } else {
