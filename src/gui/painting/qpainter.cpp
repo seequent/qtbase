@@ -2748,14 +2748,15 @@ QPainterPath QPainter::clipPathF() const
                         }
                         break;
                     }
-                                                 
+                                           
                     case QPainterClipInfo::RectClip: {
                         QTransform matrix = (info.matrix * d->invMatrix);
                         if (lastWasNothing) {
                             QPainterPath tempPath;
                             tempPath.addRect(info.rect);
-                         
-                            path = path + tempPath;
+                            tempPath = tempPath * matrix;
+
+                            path = tempPath;
                             lastWasNothing = false;
                             continue;
                         } 
