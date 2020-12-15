@@ -2673,6 +2673,114 @@ QPainterPath QPainter::clipPath() const
     }
 }
 
+
+void join_region(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
+                const QPainterClipInfo info)
+{
+    if (lastWasNothing) {
+        QPainterPath tempPath;
+        tempPath.addRegion(info.region * matrix);
+
+        path = tempPath;
+        lastWasNothing = false;
+        return;
+    }
+    if (info.operation == Qt::IntersectClip) {
+        QPainterPath tempPath;
+        tempPath.addRegion(info.region * matrix);
+
+        path &= tempPath;
+    } else if (info.operation == Qt::NoClip) {
+        lastWasNothing = true;
+        path = QPainterPath();
+    } else {
+        QPainterPath tempPath;
+        tempPath.addRegion(info.region * matrix);
+
+        path = tempPath;
+    }
+}
+void join_rectF(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
+               const QPainterClipInfo info)
+{
+    if (lastWasNothing) {
+        QPainterPath tempPath;
+        tempPath.addRect(info.rectf);
+
+        path = tempPath * matrix;
+        lastWasNothing = false;
+        return;
+    }
+    if (info.operation == Qt::IntersectClip) {
+        // Use rect intersection if possible.
+        if (matrix.type() <= QTransform::TxScale) {
+            QPainterPath tempPath;
+            tempPath.addRect(matrix.mapRect(info.rectf));
+
+            path &= tempPath;
+        } else {
+            QPainterPath tempPath;
+            tempPath.addRegion(matrix.map(QRegion(info.rectf.toRect())));
+
+            path &= tempPath;
+        }
+    } else if (info.operation == Qt::NoClip) {
+        lastWasNothing = true;
+        path = QPainterPath();
+    } else {
+        QPainterPath tempPath;
+        tempPath.addRect(info.rectf);
+
+        path = tempPath * matrix;
+    }
+}
+
+void join_path(QPainterPath &path, QTransform matrix, bool &lastWasNothing, const QPainterClipInfo info) {
+    if (lastWasNothing) {
+        path = info.path * matrix;
+        lastWasNothing = false;
+        return;
+    }
+    if (info.operation == Qt::IntersectClip) {
+        path &= (info.path * matrix);
+    } else if (info.operation == Qt::NoClip) {
+        lastWasNothing = true;
+        path = QPainterPath();
+    } else {
+        path = info.path * matrix;
+    }
+}
+
+void join_rect(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
+               const QPainterClipInfo info)
+{
+    if (lastWasNothing) {
+        QPainterPath tempPath;
+        tempPath.addRect(info.rect);
+        tempPath = tempPath * matrix;
+
+        path = tempPath;
+        lastWasNothing = false;
+        return;
+    }
+    if (info.operation == Qt::IntersectClip) {
+        QPainterPath tempPath;
+        tempPath.addRect(info.rect);
+        tempPath = tempPath * matrix;
+
+        path &= tempPath;
+    } else if (info.operation == Qt::NoClip) {
+        lastWasNothing = true;
+        path = QPainterPath();
+    } else {
+        QPainterPath tempPath;
+        tempPath.addRect(info.rect);
+        tempPath = tempPath * matrix;
+
+        path = tempPath;
+    }
+}
+
 /*!
     Returns the current clip path in logical coordinates, unrounded.
 
@@ -2714,117 +2822,30 @@ QPainterPath QPainter::clipPathF() const
         bool lastWasNothing = true;
         if (!d->txinv)
             const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
+
         // ### Falcon: Use QPainterPath
         for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
+            QTransform matrix = (info.matrix * d->invMatrix);
+
             switch (info.clipType) {
 
                 case QPainterClipInfo::PathClip: {
-                    QTransform matrix = (info.matrix * d->invMatrix);
-                    if (lastWasNothing) {
-                        path = info.path * matrix;
-                        lastWasNothing = false;
-                        continue;
-                    }
-                    if (info.operation == Qt::IntersectClip) {
-                        path &= (info.path * matrix);
-                    } else if (info.operation == Qt::NoClip) {
-                        lastWasNothing = true;
-                        path = QPainterPath();
-                    } else {
-                        path = info.path * matrix;
-                    }
+                    join_path(path, matrix, lastWasNothing, info);
                     break;
                 }
                                            
                 case QPainterClipInfo::RectClip: {
-                    QTransform matrix = (info.matrix * d->invMatrix);
-                    if (lastWasNothing) {
-                        QPainterPath tempPath;
-                        tempPath.addRect(info.rect);
-                        tempPath = tempPath * matrix;
-
-                        path = tempPath;
-                        lastWasNothing = false;
-                        continue;
-                    } 
-                    if (info.operation == Qt::IntersectClip) {
-                        QPainterPath tempPath;
-                        tempPath.addRect(info.rect);
-                        tempPath = tempPath * matrix;
-                        
-                        path &= tempPath;
-                    } else if (info.operation == Qt::NoClip) {
-                        lastWasNothing = true;
-                        path = QPainterPath();
-                    } else {
-                        QPainterPath tempPath;
-                        tempPath.addRect(info.rect);
-                        tempPath = tempPath * matrix;
-
-                        path = tempPath;
-                    }
+                    join_rect(path, matrix, lastWasNothing, info);
                     break;
                 }   
                     
                 case QPainterClipInfo::RectFClip: {
-                    QTransform matrix = (info.matrix * d->invMatrix);
-                    if (lastWasNothing) {
-                        QPainterPath tempPath;
-                        tempPath.addRect(info.rectf);
-
-                        path = tempPath * matrix;
-                        lastWasNothing = false;
-                        continue;
-                    }
-                    if (info.operation == Qt::IntersectClip) {
-                        // Use rect intersection if possible.
-                        if (matrix.type() <= QTransform::TxScale) {
-                            QPainterPath tempPath;
-                            tempPath.addRect(matrix.mapRect(info.rectf));
-
-                            path &= tempPath;
-                        } else {
-                            QPainterPath tempPath;
-                            tempPath.addRegion(matrix.map(QRegion(info.rectf.toRect())));
-
-                            path &= tempPath;
-                        }
-                    } else if (info.operation == Qt::NoClip) {
-                        lastWasNothing = true;
-                        path = QPainterPath();
-                    } else {
-                        QPainterPath tempPath;
-                        tempPath.addRect(info.rectf);
-
-                        path = tempPath * matrix;
-                    }
+                    join_rectF(path, matrix, lastWasNothing, info);
                     break;
                 }
 
                 case QPainterClipInfo::RegionClip: {
-                    QTransform matrix = (info.matrix * d->invMatrix);
-                    if (lastWasNothing) {
-                        QPainterPath tempPath;
-                        tempPath.addRegion(info.region * matrix);
-
-                        path = tempPath;
-                        lastWasNothing = false;
-                        continue;
-                    }
-                    if (info.operation == Qt::IntersectClip) {
-                        QPainterPath tempPath;
-                        tempPath.addRegion(info.region * matrix);
-
-                        path &= tempPath;
-                    } else if (info.operation == Qt::NoClip) {
-                        lastWasNothing = true;
-                        path = QPainterPath();
-                    } else {
-                        QPainterPath tempPath;
-                        tempPath.addRegion(info.region * matrix);
-
-                        path = tempPath;
-                    }
+                    join_region(path, matrix, lastWasNothing, info);
                     break;
                 }
                 default:
