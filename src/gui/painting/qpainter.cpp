@@ -2674,7 +2674,7 @@ QPainterPath QPainter::clipPath() const
 }
 
 
-void join_region(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
+static void join_region(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
                 const QPainterClipInfo info)
 {
     if (lastWasNothing) {
@@ -2700,7 +2700,7 @@ void join_region(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
         path = tempPath;
     }
 }
-void join_rectF(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
+static void join_rectF(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
                const QPainterClipInfo info)
 {
     if (lastWasNothing) {
@@ -2735,7 +2735,7 @@ void join_rectF(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
     }
 }
 
-void join_path(QPainterPath &path, QTransform matrix, bool &lastWasNothing, const QPainterClipInfo info) {
+static void join_path(QPainterPath &path, QTransform matrix, bool &lastWasNothing, const QPainterClipInfo info) {
     if (lastWasNothing) {
         path = info.path * matrix;
         lastWasNothing = false;
@@ -2751,7 +2751,7 @@ void join_path(QPainterPath &path, QTransform matrix, bool &lastWasNothing, cons
     }
 }
 
-void join_rect(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
+static void join_rect(QPainterPath &path, QTransform matrix, bool &lastWasNothing,
                const QPainterClipInfo info)
 {
     if (lastWasNothing) {
