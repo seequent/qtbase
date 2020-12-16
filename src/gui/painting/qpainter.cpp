@@ -2710,15 +2710,12 @@ static QPainterPath RectFClipReplaceClip(const QTransform &matrix, const QPainte
 
 static QPainterPath RectFClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
-    // if you simplify this method, you can simplify clipped_path
     // Use rect intersection if possible.
     QPainterPath tempPath;
 
     if (matrix.type() <= QTransform::TxScale) {
-        QPainterPath tempPath;
         tempPath.addRect(matrix.mapRect(info.rectf));
     } else {
-        QPainterPath tempPath;
         tempPath.addRegion(matrix.map(QRegion(info.rectf.toRect())));
     }
     return tempPath;
@@ -2735,6 +2732,22 @@ static QPainterPath RegionClipIntersectClip(const QTransform &matrix, const QPai
 {
     return RegionClipReplaceClip(matrix, info);
 }
+
+enum ActionForClipOperation { 
+    NoClip, 
+    ReplaceClip, 
+    IntersectClip 
+};
+
+typedef QPainterPath (*PainterFunc)(const QTransform &matrix, const QPainterClipInfo &info);
+
+PainterFunc clipped_path[][IntersectClip + 1] = {
+    { noClipping, RegionClipReplaceClip, RegionClipIntersectClip },
+    { noClipping, PathClipReplaceClip, PathClipIntersectClip },
+    { noClipping, RectClipReplaceClip, RectClipIntersectClip },
+    { noClipping, RectFClipReplaceClip, RectFClipIntersectClip }
+};
+
 
 /*!
     Returns the current clip path in logical coordinates, unrounded.
@@ -2762,67 +2775,47 @@ QPainterPath QPainter::clipPathF() const
     // No clip, return empty
     if (d->state->clipInfo.isEmpty()) {
         return QPainterPath();
-    } else {
+    }
 
-        // Update inverse matrix, used below.
-        if (!d->txinv)
-            const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
+    // Update inverse matrix, used below.
+    if (!d->txinv)
+        const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
 
-        /*
-        * Modified version of "clipRegion" that is used in ::clipPath
-        * as "return qt_regionToPath(clipRegion());" that prevents rounding of values,
-        * placing them directly into a QPainterPath.
-        */
-        QPainterPath path;
-        bool initializing = true;
-        if (!d->txinv)
-            const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
+    /*
+    * Modified version of "clipRegion" that is used in ::clipPath
+    * as "return qt_regionToPath(clipRegion());" that prevents rounding of values,
+    * placing them directly into a QPainterPath.
+    */
+    QPainterPath path;
+    bool initializing = true;
 
+    // ### Falcon: Use QPainterPath
+    for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
+        QTransform matrix = (info.matrix * d->invMatrix);
 
-        enum ActionForClipOperation {
-            NoClip,
-            ReplaceClip,
-            IntersectClip
-        };
-
-        typedef QPainterPath (*PainterFunc)(const QTransform &matrix,
-                                            const QPainterClipInfo &info);
-        PainterFunc clipped_path[4][3] = {
-            { noClipping, RegionClipReplaceClip, RegionClipIntersectClip },
-            { noClipping, PathClipReplaceClip, PathClipIntersectClip },
-            { noClipping, RectClipReplaceClip, RectClipIntersectClip },
-            { noClipping, RectFClipReplaceClip, RectFClipIntersectClip }
-        };
-
-
-        // ### Falcon: Use QPainterPath
-        for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
-            QTransform matrix = (info.matrix * d->invMatrix);
-
-            if (initializing) {
-                path = clipped_path[info.clipType][ReplaceClip](matrix, info);
-                initializing = false;
-                continue;
-            }
+        if (initializing) {
+            path = clipped_path[info.clipType][ReplaceClip](matrix, info);
+            initializing = false;
+            continue;
+        }
             
-            switch (info.operation) {
-                case Qt::IntersectClip: {
-                    path &= clipped_path[info.clipType][IntersectClip](matrix, info);
-                    break;
-                }
-                case Qt::NoClip: {
-                    initializing = true;
-                    path = clipped_path[info.clipType][NoClip](matrix, info);
-                    break;
-                }
-                case Qt::ReplaceClip: {
-                    path = clipped_path[info.clipType][ReplaceClip](matrix, info);
-                    break;
-                }
+        switch (info.operation) {
+            case Qt::IntersectClip: {
+                path &= clipped_path[info.clipType][IntersectClip](matrix, info);
+                break;
+            }
+            case Qt::NoClip: {
+                initializing = true;
+                path = clipped_path[info.clipType][NoClip](matrix, info);
+                break;
+            }
+            case Qt::ReplaceClip: {
+                path = clipped_path[info.clipType][ReplaceClip](matrix, info);
+                break;
             }
         }
-        return path;
     }
+    return path;
 }
 
 /*!
