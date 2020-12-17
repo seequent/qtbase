@@ -2705,6 +2705,7 @@ static QPainterPath RectFClipReplaceClip(const QTransform &matrix, const QPainte
 {
     QPainterPath tempPath;
     tempPath.addRect(info.rectf);
+    tempPath = tempPath * matrix;
     return tempPath;
 }
 
