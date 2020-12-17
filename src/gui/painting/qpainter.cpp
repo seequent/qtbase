@@ -2673,22 +2673,17 @@ QPainterPath QPainter::clipPath() const
     }
 }
 
-static QPainterPath noClipping(const QTransform &matrix, const QPainterClipInfo &info)
-{
-    return QPainterPath();
-}
-
-static QPainterPath PathClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath pathClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
     return info.path * matrix;
 }
 
-static QPainterPath PathClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath pathClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
-    return PathClipReplaceClip(matrix, info);
+    return pathClipReplaceClip(matrix, info);
 }
 
-static QPainterPath RectClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath rectClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
     QPainterPath tempPath;
     tempPath.addRect(info.rect);
@@ -2696,12 +2691,12 @@ static QPainterPath RectClipReplaceClip(const QTransform &matrix, const QPainter
     return tempPath;
 }
 
-static QPainterPath RectClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath rectClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
-    return RectClipReplaceClip(matrix, info);
+    return rectClipReplaceClip(matrix, info);
 }
 
-static QPainterPath RectFClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath rectFClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
     QPainterPath tempPath;
     tempPath.addRect(info.rectf);
@@ -2709,7 +2704,7 @@ static QPainterPath RectFClipReplaceClip(const QTransform &matrix, const QPainte
     return tempPath;
 }
 
-static QPainterPath RectFClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath rectFClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
     // Use rect intersection if possible.
     QPainterPath tempPath;
@@ -2722,20 +2717,19 @@ static QPainterPath RectFClipIntersectClip(const QTransform &matrix, const QPain
     return tempPath;
 }
 
-static QPainterPath RegionClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath regionClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
     QPainterPath tempPath;
     tempPath.addRegion(info.region * matrix);
     return tempPath;
 }
 
-static QPainterPath RegionClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
+static QPainterPath regionClipIntersectClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
-    return RegionClipReplaceClip(matrix, info);
+    return regionClipReplaceClip(matrix, info);
 }
 
-enum ActionForClipOperation { 
-    NoClip, 
+enum ActionForClipOperation {
     ReplaceClip, 
     IntersectClip 
 };
@@ -2743,10 +2737,10 @@ enum ActionForClipOperation {
 typedef QPainterPath (*PainterFunc)(const QTransform &matrix, const QPainterClipInfo &info);
 
 PainterFunc clipped_path[][IntersectClip + 1] = {
-    { noClipping, RegionClipReplaceClip, RegionClipIntersectClip },
-    { noClipping, PathClipReplaceClip, PathClipIntersectClip },
-    { noClipping, RectClipReplaceClip, RectClipIntersectClip },
-    { noClipping, RectFClipReplaceClip, RectFClipIntersectClip }
+    { regionClipReplaceClip, regionClipIntersectClip },
+    { pathClipReplaceClip, pathClipIntersectClip },
+    { rectClipReplaceClip, rectClipIntersectClip },
+    { rectFClipReplaceClip, rectFClipIntersectClip }
 };
 
 
@@ -2801,13 +2795,13 @@ QPainterPath QPainter::clipPathF() const
         }
             
         switch (info.operation) {
-            case Qt::IntersectClip: {
-                path &= clipped_path[info.clipType][IntersectClip](matrix, info);
-                break;
-            }
             case Qt::NoClip: {
                 initializing = true;
-                path = clipped_path[info.clipType][NoClip](matrix, info);
+                path = QPainterPath();
+                break;
+            }
+            case Qt::IntersectClip: {
+                path &= clipped_path[info.clipType][IntersectClip](matrix, info);
                 break;
             }
             case Qt::ReplaceClip: {
