@@ -2711,6 +2711,26 @@ PainterFunc clipped_path[] = {
 };
 
 
+static void round_path_coordinates_to_dp(QPainterPath *path, const int decimal_precision) {
+	int shifter = pow(10, decimal_precision);
+
+	for (int i = 0; i < path->elementCount(); i++) {
+		QPainterPath::Element coordinate = path->elementAt(i);
+
+		qreal x = coordinate.x;
+		x *= shifter;
+		x = qRound(x);
+		x /= shifter;
+
+		qreal y = coordinate.y;
+		y *= shifter;
+		y = qRound(y);
+		y /= shifter;
+
+		path->setElementPositionAt(i, x, y);
+	}
+}
+
 /*!
     Returns the current clip path in logical coordinates, unrounded.
 
@@ -2750,10 +2770,12 @@ QPainterPath QPainter::clipPathF() const
     */
     QPainterPath path;
     bool initializing = true;
+	const int deepest_working_dp_for_correct_behaviour = 5;
 
     // ### Falcon: Use QPainterPath
-    for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
+    for (QPainterClipInfo &info : d->state->clipInfo) {
         QTransform matrix = (info.matrix * d->invMatrix);
+		round_path_coordinates_to_dp(&info.path, deepest_working_dp_for_correct_behaviour);
 
         if (initializing) {
             path = clipped_path[info.clipType](matrix, info);
