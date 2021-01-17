@@ -2711,8 +2711,18 @@ PainterFunc clipped_path[] = {
 };
 
 
-static void round_path_coordinates_to_dp(QPainterPath *path, const int decimal_precision) {
-    int shifter = pow(10, decimal_precision);
+/*
+LF-37399
+
+By rounding values to 5dp, we can prevent a special use case where
+QPainterPath::intersect returns an empty clipPath when it should not,
+presumably caused by floating point errors.
+
+An identical Qt bug raised can be found at https://bugreports.qt.io/browse/QTBUG-83102
+*/
+static void round_path_coordinates_to_5_dp(QPainterPath *path) {
+    const int deepest_working_dp_for_correct_behaviour = 5;
+    int shifter = pow(10, 5);
 
     for (int i = 0; i < path->elementCount(); i++) {
         QPainterPath::Element coordinate = path->elementAt(i);
@@ -2770,12 +2780,11 @@ QPainterPath QPainter::clipPathF() const
     */
     QPainterPath path;
     bool initializing = true;
-    const int deepest_working_dp_for_correct_behaviour = 5;
 
     // ### Falcon: Use QPainterPath
     for (QPainterClipInfo &info : d->state->clipInfo) {
         QTransform matrix = (info.matrix * d->invMatrix);
-        round_path_coordinates_to_dp(&info.path, deepest_working_dp_for_correct_behaviour);
+        round_path_coordinates_to_5_dp(&info.path);
 
         if (initializing) {
             path = clipped_path[info.clipType](matrix, info);
