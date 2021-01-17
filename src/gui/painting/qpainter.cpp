@@ -2714,7 +2714,7 @@ PainterFunc clipped_path[] = {
 /*
 LF-37399
 
-By rounding values to 5dp, we can prevent a special use case where
+By rounding values to 5dp, we can prevent a special case where
 QPainterPath::intersect returns an empty clipPath when it should not,
 presumably caused by floating point errors.
 
