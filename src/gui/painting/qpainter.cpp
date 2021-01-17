@@ -2775,7 +2775,7 @@ QPainterPath QPainter::clipPathF() const
     // ### Falcon: Use QPainterPath
     for (QPainterClipInfo &info : d->state->clipInfo) {
         QTransform matrix = (info.matrix * d->invMatrix);
-		round_path_coordinates_to_dp(&info.path, deepest_working_dp_for_correct_behaviour);
+        round_path_coordinates_to_dp(&info.path, deepest_working_dp_for_correct_behaviour);
 
         if (initializing) {
             path = clipped_path[info.clipType](matrix, info);
