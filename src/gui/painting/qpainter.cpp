@@ -2673,9 +2673,35 @@ QPainterPath QPainter::clipPath() const
     }
 }
 
+/*
+LF-37399
+
+By rounding values to 7dp, we can prevent a special case where
+QPainterPath::intersect returns an empty clipPath when it should not,
+presumably caused by floating point errors.
+
+Seven decimal points was the deepest decimal point to produce the
+correct behaviour, anything above resulted in an incorrect clip path.
+
+An identical Qt bug raised can be found at https://bugreports.qt.io/browse/QTBUG-83102
+*/
+static void round_path_coordinates_to_7_dp(QPainterPath &path) {
+    qreal shifter = pow(10, 7);
+
+    for (int i = 0; i < path.elementCount(); i++) {
+        QPainterPath::Element coordinate = path.elementAt(i);
+        qreal x = qRound64(coordinate.x * shifter) / shifter;
+        qreal y = qRound64(coordinate.y * shifter) / shifter;
+        path.setElementPositionAt(i, x, y);
+    }
+}
+
 static QPainterPath pathClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
-    return info.path * matrix;
+    QPainterPath tempPath = info.path * matrix;
+
+    round_path_coordinates_to_7_dp(tempPath);
+    return tempPath;
 }
 
 static QPainterPath rectClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
@@ -2683,6 +2709,8 @@ static QPainterPath rectClipReplaceClip(const QTransform &matrix, const QPainter
     QPainterPath tempPath;
     tempPath.addRect(info.rect);
     tempPath = tempPath * matrix;
+
+    round_path_coordinates_to_7_dp(tempPath);
     return tempPath;
 }
 
@@ -2691,6 +2719,8 @@ static QPainterPath rectFClipReplaceClip(const QTransform &matrix, const QPainte
     QPainterPath tempPath;
     tempPath.addRect(info.rectf);
     tempPath = tempPath * matrix;
+
+    round_path_coordinates_to_7_dp(tempPath);
     return tempPath;
 }
 
@@ -2698,6 +2728,8 @@ static QPainterPath regionClipReplaceClip(const QTransform &matrix, const QPaint
 {
     QPainterPath tempPath;
     tempPath.addRegion(info.region * matrix);
+
+    round_path_coordinates_to_7_dp(tempPath);
     return tempPath;
 }
 
@@ -2709,39 +2741,6 @@ PainterFunc clipped_path[] = {
      rectClipReplaceClip,
      rectFClipReplaceClip 
 };
-
-
-/*
-LF-37399
-
-By rounding values to 5dp, we can prevent a special case where
-QPainterPath::intersect returns an empty clipPath when it should not,
-presumably caused by floating point errors.
-
-Five decimal points was the deepest decimal point to produce the
-correct behaviour, anything above resulted in a distorted image.
-
-An identical Qt bug raised can be found at https://bugreports.qt.io/browse/QTBUG-83102
-*/
-static void round_path_coordinates_to_5_dp(QPainterPath *path) {
-    int shifter = pow(10, 5);
-
-    for (int i = 0; i < path->elementCount(); i++) {
-        QPainterPath::Element coordinate = path->elementAt(i);
-
-        qreal x = coordinate.x;
-        x *= shifter;
-        x = qRound(x);
-        x /= shifter;
-
-        qreal y = coordinate.y;
-        y *= shifter;
-        y = qRound(y);
-        y /= shifter;
-
-        path->setElementPositionAt(i, x, y);
-    }
-}
 
 /*!
     Returns the current clip path in logical coordinates, unrounded.
@@ -2783,10 +2782,8 @@ QPainterPath QPainter::clipPathF() const
     QPainterPath path;
     bool initializing = true;
 
-    // ### Falcon: Use QPainterPath
     for (QPainterClipInfo &info : d->state->clipInfo) {
         QTransform matrix = (info.matrix * d->invMatrix);
-        round_path_coordinates_to_5_dp(&info.path);
 
         if (initializing) {
             path = clipped_path[info.clipType](matrix, info);
@@ -2810,6 +2807,7 @@ QPainterPath QPainter::clipPathF() const
             }
         }
     }
+
     return path;
 }
 
