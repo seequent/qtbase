@@ -129,9 +129,9 @@ bool QXcbMime::mimeDataForAtom(QXcbConnection *connection, xcb_atom_t a, QMimeDa
     return ret;
 }
 
-QVector<xcb_atom_t> QXcbMime::mimeAtomsForFormat(QXcbConnection *connection, const QString &format)
+QList<xcb_atom_t> QXcbMime::mimeAtomsForFormat(QXcbConnection *connection, const QString &format)
 {
-    QVector<xcb_atom_t> atoms;
+    QList<xcb_atom_t> atoms;
     atoms.reserve(7);
     atoms.append(connection->internAtom(format.toLatin1()));
 
@@ -158,14 +158,14 @@ QVector<xcb_atom_t> QXcbMime::mimeAtomsForFormat(QXcbConnection *connection, con
 }
 
 QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a, const QByteArray &d, const QString &format,
-                                       QMetaType::Type requestedType, bool hasUtf8)
+                                       QMetaType requestedType, bool hasUtf8)
 {
     QByteArray data = d;
     QString atomName = mimeAtomToString(connection, a);
 //    qDebug() << "mimeConvertDataToFormat" << format << atomName << data;
 
     if (hasUtf8 && atomName == format + QLatin1String(";charset=utf-8")) {
-        if (requestedType == QMetaType::QString)
+        if (requestedType.id() == QMetaType::QString)
             return QString::fromUtf8(data);
         return data;
     }
@@ -195,10 +195,10 @@ QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a,
                   reinterpret_cast<const char16_t *>(data.constData()), data.size() / 2);
             if (!str.isNull()) {
                 if (format == QLatin1String("text/uri-list")) {
-                    const auto urls = str.splitRef(QLatin1Char('\n'));
+                    const auto urls = QStringView{str}.split(QLatin1Char('\n'));
                     QList<QVariant> list;
                     list.reserve(urls.size());
-                    for (const QStringRef &s : urls) {
+                    for (const QStringView &s : urls) {
                         const QUrl url(s.trimmed().toString());
                         if (url.isValid())
                             list.append(url);
@@ -255,8 +255,8 @@ QVariant QXcbMime::mimeConvertToFormat(QXcbConnection *connection, xcb_atom_t a,
     return QVariant();
 }
 
-xcb_atom_t QXcbMime::mimeAtomForFormat(QXcbConnection *connection, const QString &format, QMetaType::Type requestedType,
-                                 const QVector<xcb_atom_t> &atoms, bool *hasUtf8)
+xcb_atom_t QXcbMime::mimeAtomForFormat(QXcbConnection *connection, const QString &format, QMetaType requestedType,
+                                 const QList<xcb_atom_t> &atoms, bool *hasUtf8)
 {
     *hasUtf8 = false;
 
@@ -288,7 +288,7 @@ xcb_atom_t QXcbMime::mimeAtomForFormat(QXcbConnection *connection, const QString
 
     // for string/text requests try to use a format with a well-defined charset
     // first to avoid encoding problems
-    if (requestedType == QMetaType::QString
+    if (requestedType.id() == QMetaType::QString
         && format.startsWith(QLatin1String("text/"))
         && !format.contains(QLatin1String("charset="))) {
 

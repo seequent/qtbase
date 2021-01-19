@@ -798,6 +798,13 @@ UnixMakefileGenerator::writeMakeParts(QTextStream &t)
             commonSedArgs << "-e \"s,\\$${WATCHOS_DEPLOYMENT_TARGET},"
                           << project->first("QMAKE_WATCHOS_DEPLOYMENT_TARGET").toQString() << ",g\" ";
 
+            QString launchScreen = var("QMAKE_IOS_LAUNCH_SCREEN");
+            if (launchScreen.isEmpty())
+                launchScreen = QLatin1String("LaunchScreen");
+            else
+                launchScreen = QFileInfo(launchScreen).baseName();
+            commonSedArgs << "-e \"s,\\$${IOS_LAUNCH_SCREEN}," << launchScreen << ",g\" ";
+
             if (!isFramework) {
                 ProString app_bundle_name = var("QMAKE_APPLICATION_BUNDLE_NAME");
                 if (app_bundle_name.isEmpty())
@@ -1554,13 +1561,8 @@ std::pair<bool, QString> UnixMakefileGenerator::writeObjectsPart(QTextStream &t,
         if (objMax.isEmpty() || project->values("OBJECTS").count() < objMax.toInt()) {
             objectsLinkLine = "$(OBJECTS)";
         } else {
-            QString ld_response_file = fileVar("OBJECTS_DIR");
-            ld_response_file += var("QMAKE_LINK_OBJECT_SCRIPT") + "." + var("QMAKE_TARGET");
-            if (!var("BUILD_NAME").isEmpty())
-                ld_response_file += "." + var("BUILD_NAME");
-            if (!var("MAKEFILE").isEmpty())
-                ld_response_file += "." + var("MAKEFILE");
-            createResponseFile(ld_response_file, objs);
+            const QString ld_response_file = createResponseFile(
+                        fileVar("OBJECTS_DIR") + var("QMAKE_LINK_OBJECT_SCRIPT"), objs);
             objectsLinkLine = "@" + escapeFilePath(ld_response_file);
         }
         t << "OBJECTS       = " << valList(escapeDependencyPaths(objs)) << Qt::endl;

@@ -1,6 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2020 The Qt Company Ltd.
+** Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -40,14 +41,15 @@
 #ifndef QHASH_H
 #define QHASH_H
 
-#include <QtCore/qiterator.h>
-#include <QtCore/qvector.h>
-#include <QtCore/qrefcount.h>
-#include <QtCore/qhashfunctions.h>
 #include <QtCore/qcontainertools_impl.h>
+#include <QtCore/qhashfunctions.h>
+#include <QtCore/qiterator.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qmath.h>
+#include <QtCore/qrefcount.h>
 
 #include <initializer_list>
+#include <functional> // for std::hash
 
 QT_BEGIN_NAMESPACE
 
@@ -58,12 +60,51 @@ struct QHashDummyValue
 
 namespace QHashPrivate {
 
-// QHash uses a power of two growth policy.
-namespace GrowthPolicy
+template <typename T, typename = void>
+constexpr inline bool HasQHashOverload = false;
+
+template <typename T>
+constexpr inline bool HasQHashOverload<T, std::enable_if_t<
+    std::is_convertible_v<decltype(qHash(std::declval<const T &>(), std::declval<size_t>())), size_t>
+>> = true;
+
+template <typename T, typename = void>
+constexpr inline bool HasStdHashSpecializationWithSeed = false;
+
+template <typename T>
+constexpr inline bool HasStdHashSpecializationWithSeed<T, std::enable_if_t<
+    std::is_convertible_v<decltype(std::hash<T>()(std::declval<const T &>(), std::declval<size_t>())), size_t>
+>> = true;
+
+template <typename T, typename = void>
+constexpr inline bool HasStdHashSpecializationWithoutSeed = false;
+
+template <typename T>
+constexpr inline bool HasStdHashSpecializationWithoutSeed<T, std::enable_if_t<
+    std::is_convertible_v<decltype(std::hash<T>()(std::declval<const T &>())), size_t>
+>> = true;
+
+template <typename T>
+size_t calculateHash(const T &t, size_t seed = 0)
 {
+    if constexpr (HasQHashOverload<T>) {
+        return qHash(t, seed);
+    } else if constexpr (HasStdHashSpecializationWithSeed<T>) {
+        return std::hash<T>()(t, seed);
+    } else if constexpr (HasStdHashSpecializationWithoutSeed<T>) {
+        Q_UNUSED(seed);
+        return std::hash<T>()(t);
+    } else {
+        static_assert(sizeof(T) == 0, "The key type must have a qHash overload or a std::hash specialization");
+        return 0;
+    }
+}
+
+// QHash uses a power of two growth policy.
+namespace GrowthPolicy {
 inline constexpr size_t maxNumBuckets() noexcept
 {
-    return size_t(1) << (8*sizeof(size_t) - 1);
+    return size_t(1) << (8 * sizeof(size_t) - 1);
 }
 inline constexpr size_t bucketsForCapacity(size_t requestedCapacity) noexcept
 {
@@ -71,7 +112,7 @@ inline constexpr size_t bucketsForCapacity(size_t requestedCapacity) noexcept
         return 16;
     if (requestedCapacity >= maxNumBuckets())
         return maxNumBuckets();
-    return qNextPowerOfTwo(QIntegerForSize<sizeof(size_t)>::Unsigned(2*requestedCapacity - 1));
+    return qNextPowerOfTwo(QIntegerForSize<sizeof(size_t)>::Unsigned(2 * requestedCapacity - 1));
 }
 inline constexpr size_t bucketForHash(size_t nBuckets, size_t hash) noexcept
 {
@@ -185,9 +226,8 @@ struct MultiNode
 
     MultiNode(MultiNode &&other)
         : key(other.key),
-          value(other.value)
+          value(qExchange(other.value, nullptr))
     {
-        other.value = nullptr;
     }
 
     MultiNode(const MultiNode &other)
@@ -217,16 +257,13 @@ struct MultiNode
     void insertMulti(Args &&... args)
     {
         Chain *e = new Chain{ T(std::forward<Args>(args)...), nullptr };
-        e->next = value;
-        value = e;
+        e->next = qExchange(value, e);
     }
     template<typename ...Args>
     void emplaceValue(Args &&... args)
     {
         value->value = T(std::forward<Args>(args)...);
     }
-
-    // compiler generated move operators are fine
 };
 
 template<typename  Node>
@@ -286,7 +323,7 @@ struct Span {
                         entries[o].node().~Node();
                 }
             }
-            delete [] entries;
+            delete[] entries;
             entries = nullptr;
         }
     }
@@ -391,13 +428,14 @@ struct Span {
         // in here. The likelihood of having below 16 entries is very small,
         // so start with that and increment by 16 each time we need to add
         // some more space
-        const size_t increment = NEntries/8;
+        const size_t increment = NEntries / 8;
         size_t alloc = allocated + increment;
         Entry *newEntries = new Entry[alloc];
         // we only add storage if the previous storage was fully filled, so
         // simply copy the old data over
         if constexpr (isRelocatable<Node>()) {
-            memcpy(newEntries, entries, allocated*sizeof(Entry));
+            if (allocated)
+                memcpy(newEntries, entries, allocated * sizeof(Entry));
         } else {
             for (size_t i = 0; i < allocated; ++i) {
                 new (&newEntries[i].node()) Node(std::move(entries[i].node()));
@@ -407,7 +445,7 @@ struct Span {
         for (size_t i = allocated; i < allocated + increment; ++i) {
             newEntries[i].nextFree() = uchar(i + 1);
         }
-        delete [] entries;
+        delete[] entries;
         entries = newEntries;
         allocated = uchar(alloc);
     }
@@ -474,10 +512,9 @@ struct Data
         return dd;
     }
 
-
     void clear()
     {
-        delete [] spans;
+        delete[] spans;
         spans = nullptr;
         size = 0;
         numBuckets = 0;
@@ -527,7 +564,7 @@ struct Data
             }
             span.freeData();
         }
-        delete [] oldSpans;
+        delete[] oldSpans;
     }
 
     size_t nextBucket(size_t bucket) const noexcept
@@ -550,7 +587,7 @@ struct Data
     iterator find(const Key &key) const noexcept
     {
         Q_ASSERT(numBuckets > 0);
-        size_t hash = qHash(key, seed);
+        size_t hash = QHashPrivate::calculateHash(key, seed);
         size_t bucket = GrowthPolicy::bucketForHash(numBuckets, hash);
         // loop over the buckets until we find the entry we search for
         // or an empty slot, in which case we know the entry doesn't exist
@@ -565,7 +602,7 @@ struct Data
                 return iterator{ this, bucket };
             } else {
                 Node &n = s.atOffset(offset);
-                if (n.key == key)
+                if (qHashEquals(n.key, key))
                     return iterator{ this, bucket };
             }
             bucket = nextBucket(bucket);
@@ -582,7 +619,8 @@ struct Data
         return it.node();
     }
 
-    struct InsertionResult {
+    struct InsertionResult
+    {
         iterator it;
         bool initialized;
     };
@@ -618,7 +656,7 @@ struct Data
             size_t nextIndex = next & Span::LocalBucketMask;
             if (!spans[nextSpan].hasNode(nextIndex))
                 break;
-            size_t hash = qHash(spans[nextSpan].at(nextIndex).key, seed);
+            size_t hash = QHashPrivate::calculateHash(spans[nextSpan].at(nextIndex).key, seed);
             size_t newBucket = GrowthPolicy::bucketForHash(numBuckets, hash);
             while (true) {
                 if (newBucket == next) {
@@ -695,12 +733,13 @@ struct iterator {
 
 } // namespace QHashPrivate
 
-template <class Key, class T>
+template <typename Key, typename T>
 class QHash
 {
     using Node = QHashPrivate::Node<Key, T>;
     using Data = QHashPrivate::Data<Node>;
     friend class QSet<Key>;
+    friend class QMultiHash<Key, T>;
 
     Data *d = nullptr;
 
@@ -728,6 +767,9 @@ public:
     }
     ~QHash()
     {
+        static_assert(std::is_nothrow_destructible_v<Key>, "Types with throwing destructors are not supported in Qt containers.");
+        static_assert(std::is_nothrow_destructible_v<T>, "Types with throwing destructors are not supported in Qt containers.");
+
         if (d && !d->ref.deref())
             delete d;
     }
@@ -749,15 +791,7 @@ public:
         : d(std::exchange(other.d, nullptr))
     {
     }
-    QHash &operator=(QHash &&other) noexcept(std::is_nothrow_destructible<Node>::value)
-    {
-        if (d != other.d) {
-            if (d && !d->ref.deref())
-                delete d;
-            d = std::exchange(other.d, nullptr);
-        }
-        return *this;
-    }
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QHash)
 #ifdef Q_QDOC
     template <typename InputIterator>
     QHash(InputIterator f, InputIterator l);
@@ -782,7 +816,8 @@ public:
 #endif
     void swap(QHash &other) noexcept { qSwap(d, other.d); }
 
-    bool operator==(const QHash &other) const noexcept
+    template <typename U = T>
+    QTypeTraits::compare_eq_result<U> operator==(const QHash &other) const noexcept
     {
         if (d == other.d)
             return true;
@@ -797,7 +832,9 @@ public:
         // all values must be the same as size is the same
         return true;
     }
-    bool operator!=(const QHash &other) const noexcept { return !(*this == other); }
+    template <typename U = T>
+    QTypeTraits::compare_eq_result<U> operator!=(const QHash &other) const noexcept
+    { return !(*this == other); }
 
     inline qsizetype size() const noexcept { return d ? qsizetype(d->size) : 0; }
     inline bool isEmpty() const noexcept { return !d || d->size == 0; }
@@ -834,6 +871,11 @@ public:
             return false;
         d->erase(it);
         return true;
+    }
+    template <typename Predicate>
+    qsizetype removeIf(Predicate pred)
+    {
+        return QtPrivate::associative_erase_if(*this, pred);
     }
     T take(const Key &key)
     {
@@ -897,13 +939,10 @@ public:
         return value(key);
     }
 
-    QVector<Key> keys() const
+    QList<Key> keys() const { return QList<Key>(keyBegin(), keyEnd()); }
+    QList<Key> keys(const T &value) const
     {
-        return QVector<Key>(keyBegin(), keyEnd());
-    }
-    QVector<Key> keys(const T &value) const
-    {
-        QVector<Key> res;
+        QList<Key> res;
         const_iterator i = begin();
         while (i != end()) {
             if (i.value() == value)
@@ -912,10 +951,7 @@ public:
         }
         return res;
     }
-    QVector<T> values() const
-    {
-        return QVector<T>(begin(), end());
-    }
+    QList<T> values() const { return QList<T>(begin(), end()); }
 
     class const_iterator;
 
@@ -1124,7 +1160,8 @@ public:
     template <typename ...Args>
     iterator emplace(const Key &key, Args &&... args)
     {
-        return emplace(Key(key), std::forward<Args>(args)...);
+        Key copy = key; // Needs to be explicit for MSVC 2019
+        return emplace(std::move(copy), std::forward<Args>(args)...);
     }
 
     template <typename ...Args>
@@ -1150,14 +1187,14 @@ public:
 
 
 
-template <class Key, class T>
+template <typename Key, typename T>
 class QMultiHash
 {
     using Node = QHashPrivate::MultiNode<Key, T>;
     using Data = QHashPrivate::Data<Node>;
     using Chain = QHashPrivate::MultiNodeChain<T>;
 
-    Data  *d = nullptr;
+    Data *d = nullptr;
     qsizetype m_size = 0;
 
 public:
@@ -1204,6 +1241,9 @@ public:
     }
     ~QMultiHash()
     {
+        static_assert(std::is_nothrow_destructible_v<Key>, "Types with throwing destructors are not supported in Qt containers.");
+        static_assert(std::is_nothrow_destructible_v<T>, "Types with throwing destructors are not supported in Qt containers.");
+
         if (d && !d->ref.deref())
             delete d;
     }
@@ -1221,10 +1261,10 @@ public:
         }
         return *this;
     }
-    QMultiHash(QMultiHash &&other) noexcept : d(other.d), m_size(other.m_size)
+    QMultiHash(QMultiHash &&other) noexcept
+        : d(qExchange(other.d, nullptr)),
+          m_size(qExchange(other.m_size, 0))
     {
-        other.d = nullptr;
-        other.m_size = 0;
     }
     QMultiHash &operator=(QMultiHash &&other) noexcept(std::is_nothrow_destructible<Node>::value)
     {
@@ -1233,18 +1273,28 @@ public:
         return *this;
     }
 
-    QMultiHash(const QHash<Key, T> &other)
+    explicit QMultiHash(const QHash<Key, T> &other)
         : QMultiHash(other.begin(), other.end())
     {}
+
+    explicit QMultiHash(QHash<Key, T> &&other)
+    {
+        unite(std::move(other));
+    }
     void swap(QMultiHash &other) noexcept { qSwap(d, other.d); qSwap(m_size, other.m_size); }
 
     bool operator==(const QMultiHash &other) const noexcept
     {
         if (d == other.d)
             return true;
-        if (!d || ! other.d)
+        if (m_size != other.m_size)
             return false;
-        if (m_size != other.m_size || d->size != other.d->size)
+        if (m_size == 0)
+            return true;
+        // equal size, and both non-zero size => d pointers allocated for both
+        Q_ASSERT(d);
+        Q_ASSERT(other.d);
+        if (d->size != other.d->size)
             return false;
         for (auto it = other.d->begin(); it != other.d->end(); ++it) {
             auto i = d->find(it.node()->key);
@@ -1308,6 +1358,11 @@ public:
         Q_ASSERT(m_size >= 0);
         d->erase(it);
         return n;
+    }
+    template <typename Predicate>
+    qsizetype removeIf(Predicate pred)
+    {
+        return QtPrivate::associative_erase_if(*this, pred);
     }
     T take(const Key &key)
     {
@@ -1381,9 +1436,9 @@ public:
         return value(key);
     }
 
-    QVector<Key> uniqueKeys() const
+    QList<Key> uniqueKeys() const
     {
-        QVector<Key> res;
+        QList<Key> res;
         if (d) {
             auto i = d->begin();
             while (i != d->end()) {
@@ -1394,13 +1449,10 @@ public:
         return res;
     }
 
-    QVector<Key> keys() const
+    QList<Key> keys() const { return QList<Key>(keyBegin(), keyEnd()); }
+    QList<Key> keys(const T &value) const
     {
-        return QVector<Key>(keyBegin(), keyEnd());
-    }
-    QVector<Key> keys(const T &value) const
-    {
-        QVector<Key> res;
+        QList<Key> res;
         const_iterator i = begin();
         while (i != end()) {
             if (i.value()->contains(value))
@@ -1409,13 +1461,10 @@ public:
         }
         return res;
     }
-    QVector<T> values() const
+    QList<T> values() const { return QList<T>(begin(), end()); }
+    QList<T> values(const Key &key) const
     {
-        return QVector<T>(begin(), end());
-    }
-    QVector<T> values(const Key &key) const
-    {
-        QVector<T> values;
+        QList<T> values;
         if (d) {
             Node *n = d->findNode(key);
             if (n) {
@@ -1823,6 +1872,26 @@ public:
         return *this;
     }
 
+    QMultiHash &unite(const QHash<Key, T> &other)
+    {
+        for (auto cit = other.cbegin(); cit != other.cend(); ++cit)
+            insert(cit.key(), *cit);
+        return *this;
+    }
+
+    QMultiHash &unite(QHash<Key, T> &&other)
+    {
+        if (!other.isDetached()) {
+            unite(other);
+            return *this;
+        }
+        auto it = other.d->begin();
+        for (const auto end = other.d->end(); it != end; ++it)
+            emplace(std::move(it.node()->key), std::move(it.node()->takeValue()));
+        other.clear();
+        return *this;
+    }
+
     QPair<iterator, iterator> equal_range(const Key &key)
     {
         detach();
@@ -1832,6 +1901,9 @@ public:
 
     QPair<const_iterator, const_iterator> equal_range(const Key &key) const noexcept
     {
+        if (!d)
+            return qMakePair(end(), end());
+
         auto it = d->find(key);
         if (it.isUnused())
             return qMakePair(end(), end());
@@ -1854,160 +1926,49 @@ private:
     }
 };
 
-#if !defined(QT_NO_JAVA_STYLE_ITERATORS)
-template<class Key, class T>
-class QHashIterator
-{
-    typedef typename QHash<Key, T>::const_iterator const_iterator;
-    typedef const_iterator Item;
-    QHash<Key, T> c;
-    const_iterator i, n;
-    inline bool item_exists() const noexcept { return n != c.constEnd(); }
-
-public:
-    inline QHashIterator(const QHash<Key, T> &container) noexcept
-        : c(container), i(c.constBegin()), n(c.constEnd())
-    { }
-    inline QHashIterator &operator=(const QHash<Key, T> &container) noexcept
-    {
-        c = container;
-        i = c.constBegin();
-        n = c.constEnd();
-        return *this;
-    }
-    inline void toFront() noexcept
-    {
-        i = c.constBegin();
-        n = c.constEnd();
-    }
-    inline void toBack() noexcept
-    {
-        i = c.constEnd();
-        n = c.constEnd();
-    }
-    inline bool hasNext() const noexcept { return i != c.constEnd(); }
-    inline Item next() noexcept
-    {
-        n = i++;
-        return n;
-    }
-    inline Item peekNext() const noexcept { return i; }
-    inline const T &value() const noexcept
-    {
-        Q_ASSERT(item_exists());
-        return *n;
-    }
-    inline const Key &key() const noexcept
-    {
-        Q_ASSERT(item_exists());
-        return n.key();
-    }
-    inline bool findNext(const T &t) noexcept
-    {
-        while ((n = i) != c.constEnd())
-            if (*i++ == t)
-                return true;
-        return false;
-    }
-};
-
-template<class Key, class T>
-class QMutableHashIterator
-{
-    typedef typename QHash<Key, T>::iterator iterator;
-    typedef typename QHash<Key, T>::const_iterator const_iterator;
-    typedef iterator Item;
-    QHash<Key, T> *c;
-    iterator i, n;
-    inline bool item_exists() const noexcept { return const_iterator(n) != c->constEnd(); }
-
-public:
-    inline QMutableHashIterator(QHash<Key, T> &container)
-        : c(&container)
-    {
-        i = c->begin();
-        n = c->end();
-    }
-    inline QMutableHashIterator &operator=(QHash<Key, T> &container)
-    {
-        c = &container;
-        i = c->begin();
-        n = c->end();
-        return *this;
-    }
-    inline void toFront()
-    {
-        i = c->begin();
-        n = c->end();
-    }
-    inline void toBack() noexcept
-    {
-        i = c->end();
-        n = c->end();
-    }
-    inline bool hasNext() const noexcept { return const_iterator(i) != c->constEnd(); }
-    inline Item next() noexcept
-    {
-        n = i++;
-        return n;
-    }
-    inline Item peekNext() const noexcept { return i; }
-    inline void remove()
-    {
-        if (const_iterator(n) != c->constEnd()) {
-            i = c->erase(n);
-            n = c->end();
-        }
-    }
-    inline void setValue(const T &t)
-    {
-        if (const_iterator(n) != c->constEnd())
-            *n = t;
-    }
-    inline T &value() noexcept
-    {
-        Q_ASSERT(item_exists());
-        return *n;
-    }
-    inline const T &value() const noexcept
-    {
-        Q_ASSERT(item_exists());
-        return *n;
-    }
-    inline const Key &key() const noexcept
-    {
-        Q_ASSERT(item_exists());
-        return n.key();
-    }
-    inline bool findNext(const T &t) noexcept
-    {
-        while (const_iterator(n = i) != c->constEnd())
-            if (*i++ == t)
-                return true;
-        return false;
-    }
-};
-#endif // !QT_NO_JAVA_STYLE_ITERATORS
+Q_DECLARE_ASSOCIATIVE_FORWARD_ITERATOR(Hash)
+Q_DECLARE_MUTABLE_ASSOCIATIVE_FORWARD_ITERATOR(Hash)
+Q_DECLARE_ASSOCIATIVE_FORWARD_ITERATOR(MultiHash)
+Q_DECLARE_MUTABLE_ASSOCIATIVE_FORWARD_ITERATOR(MultiHash)
 
 template <class Key, class T>
 size_t qHash(const QHash<Key, T> &key, size_t seed = 0)
     noexcept(noexcept(qHash(std::declval<Key&>())) && noexcept(qHash(std::declval<T&>())))
 {
-    QtPrivate::QHashCombineCommutative hash;
+    size_t hash = 0;
     for (auto it = key.begin(), end = key.end(); it != end; ++it) {
-        const Key &k = it.key();
-        const T   &v = it.value();
-        seed = hash(seed, std::pair<const Key&, const T&>(k, v));
+        QtPrivate::QHashCombine combine;
+        size_t h = combine(seed, it.key());
+        // use + to keep the result independent of the ordering of the keys
+        hash += combine(h, it.value());
     }
-    return seed;
+    return hash;
 }
 
 template <class Key, class T>
 inline size_t qHash(const QMultiHash<Key, T> &key, size_t seed = 0)
     noexcept(noexcept(qHash(std::declval<Key&>())) && noexcept(qHash(std::declval<T&>())))
 {
-    const QHash<Key, T> &key2 = key;
-    return qHash(key2, seed);
+    size_t hash = 0;
+    for (auto it = key.begin(), end = key.end(); it != end; ++it) {
+        QtPrivate::QHashCombine combine;
+        size_t h = combine(seed, it.key());
+        // use + to keep the result independent of the ordering of the keys
+        hash += combine(h, it.value());
+    }
+    return hash;
+}
+
+template <typename Key, typename T, typename Predicate>
+qsizetype erase_if(QHash<Key, T> &hash, Predicate pred)
+{
+    return QtPrivate::associative_erase_if(hash, pred);
+}
+
+template <typename Key, typename T, typename Predicate>
+qsizetype erase_if(QMultiHash<Key, T> &hash, Predicate pred)
+{
+    return QtPrivate::associative_erase_if(hash, pred);
 }
 
 QT_END_NAMESPACE

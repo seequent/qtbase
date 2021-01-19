@@ -54,11 +54,11 @@
 #include <QtSql/private/qtsqlglobal_p.h>
 #include "QtSql/qsqlresult.h"
 #include "QtSql/private/qsqlresult_p.h"
+#include <QtCore/qcontainerfwd.h>
 
 QT_BEGIN_NAMESPACE
 
 class QVariant;
-template <typename T> class QVector;
 
 class QSqlCachedResultPrivate;
 
@@ -67,7 +67,7 @@ class Q_SQL_EXPORT QSqlCachedResult: public QSqlResult
     Q_DECLARE_PRIVATE(QSqlCachedResult)
 
 public:
-    typedef QVector<QVariant> ValueCache;
+    typedef QList<QVariant> ValueCache;
 
 protected:
     QSqlCachedResult(QSqlCachedResultPrivate &d);

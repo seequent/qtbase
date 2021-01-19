@@ -94,9 +94,9 @@ bool QAndroidPlatformFileDialogHelper::handleActivityResult(jint requestCode, ji
             QJNIObjectPrivate itemUri = item.callObjectMethod("getUri", "()Landroid/net/Uri;");
             takePersistableUriPermission(itemUri);
             m_selectedFile.append(itemUri.toString());
-            Q_EMIT filesSelected(m_selectedFile);
-            Q_EMIT accept();
         }
+        Q_EMIT filesSelected(m_selectedFile);
+        Q_EMIT accept();
     }
 
     return true;
@@ -176,7 +176,7 @@ void QAndroidPlatformFileDialogHelper::setMimeTypes()
                 JniIntentClass, "EXTRA_MIME_TYPES", "Ljava/lang/String;");
 
         QJNIObjectPrivate mimeTypesArray = QJNIObjectPrivate::callStaticObjectMethod(
-                "org/qtproject/qt5/android/QtNative",
+                "org/qtproject/qt/android/QtNative",
                 "getStringArray",
                 "(Ljava/lang/String;)[Ljava/lang/String;",
                 QJNIObjectPrivate::fromString(mimeTypes.join(",")).object());
@@ -197,9 +197,9 @@ QJNIObjectPrivate QAndroidPlatformFileDialogHelper::getFileDialogIntent(const QS
 
 bool QAndroidPlatformFileDialogHelper::show(Qt::WindowFlags windowFlags, Qt::WindowModality windowModality, QWindow *parent)
 {
-    Q_UNUSED(windowFlags)
-    Q_UNUSED(windowModality)
-    Q_UNUSED(parent)
+    Q_UNUSED(windowFlags);
+    Q_UNUSED(windowModality);
+    Q_UNUSED(parent);
 
     bool isDirDialog = false;
 

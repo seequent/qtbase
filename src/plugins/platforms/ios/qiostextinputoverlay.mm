@@ -67,7 +67,7 @@ static SelectionPair querySelection()
     QGuiApplication::sendEvent(QGuiApplication::focusObject(), &query);
     int anchorPos = query.value(Qt::ImAnchorPosition).toInt();
     int cursorPos = query.value(Qt::ImCursorPosition).toInt();
-    return qMakePair<int, int>(anchorPos, cursorPos);
+    return qMakePair(anchorPos, cursorPos);
 }
 
 static bool hasSelection()
@@ -588,7 +588,7 @@ static void executeBlockWithoutAnimation(Block block)
 
 - (BOOL)acceptTouchesBegan:(QPointF)touchPoint
 {
-    Q_UNUSED(touchPoint)
+    Q_UNUSED(touchPoint);
     Q_UNREACHABLE();
     return NO;
 }
@@ -601,7 +601,7 @@ static void executeBlockWithoutAnimation(Block block)
 
 - (void)updateFocalPoint:(QPointF)touchPoint
 {
-    Q_UNUSED(touchPoint)
+    Q_UNUSED(touchPoint);
     Q_UNREACHABLE();
 }
 

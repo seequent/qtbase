@@ -59,7 +59,7 @@ struct {
     QRhiSampler *sampler = nullptr;
     QRhiShaderResourceBindings *srb = nullptr;
     QRhiGraphicsPipeline *ps = nullptr;
-    QVector<QRhiResource *> releasePool;
+    QList<QRhiResource *> releasePool;
 
     float rotation = 0;
     QRhiResourceUpdateBatch *initialUpdates = nullptr;
@@ -302,7 +302,7 @@ void Window::customRender()
     cb->setShaderResources();
     const QRhiCommandBuffer::VertexInput vbufBindings[] = {
         { d.vbuf, 0 },
-        { d.vbuf, 36 * 3 * sizeof(float) }
+        { d.vbuf, quint32(36 * 3 * sizeof(float)) }
     };
     cb->setVertexInput(0, 2, vbufBindings);
     cb->draw(36);

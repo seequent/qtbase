@@ -77,7 +77,6 @@ QString graphicsApiName(QRhi::Implementation graphicsApi)
 
 int main(int argc, char **argv)
 {
-    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QGuiApplication app(argc, argv);
 
     QRhi::Implementation graphicsApi;
@@ -139,7 +138,7 @@ int main(int argc, char **argv)
                 "VK_LAYER_LUNARG_swapchain",
                 "VK_LAYER_GOOGLE_unique_objects"});
 #endif
-        inst.setExtensions({ "VK_KHR_get_physical_device_properties2" });
+        inst.setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
         if (!inst.create()) {
             qWarning("Failed to create Vulkan instance, switching to OpenGL");
             graphicsApi = QRhi::OpenGLES2;

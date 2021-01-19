@@ -89,7 +89,7 @@ QT_END_NAMESPACE
 #include "qprocess_p.h"
 
 #include <qbytearray.h>
-#include <qelapsedtimer.h>
+#include <qdeadlinetimer.h>
 #include <qcoreapplication.h>
 #include <qsocketnotifier.h>
 #include <qtimer.h>
@@ -290,7 +290,7 @@ bool QProcessEnvironment::isEmpty() const
 */
 void QProcessEnvironment::clear()
 {
-    if (d)
+    if (d.constData())
         d->vars.clear();
     // Unix: Don't clear d->nameMap, as the environment is likely to be
     // re-populated with the same keys again.
@@ -339,9 +339,9 @@ void QProcessEnvironment::insert(const QString &name, const QString &value)
 */
 void QProcessEnvironment::remove(const QString &name)
 {
-    if (d) {
-        d.detach(); // detach before prepareName()
-        d->vars.remove(d->prepareName(name));
+    if (d.constData()) {
+        QProcessEnvironmentPrivate *p = d.data();
+        p->vars.remove(p->prepareName(name));
     }
 }
 
@@ -616,7 +616,8 @@ void QProcessPrivate::Channel::clear()
     process into the standard output channel (\c stdout). The
     standard error channel (\c stderr) will not receive any data. The
     standard output and standard error data of the running process
-    are interleaved.
+    are interleaved. For detached processes, the merged output of the
+    running process is forwarded onto the main process.
 
     \value ForwardedChannels QProcess forwards the output of the
     running process onto the main process. Anything the child process
@@ -673,7 +674,7 @@ void QProcessPrivate::Channel::clear()
 
     \value FailedToStart The process failed to start. Either the
     invoked program is missing, or you may have insufficient
-    permissions to invoke the program.
+    permissions or resources to invoke the program.
 
     \value Crashed The process crashed some time after starting
     successfully.
@@ -766,13 +767,6 @@ void QProcessPrivate::Channel::clear()
 */
 
 /*!
-    \fn void QProcess::error(QProcess::ProcessError error)
-    \obsolete
-
-    Use errorOccurred() instead.
-*/
-
-/*!
     \fn void QProcess::errorOccurred(QProcess::ProcessError error)
     \since 5.6
 
@@ -835,27 +829,6 @@ QProcessPrivate::QProcessPrivate()
 {
     readBufferChunkSize = QRINGBUFFER_CHUNKSIZE;
     writeBufferChunkSize = QRINGBUFFER_CHUNKSIZE;
-    processChannelMode = QProcess::SeparateChannels;
-    inputChannelMode = QProcess::ManagedInputChannel;
-    processError = QProcess::UnknownError;
-    processState = QProcess::NotRunning;
-    pid = 0;
-    sequenceNumber = 0;
-    exitCode = 0;
-    exitStatus = QProcess::NormalExit;
-    startupSocketNotifier = nullptr;
-    deathNotifier = nullptr;
-    childStartedPipe[0] = INVALID_Q_PIPE;
-    childStartedPipe[1] = INVALID_Q_PIPE;
-    forkfd = -1;
-    crashed = false;
-    dying = false;
-    emittedReadyRead = false;
-    emittedBytesWritten = false;
-#ifdef Q_OS_WIN
-    stdinWriteTrigger = 0;
-    processFinishedNotifier = 0;
-#endif // Q_OS_WIN
 }
 
 /*!
@@ -876,12 +849,6 @@ void QProcessPrivate::cleanup()
 {
     q_func()->setProcessState(QProcess::NotRunning);
 #ifdef Q_OS_WIN
-    if (pid) {
-        CloseHandle(pid->hThread);
-        CloseHandle(pid->hProcess);
-        delete pid;
-        pid = 0;
-    }
     if (stdinWriteTrigger) {
         delete stdinWriteTrigger;
         stdinWriteTrigger = 0;
@@ -890,11 +857,15 @@ void QProcessPrivate::cleanup()
         delete processFinishedNotifier;
         processFinishedNotifier = 0;
     }
-
-#endif
+    if (pid) {
+        CloseHandle(pid->hThread);
+        CloseHandle(pid->hProcess);
+        delete pid;
+        pid = nullptr;
+    }
+#else
     pid = 0;
-    sequenceNumber = 0;
-    dying = false;
+#endif
 
     if (stdoutChannel.notifier) {
         delete stdoutChannel.notifier;
@@ -908,13 +879,9 @@ void QProcessPrivate::cleanup()
         delete stdinChannel.notifier;
         stdinChannel.notifier = nullptr;
     }
-    if (startupSocketNotifier) {
-        delete startupSocketNotifier;
-        startupSocketNotifier = nullptr;
-    }
-    if (deathNotifier) {
-        delete deathNotifier;
-        deathNotifier = nullptr;
+    if (stateNotifier) {
+        delete stateNotifier;
+        stateNotifier = nullptr;
     }
     closeChannel(&stdoutChannel);
     closeChannel(&stderrChannel);
@@ -968,6 +935,84 @@ void QProcessPrivate::setErrorAndEmit(QProcess::ProcessError error, const QStrin
     Q_ASSERT(error != QProcess::UnknownError);
     setError(error, description);
     emit q->errorOccurred(processError);
+}
+
+/*!
+    \internal
+*/
+bool QProcessPrivate::openChannels()
+{
+    // stdin channel.
+    if (inputChannelMode == QProcess::ForwardedInputChannel) {
+        if (stdinChannel.type != Channel::Normal)
+            qWarning("QProcess::openChannels: Inconsistent stdin channel configuration");
+    } else if (!openChannel(stdinChannel)) {
+        return false;
+    }
+
+    // stdout channel.
+    if (processChannelMode == QProcess::ForwardedChannels
+            || processChannelMode == QProcess::ForwardedOutputChannel) {
+        if (stdoutChannel.type != Channel::Normal)
+            qWarning("QProcess::openChannels: Inconsistent stdout channel configuration");
+    } else if (!openChannel(stdoutChannel)) {
+        return false;
+    }
+
+    // stderr channel.
+    if (processChannelMode == QProcess::ForwardedChannels
+            || processChannelMode == QProcess::ForwardedErrorChannel
+            || processChannelMode == QProcess::MergedChannels) {
+        if (stderrChannel.type != Channel::Normal)
+            qWarning("QProcess::openChannels: Inconsistent stderr channel configuration");
+    } else if (!openChannel(stderrChannel)) {
+        return false;
+    }
+
+    return true;
+}
+
+/*!
+    \internal
+*/
+bool QProcessPrivate::openChannelsForDetached()
+{
+    // stdin channel.
+    bool needToOpen = (stdinChannel.type == Channel::Redirect
+                       || stdinChannel.type == Channel::PipeSink);
+    if (stdinChannel.type != Channel::Normal
+            && (!needToOpen
+                || inputChannelMode == QProcess::ForwardedInputChannel)) {
+        qWarning("QProcess::openChannelsForDetached: Inconsistent stdin channel configuration");
+    }
+    if (needToOpen && !openChannel(stdinChannel))
+        return false;
+
+    // stdout channel.
+    needToOpen = (stdoutChannel.type == Channel::Redirect
+                  || stdoutChannel.type == Channel::PipeSource);
+    if (stdoutChannel.type != Channel::Normal
+            && (!needToOpen
+                || processChannelMode == QProcess::ForwardedChannels
+                || processChannelMode == QProcess::ForwardedOutputChannel)) {
+        qWarning("QProcess::openChannelsForDetached: Inconsistent stdout channel configuration");
+    }
+    if (needToOpen && !openChannel(stdoutChannel))
+        return false;
+
+    // stderr channel.
+    needToOpen = (stderrChannel.type == Channel::Redirect);
+    if (stderrChannel.type != Channel::Normal
+            && (!needToOpen
+                || processChannelMode == QProcess::ForwardedChannels
+                || processChannelMode == QProcess::ForwardedErrorChannel
+                || processChannelMode == QProcess::MergedChannels)) {
+        qWarning("QProcess::openChannelsForDetached: Inconsistent stderr channel configuration");
+    }
+    if (needToOpen && !openChannel(stderrChannel))
+        return false;
+
+    return true;
 }
 
 /*!
@@ -1086,69 +1131,61 @@ bool QProcessPrivate::_q_canWrite()
 /*!
     \internal
 */
-bool QProcessPrivate::_q_processDied()
+void QProcessPrivate::_q_processDied()
 {
-    Q_Q(QProcess);
 #if defined QPROCESS_DEBUG
     qDebug("QProcessPrivate::_q_processDied()");
 #endif
-#ifdef Q_OS_UNIX
-    if (!waitForDeadChild())
-        return false;
-#endif
+
+    // in case there is data in the pipeline and this slot by chance
+    // got called before the read notifications, call these functions
+    // so the data is made available before we announce death.
 #ifdef Q_OS_WIN
-    if (processFinishedNotifier)
-        processFinishedNotifier->setEnabled(false);
     drainOutputPipes();
 #endif
-
-    // the process may have died before it got a chance to report that it was
-    // either running or stopped, so we will call _q_startupNotification() and
-    // give it a chance to emit started() or errorOccurred(FailedToStart).
-    if (processState == QProcess::Starting) {
-        if (!_q_startupNotification())
-            return true;
-    }
-
-    if (dying) {
-        // at this point we know the process is dead. prevent
-        // reentering this slot recursively by calling waitForFinished()
-        // or opening a dialog inside slots connected to the readyRead
-        // signals emitted below.
-        return true;
-    }
-    dying = true;
-
-    // in case there is data in the pipe line and this slot by chance
-    // got called before the read notifications, call these two slots
-    // so the data is made available before the process dies.
     _q_canReadStandardOutput();
     _q_canReadStandardError();
 
+    // Slots connected to signals emitted by the functions called above
+    // might call waitFor*(), which would synchronously reap the process.
+    // So check the state to avoid trying to reap a second time.
+    if (processState != QProcess::NotRunning)
+        processFinished();
+}
+
+/*!
+    \internal
+*/
+void QProcessPrivate::processFinished()
+{
+    Q_Q(QProcess);
+#if defined QPROCESS_DEBUG
+    qDebug("QProcessPrivate::processFinished()");
+#endif
+
+#ifdef Q_OS_UNIX
+    waitForDeadChild();
+#endif
     findExitCode();
+
+    cleanup();
 
     if (crashed) {
         exitStatus = QProcess::CrashExit;
         setErrorAndEmit(QProcess::Crashed);
     }
 
-    bool wasRunning = (processState == QProcess::Running);
+    // we received EOF now:
+    emit q->readChannelFinished();
+    // in the future:
+    //emit q->standardOutputClosed();
+    //emit q->standardErrorClosed();
 
-    cleanup();
+    emit q->finished(exitCode, exitStatus);
 
-    if (wasRunning) {
-        // we received EOF now:
-        emit q->readChannelFinished();
-        // in the future:
-        //emit q->standardOutputClosed();
-        //emit q->standardErrorClosed();
-
-        emit q->finished(exitCode, exitStatus);
-    }
 #if defined QPROCESS_DEBUG
-    qDebug("QProcessPrivate::_q_processDied() process is dead");
+    qDebug("QProcessPrivate::processFinished(): process is dead");
 #endif
-    return true;
 }
 
 /*!
@@ -1161,8 +1198,6 @@ bool QProcessPrivate::_q_startupNotification()
     qDebug("QProcessPrivate::startupNotification()");
 #endif
 
-    if (startupSocketNotifier)
-        startupSocketNotifier->setEnabled(false);
     QString errorMessage;
     if (processStarted(&errorMessage)) {
         q->setProcessState(QProcess::Running);
@@ -1173,7 +1208,6 @@ bool QProcessPrivate::_q_startupNotification()
     q->setProcessState(QProcess::NotRunning);
     setErrorAndEmit(QProcess::FailedToStart, errorMessage);
 #ifdef Q_OS_UNIX
-    // make sure the process manager removes this entry
     waitForDeadChild();
     findExitCode();
 #endif
@@ -1228,7 +1262,6 @@ QProcess::~QProcess()
         waitForFinished();
     }
 #ifdef Q_OS_UNIX
-    // make sure the process manager removes this entry
     d->findExitCode();
 #endif
     d->cleanup();
@@ -1537,7 +1570,7 @@ QProcess::CreateProcessArgumentModifier QProcess::createProcessArgumentsModifier
     \note This function is available only on the Windows platform and requires
     C++11.
 
-    \sa QProcess::CreateProcessArgumentModifier
+    \sa QProcess::CreateProcessArgumentModifier, setChildProcessModifier()
 */
 void QProcess::setCreateProcessArgumentsModifier(CreateProcessArgumentModifier modifier)
 {
@@ -1545,6 +1578,59 @@ void QProcess::setCreateProcessArgumentsModifier(CreateProcessArgumentModifier m
     d->modifyCreateProcessArgs = modifier;
 }
 
+#endif
+
+#if defined(Q_OS_UNIX) || defined(Q_QDOC)
+/*!
+    \since 6.0
+
+    Returns the modifier function previously set by calling
+    setChildProcessModifier().
+
+    \note This function is only available on Unix platforms.
+
+    \sa setChildProcessModifier()
+*/
+std::function<void(void)> QProcess::childProcessModifier() const
+{
+    Q_D(const QProcess);
+    return d->childProcessModifier;
+}
+
+/*!
+    \since 6.0
+
+    Sets the \a modifier function for the child process, for Unix systems
+    (including \macos; for Windows, see setCreateProcessArgumentsModifier()).
+    The function contained by the \a modifier argument will be invoked in the
+    child process after \c{fork()} is completed and QProcess has set up the
+    standard file descriptors for the child process, but before \c{execve()},
+    inside start(). The modifier is useful to change certain properties of the
+    child process, such as setting up additional file descriptors or closing
+    others, changing the nice level, disconnecting from the controlling TTY,
+    etc.
+
+    The following shows an example of setting up a child process to run without
+    privileges:
+
+    \snippet code/src_corelib_io_qprocess.cpp 4
+
+    If the modifier function needs to exit the process, remember to use
+    \c{_exit()}, not \c{exit()}.
+
+    \note In multithreaded applications, this function must be careful not to
+    call any functions that may lock mutexes that may have been in use in
+    other threads (in general, using only functions defined by POSIX as
+    "async-signal-safe" is advised). Most of the Qt API is unsafe inside this
+    callback, including qDebug(), and may lead to deadlocks.
+
+    \sa childProcessModifier()
+*/
+void QProcess::setChildProcessModifier(const std::function<void(void)> &modifier)
+{
+    Q_D(QProcess);
+    d->childProcessModifier = modifier;
+}
 #endif
 
 /*!
@@ -1576,24 +1662,6 @@ void QProcess::setWorkingDirectory(const QString &dir)
 {
     Q_D(QProcess);
     d->workingDirectory = dir;
-}
-
-
-/*!
-    \deprecated
-    Use processId() instead.
-
-    Returns the native process identifier for the running process, if
-    available.  If no process is currently running, \c 0 is returned.
-
-    \note Unlike \l processId(), pid() returns an integer on Unix and a pointer on Windows.
-
-    \sa Q_PID, processId()
-*/
-Q_PID QProcess::pid() const // ### Qt 6 remove or rename this method to processInformation()
-{
-    Q_D(const QProcess);
-    return d->pid;
 }
 
 /*!
@@ -1762,7 +1830,7 @@ bool QProcess::waitForStarted(int msecs)
 {
     Q_D(QProcess);
     if (d->processState == QProcess::Starting)
-        return d->waitForStarted(msecs);
+        return d->waitForStarted(QDeadlineTimer(msecs));
 
     return d->processState == QProcess::Running;
 }
@@ -1779,7 +1847,15 @@ bool QProcess::waitForReadyRead(int msecs)
         return false;
     if (d->currentReadChannel == QProcess::StandardError && d->stderrChannel.closed)
         return false;
-    return d->waitForReadyRead(msecs);
+
+    QDeadlineTimer deadline(msecs);
+    if (d->processState == QProcess::Starting) {
+        bool started = d->waitForStarted(deadline);
+        if (!started)
+            return false;
+    }
+
+    return d->waitForReadyRead(deadline);
 }
 
 /*! \reimp
@@ -1789,16 +1865,15 @@ bool QProcess::waitForBytesWritten(int msecs)
     Q_D(QProcess);
     if (d->processState == QProcess::NotRunning)
         return false;
+
+    QDeadlineTimer deadline(msecs);
     if (d->processState == QProcess::Starting) {
-        QElapsedTimer stopWatch;
-        stopWatch.start();
-        bool started = waitForStarted(msecs);
+        bool started = d->waitForStarted(deadline);
         if (!started)
             return false;
-        msecs = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
     }
 
-    return d->waitForBytesWritten(msecs);
+    return d->waitForBytesWritten(deadline);
 }
 
 /*!
@@ -1825,16 +1900,15 @@ bool QProcess::waitForFinished(int msecs)
     Q_D(QProcess);
     if (d->processState == QProcess::NotRunning)
         return false;
+
+    QDeadlineTimer deadline(msecs);
     if (d->processState == QProcess::Starting) {
-        QElapsedTimer stopWatch;
-        stopWatch.start();
-        bool started = waitForStarted(msecs);
+        bool started = d->waitForStarted(deadline);
         if (!started)
             return false;
-        msecs = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
     }
 
-    return d->waitForFinished(msecs);
+    return d->waitForFinished(deadline);
 }
 
 /*!
@@ -1851,25 +1925,16 @@ void QProcess::setProcessState(ProcessState state)
     emit stateChanged(state, QPrivateSignal());
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(7,0,0)
 /*!
-  This function is called in the child process context just before the
-    program is executed on Unix or \macos (i.e., after \c fork(), but before
-    \c execve()). Reimplement this function to do last minute initialization
-    of the child process. Example:
-
-    \snippet code/src_corelib_io_qprocess.cpp 4
-
-    You cannot exit the process (by calling exit(), for instance) from
-    this function. If you need to stop the program before it starts
-    execution, your workaround is to emit finished() and then call
-    exit().
-
-    \warning This function is called by QProcess on Unix and \macos
-    only. On Windows and QNX, it is not called.
+    \internal
 */
-void QProcess::setupChildProcess()
+auto QProcess::setupChildProcess() -> Use_setChildProcessModifier_Instead
 {
+    Q_UNREACHABLE();
+    return {};
 }
+#endif
 
 /*! \reimp
 */
@@ -1907,7 +1972,7 @@ qint64 QProcess::writeData(const char *data, qint64 len)
     }
 #endif
 
-    d->writeBuffer.append(data, len);
+    d->write(data, len);
 #ifdef Q_OS_WIN
     if (!d->stdinWriteTrigger->isActive())
         d->stdinWriteTrigger->start();
@@ -2027,6 +2092,47 @@ void QProcess::start(OpenMode mode)
 }
 
 /*!
+    \since 6.0
+
+    Starts the command \a command in a new process.
+    The OpenMode is set to \a mode.
+
+    \a command is a single string of text containing both the program name
+    and its arguments. The arguments are separated by one or more spaces.
+    For example:
+
+    \snippet code/src_corelib_io_qprocess.cpp 5
+
+    Arguments containing spaces must be quoted to be correctly supplied to
+    the new process. For example:
+
+    \snippet code/src_corelib_io_qprocess.cpp 6
+
+    Literal quotes in the \a command string are represented by triple quotes.
+    For example:
+
+    \snippet code/src_corelib_io_qprocess.cpp 7
+
+    After the \a command string has been split and unquoted, this function
+    behaves like start().
+
+    On operating systems where the system API for passing command line
+    arguments to a subprocess natively uses a single string (Windows), one can
+    conceive command lines which cannot be passed via QProcess's portable
+    list-based API. In these rare cases you need to use setProgram() and
+    setNativeArguments() instead of this function.
+
+    \sa splitCommand()
+    \sa start()
+ */
+void QProcess::startCommand(const QString &command, OpenMode mode)
+{
+    QStringList args = splitCommand(command);
+    const QString program = args.takeFirst();
+    start(program, args, mode);
+}
+
+/*!
     \since 5.10
 
     Starts the program set by setProgram() with arguments set by setArguments()
@@ -2061,6 +2167,8 @@ void QProcess::start(OpenMode mode)
     \li setStandardErrorFile()
     \li setStandardInputFile()
     \li setStandardOutputFile()
+    \li setProcessChannelMode(QProcess::MergedChannels)
+    \li setStandardOutputProcess()
     \li setWorkingDirectory()
     \endlist
     All other properties of the QProcess object are ignored.
@@ -2072,7 +2180,6 @@ void QProcess::start(OpenMode mode)
     \sa start()
     \sa startDetached(const QString &program, const QStringList &arguments,
                       const QString &workingDirectory, qint64 *pid)
-    \sa startDetached(const QString &command)
 */
 bool QProcess::startDetached(qint64 *pid)
 {
@@ -2386,7 +2493,7 @@ bool QProcess::startDetached(const QString &program,
 }
 
 QT_BEGIN_INCLUDE_NAMESPACE
-#if defined(Q_OS_MACX)
+#if defined(Q_OS_MACOS)
 # include <crt_externs.h>
 # define environ (*_NSGetEnviron())
 #elif defined(QT_PLATFORM_UIKIT)
@@ -2465,17 +2572,6 @@ QString QProcess::nullDevice()
     return QStringLiteral("/dev/null");
 #endif
 }
-
-/*!
-    \typedef Q_PID
-    \relates QProcess
-
-    Typedef for the identifiers used to represent processes on the underlying
-    platform. On Unix, this corresponds to \l qint64; on Windows, it
-    corresponds to \c{_PROCESS_INFORMATION*}.
-
-    \sa QProcess::pid()
-*/
 
 #endif // QT_CONFIG(process)
 

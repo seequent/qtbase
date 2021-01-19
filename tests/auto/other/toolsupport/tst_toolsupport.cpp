@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest>
+#include <QTest>
 
 //
 // Note:
@@ -64,7 +64,7 @@ size_t pmm_to_offsetof(T K:: *pmm)
 #else
     size_t ret;
 #endif
-    Q_STATIC_ASSERT(sizeof(ret) == sizeof(pmm));
+    static_assert(sizeof(ret) == sizeof(pmm));
     memcpy(&ret, &pmm, sizeof(ret));
     return ret;
 }
@@ -97,14 +97,20 @@ void tst_toolsupport::offsets_data()
     {
         QTestData &data = QTest::newRow("sizeof(QObjectData)")
                 << sizeof(QObjectData);
-        data << 36 << 64; // vptr + 2 ptr + (2*ptr + int) + 2 int + ptr
+        data << 44 << 80; // vptr + 2 ptr + (2*ptr + int) + 2 int + ptr
+    }
+
+    {
+        QTestData &data = QTest::newRow("sizeof(QObjectPrivate::ExtraData)")
+                << sizeof(QObjectPrivate::ExtraData);
+        data << 60 << 120; // 4 * QList + 1 * QString
     }
 
 #if RUN_MEMBER_OFFSET_TEST
     {
         QTestData &data = QTest::newRow("QObjectPrivate::extraData")
                 << pmm_to_offsetof(&QObjectPrivate::extraData);
-        data << 36 << 64;    // sizeof(QObjectData)
+        data << 44 << 80;    // sizeof(QObjectData)
     }
 
     {
@@ -126,9 +132,9 @@ void tst_toolsupport::offsets_data()
 #ifdef Q_PROCESSOR_X86
         // x86 32-bit has weird alignment rules. Refer to QtPrivate::AlignOf in
         // qglobal.h for more details.
-        data << 184 << 288;
+        data << 188 << 304;
 #else
-        data << 188 << 288;
+        data << 196 << 304;
 #endif
     }
 #endif

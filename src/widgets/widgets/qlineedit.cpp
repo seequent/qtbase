@@ -64,7 +64,6 @@
 #include "qtimer.h"
 #include "qvalidator.h"
 #include "qvariant.h"
-#include "qvector.h"
 #include "qdebug.h"
 #if QT_CONFIG(textedit)
 #include "qtextedit.h"
@@ -1437,23 +1436,29 @@ void QLineEdit::paste()
 
 #endif // !QT_NO_CLIPBOARD
 
+/*!
+    \reimp
+*/
+void QLineEdit::timerEvent(QTimerEvent *e)
+{
+    Q_D(QLineEdit);
+    int timerId = ((QTimerEvent*)e)->timerId();
+    if (false) {
+#if QT_CONFIG(draganddrop)
+    } else if (timerId == d->dndTimer.timerId()) {
+        d->drag();
+#endif
+    }
+    else if (timerId == d->tripleClickTimer.timerId())
+        d->tripleClickTimer.stop();
+}
+
 /*! \reimp
 */
 bool QLineEdit::event(QEvent * e)
 {
     Q_D(QLineEdit);
-    if (e->type() == QEvent::Timer) {
-        // ### Qt6: move to timerEvent, is here for binary compatibility
-        int timerId = ((QTimerEvent*)e)->timerId();
-        if (false) {
-#if QT_CONFIG(draganddrop)
-        } else if (timerId == d->dndTimer.timerId()) {
-            d->drag();
-#endif
-        }
-        else if (timerId == d->tripleClickTimer.timerId())
-            d->tripleClickTimer.stop();
-    } else if (e->type() == QEvent::ContextMenu) {
+    if (e->type() == QEvent::ContextMenu) {
 #ifndef QT_NO_IM
         if (d->control->composeMode())
             return true;
@@ -1466,8 +1471,6 @@ bool QLineEdit::event(QEvent * e)
         QKeyEvent *ke = static_cast<QKeyEvent*>(e);
         d->control->processShortcutOverrideEvent(ke);
 #endif
-    } else if (e->type() == QEvent::KeyRelease) {
-        d->control->updateCursorBlinking();
     } else if (e->type() == QEvent::Show) {
         //In order to get the cursor blinking if QComboBox::setEditable is called when the combobox has focus
         if (hasFocus()) {
@@ -1616,7 +1619,7 @@ void QLineEdit::mouseReleaseEvent(QMouseEvent* e)
     if (QGuiApplication::clipboard()->supportsSelection()) {
         if (e->button() == Qt::LeftButton) {
             d->control->copy(QClipboard::Selection);
-        } else if (!d->control->isReadOnly() && e->button() == Qt::MidButton) {
+        } else if (!d->control->isReadOnly() && e->button() == Qt::MiddleButton) {
             deselect();
             d->control->paste(QClipboard::Selection);
         }
@@ -1688,8 +1691,11 @@ void QLineEdit::mouseDoubleClickEvent(QMouseEvent* e)
 /*!
     \fn void  QLineEdit::editingFinished()
 
-    This signal is emitted when the Return or Enter key is pressed or
-    the line edit loses focus. Note that if there is a validator() or
+    This signal is emitted when the Return or Enter key is pressed, or
+    if the line edit loses focus and its contents have changed since the
+    last time this signal was emitted.
+
+    Note that if there is a validator() or
     inputMask() set on the line edit and enter/return is pressed, the
     editingFinished() signal will only be emitted if the input follows
     the inputMask() and the validator() returns QValidator::Acceptable.
@@ -1773,6 +1779,15 @@ void QLineEdit::keyPressEvent(QKeyEvent *event)
             setLayoutDirection(d->control->layoutDirection());
         d->control->updateCursorBlinking();
     }
+}
+
+/*!
+    \reimp
+*/
+void QLineEdit::keyReleaseEvent(QKeyEvent *)
+{
+    Q_D(QLineEdit);
+    d->control->updateCursorBlinking();
 }
 
 /*!
@@ -1886,7 +1901,7 @@ void QLineEdit::focusInEvent(QFocusEvent *e)
     d->control->setBlinkingCursorEnabled(true);
     QStyleOptionFrame opt;
     initStyleOption(&opt);
-    if((!hasSelectedText() && d->control->preeditAreaText().isEmpty())
+    if ((!hasSelectedText() && d->control->preeditAreaText().isEmpty())
        || style()->styleHint(QStyle::SH_BlinkCursorWhenTextSelected, &opt, this))
         d->setCursorVisible(true);
 #ifdef QT_KEYPAD_NAVIGATION
@@ -2032,6 +2047,7 @@ void QLineEdit::paintEvent(QPaintEvent *)
     }
 
     // the y offset is there to keep the baseline constant in case we have script changes in the text.
+    // Needs to be kept in sync with QLineEditPrivate::adjustedControlRect
     QPoint topLeft = lineRect.topLeft() - QPoint(d->hscroll, d->control->ascent() - fm.ascent());
 
     // draw text, selections and cursors

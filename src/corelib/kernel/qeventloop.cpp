@@ -118,8 +118,8 @@ QEventLoop::~QEventLoop()
 
 
 /*!
-    Processes pending events that match \a flags until there are no
-    more events to process. Returns \c true if pending events were handled;
+    Processes some pending events that match \a flags.
+    Returns \c true if pending events were handled;
     otherwise returns \c false.
 
     This function is especially useful if you have a long running
@@ -179,10 +179,10 @@ int QEventLoop::exec(ProcessEventsFlags flags)
 
     struct LoopReference {
         QEventLoopPrivate *d;
-        QMutexLocker &locker;
+        QMutexLocker<QMutex> &locker;
 
         bool exceptionCaught;
-        LoopReference(QEventLoopPrivate *d, QMutexLocker &locker) : d(d), locker(locker), exceptionCaught(true)
+        LoopReference(QEventLoopPrivate *d, QMutexLocker<QMutex> &locker) : d(d), locker(locker), exceptionCaught(true)
         {
             d->inExec = true;
             d->exit.storeRelease(false);

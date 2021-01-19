@@ -493,9 +493,7 @@ void QOpenGLEngineSharedShaders::cleanupCustomStage(QOpenGLCustomShaderStage* st
         }
         return false;
     };
-    cachedPrograms.erase(std::remove_if(cachedPrograms.begin(), cachedPrograms.end(),
-                                        hasStageAsCustomShaderSouce),
-                         cachedPrograms.end());
+    cachedPrograms.removeIf(hasStageAsCustomShaderSouce);
 }
 
 
@@ -524,7 +522,7 @@ GLuint QOpenGLEngineShaderManager::getUniformLocation(Uniform id)
     if (!currentShaderProg)
         return 0;
 
-    QVector<uint> &uniformLocations = currentShaderProg->uniformLocations;
+    QList<uint> &uniformLocations = currentShaderProg->uniformLocations;
     if (uniformLocations.isEmpty())
         uniformLocations.fill(GLuint(-1), NumUniforms);
 

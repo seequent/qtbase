@@ -48,10 +48,6 @@ private slots:
 
     void defaultHandler();
     void installMessageHandler();
-#if QT_DEPRECATED_SINCE(5, 0)
-    void installMsgHandler();
-    void installBothHandler();
-#endif
 
 #ifdef QT_BUILD_INTERNAL
     void cleanupFuncinfo_data();
@@ -84,15 +80,6 @@ void customMessageHandler(QtMsgType type, const QMessageLogContext &context, con
     s_message = msg;
 }
 
-void customMsgHandler(QtMsgType type, const char *msg)
-{
-    s_type = type;
-    s_file = 0;
-    s_line = 0;
-    s_function = 0;
-    s_message = QString::fromLocal8Bit(msg);
-}
-
 tst_qmessagehandler::tst_qmessagehandler()
 {
     // ensure it's unset, otherwise we'll have trouble
@@ -114,9 +101,6 @@ void tst_qmessagehandler::initTestCase()
 
 void tst_qmessagehandler::cleanup()
 {
-#if QT_DEPRECATED_SINCE(5, 0)
-    qInstallMsgHandler(0);
-#endif
     qInstallMessageHandler((QtMessageHandler)0);
     s_type = QtFatalMsg;
     s_file = 0;
@@ -147,38 +131,6 @@ void tst_qmessagehandler::installMessageHandler()
     QCOMPARE((void*)myHandler, (void*)customMessageHandler);
 }
 
-#if QT_DEPRECATED_SINCE(5, 0)
-void tst_qmessagehandler::installMsgHandler()
-{
-    QtMsgHandler oldHandler = qInstallMsgHandler(customMsgHandler);
-
-    qDebug("installMsgHandler");
-
-    QCOMPARE(s_type, QtDebugMsg);
-    QCOMPARE(s_message, QString::fromLocal8Bit("installMsgHandler"));
-    QCOMPARE(s_file, (const char*)0);
-    QCOMPARE(s_function, (const char*)0);
-    QCOMPARE(s_line, 0);
-
-    QtMsgHandler myHandler = qInstallMsgHandler(oldHandler);
-    QCOMPARE((void*)myHandler, (void*)customMsgHandler);
-}
-
-void tst_qmessagehandler::installBothHandler()
-{
-    qInstallMessageHandler(customMessageHandler);
-    qInstallMsgHandler(customMsgHandler);
-
-    qDebug("installBothHandler"); int line = __LINE__;
-
-    QCOMPARE(s_type, QtDebugMsg);
-    QCOMPARE(s_message, QString::fromLocal8Bit("installBothHandler"));
-    QCOMPARE(s_file, __FILE__);
-    QCOMPARE(s_function, Q_FUNC_INFO);
-    QCOMPARE(s_line, line);
-}
-#endif
-
 # define ADD(x)          QTest::newRow(x) << Q_FUNC_INFO << x;
 
 class TestClass1
@@ -200,7 +152,7 @@ public:
     char *func_Pchar() { ADD("TestClass1::func_Pchar"); return 0; }
     const char *func_KPchar() { ADD("TestClass1::func_KPchar"); return 0; }
     const volatile char *func_VKPchar() { ADD("TestClass1::func_VKPchar"); return 0; }
-    const volatile unsigned long long * const volatile func_KVPKVull() { ADD("TestClass1::func_KVPKVull"); return 0; }
+    const volatile unsigned long long * func_KVPull() { ADD("TestClass1::func_KVPull"); return 0; }
     const void * const volatile *func_KPKVvoid() { ADD("TestClass1::func_KPKVvoid"); return 0; }
 
     QList<int> func_ai() { ADD("TestClass1::func_ai"); return QList<int>(); }
@@ -287,7 +239,7 @@ public:
             func_Pchar();
             func_KPchar();
             func_VKPchar();
-            func_KVPKVull();
+            func_KVPull();
             func_KPKVvoid();
             func_ai();
             func_aptr();
@@ -494,11 +446,11 @@ void tst_qmessagehandler::cleanupFuncinfo_data()
         << "TestClass1::func_VKPchar";
 
     QTest::newRow("msvc_13")
-        << "volatile const unsigned __int64 *volatile const __thiscall TestClass1::func_KVPKVull(void)"
-        << "TestClass1::func_KVPKVull";
+        << "volatile const unsigned __int64 *__thiscall TestClass1::func_KVPull(void)"
+        << "TestClass1::func_KVPull";
     QTest::newRow("gcc_13")
-        << "const volatile long long unsigned int* const volatile TestClass1::func_KVPKVull()"
-        << "TestClass1::func_KVPKVull";
+        << "const volatile long long unsigned int* TestClass1::func_KVPull()"
+        << "TestClass1::func_KVPull";
 
     QTest::newRow("msvc_14")
         << "const void *volatile const *__thiscall TestClass1::func_KPKVvoid(void)"
@@ -785,18 +737,17 @@ void tst_qmessagehandler::qMessagePattern_data()
     QTest::newRow("time-process") << "<%{time process}>%{message}" << true << (QList<QByteArray>()
             << "<     ");
 
+#ifdef QT_CMAKE_BUILD
+#define BACKTRACE_HELPER_NAME "qlogging_helper"
+#else
+#define BACKTRACE_HELPER_NAME "helper"
+#endif
+
 #ifdef __GLIBC__
 #ifdef QT_NAMESPACE
 #define QT_NAMESPACE_STR QT_STRINGIFY(QT_NAMESPACE::)
 #else
 #define QT_NAMESPACE_STR ""
-#endif
-
-
-#ifdef QT_CMAKE_BUILD
-#define BACKTRACE_HELPER_NAME "qlogging_helper"
-#else
-#define BACKTRACE_HELPER_NAME "helper"
 #endif
 
 #ifndef QT_NO_DEBUG

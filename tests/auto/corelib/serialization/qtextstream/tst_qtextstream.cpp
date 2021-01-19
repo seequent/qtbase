@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #ifdef Q_OS_UNIX
 #include <locale.h>
@@ -609,15 +609,15 @@ class ErrorDevice : public QIODevice
 protected:
     qint64 readData(char *data, qint64 maxlen) override
     {
-        Q_UNUSED(data)
-        Q_UNUSED(maxlen)
+        Q_UNUSED(data);
+        Q_UNUSED(maxlen);
         return -1;
     }
 
     qint64 writeData(const char *data, qint64 len) override
     {
-        Q_UNUSED(data)
-        Q_UNUSED(len)
+        Q_UNUSED(data);
+        Q_UNUSED(len);
         return -1;
     }
 };
@@ -2125,9 +2125,9 @@ void tst_QTextStream::generateStringData(bool for_QString)
 
     if (!for_QString) {
         QTest::newRow("utf16-BE (empty)") << QByteArray("\xff\xfe", 2) << QByteArray() << QString();
-        QTest::newRow("utf16-BE (corrupt)") << QByteArray("\xff", 1) << QByteArray("\xff") << QString::fromLatin1("\xff");
+        QTest::newRow("utf16-BE (corrupt)") << QByteArray("\xff", 1) << QByteArray("\xc3\xbf") << QString::fromUtf8("\xc3\xbf");
         QTest::newRow("utf16-LE (empty)") << QByteArray("\xfe\xff", 2) << QByteArray() << QString();
-        QTest::newRow("utf16-LE (corrupt)") << QByteArray("\xfe", 1) << QByteArray("\xfe") << QString::fromLatin1("\xfe");
+        QTest::newRow("utf16-LE (corrupt)") << QByteArray("\xfe", 1) << QByteArray("\xc3\xbe") << QString::fromUtf8("\xc3\xbe");
     }
 }
 
@@ -2528,10 +2528,10 @@ void tst_QTextStream::stringref_write_operator_ToDevice()
     stream.setEncoding(QStringConverter::Latin1);
     stream.setAutoDetectUnicode(true);
 
-    const QString expected = "No explicit lengthExplicit length";
+    const QStringView expected = u"No explicit lengthExplicit length";
 
-    stream << expected.leftRef(18);
-    stream << expected.midRef(18);
+    stream << expected.left(18);
+    stream << expected.mid(18);
     stream.flush();
     QCOMPARE(buf.buffer().constData(), "No explicit lengthExplicit length");
 }
@@ -2795,7 +2795,7 @@ void tst_QTextStream::status_word_read()
 class FakeBuffer : public QBuffer
 {
 protected:
-    qint64 writeData(const char *c, qint64 i) { return m_lock ? 0 : QBuffer::writeData(c, i); }
+    qint64 writeData(const char *c, qint64 i) override { return m_lock ? 0 : QBuffer::writeData(c, i); }
 public:
     FakeBuffer(bool locked = false) : m_lock(locked) {}
     void setLocked(bool locked) { m_lock = locked; }

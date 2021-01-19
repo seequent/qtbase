@@ -9,7 +9,7 @@
 # libraries.
 add_library(Bootstrap STATIC)
 # special case end
-qt_extend_target(Bootstrap
+qt_internal_extend_target(Bootstrap
     SOURCES
         ../../3rdparty/pcre2/src/config.h
         ../../3rdparty/pcre2/src/pcre2.h
@@ -43,6 +43,7 @@ qt_extend_target(Bootstrap
         ../../3rdparty/pcre2/src/pcre2_valid_utf.c
         ../../3rdparty/pcre2/src/pcre2_xclass.c
         ../../corelib/global/qendian.cpp
+        ../../corelib/global/qfloat16.cpp
         ../../corelib/global/qglobal.cpp
         ../../corelib/global/qlogging.cpp
         ../../corelib/global/qmalloc.cpp
@@ -76,6 +77,8 @@ qt_extend_target(Bootstrap
         ../../corelib/io/qurlrecode.cpp
         ../../corelib/kernel/qcoreapplication.cpp
         ../../corelib/kernel/qcoreglobaldata.cpp
+        ../../corelib/kernel/qiterable.cpp
+        ../../corelib/kernel/qmetacontainer.cpp
         ../../corelib/kernel/qmetatype.cpp
         ../../corelib/kernel/qsharedmemory.cpp
         ../../corelib/kernel/qsystemerror.cpp
@@ -95,6 +98,7 @@ qt_extend_target(Bootstrap
         ../../corelib/serialization/qjsonwriter.cpp
         ../../corelib/serialization/qtextstream.cpp
         ../../corelib/serialization/qxmlstream.cpp
+        ../../corelib/serialization/qxmlstreamgrammar.cpp
         ../../corelib/serialization/qxmlutils.cpp
         ../../corelib/text/qbytearray.cpp
         ../../corelib/text/qbytearraylist.cpp
@@ -103,7 +107,6 @@ qt_extend_target(Bootstrap
         ../../corelib/text/qlocale_tools.cpp
         ../../corelib/text/qregularexpression.cpp
         ../../corelib/text/qstring.cpp
-        ../../corelib/text/qstring_compat.cpp
         ../../corelib/text/qstringbuilder.cpp
         ../../corelib/text/qstringconverter.cpp
         ../../corelib/text/qstringlist.cpp
@@ -119,14 +122,12 @@ qt_extend_target(Bootstrap
         ../../corelib/tools/qcryptographichash.cpp
         ../../corelib/tools/qhash.cpp
         ../../corelib/tools/qline.cpp
-        ../../corelib/tools/qmap.cpp
         ../../corelib/tools/qpoint.cpp
         ../../corelib/tools/qrect.cpp
         ../../corelib/tools/qringbuffer.cpp
         ../../corelib/tools/qsize.cpp
         ../../corelib/tools/qversionnumber.cpp
         ../../xml/dom/qdom.cpp
-        ../../xml/sax/qxml.cpp
     DEFINES
         HAVE_CONFIG_H
         PCRE2_CODE_UNIT_WIDTH=16
@@ -163,7 +164,7 @@ qt_extend_target(Bootstrap
 ## Scopes:
 #####################################################################
 
-qt_extend_target(Bootstrap CONDITION UNIX
+qt_internal_extend_target(Bootstrap CONDITION UNIX
     SOURCES
         ../../corelib/io/qfilesystemengine_unix.cpp
         ../../corelib/io/qfilesystemiterator_unix.cpp
@@ -177,7 +178,7 @@ qt_extend_target(Bootstrap CONDITION UNIX
         ../../corelib/kernel/qsystemsemaphore_unix.cpp
 )
 
-qt_extend_target(Bootstrap CONDITION WIN32
+qt_internal_extend_target(Bootstrap CONDITION WIN32
     SOURCES
         ../../corelib/global/qoperatingsystemversion_win.cpp
         ../../corelib/io/qfilesystemengine_win.cpp
@@ -199,7 +200,7 @@ qt_extend_target(Bootstrap CONDITION WIN32
         user32
 )
 
-qt_extend_target(Bootstrap CONDITION APPLE
+qt_internal_extend_target(Bootstrap CONDITION APPLE
     SOURCES
         ../../corelib/global/qoperatingsystemversion_darwin.mm
         ../../corelib/kernel/qcore_foundation.mm
@@ -209,24 +210,24 @@ qt_extend_target(Bootstrap CONDITION APPLE
         ${FWFoundation}
 )
 
-qt_extend_target(Bootstrap CONDITION MACOS
+qt_internal_extend_target(Bootstrap CONDITION MACOS
     SOURCES
         ../../corelib/io/qstandardpaths_mac.mm
     LIBRARIES
         ${FWCoreServices}
 )
 
-qt_extend_target(Bootstrap CONDITION UIKIT
+qt_internal_extend_target(Bootstrap CONDITION UIKIT
     LIBRARIES
         ${FWUIKit}
 )
 
-qt_extend_target(Bootstrap CONDITION UNIX AND NOT MACOS
+qt_internal_extend_target(Bootstrap CONDITION UNIX AND NOT MACOS
     SOURCES
         ../../corelib/io/qstandardpaths_unix.cpp
 )
 
-qt_extend_target(Bootstrap CONDITION CMAKE_CROSSCOMPILING OR NOT QT_FEATURE_system_zlib
+qt_internal_extend_target(Bootstrap CONDITION CMAKE_CROSSCOMPILING OR NOT QT_FEATURE_system_zlib
     SOURCES
         ../../3rdparty/zlib/src/adler32.c
         ../../3rdparty/zlib/src/compress.c
@@ -247,12 +248,12 @@ qt_extend_target(Bootstrap CONDITION CMAKE_CROSSCOMPILING OR NOT QT_FEATURE_syst
         ../../3rdparty/zlib/src
 )
 
-qt_extend_target(Bootstrap CONDITION QT_FEATURE_system_zlib AND NOT CMAKE_CROSSCOMPILING
+qt_internal_extend_target(Bootstrap CONDITION QT_FEATURE_system_zlib AND NOT CMAKE_CROSSCOMPILING
     LIBRARIES
         ZLIB::ZLIB
 )
 
-qt_extend_target(Bootstrap CONDITION MINGW AND WIN32
+qt_internal_extend_target(Bootstrap CONDITION MINGW AND WIN32
     PUBLIC_LIBRARIES
         uuid
 )
@@ -261,8 +262,16 @@ qt_extend_target(Bootstrap CONDITION MINGW AND WIN32
 # QMAKE_CFLAGS = "$$QMAKE_CFLAGS_SHSTK"
 
 # special case begin
-qt_internal_add_link_flags_gc_sections(Bootstrap PUBLIC)
+target_link_libraries(Bootstrap PRIVATE PlatformCommonInternal)
+qt_internal_apply_gc_binaries(Bootstrap PUBLIC)
 set_target_properties(Bootstrap PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
 qt_internal_add_target_aliases(Bootstrap)
-qt_enable_msvc_cplusplus_define(Bootstrap PUBLIC)
+qt_set_msvc_cplusplus_options(Bootstrap PUBLIC)
+qt_set_common_target_properties(Bootstrap)
+qt_internal_apply_intel_cet(Bootstrap PUBLIC)
+
+qt_internal_extend_target(Bootstrap CONDITION MSVC
+    DEFINES
+        _CRT_SECURE_NO_WARNINGS
+)
 # special case end

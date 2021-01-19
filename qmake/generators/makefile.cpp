@@ -41,7 +41,6 @@
 #include <qdebug.h>
 #include <qbuffer.h>
 #include <qdatetime.h>
-#include <qregexp.h>
 
 #if defined(Q_OS_UNIX)
 #include <unistd.h>
@@ -602,7 +601,7 @@ MakefileGenerator::init()
     int x;
 
     //build up a list of compilers
-    QVector<Compiler> compilers;
+    QList<Compiler> compilers;
     {
         const char *builtins[] = { "OBJECTS", "SOURCES", "PRECOMPILED_HEADER", nullptr };
         for(x = 0; builtins[x]; ++x) {
@@ -765,7 +764,7 @@ MakefileGenerator::init()
         ProStringList incDirs = v["DEPENDPATH"] + v["QMAKE_ABSOLUTE_SOURCE_PATH"];
         if(project->isActiveConfig("depend_includepath"))
             incDirs += v["INCLUDEPATH"];
-        QVector<QMakeLocalFileName> deplist;
+        QList<QMakeLocalFileName> deplist;
         deplist.reserve(incDirs.size());
         for (ProStringList::Iterator it = incDirs.begin(); it != incDirs.end(); ++it)
             deplist.append(QMakeLocalFileName((*it).toQString()));
@@ -941,9 +940,7 @@ MakefileGenerator::filterIncludedFiles(const char *var)
     auto isIncluded = [this](const ProString &input) {
         return QMakeSourceFileInfo::included(input.toQString()) > 0;
     };
-    inputs.erase(std::remove_if(inputs.begin(), inputs.end(),
-                                isIncluded),
-                 inputs.end());
+    inputs.removeIf(isIncluded);
 }
 
 static QString
@@ -1287,7 +1284,14 @@ MakefileGenerator::writeInstalls(QTextStream &t, bool noBuild)
                     else
                        cmd = QLatin1String("$(QINSTALL)");
                     cmd += " " + escapeFilePath(wild) + " " + escapeFilePath(dst_file);
-                    inst << cmd;
+
+                    QString sedArgs = createSedArgs(ProKey("QMAKE_INSTALL_REPLACE"), fi.fileName());
+                    if (!sedArgs.isEmpty())
+                        inst << "$(SED) " + sedArgs + ' ' + escapeFilePath(wild) + " > "
+                                        + escapeFilePath(dst_file);
+                    else
+                        inst << cmd;
+
                     if (!noStrip && !project->isActiveConfig("debug_info") && !project->isActiveConfig("nostrip") &&
                        !fi.isDir() && fi.isExecutable() && !project->isEmpty("QMAKE_STRIP"))
                         inst << QString("-") + var("QMAKE_STRIP") + " " +
@@ -1678,7 +1682,7 @@ MakefileGenerator::replaceExtraCompilerVariables(
                 fullVal = val.join(' ');
             }
             ret.replace(match.capturedStart(), match.capturedLength(), fullVal);
-            rep = match.capturedStart(), fullVal.length();
+            rep += fullVal.length();
         } else {
             rep = match.capturedEnd();
         }
@@ -1827,7 +1831,7 @@ static QStringList splitDeps(const QString &indeps, bool lineMode)
 
 QString MakefileGenerator::resolveDependency(const QDir &outDir, const QString &file)
 {
-    const QVector<QMakeLocalFileName> &depdirs = QMakeSourceFileInfo::dependencyPaths();
+    const QList<QMakeLocalFileName> &depdirs = QMakeSourceFileInfo::dependencyPaths();
     for (const auto &depdir : depdirs) {
         const QString &local = depdir.local();
         QString lf = outDir.absoluteFilePath(local + '/' + file);
@@ -3096,7 +3100,7 @@ MakefileGenerator::findFileForDep(const QMakeLocalFileName &dep, const QMakeLoca
 
         if(Option::output_dir != qmake_getpwd()
            && QDir::isRelativePath(dep.real())) { //is it from the shadow tree
-            QVector<QMakeLocalFileName> depdirs = QMakeSourceFileInfo::dependencyPaths();
+            QList<QMakeLocalFileName> depdirs = QMakeSourceFileInfo::dependencyPaths();
             depdirs.prepend(fileInfo(file.real()).absoluteDir().path());
             QString pwd = qmake_getpwd();
             if(pwd.at(pwd.length()-1) != '/')
@@ -3414,35 +3418,43 @@ static QString windowsifyPath(const QString &str)
     return QString(str).replace('/', QLatin1String("\\\\\\\\"));
 }
 
-QString MakefileGenerator::installMetaFile(const ProKey &replace_rule, const QString &src, const QString &dst)
+QString MakefileGenerator::createSedArgs(const ProKey &replace_rule, const QString &file_name) const
 {
-    QString ret;
-    if (project->isEmpty(replace_rule)
-        || project->isActiveConfig("no_sed_meta_install")) {
-        ret += "$(INSTALL_FILE) " + escapeFilePath(src) + ' ' + escapeFilePath(dst);
-    } else {
-        QString sedargs;
+    QString sedargs;
+    if (!project->isEmpty(replace_rule) && !project->isActiveConfig("no_sed_meta_install")) {
         const ProStringList &replace_rules = project->values(replace_rule);
         for (int r = 0; r < replace_rules.size(); ++r) {
             const ProString match = project->first(ProKey(replace_rules.at(r) + ".match")),
-                        replace = project->first(ProKey(replace_rules.at(r) + ".replace"));
-            if (!match.isEmpty() /*&& match != replace*/) {
+                            replace = project->first(ProKey(replace_rules.at(r) + ".replace")),
+                            filename = project->first(ProKey(replace_rules.at(r) + ".filename"));
+            if (!match.isEmpty() /*&& match != replace*/
+                && (filename.isEmpty() || filename == file_name)) {
                 sedargs += " -e " + shellQuote("s," + match + "," + replace + ",g");
-                if (isWindowsShell() && project->first(ProKey(replace_rules.at(r) + ".CONFIG")).contains("path"))
-                    sedargs += " -e " + shellQuote("s," + windowsifyPath(match.toQString())
-                                               + "," + windowsifyPath(replace.toQString()) + ",gi");
+                if (isWindowsShell()
+                    && project->first(ProKey(replace_rules.at(r) + ".CONFIG")).contains("path"))
+                    sedargs += " -e "
+                            + shellQuote("s," + windowsifyPath(match.toQString()) + ","
+                                         + windowsifyPath(replace.toQString()) + ",gi");
             }
         }
-        if (sedargs.isEmpty()) {
-            ret += "$(INSTALL_FILE) " + escapeFilePath(src) + ' ' + escapeFilePath(dst);
-        } else {
-            ret += "$(SED) " + sedargs + ' ' + escapeFilePath(src) + " > " + escapeFilePath(dst);
-        }
+    }
+    return sedargs;
+}
+
+QString MakefileGenerator::installMetaFile(const ProKey &replace_rule, const QString &src,
+                                           const QString &dst) const
+{
+    QString ret;
+    QString sedargs = createSedArgs(replace_rule);
+    if (sedargs.isEmpty()) {
+        ret = "$(INSTALL_FILE) " + escapeFilePath(src) + ' ' + escapeFilePath(dst);
+    } else {
+        ret = "$(SED) " + sedargs + ' ' + escapeFilePath(src) + " > " + escapeFilePath(dst);
     }
     return ret;
 }
 
-QString MakefileGenerator::shellQuote(const QString &str)
+QString MakefileGenerator::shellQuote(const QString &str) const
 {
     return isWindowsShell() ? IoUtils::shellQuoteWin(str) : IoUtils::shellQuoteUnix(str);
 }
@@ -3456,28 +3468,37 @@ ProKey MakefileGenerator::fullTargetVariable() const
     return "TARGET";
 }
 
-void MakefileGenerator::createResponseFile(const QString &fileName, const ProStringList &objList)
+QString MakefileGenerator::createResponseFile(
+        const QString &baseName,
+        const ProStringList &objList,
+        const QString &prefix)
 {
+    QString fileName = baseName + '.' + fileVar("QMAKE_ORIG_TARGET");
+    if (!var("BUILD_NAME").isEmpty())
+        fileName += '.' + var("BUILD_NAME");
+    if (!var("MAKEFILE").isEmpty())
+        fileName += '.' + var("MAKEFILE");
     QString filePath = Option::output_dir + QDir::separator() + fileName;
     QFile file(filePath);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream t(&file);
-        for (ProStringList::ConstIterator it = objList.constBegin(); it != objList.constEnd(); ++it) {
-            QString path = (*it).toQString();
-            // In response files, whitespace and special characters are
-            // escaped with a backslash; backslashes themselves can either
-            // be escaped into double backslashes, or, as this is a list of
-            // path names, converted to forward slashes.
-            path.replace(QLatin1Char('\\'), QLatin1String("/"))
-                .replace(QLatin1Char(' '), QLatin1String("\\ "))
-                .replace(QLatin1Char('\t'), QLatin1String("\\\t"))
-                .replace(QLatin1Char('"'), QLatin1String("\\\""))
-                .replace(QLatin1Char('\''), QLatin1String("\\'"));
-            t << path << Qt::endl;
-        }
-        t.flush();
-        file.close();
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return QString();
+    QTextStream t(&file);
+    for (ProStringList::ConstIterator it = objList.constBegin(); it != objList.constEnd(); ++it) {
+        QString path = (*it).toQString();
+        // In response files, whitespace and special characters are
+        // escaped with a backslash; backslashes themselves can either
+        // be escaped into double backslashes, or, as this is a list of
+        // path names, converted to forward slashes.
+        path.replace(QLatin1Char('\\'), QLatin1String("/"))
+            .replace(QLatin1Char(' '), QLatin1String("\\ "))
+            .replace(QLatin1Char('\t'), QLatin1String("\\\t"))
+            .replace(QLatin1Char('"'), QLatin1String("\\\""))
+            .replace(QLatin1Char('\''), QLatin1String("\\'"));
+        t << prefix << path << Qt::endl;
     }
+    t.flush();
+    file.close();
+    return fileName;
 }
 
 QT_END_NAMESPACE

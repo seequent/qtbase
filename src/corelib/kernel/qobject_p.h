@@ -53,14 +53,14 @@
 //
 
 #include <QtCore/private/qglobal_p.h>
-#include "QtCore/qobject.h"
-#include "QtCore/qpointer.h"
-#include "QtCore/qsharedpointer.h"
 #include "QtCore/qcoreevent.h"
 #include "QtCore/qlist.h"
-#include "QtCore/qvector.h"
-#include "QtCore/qvariant.h"
+#include "QtCore/qobject.h"
+#include "QtCore/qpointer.h"
 #include "QtCore/qreadwritelock.h"
+#include "QtCore/qsharedpointer.h"
+#include "QtCore/qvariant.h"
+#include "QtCore/qproperty.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -105,9 +105,9 @@ public:
     {
         ExtraData() {}
         QList<QByteArray> propertyNames;
-        QVector<QVariant> propertyValues;
-        QVector<int> runningTimers;
-        QList<QPointer<QObject> > eventFilters;
+        QList<QVariant> propertyValues;
+        QList<int> runningTimers;
+        QList<QPointer<QObject>> eventFilters;
         QString objectName;
     };
 
@@ -123,7 +123,8 @@ public:
             Connection *next;
         };
 
-        static SignalVector *asSignalVector(ConnectionOrSignalVector *c) {
+        static SignalVector *asSignalVector(ConnectionOrSignalVector *c)
+        {
             if (reinterpret_cast<quintptr>(c) & 1)
                 return reinterpret_cast<SignalVector *>(reinterpret_cast<quintptr>(c) & ~quintptr(1u));
             return nullptr;
@@ -153,10 +154,11 @@ public:
         uint id = 0;
         ushort method_offset;
         ushort method_relative;
-        int signal_index : 27; // In signal range (see QObjectPrivate::signalIndex())
-        ushort connectionType : 3; // 0 == auto, 1 == direct, 2 == queued, 4 == blocking
+        signed int signal_index : 27; // In signal range (see QObjectPrivate::signalIndex())
+        ushort connectionType : 2; // 0 == auto, 1 == direct, 2 == queued, 3 == blocking
         ushort isSlotObject : 1;
         ushort ownArgumentTypes : 1;
+        ushort isSingleShot : 1;
         Connection() : ref_(2), ownArgumentTypes(true) {
             //ref_ is 2 for the use in the internal lists, and for the use in QMetaObject::Connection
         }
@@ -170,7 +172,8 @@ public:
                 isSlotObject = false;
             }
         }
-        void deref() {
+        void deref()
+        {
             if (!ref_.deref()) {
                 Q_ASSERT(!receiver.loadRelaxed());
                 Q_ASSERT(!isSlotObject);
@@ -228,8 +231,6 @@ public:
         int count() const { return static_cast<int>(allocated); }
     };
 
-
-
     /*
         This contains the all connections from and to an object.
 
@@ -277,7 +278,8 @@ public:
             return signalVector.loadRelaxed()->at(signal);
         }
 
-        void resizeSignalVector(uint size) {
+        void resizeSignalVector(uint size)
+        {
             SignalVector *vector = this->signalVector.loadRelaxed();
             if (vector && vector->allocated > size)
                 return;
@@ -299,8 +301,9 @@ public:
                 orphaned.storeRelaxed(ConnectionOrSignalVector::fromSignalVector(vector));
             }
         }
-        int signalVectorCount() const {
-            return  signalVector.loadAcquire() ? signalVector.loadRelaxed()->count() : -1;
+        int signalVectorCount() const
+        {
+            return signalVector.loadAcquire() ? signalVector.loadRelaxed()->count() : -1;
         }
 
         static void deleteOrphaned(ConnectionOrSignalVector *c);
@@ -323,9 +326,7 @@ public:
 
     void addConnection(int signal, Connection *c);
 
-    static QObjectPrivate *get(QObject *o) {
-        return o->d_func();
-    }
+    static QObjectPrivate *get(QObject *o) { return o->d_func(); }
     static const QObjectPrivate *get(const QObject *o) { return o->d_func(); }
 
     int signalIndex(const char *signalName, const QMetaObject **meta = nullptr) const;
@@ -349,10 +350,17 @@ public:
 
     static QMetaObject::Connection connectImpl(const QObject *sender, int signal_index,
                                                const QObject *receiver, void **slot,
-                                               QtPrivate::QSlotObjectBase *slotObj, Qt::ConnectionType type,
+                                               QtPrivate::QSlotObjectBase *slotObj, int type,
                                                const int *types, const QMetaObject *senderMetaObject);
     static QMetaObject::Connection connect(const QObject *sender, int signal_index, QtPrivate::QSlotObjectBase *slotObj, Qt::ConnectionType type);
+    static QMetaObject::Connection connect(const QObject *sender, int signal_index,
+                                           const QObject *receiver,
+                                           QtPrivate::QSlotObjectBase *slotObj,
+                                           Qt::ConnectionType type);
     static bool disconnect(const QObject *sender, int signal_index, void **slot);
+    static bool disconnect(const QObject *sender, int signal_index, const QObject *receiver,
+                           void **slot);
+    static bool disconnect(Connection *c);
 
     void ensureConnectionData()
     {
@@ -384,7 +392,7 @@ public:
     QAtomicPointer<QtSharedPointer::ExternalRefCountData> sharedRefcount;
 };
 
-Q_DECLARE_TYPEINFO(QObjectPrivate::ConnectionList, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QObjectPrivate::ConnectionList, Q_RELOCATABLE_TYPE);
 
 /*
     Catch mixing of incompatible library versions.
@@ -457,15 +465,15 @@ inline QMetaObject::Connection QObjectPrivate::connect(const typename QtPrivate:
 {
     typedef QtPrivate::FunctionPointer<Func1> SignalType;
     typedef QtPrivate::FunctionPointer<Func2> SlotType;
-    Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
+    static_assert(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
                       "No Q_OBJECT in the class with the signal");
 
     //compilation error if the arguments does not match.
-    Q_STATIC_ASSERT_X(int(SignalType::ArgumentCount) >= int(SlotType::ArgumentCount),
+    static_assert(int(SignalType::ArgumentCount) >= int(SlotType::ArgumentCount),
                       "The slot requires more arguments than the signal provides.");
-    Q_STATIC_ASSERT_X((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
+    static_assert((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
                       "Signal and slot arguments are not compatible.");
-    Q_STATIC_ASSERT_X((QtPrivate::AreArgumentsCompatible<typename SlotType::ReturnType, typename SignalType::ReturnType>::value),
+    static_assert((QtPrivate::AreArgumentsCompatible<typename SlotType::ReturnType, typename SignalType::ReturnType>::value),
                       "Return type of the slot is not compatible with the return type of the signal.");
 
     const int *types = nullptr;
@@ -485,18 +493,18 @@ bool QObjectPrivate::disconnect(const typename QtPrivate::FunctionPointer< Func1
 {
     typedef QtPrivate::FunctionPointer<Func1> SignalType;
     typedef QtPrivate::FunctionPointer<Func2> SlotType;
-    Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
+    static_assert(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
                       "No Q_OBJECT in the class with the signal");
     //compilation error if the arguments does not match.
-    Q_STATIC_ASSERT_X((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
+    static_assert((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
                       "Signal and slot arguments are not compatible.");
     return QObject::disconnectImpl(sender, reinterpret_cast<void **>(&signal),
                           receiverPrivate->q_ptr, reinterpret_cast<void **>(&slot),
                           &SignalType::Object::staticMetaObject);
 }
 
-Q_DECLARE_TYPEINFO(QObjectPrivate::Connection, Q_MOVABLE_TYPE);
-Q_DECLARE_TYPEINFO(QObjectPrivate::Sender, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QObjectPrivate::Connection, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(QObjectPrivate::Sender, Q_RELOCATABLE_TYPE);
 
 class QSemaphore;
 class Q_CORE_EXPORT QAbstractMetaCallEvent : public QEvent
@@ -549,8 +557,8 @@ public:
     inline int id() const { return d.method_offset_ + d.method_relative_; }
     inline const void * const* args() const { return d.args_; }
     inline void ** args() { return d.args_; }
-    inline const int *types() const { return reinterpret_cast<int*>(d.args_ + d.nargs_); }
-    inline int *types() { return reinterpret_cast<int*>(d.args_ + d.nargs_); }
+    inline const QMetaType *types() const { return reinterpret_cast<QMetaType *>(d.args_ + d.nargs_); }
+    inline QMetaType *types() { return reinterpret_cast<QMetaType *>(d.args_ + d.nargs_); }
 
     virtual void placeMetaCall(QObject *object) override;
 
@@ -566,15 +574,16 @@ private:
         ushort method_relative_;
     } d;
     // preallocate enough space for three arguments
-    char prealloc_[3*(sizeof(void*) + sizeof(int))];
+    alignas(void *) char prealloc_[3 * sizeof(void *) + 3 * sizeof(QMetaType)];
 };
 
 class QBoolBlocker
 {
     Q_DISABLE_COPY_MOVE(QBoolBlocker)
 public:
-    explicit inline QBoolBlocker(bool &b, bool value=true):block(b), reset(b){block = value;}
-    inline ~QBoolBlocker(){block = reset; }
+    explicit inline QBoolBlocker(bool &b, bool value = true) : block(b), reset(b) { block = value; }
+    inline ~QBoolBlocker() { block = reset; }
+
 private:
     bool &block;
     bool reset;
@@ -602,6 +611,16 @@ struct Q_CORE_EXPORT QAbstractDynamicMetaObject : public QDynamicMetaObjectData,
     { return metaCall(c, _id, a); }
     virtual int metaCall(QMetaObject::Call, int _id, void **) { return _id; } // Compat overload
 };
+
+inline const QBindingStorage *qGetBindingStorage(const QObjectPrivate *o)
+{
+    return &o->bindingStorage;
+}
+inline QBindingStorage *qGetBindingStorage(QObjectPrivate *o)
+{
+    return &o->bindingStorage;
+}
+
 
 QT_END_NAMESPACE
 

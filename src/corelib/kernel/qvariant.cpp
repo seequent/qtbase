@@ -89,79 +89,35 @@
 
 QT_BEGIN_NAMESPACE
 
-namespace {
-class HandlersManager
-{
-    static const QVariant::Handler *Handlers[QModulesPrivate::ModulesCount];
-public:
-    const QVariant::Handler *operator[] (const uint typeId) const
-    {
-        return Handlers[QModulesPrivate::moduleForType(typeId)];
-    }
-
-    void registerHandler(const QModulesPrivate::Names name, const QVariant::Handler *handler)
-    {
-        Handlers[name] = handler;
-    }
-};
-}  // namespace
-
-namespace {
-struct CoreTypesFilter {
-    template<typename T>
-    struct Acceptor {
-        static const bool IsAccepted = QModulesPrivate::QTypeModuleInfo<T>::IsCore && QtMetaTypePrivate::TypeDefinition<T>::IsAvailable;
-    };
-};
-} // annonymous
-
 namespace { // annonymous used to hide QVariant handlers
-
-static bool isNull(const QVariant::Private *d)
-{
-    QVariantIsNull<CoreTypesFilter> isNull(d);
-    return QMetaTypeSwitcher::switcher<bool>(isNull, d->type().id());
-}
-
-/*!
-  \internal
-
-  Compares \a a to \a b. The caller guarantees that \a a and \a b
-  are of the same type.
- */
-static bool compare(const QVariant::Private *a, const QVariant::Private *b)
-{
-    QVariantComparator<CoreTypesFilter> comparator(a, b);
-    return QMetaTypeSwitcher::switcher<bool>(comparator, a->type().id());
-}
 
 /*!
   \internal
  */
 static qlonglong qMetaTypeNumber(const QVariant::Private *d)
 {
-    switch (d->type().id()) {
+    switch (d->typeId()) {
     case QMetaType::Int:
-        return d->data.i;
+        return d->get<int>();
     case QMetaType::LongLong:
-        return d->data.ll;
+        return d->get<qlonglong>();
     case QMetaType::Char:
-        return qlonglong(d->data.c);
+        return qlonglong(d->get<char>());
     case QMetaType::SChar:
-        return qlonglong(d->data.sc);
+        return qlonglong(d->get<signed char>());
     case QMetaType::Short:
-        return qlonglong(d->data.s);
+        return qlonglong(d->get<short>());
     case QMetaType::Long:
-        return qlonglong(d->data.l);
+        return qlonglong(d->get<long>());
     case QMetaType::Float:
-        return qRound64(d->data.f);
+        return qRound64(d->get<float>());
     case QMetaType::Double:
-        return qRound64(d->data.d);
+        return qRound64(d->get<double>());
 #ifndef QT_BOOTSTRAPPED
     case QMetaType::QJsonValue:
-        return v_cast<QJsonValue>(d)->toDouble();
+        return d->get<QJsonValue>().toDouble();
     case QMetaType::QCborValue:
-        return v_cast<QCborValue>(d)->toInteger();
+        return d->get<QCborValue>().toInteger();
 #endif
     }
     Q_ASSERT(false);
@@ -170,42 +126,57 @@ static qlonglong qMetaTypeNumber(const QVariant::Private *d)
 
 static qulonglong qMetaTypeUNumber(const QVariant::Private *d)
 {
-    switch (d->type().id()) {
+    switch (d->typeId()) {
     case QMetaType::UInt:
-        return d->data.u;
+        return d->get<unsigned int>();
     case QMetaType::ULongLong:
-        return d->data.ull;
+        return d->get<qulonglong>();
     case QMetaType::UChar:
-        return d->data.uc;
+        return d->get<unsigned char>();
     case QMetaType::UShort:
-        return d->data.us;
+        return d->get<unsigned short>();
     case QMetaType::ULong:
-        return d->data.ul;
+        return d->get<unsigned long>();
     }
     Q_ASSERT(false);
     return 0;
 }
 
-static qlonglong qConvertToNumber(const QVariant::Private *d, bool *ok)
+static qlonglong qConvertToNumber(const QVariant::Private *d, bool *ok, bool allowStringToBool = false)
 {
     *ok = true;
 
-    switch (uint(d->type().id())) {
-    case QMetaType::QString:
-        return v_cast<QString>(d)->toLongLong(ok);
+    switch (uint(d->typeId())) {
+    case QMetaType::QString: {
+        const QString &s = d->get<QString>();
+        qlonglong l = s.toLongLong(ok);
+        if (*ok)
+            return l;
+        if (allowStringToBool) {
+            if (s == QLatin1String("false") || s == QLatin1String("0")) {
+                *ok = true;
+                return 0;
+            }
+            if (s == QLatin1String("true") || s == QLatin1String("1")) {
+                *ok = true;
+                return 1;
+            }
+        }
+        return 0;
+    }
     case QMetaType::QChar:
-        return v_cast<QChar>(d)->unicode();
+        return d->get<QChar>().unicode();
     case QMetaType::QByteArray:
-        return v_cast<QByteArray>(d)->toLongLong(ok);
+        return d->get<QByteArray>().toLongLong(ok);
     case QMetaType::Bool:
-        return qlonglong(d->data.b);
+        return qlonglong(d->get<bool>());
 #ifndef QT_BOOTSTRAPPED
     case QMetaType::QCborValue:
-        if (!v_cast<QCborValue>(d)->isInteger() && !v_cast<QCborValue>(d)->isDouble())
+        if (!d->get<QCborValue>().isInteger() && !d->get<QCborValue>().isDouble())
             break;
         return qMetaTypeNumber(d);
     case QMetaType::QJsonValue:
-        if (!v_cast<QJsonValue>(d)->isDouble())
+        if (!d->get<QJsonValue>().isDouble())
             break;
         Q_FALLTHROUGH();
 #endif
@@ -229,16 +200,16 @@ static qlonglong qConvertToNumber(const QVariant::Private *d, bool *ok)
 
     QMetaType typeInfo = d->type();
     if (typeInfo.flags() & QMetaType::IsEnumeration
-        || d->type().id() == QMetaType::QCborSimpleType) {
+        || d->typeId() == QMetaType::QCborSimpleType) {
         switch (typeInfo.sizeOf()) {
         case 1:
-            return d->is_shared ? *reinterpret_cast<signed char *>(d->data.shared->ptr) : d->data.sc;
+            return d->get<signed char>();
         case 2:
-            return d->is_shared ? *reinterpret_cast<qint16 *>(d->data.shared->ptr) : d->data.s;
+            return d->get<short>();
         case 4:
-            return d->is_shared ? *reinterpret_cast<qint32 *>(d->data.shared->ptr) : d->data.i;
+            return d->get<int>();
         case 8:
-            return d->is_shared ? *reinterpret_cast<qint64 *>(d->data.shared->ptr) : d->data.ll;
+            return d->get<qlonglong>();
         }
     }
 
@@ -249,11 +220,13 @@ static qlonglong qConvertToNumber(const QVariant::Private *d, bool *ok)
 static qreal qConvertToRealNumber(const QVariant::Private *d, bool *ok)
 {
     *ok = true;
-    switch (uint(d->type().id())) {
+    switch (uint(d->typeId())) {
+    case QMetaType::QString:
+        return d->get<QString>().toDouble(ok);
     case QMetaType::Double:
-        return qreal(d->data.d);
+        return qreal(d->get<double>());
     case QMetaType::Float:
-        return qreal(d->data.f);
+        return qreal(d->get<float>());
     case QMetaType::ULongLong:
     case QMetaType::UInt:
     case QMetaType::UChar:
@@ -262,1159 +235,15 @@ static qreal qConvertToRealNumber(const QVariant::Private *d, bool *ok)
         return qreal(qMetaTypeUNumber(d));
 #ifndef QT_BOOTSTRAPPED
     case QMetaType::QCborValue:
-        return v_cast<QCborValue>(d)->toDouble();
+        return d->get<QCborValue>().toDouble();
     case QMetaType::QJsonValue:
-        return v_cast<QJsonValue>(d)->toDouble();
+        return d->get<QJsonValue>().toDouble();
 #endif
     default:
         // includes enum conversion as well as invalid types
         return qreal(qConvertToNumber(d, ok));
     }
 }
-
-static qulonglong qConvertToUnsignedNumber(const QVariant::Private *d, bool *ok)
-{
-    *ok = true;
-
-    switch (uint(d->type().id())) {
-    case QMetaType::QString:
-        return v_cast<QString>(d)->toULongLong(ok);
-    case QMetaType::QChar:
-        return v_cast<QChar>(d)->unicode();
-    case QMetaType::QByteArray:
-        return v_cast<QByteArray>(d)->toULongLong(ok);
-    case QMetaType::Bool:
-        return qulonglong(d->data.b);
-#ifndef QT_BOOTSTRAPPED
-    case QMetaType::QCborValue:
-        if (v_cast<QCborValue>(d)->isDouble())
-            return qulonglong(qConvertToRealNumber(d, ok));
-        if (!v_cast<QCborValue>(d)->isInteger())
-            return false;
-        return qulonglong(qMetaTypeNumber(d));
-    case QMetaType::QJsonValue:
-        if (!v_cast<QJsonValue>(d)->isDouble())
-            break;
-        Q_FALLTHROUGH();
-#endif
-    case QMetaType::Double:
-    case QMetaType::Int:
-    case QMetaType::Char:
-    case QMetaType::SChar:
-    case QMetaType::Short:
-    case QMetaType::Long:
-    case QMetaType::Float:
-    case QMetaType::LongLong:
-        return qulonglong(qMetaTypeNumber(d));
-    case QMetaType::ULongLong:
-    case QMetaType::UInt:
-    case QMetaType::UChar:
-    case QMetaType::UShort:
-    case QMetaType::ULong:
-        return qMetaTypeUNumber(d);
-    }
-
-    QMetaType typeInfo = d->type();
-    if (typeInfo.flags() & QMetaType::IsEnumeration) {
-        switch (typeInfo.sizeOf()) {
-        case 1:
-            return d->is_shared ? *reinterpret_cast<uchar *>(d->data.shared->ptr) : d->data.uc;
-        case 2:
-            return d->is_shared ? *reinterpret_cast<quint16 *>(d->data.shared->ptr) : d->data.us;
-        case 4:
-            return d->is_shared ? *reinterpret_cast<quint32 *>(d->data.shared->ptr) : d->data.u;
-        case 8:
-            return d->is_shared ? *reinterpret_cast<qint64 *>(d->data.shared->ptr) : d->data.ull;
-        }
-    }
-
-    *ok = false;
-    return Q_UINT64_C(0);
-}
-
-template<typename TInput, typename LiteralWrapper>
-inline bool qt_convertToBool(const QVariant::Private *const d)
-{
-    TInput str = v_cast<TInput>(d)->toLower();
-    return !(str.isEmpty() || str == LiteralWrapper("0") || str == LiteralWrapper("false"));
-}
-
-/*!
- \internal
- Returns the internal data pointer from \a d.
- */
-
-static const void *constData(const QVariant::Private &d)
-{
-    return d.is_shared ? d.data.shared->ptr : reinterpret_cast<const void *>(&d.data.c);
-}
-
-#ifndef QT_NO_QOBJECT
-/*!
-  \internal
-  returns a QMetaEnum for a given meta tape type id if possible
-*/
-static QMetaEnum metaEnumFromType(QMetaType t)
-{
-    if (t.flags() & QMetaType::IsEnumeration) {
-        if (const QMetaObject *metaObject = t.metaObject()) {
-            const QByteArray enumName = t.name();
-            const char *lastColon = std::strrchr(enumName, ':');
-            return metaObject->enumerator(metaObject->indexOfEnumerator(
-                    lastColon ? lastColon + 1 : enumName.constData()));
-        }
-    }
-    return QMetaEnum();
-}
-#endif
-
-/*!
- \internal
-
- Converts \a d to type \a t, which is placed in \a result.
- */
-static bool convert(const QVariant::Private *d, int t, void *result, bool *ok)
-{
-    Q_ASSERT(d->type().id() != t);
-    Q_ASSERT(result);
-
-    if (d->type().id() >= QMetaType::User || t >= QMetaType::User) {
-        const bool isOk = QMetaType::convert(constData(*d), d->type().id(), result, t);
-        if (ok)
-            *ok = isOk;
-        if (isOk)
-            return true;
-    }
-
-    bool dummy;
-    if (!ok)
-        ok = &dummy;
-
-    switch (uint(t)) {
-#ifndef QT_BOOTSTRAPPED
-    case QMetaType::QUrl:
-        switch (d->type().id()) {
-        case QMetaType::QString:
-            *static_cast<QUrl *>(result) = QUrl(*v_cast<QString>(d));
-            break;
-        case QMetaType::QCborValue:
-            if (v_cast<QCborValue>(d)->isUrl()) {
-                *static_cast<QUrl *>(result) = v_cast<QCborValue>(d)->toUrl();
-                break;
-            }
-            return false;
-        default:
-            return false;
-        }
-        break;
-#endif // QT_BOOTSTRAPPED
-#if QT_CONFIG(itemmodel)
-    case QMetaType::QModelIndex:
-        switch (d->type().id()) {
-        case QMetaType::QPersistentModelIndex:
-            *static_cast<QModelIndex *>(result) = QModelIndex(*v_cast<QPersistentModelIndex>(d));
-            break;
-        default:
-            return false;
-        }
-        break;
-    case QMetaType::QPersistentModelIndex:
-        switch (d->type().id()) {
-        case QMetaType::QModelIndex:
-            *static_cast<QPersistentModelIndex *>(result) = QPersistentModelIndex(*v_cast<QModelIndex>(d));
-            break;
-        default:
-            return false;
-        }
-        break;
-#endif // QT_CONFIG(itemmodel)
-    case QMetaType::QString: {
-        QString *str = static_cast<QString *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QChar:
-            *str = *v_cast<QChar>(d);
-            break;
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::UChar:
-            *str = QChar::fromLatin1(d->data.c);
-            break;
-        case QMetaType::Short:
-        case QMetaType::Long:
-        case QMetaType::Int:
-        case QMetaType::LongLong:
-            *str = QString::number(qMetaTypeNumber(d));
-            break;
-        case QMetaType::UInt:
-        case QMetaType::ULongLong:
-        case QMetaType::UShort:
-        case QMetaType::ULong:
-            *str = QString::number(qMetaTypeUNumber(d));
-            break;
-        case QMetaType::Float:
-            *str = QString::number(d->data.f, 'g', QLocale::FloatingPointShortest);
-            break;
-        case QMetaType::Double:
-            *str = QString::number(d->data.d, 'g', QLocale::FloatingPointShortest);
-            break;
-#if QT_CONFIG(datestring)
-        case QMetaType::QDate:
-            *str = v_cast<QDate>(d)->toString(Qt::ISODate);
-            break;
-        case QMetaType::QTime:
-            *str = v_cast<QTime>(d)->toString(Qt::ISODateWithMs);
-            break;
-        case QMetaType::QDateTime:
-            *str = v_cast<QDateTime>(d)->toString(Qt::ISODateWithMs);
-            break;
-#endif
-        case QMetaType::Bool:
-            *str = d->data.b ? QStringLiteral("true") : QStringLiteral("false");
-            break;
-        case QMetaType::QByteArray:
-            *str = QString::fromUtf8(v_cast<QByteArray>(d)->constData());
-            break;
-        case QMetaType::QStringList:
-            if (v_cast<QStringList>(d)->count() == 1)
-                *str = v_cast<QStringList>(d)->at(0);
-            break;
-#ifndef QT_BOOTSTRAPPED
-        case QMetaType::QUrl:
-            *str = v_cast<QUrl>(d)->toString();
-            break;
-        case QMetaType::QJsonValue:
-            if (v_cast<QJsonValue>(d)->isString())
-                *str = v_cast<QJsonValue>(d)->toString();
-            else if (!v_cast<QJsonValue>(d)->isNull())
-                return false;
-            break;
-        case QMetaType::QCborValue:
-            if (v_cast<QCborValue>(d)->isContainer() || v_cast<QCborValue>(d)->isTag())
-                return false;
-            *str = v_cast<QCborValue>(d)->toVariant().toString();
-            break;
-#endif
-        case QMetaType::QUuid:
-            *str = v_cast<QUuid>(d)->toString();
-            break;
-        case QMetaType::Nullptr:
-            *str = QString();
-            break;
-        default:
-#ifndef QT_NO_QOBJECT
-            {
-                QMetaEnum en = metaEnumFromType(d->type());
-                if (en.isValid()) {
-                    *str = QString::fromUtf8(en.valueToKey(qConvertToNumber(d, ok)));
-                    return *ok;
-                }
-            }
-#endif
-            return false;
-        }
-        break;
-    }
-    case QMetaType::QChar: {
-        QChar *c = static_cast<QChar *>(result);
-        switch (d->type().id()) {
-        case QMetaType::Int:
-        case QMetaType::LongLong:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-        case QMetaType::Long:
-        case QMetaType::Float:
-            *c = QChar::fromUcs2(qMetaTypeNumber(d));
-            break;
-        case QMetaType::UInt:
-        case QMetaType::ULongLong:
-        case QMetaType::UChar:
-        case QMetaType::UShort:
-        case QMetaType::ULong:
-            *c = QChar::fromUcs2(qMetaTypeUNumber(d));
-            break;
-        default:
-            return false;
-        }
-        break;
-    }
-#ifndef QT_NO_GEOM_VARIANT
-    case QMetaType::QSize: {
-        QSize *s = static_cast<QSize *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QSizeF:
-            *s = v_cast<QSizeF>(d)->toSize();
-            break;
-        default:
-            return false;
-        }
-        break;
-    }
-
-    case QMetaType::QSizeF: {
-        QSizeF *s = static_cast<QSizeF *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QSize:
-            *s = QSizeF(*(v_cast<QSize>(d)));
-            break;
-        default:
-            return false;
-        }
-        break;
-    }
-
-    case QMetaType::QLine: {
-        QLine *s = static_cast<QLine *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QLineF:
-            *s = v_cast<QLineF>(d)->toLine();
-            break;
-        default:
-            return false;
-        }
-        break;
-    }
-
-    case QMetaType::QLineF: {
-        QLineF *s = static_cast<QLineF *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QLine:
-            *s = QLineF(*(v_cast<QLine>(d)));
-            break;
-        default:
-            return false;
-        }
-        break;
-    }
-#endif
-    case QMetaType::QStringList:
-        if (d->type().id() == QMetaType::QVariantList) {
-            QStringList *slst = static_cast<QStringList *>(result);
-            const QVariantList *list = v_cast<QVariantList >(d);
-            const int size = list->size();
-            slst->reserve(size);
-            for (int i = 0; i < size; ++i)
-                slst->append(list->at(i).toString());
-        } else if (d->type().id() == QMetaType::QString) {
-            QStringList *slst = static_cast<QStringList *>(result);
-            *slst = QStringList(*v_cast<QString>(d));
-        } else {
-            return false;
-        }
-        break;
-    case QMetaType::QDate: {
-        QDate *dt = static_cast<QDate *>(result);
-        if (d->type().id() == QMetaType::QDateTime)
-            *dt = v_cast<QDateTime>(d)->date();
-#if QT_CONFIG(datestring)
-        else if (d->type().id() == QMetaType::QString)
-            *dt = QDate::fromString(*v_cast<QString>(d), Qt::ISODate);
-#endif
-        else
-            return false;
-
-        return dt->isValid();
-    }
-    case QMetaType::QTime: {
-        QTime *t = static_cast<QTime *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QDateTime:
-            *t = v_cast<QDateTime>(d)->time();
-            break;
-#if QT_CONFIG(datestring)
-        case QMetaType::QString:
-            *t = QTime::fromString(*v_cast<QString>(d), Qt::ISODate);
-            break;
-#endif
-        default:
-            return false;
-        }
-        return t->isValid();
-    }
-    case QMetaType::QDateTime: {
-        QDateTime *dt = static_cast<QDateTime *>(result);
-        switch (d->type().id()) {
-#if QT_CONFIG(datestring)
-        case QMetaType::QString:
-            *dt = QDateTime::fromString(*v_cast<QString>(d), Qt::ISODate);
-            break;
-#  ifndef QT_BOOTSTRAPPED
-        case QMetaType::QCborValue:
-            if (v_cast<QCborValue>(d)->isDateTime())
-                *dt = v_cast<QCborValue>(d)->toDateTime();
-            else
-                return false;
-            break;
-#  endif
-#endif
-        case QMetaType::QDate:
-            *dt = v_cast<QDate>(d)->startOfDay();
-            break;
-        default:
-            return false;
-        }
-        return dt->isValid();
-    }
-    case QMetaType::QByteArray: {
-        QByteArray *ba = static_cast<QByteArray *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QString:
-            *ba = v_cast<QString>(d)->toUtf8();
-            break;
-        case QMetaType::Double:
-            *ba = QByteArray::number(d->data.d, 'g', QLocale::FloatingPointShortest);
-            break;
-        case QMetaType::Float:
-            *ba = QByteArray::number(d->data.f, 'g', QLocale::FloatingPointShortest);
-            break;
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::UChar:
-            *ba = QByteArray(1, d->data.c);
-            break;
-        case QMetaType::Int:
-        case QMetaType::LongLong:
-        case QMetaType::Short:
-        case QMetaType::Long:
-            *ba = QByteArray::number(qMetaTypeNumber(d));
-            break;
-        case QMetaType::UInt:
-        case QMetaType::ULongLong:
-        case QMetaType::UShort:
-        case QMetaType::ULong:
-            *ba = QByteArray::number(qMetaTypeUNumber(d));
-            break;
-        case QMetaType::Bool:
-            *ba = QByteArray(d->data.b ? "true" : "false");
-            break;
-        case QMetaType::QUuid:
-            *ba = v_cast<QUuid>(d)->toByteArray();
-            break;
-        case QMetaType::Nullptr:
-            *ba = QByteArray();
-            break;
-#ifndef QT_BOOTSTRAPPED
-        case QMetaType::QCborValue:
-            if (v_cast<QCborValue>(d)->isByteArray())
-                *ba = v_cast<QCborValue>(d)->toByteArray();
-            else
-                return false;
-            break;
-#endif
-        default:
-#ifndef QT_NO_QOBJECT
-            {
-                QMetaEnum en = metaEnumFromType(d->type());
-                if (en.isValid()) {
-                    *ba = en.valueToKey(qConvertToNumber(d, ok));
-                    return *ok;
-                }
-            }
-#endif
-            return false;
-        }
-    }
-    break;
-    case QMetaType::Short:
-        *static_cast<short *>(result) = short(qConvertToNumber(d, ok));
-        return *ok;
-    case QMetaType::Long:
-        *static_cast<long *>(result) = long(qConvertToNumber(d, ok));
-        return *ok;
-    case QMetaType::UShort:
-        *static_cast<ushort *>(result) = ushort(qConvertToUnsignedNumber(d, ok));
-        return *ok;
-    case QMetaType::ULong:
-        *static_cast<ulong *>(result) = ulong(qConvertToUnsignedNumber(d, ok));
-        return *ok;
-    case QMetaType::Int:
-        *static_cast<int *>(result) = int(qConvertToNumber(d, ok));
-        return *ok;
-    case QMetaType::UInt:
-        *static_cast<uint *>(result) = uint(qConvertToUnsignedNumber(d, ok));
-        return *ok;
-    case QMetaType::LongLong:
-        *static_cast<qlonglong *>(result) = qConvertToNumber(d, ok);
-        return *ok;
-    case QMetaType::ULongLong: {
-        *static_cast<qulonglong *>(result) = qConvertToUnsignedNumber(d, ok);
-        return *ok;
-    }
-    case QMetaType::SChar: {
-        signed char s = qConvertToNumber(d, ok);
-        *static_cast<signed char*>(result) = s;
-        return *ok;
-    }
-    case QMetaType::UChar: {
-        *static_cast<uchar *>(result) = qConvertToUnsignedNumber(d, ok);
-        return *ok;
-    }
-    case QMetaType::Bool: {
-        bool *b = static_cast<bool *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QByteArray:
-            *b = qt_convertToBool<QByteArray, const char*>(d);
-            break;
-        case QMetaType::QString:
-            *b = qt_convertToBool<QString, QLatin1String>(d);
-            break;
-        case QMetaType::QChar:
-            *b = !v_cast<QChar>(d)->isNull();
-            break;
-        case QMetaType::Double:
-        case QMetaType::Int:
-        case QMetaType::LongLong:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-        case QMetaType::Long:
-        case QMetaType::Float:
-            *b = qMetaTypeNumber(d) != Q_INT64_C(0);
-            break;
-        case QMetaType::UInt:
-        case QMetaType::ULongLong:
-        case QMetaType::UChar:
-        case QMetaType::UShort:
-        case QMetaType::ULong:
-            *b = qMetaTypeUNumber(d) != Q_UINT64_C(0);
-            break;
-#ifndef QT_BOOTSTRAPPED
-        case QMetaType::QCborValue:
-            *b = v_cast<QCborValue>(d)->toBool();
-            if (!v_cast<QCborValue>(d)->isBool())
-                return false;
-            break;
-        case QMetaType::QJsonValue:
-            *b = v_cast<QJsonValue>(d)->toBool(false);
-            if (!v_cast<QJsonValue>(d)->isBool())
-                return false;
-            break;
-#endif
-        default:
-            *b = false;
-            return false;
-        }
-        break;
-    }
-    case QMetaType::Double: {
-        double *f = static_cast<double *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QString:
-            *f = v_cast<QString>(d)->toDouble(ok);
-            break;
-        case QMetaType::QByteArray:
-            *f = v_cast<QByteArray>(d)->toDouble(ok);
-            break;
-        case QMetaType::Bool:
-            *f = double(d->data.b);
-            break;
-        case QMetaType::Float:
-            *f = double(d->data.f);
-            break;
-        case QMetaType::LongLong:
-        case QMetaType::Int:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-        case QMetaType::Long:
-            *f = double(qMetaTypeNumber(d));
-            break;
-        case QMetaType::UInt:
-        case QMetaType::ULongLong:
-        case QMetaType::UChar:
-        case QMetaType::UShort:
-        case QMetaType::ULong:
-            *f = double(qMetaTypeUNumber(d));
-            break;
-#ifndef QT_BOOTSTRAPPED
-        case QMetaType::QCborValue:
-            *f = v_cast<QCborValue>(d)->toDouble();
-            if (!v_cast<QCborValue>(d)->isDouble())
-                return false;
-            break;
-        case QMetaType::QJsonValue:
-            *f = v_cast<QJsonValue>(d)->toDouble(0.0);
-            if (!v_cast<QJsonValue>(d)->isDouble())
-                return false;
-            break;
-#endif
-        default:
-            *f = 0.0;
-            return false;
-        }
-        break;
-    }
-    case QMetaType::Float: {
-        float *f = static_cast<float *>(result);
-        switch (d->type().id()) {
-        case QMetaType::QString:
-            *f = v_cast<QString>(d)->toFloat(ok);
-            break;
-        case QMetaType::QByteArray:
-            *f = v_cast<QByteArray>(d)->toFloat(ok);
-            break;
-        case QMetaType::Bool:
-            *f = float(d->data.b);
-            break;
-        case QMetaType::Double:
-            *f = float(d->data.d);
-            break;
-        case QMetaType::LongLong:
-        case QMetaType::Int:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-        case QMetaType::Long:
-            *f = float(qMetaTypeNumber(d));
-            break;
-        case QMetaType::UInt:
-        case QMetaType::ULongLong:
-        case QMetaType::UChar:
-        case QMetaType::UShort:
-        case QMetaType::ULong:
-            *f = float(qMetaTypeUNumber(d));
-            break;
-#ifndef QT_BOOTSTRAPPED
-        case QMetaType::QCborValue:
-            *f = v_cast<QCborValue>(d)->toDouble();
-            if (!v_cast<QCborValue>(d)->isDouble())
-                return false;
-            break;
-        case QMetaType::QJsonValue:
-            *f = v_cast<QJsonValue>(d)->toDouble(0.0);
-            if (!v_cast<QJsonValue>(d)->isDouble())
-                return false;
-            break;
-#endif
-        default:
-            *f = 0.0f;
-            return false;
-        }
-        break;
-    }
-    case QMetaType::QVariantList:
-        if (d->type().id() == QMetaType::QStringList) {
-            QVariantList *lst = static_cast<QVariantList *>(result);
-            const QStringList *slist = v_cast<QStringList>(d);
-            const int size = slist->size();
-            lst->reserve(size);
-            for (int i = 0; i < size; ++i)
-                lst->append(QVariant(slist->at(i)));
-#ifndef QT_BOOTSTRAPPED
-        } else if (d->type().id() == QMetaType::QCborValue) {
-            if (!v_cast<QCborValue>(d)->isArray())
-                return false;
-            *static_cast<QVariantList *>(result) = v_cast<QCborValue>(d)->toArray().toVariantList();
-        } else if (d->type().id() == QMetaType::QCborArray) {
-            *static_cast<QVariantList *>(result) = v_cast<QCborArray>(d)->toVariantList();
-        } else if (d->type().id() == QMetaType::QJsonValue) {
-            if (!v_cast<QJsonValue>(d)->isArray())
-                return false;
-            *static_cast<QVariantList *>(result) = v_cast<QJsonValue>(d)->toArray().toVariantList();
-        } else if (d->type().id() == QMetaType::QJsonArray) {
-            *static_cast<QVariantList *>(result) = v_cast<QJsonArray>(d)->toVariantList();
-#endif
-        } else {
-            return false;
-        }
-        break;
-    case QMetaType::QVariantMap:
-        if (d->type().id() == QMetaType::QVariantHash) {
-            QVariantMap *map = static_cast<QVariantMap *>(result);
-            const QVariantHash *hash = v_cast<QVariantHash>(d);
-            const auto end = hash->end();
-            for (auto it = hash->begin(); it != end; ++it)
-                static_cast<QMultiMap<QString, QVariant> *>(map)->insert(it.key(), it.value());
-#ifndef QT_BOOTSTRAPPED
-        } else if (d->type().id() == QMetaType::QCborValue) {
-            if (!v_cast<QCborValue>(d)->isMap())
-                return false;
-            *static_cast<QVariantMap *>(result) = v_cast<QCborValue>(d)->toMap().toVariantMap();
-        } else if (d->type().id() == QMetaType::QCborMap) {
-            *static_cast<QVariantMap *>(result) = v_cast<QCborMap>(d)->toVariantMap();
-        } else if (d->type().id() == QMetaType::QJsonValue) {
-            if (!v_cast<QJsonValue>(d)->isObject())
-                return false;
-            *static_cast<QVariantMap *>(result) = v_cast<QJsonValue>(d)->toObject().toVariantMap();
-        } else if (d->type().id() == QMetaType::QJsonObject) {
-            *static_cast<QVariantMap *>(result) = v_cast<QJsonObject>(d)->toVariantMap();
-#endif
-        } else {
-            return false;
-        }
-        break;
-    case QMetaType::QVariantHash:
-        if (d->type().id() == QMetaType::QVariantMap) {
-            QVariantHash *hash = static_cast<QVariantHash *>(result);
-            const QVariantMap *map = v_cast<QVariantMap>(d);
-            const auto end = map->end();
-            for (auto it = map->begin(); it != end; ++it)
-                hash->insert(it.key(), it.value());
-#ifndef QT_BOOTSTRAPPED
-        } else if (d->type().id() == QMetaType::QCborValue) {
-            if (!v_cast<QCborValue>(d)->isMap())
-                return false;
-            *static_cast<QVariantHash *>(result) = v_cast<QCborValue>(d)->toMap().toVariantHash();
-        } else if (d->type().id() == QMetaType::QCborMap) {
-            *static_cast<QVariantHash *>(result) = v_cast<QCborMap>(d)->toVariantHash();
-        } else if (d->type().id() == QMetaType::QJsonValue) {
-            if (!v_cast<QJsonValue>(d)->isObject())
-                return false;
-            *static_cast<QVariantHash *>(result) = v_cast<QJsonValue>(d)->toObject().toVariantHash();
-        } else if (d->type().id() == QMetaType::QJsonObject) {
-            *static_cast<QVariantHash *>(result) = v_cast<QJsonObject>(d)->toVariantHash();
-#endif
-        } else {
-            return false;
-        }
-        break;
-#ifndef QT_NO_GEOM_VARIANT
-    case QMetaType::QRect:
-        if (d->type().id() == QMetaType::QRectF)
-            *static_cast<QRect *>(result) = (v_cast<QRectF>(d))->toRect();
-        else
-            return false;
-        break;
-    case QMetaType::QRectF:
-        if (d->type().id() == QMetaType::QRect)
-            *static_cast<QRectF *>(result) = *v_cast<QRect>(d);
-        else
-            return false;
-        break;
-    case QMetaType::QPointF:
-        if (d->type().id() == QMetaType::QPoint)
-            *static_cast<QPointF *>(result) = *v_cast<QPoint>(d);
-        else
-            return false;
-        break;
-    case QMetaType::QPoint:
-        if (d->type().id() == QMetaType::QPointF)
-            *static_cast<QPoint *>(result) = (v_cast<QPointF>(d))->toPoint();
-        else
-            return false;
-        break;
-    case QMetaType::Char:
-    {
-        *static_cast<qint8 *>(result) = qint8(qConvertToNumber(d, ok));
-        return *ok;
-    }
-#endif
-    case QMetaType::QUuid:
-        switch (d->type().id()) {
-        case QMetaType::QString:
-            *static_cast<QUuid *>(result) = QUuid(*v_cast<QString>(d));
-            break;
-        case QMetaType::QByteArray:
-            *static_cast<QUuid *>(result) = QUuid(*v_cast<QByteArray>(d));
-            break;
-#ifndef QT_BOOTSTRAPPED
-        case QMetaType::QCborValue:
-            if (!v_cast<QCborValue>(d)->isUuid())
-                return false;
-            *static_cast<QUuid *>(result) = v_cast<QCborValue>(d)->toUuid();
-            break;
-#endif
-        default:
-            return false;
-        }
-        break;
-    case QMetaType::Nullptr:
-        *static_cast<std::nullptr_t *>(result) = nullptr;
-        if (QMetaType::typeFlags(t) & (QMetaType::PointerToGadget | QMetaType::PointerToQObject)
-            || d->type().id() == QMetaType::VoidStar) {
-            if (v_cast<const void *>(d) == nullptr)
-                break;
-        }
-#ifndef QT_BOOTSTRAPPED
-        if (d->type().id() == QMetaType::QCborValue && v_cast<QCborValue>(d)->isNull())
-            break;
-#endif
-        return false;
-
-#ifndef QT_BOOTSTRAPPED
-#if QT_CONFIG(regularexpression)
-    case QMetaType::QRegularExpression:
-        if (d->type().id() != QMetaType::QCborValue
-            || !v_cast<QCborValue>(d)->isRegularExpression())
-            return false;
-        *static_cast<QRegularExpression *>(result) = v_cast<QCborValue>(d)->toRegularExpression();
-        break;
-#endif
-    case QMetaType::QJsonValue:
-        switch (d->type().id()) {
-        case QMetaType::Nullptr:
-            *static_cast<QJsonValue *>(result) = QJsonValue(QJsonValue::Null);
-            break;
-        case QMetaType::Bool:
-            *static_cast<QJsonValue *>(result) = QJsonValue(d->data.b);
-            break;
-        case QMetaType::Int:
-        case QMetaType::UInt:
-        case QMetaType::Double:
-        case QMetaType::Float:
-        case QMetaType::ULong:
-        case QMetaType::Long:
-        case QMetaType::LongLong:
-        case QMetaType::ULongLong:
-        case QMetaType::UShort:
-        case QMetaType::UChar:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-            *static_cast<QJsonValue *>(result) = QJsonValue(qConvertToRealNumber(d, ok));
-            Q_ASSERT(ok);
-            break;
-        case QMetaType::QString:
-            *static_cast<QJsonValue *>(result) = QJsonValue(*v_cast<QString>(d));
-            break;
-        case QMetaType::QStringList:
-            *static_cast<QJsonValue *>(result) = QJsonValue(QJsonArray::fromStringList(*v_cast<QStringList>(d)));
-            break;
-        case QMetaType::QVariantList:
-            *static_cast<QJsonValue *>(result) = QJsonValue(QJsonArray::fromVariantList(*v_cast<QVariantList>(d)));
-            break;
-        case QMetaType::QVariantMap:
-            *static_cast<QJsonValue *>(result) = QJsonValue(QJsonObject::fromVariantMap(*v_cast<QVariantMap>(d)));
-            break;
-        case QMetaType::QVariantHash:
-            *static_cast<QJsonValue *>(result) = QJsonValue(QJsonObject::fromVariantHash(*v_cast<QVariantHash>(d)));
-            break;
-        case QMetaType::QJsonObject:
-            *static_cast<QJsonValue *>(result) = *v_cast<QJsonObject>(d);
-            break;
-        case QMetaType::QJsonArray:
-            *static_cast<QJsonValue *>(result) = *v_cast<QJsonArray>(d);
-            break;
-        case QMetaType::QJsonDocument: {
-            QJsonDocument doc = *v_cast<QJsonDocument>(d);
-            *static_cast<QJsonValue *>(result) = doc.isArray() ? QJsonValue(doc.array()) : QJsonValue(doc.object());
-            break;
-        }
-        case QMetaType::QCborValue:
-            *static_cast<QJsonValue *>(result) = v_cast<QCborValue>(d)->toJsonValue();
-            break;
-        case QMetaType::QCborMap:
-            *static_cast<QJsonValue *>(result) = v_cast<QCborMap>(d)->toJsonObject();
-            break;
-        case QMetaType::QCborArray:
-            *static_cast<QJsonValue *>(result) = v_cast<QCborArray>(d)->toJsonArray();
-            break;
-        default:
-            *static_cast<QJsonValue *>(result) = QJsonValue(QJsonValue::Undefined);
-            return false;
-        }
-        break;
-    case QMetaType::QJsonArray:
-        switch (d->type().id()) {
-        case QMetaType::QStringList:
-            *static_cast<QJsonArray *>(result) = QJsonArray::fromStringList(*v_cast<QStringList>(d));
-            break;
-        case QMetaType::QVariantList:
-            *static_cast<QJsonArray *>(result) = QJsonArray::fromVariantList(*v_cast<QVariantList>(d));
-            break;
-        case QMetaType::QJsonValue:
-            if (!v_cast<QJsonValue>(d)->isArray())
-                return false;
-            *static_cast<QJsonArray *>(result) = v_cast<QJsonValue>(d)->toArray();
-            break;
-        case QMetaType::QJsonDocument:
-            if (!v_cast<QJsonDocument>(d)->isArray())
-                return false;
-            *static_cast<QJsonArray *>(result) = v_cast<QJsonDocument>(d)->array();
-            break;
-        case QMetaType::QCborValue:
-            if (!v_cast<QCborValue>(d)->isArray())
-                return false;
-            *static_cast<QJsonArray *>(result) = v_cast<QCborValue>(d)->toArray().toJsonArray();
-            break;
-        case QMetaType::QCborArray:
-            *static_cast<QJsonArray *>(result) = v_cast<QCborArray>(d)->toJsonArray();
-            break;
-        default:
-            return false;
-        }
-        break;
-    case QMetaType::QJsonObject:
-        switch (d->type().id()) {
-        case QMetaType::QVariantMap:
-            *static_cast<QJsonObject *>(result) = QJsonObject::fromVariantMap(*v_cast<QVariantMap>(d));
-            break;
-        case QMetaType::QVariantHash:
-            *static_cast<QJsonObject *>(result) = QJsonObject::fromVariantHash(*v_cast<QVariantHash>(d));
-            break;
-        case QMetaType::QJsonValue:
-            if (!v_cast<QJsonValue>(d)->isObject())
-                return false;
-            *static_cast<QJsonObject *>(result) = v_cast<QJsonValue>(d)->toObject();
-            break;
-        case QMetaType::QJsonDocument:
-            if (v_cast<QJsonDocument>(d)->isArray())
-                return false;
-            *static_cast<QJsonObject *>(result) = v_cast<QJsonDocument>(d)->object();
-            break;
-        case QMetaType::QCborValue:
-            if (!v_cast<QCborValue>(d)->isMap())
-                return false;
-            *static_cast<QJsonObject *>(result) = v_cast<QCborValue>(d)->toMap().toJsonObject();
-            break;
-        case QMetaType::QCborMap:
-            *static_cast<QJsonObject *>(result) = v_cast<QCborMap>(d)->toJsonObject();
-            break;
-        default:
-            return false;
-        }
-        break;
-    case QMetaType::QCborSimpleType:
-        if (d->type().id() == QMetaType::QCborValue && v_cast<QCborValue>(d)->isSimpleType()) {
-            *static_cast<QCborSimpleType *>(result) = v_cast<QCborValue>(d)->toSimpleType();
-            break;
-        }
-        return false;
-    case QMetaType::QCborValue:
-        switch (d->type().id()) {
-        case QMetaType::Nullptr:
-            *static_cast<QCborValue *>(result) = QCborValue(QCborValue::Null);
-            break;
-        case QMetaType::Bool:
-            *static_cast<QCborValue *>(result) = QCborValue(d->data.b);
-            break;
-        case QMetaType::Int:
-        case QMetaType::UInt:
-        case QMetaType::ULong:
-        case QMetaType::Long:
-        case QMetaType::LongLong:
-        case QMetaType::ULongLong:
-        case QMetaType::UShort:
-        case QMetaType::UChar:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-            *static_cast<QCborValue *>(result) = QCborValue(qConvertToNumber(d, ok));
-            Q_ASSERT(ok);
-            break;
-        case QMetaType::Double:
-        case QMetaType::Float:
-            *static_cast<QCborValue *>(result) = QCborValue(qConvertToRealNumber(d, ok));
-            Q_ASSERT(ok);
-            break;
-        case QMetaType::QString:
-            *static_cast<QCborValue *>(result) = *v_cast<QString>(d);
-            break;
-        case QMetaType::QStringList:
-            *static_cast<QCborValue *>(result) = QCborArray::fromStringList(*v_cast<QStringList>(d));
-            break;
-        case QMetaType::QByteArray:
-            *static_cast<QCborValue *>(result) = *v_cast<QByteArray>(d);
-            break;
-        case QMetaType::QDate:
-            *static_cast<QCborValue *>(result) = QCborValue(v_cast<QDate>(d)->startOfDay());
-            break;
-        case QMetaType::QDateTime:
-            *static_cast<QCborValue *>(result) = QCborValue(*v_cast<QDateTime>(d));
-            break;
-        case QMetaType::QUrl:
-            *static_cast<QCborValue *>(result) = QCborValue(*v_cast<QUrl>(d));
-            break;
-#if QT_CONFIG(regularexpression)
-        case QMetaType::QRegularExpression:
-            *static_cast<QCborValue *>(result) = QCborValue(*v_cast<QRegularExpression>(d));
-            break;
-#endif
-        case QMetaType::QUuid:
-            *static_cast<QCborValue *>(result) = QCborValue(*v_cast<QUuid>(d));
-            break;
-        case QMetaType::QVariantList:
-            *static_cast<QCborValue *>(result) = QCborArray::fromVariantList(*v_cast<QVariantList>(d));
-            break;
-        case QMetaType::QVariantMap:
-            *static_cast<QCborValue *>(result) = QCborMap::fromVariantMap(*v_cast<QVariantMap>(d));
-            break;
-        case QMetaType::QVariantHash:
-            *static_cast<QCborValue *>(result) = QCborMap::fromVariantHash(*v_cast<QVariantHash>(d));
-            break;
-        case QMetaType::QJsonValue:
-            *static_cast<QCborValue *>(result) = QCborValue::fromJsonValue(*v_cast<QJsonValue>(d));
-            break;
-        case QMetaType::QJsonObject:
-            *static_cast<QCborValue *>(result) = QCborMap::fromJsonObject(*v_cast<QJsonObject>(d));
-            break;
-        case QMetaType::QJsonArray:
-            *static_cast<QCborValue *>(result) = QCborArray::fromJsonArray(*v_cast<QJsonArray>(d));
-            break;
-        case QMetaType::QJsonDocument: {
-            QJsonDocument doc = *v_cast<QJsonDocument>(d);
-            if (doc.isArray())
-                *static_cast<QCborValue *>(result) = QCborArray::fromJsonArray(doc.array());
-            else
-                *static_cast<QCborValue *>(result) = QCborMap::fromJsonObject(doc.object());
-            break;
-        }
-        case QMetaType::QCborSimpleType:
-            *static_cast<QCborValue *>(result) = *v_cast<QCborSimpleType>(d);
-            break;
-        case QMetaType::QCborMap:
-            *static_cast<QCborValue *>(result) = *v_cast<QCborMap>(d);
-            break;
-        case QMetaType::QCborArray:
-            *static_cast<QCborValue *>(result) = *v_cast<QCborArray>(d);
-            break;
-        default:
-            *static_cast<QCborValue *>(result) = {};
-            return false;
-        }
-        break;
-    case QMetaType::QCborArray:
-        switch (d->type().id()) {
-        case QMetaType::QStringList:
-            *static_cast<QCborArray *>(result) = QCborArray::fromStringList(*v_cast<QStringList>(d));
-            break;
-        case QMetaType::QVariantList:
-            *static_cast<QCborArray *>(result) = QCborArray::fromVariantList(*v_cast<QVariantList>(d));
-            break;
-        case QMetaType::QCborValue:
-            if (!v_cast<QCborValue>(d)->isArray())
-                return false;
-            *static_cast<QCborArray *>(result) = v_cast<QCborValue>(d)->toArray();
-            break;
-        case QMetaType::QJsonDocument:
-            if (!v_cast<QJsonDocument>(d)->isArray())
-                return false;
-            *static_cast<QCborArray *>(result) = QCborArray::fromJsonArray(v_cast<QJsonDocument>(d)->array());
-            break;
-        case QMetaType::QJsonValue:
-            if (!v_cast<QJsonValue>(d)->isArray())
-                return false;
-            *static_cast<QCborArray *>(result) = QCborArray::fromJsonArray(v_cast<QJsonValue>(d)->toArray());
-            break;
-        case QMetaType::QJsonArray:
-            *static_cast<QCborArray *>(result) = QCborArray::fromJsonArray(*v_cast<QJsonArray>(d));
-            break;
-        default:
-            return false;
-        }
-        break;
-    case QMetaType::QCborMap:
-        switch (d->type().id()) {
-        case QMetaType::QVariantMap:
-            *static_cast<QCborMap *>(result) = QCborMap::fromVariantMap(*v_cast<QVariantMap>(d));
-            break;
-        case QMetaType::QVariantHash:
-            *static_cast<QCborMap *>(result) = QCborMap::fromVariantHash(*v_cast<QVariantHash>(d));
-            break;
-        case QMetaType::QCborValue:
-            if (!v_cast<QCborValue>(d)->isMap())
-                return false;
-            *static_cast<QCborMap *>(result) = v_cast<QCborValue>(d)->toMap();
-            break;
-        case QMetaType::QJsonDocument:
-            if (v_cast<QJsonDocument>(d)->isArray())
-                return false;
-            *static_cast<QCborMap *>(result) = QCborMap::fromJsonObject(v_cast<QJsonDocument>(d)->object());
-            break;
-        case QMetaType::QJsonValue:
-            if (!v_cast<QJsonValue>(d)->isObject())
-                return false;
-            *static_cast<QCborMap *>(result) = QCborMap::fromJsonObject(v_cast<QJsonValue>(d)->toObject());
-            break;
-        case QMetaType::QJsonObject:
-            *static_cast<QCborMap *>(result) = QCborMap::fromJsonObject(*v_cast<QJsonObject>(d));
-            break;
-        default:
-            return false;
-        }
-        break;
-#endif
-
-    default:
-#ifndef QT_NO_QOBJECT
-        if (d->type().id() == QMetaType::QString || d->type().id() == QMetaType::QByteArray) {
-            QMetaEnum en = metaEnumFromType(QMetaType(t));
-            if (en.isValid()) {
-                QByteArray keys = (d->type().id() == QMetaType::QString)
-                        ? v_cast<QString>(d)->toUtf8()
-                        : *v_cast<QByteArray>(d);
-                int value = en.keysToValue(keys.constData(), ok);
-                if (*ok) {
-                    switch (QMetaType::sizeOf(t)) {
-                    case 1:
-                        *static_cast<signed char *>(result) = value;
-                        return true;
-                    case 2:
-                        *static_cast<qint16 *>(result) = value;
-                        return true;
-                    case 4:
-                        *static_cast<qint32 *>(result) = value;
-                        return true;
-                    case 8:
-                        *static_cast<qint64 *>(result) = value;
-                        return true;
-                    }
-                }
-            }
-        }
-#endif
-        if (QMetaType::typeFlags(t) & QMetaType::IsEnumeration
-            || d->type().id() == QMetaType::QCborSimpleType) {
-            qlonglong value = qConvertToNumber(d, ok);
-            if (*ok) {
-                switch (QMetaType::sizeOf(t)) {
-                case 1:
-                    *static_cast<signed char *>(result) = value;
-                    return true;
-                case 2:
-                    *static_cast<qint16 *>(result) = value;
-                    return true;
-                case 4:
-                    *static_cast<qint32 *>(result) = value;
-                    return true;
-                case 8:
-                    *static_cast<qint64 *>(result) = value;
-                    return true;
-                }
-            }
-            return *ok;
-        }
-        return false;
-    }
-    return true;
-}
-
-#if !defined(QT_NO_DEBUG_STREAM)
-static void streamDebug(QDebug dbg, const QVariant &v)
-{
-    QVariant::Private *d = const_cast<QVariant::Private *>(&v.data_ptr());
-    QVariantDebugStream<CoreTypesFilter> stream(dbg, d);
-    QMetaTypeSwitcher::switcher<void>(stream, d->type().id());
-}
-#endif
-
-const QVariant::Handler qt_kernel_variant_handler = {
-    isNull,
-    compare,
-    convert,
-#if !defined(QT_NO_DEBUG_STREAM)
-    streamDebug
-#else
-    nullptr
-#endif
-};
-
-static bool dummyIsNull(const QVariant::Private *d) { Q_ASSERT_X(false, "QVariant::isNull", "Trying to call isNull on an unknown type"); return d->is_null; }
-static bool dummyCompare(const QVariant::Private *, const QVariant::Private *) { Q_ASSERT_X(false, "QVariant", "Trying to compare an unknown types"); return false; }
-static bool dummyConvert(const QVariant::Private *, int, void *, bool *) { Q_ASSERT_X(false, "QVariant", "Trying to convert an unknown type"); return false; }
-#if !defined(QT_NO_DEBUG_STREAM)
-static void dummyStreamDebug(QDebug, const QVariant &) { Q_ASSERT_X(false, "QVariant", "Trying to convert an unknown type"); }
-#endif
-const QVariant::Handler qt_dummy_variant_handler = {
-    dummyIsNull,
-    dummyCompare,
-    dummyConvert,
-#if !defined(QT_NO_DEBUG_STREAM)
-    dummyStreamDebug
-#else
-    nullptr
-#endif
-};
 
 // the type of d has already been set, but other field are not set
 static void customConstruct(QVariant::Private *d, const void *copy)
@@ -1426,24 +255,17 @@ static void customConstruct(QVariant::Private *d, const void *copy)
         return;
     }
 
-    // this logic should match with QVariantIntegrator::CanUseInternalSpace
-    if (size <= sizeof(QVariant::Private::Data)
-            && (type.flags() & (QMetaType::MovableType | QMetaType::IsEnumeration))) {
+    if (QVariant::Private::canUseInternalSpace(type)) {
         type.construct(&d->data, copy);
         d->is_shared = false;
     } else {
-        // Private::Data contains long long, and long double is the biggest standard type.
-        const size_t maxAlignment =
-            qMax(alignof(QVariant::Private::Data), alignof(long double));
-        const size_t s = sizeof(QVariant::PrivateShared);
-        const size_t offset = s + ((s * maxAlignment - s) % maxAlignment);
-        void *data = operator new(offset + size);
-        void *ptr = static_cast<char *>(data) + offset;
-        type.construct(ptr, copy);
+        d->data.shared = QVariant::PrivateShared::create(type);
+        type.construct(d->data.shared->data(), copy);
         d->is_shared = true;
-        d->data.shared = new (data) QVariant::PrivateShared(ptr);
     }
-    d->is_null = !copy;
+    // need to check for nullptr_t here, as this can get called by fromValue(nullptr). fromValue() uses
+    // std::addressof(value) which in this case returns the address of the nullptr object.
+    d->is_null = !copy || type == QMetaType::fromType<std::nullptr_t>();
 }
 
 static void customClear(QVariant::Private *d)
@@ -1451,88 +273,13 @@ static void customClear(QVariant::Private *d)
     if (!d->is_shared) {
         d->type().destruct(&d->data);
     } else {
-        d->type().destruct(d->data.shared->ptr);
-        d->data.shared->~PrivateShared();
-        operator delete(d->data.shared);
+        d->type().destruct(d->data.shared->data());
+        QVariant::PrivateShared::free(d->data.shared);
     }
 }
 
-static bool customIsNull(const QVariant::Private *d)
-{
-    if (d->is_null)
-        return true;
-    if (d->type().flags() & QMetaType::IsPointer) {
-        const void *d_ptr = d->is_shared ? d->data.shared->ptr : &(d->data);
-        return *static_cast<void *const *>(d_ptr) == nullptr;
-    }
-    return false;
-}
-
-static bool customCompare(const QVariant::Private *a, const QVariant::Private *b)
-{
-    const void *a_ptr = a->is_shared ? a->data.shared->ptr : &(a->data);
-    const void *b_ptr = b->is_shared ? b->data.shared->ptr : &(b->data);
-
-    if (a->is_null && b->is_null)
-        return true;
-
-    return !memcmp(a_ptr, b_ptr, a->type().sizeOf());
-}
-
-static bool customConvert(const QVariant::Private *d, int t, void *result, bool *ok)
-{
-    if (d->type().id() >= QMetaType::User || t >= QMetaType::User) {
-        if (QMetaType::convert(constData(*d), d->type().id(), result, t)) {
-            if (ok)
-                *ok = true;
-            return true;
-        }
-    }
-    return convert(d, t, result, ok);
-}
-
-#if !defined(QT_NO_DEBUG_STREAM)
-static void customStreamDebug(QDebug dbg, const QVariant &variant) {
-#ifndef QT_BOOTSTRAPPED
-    QMetaType::TypeFlags flags = QMetaType::typeFlags(variant.userType());
-    if (flags & QMetaType::PointerToQObject)
-        dbg.nospace() << qvariant_cast<QObject*>(variant);
-#else
-    Q_UNUSED(dbg);
-    Q_UNUSED(variant);
-#endif
-}
-#endif
-
-const QVariant::Handler qt_custom_variant_handler = {
-    customIsNull,
-    customCompare,
-    customConvert,
-#if !defined(QT_NO_DEBUG_STREAM)
-    customStreamDebug
-#else
-    nullptr
-#endif
-};
 
 } // annonymous used to hide QVariant handlers
-
-static HandlersManager handlerManager;
-
-Q_STATIC_ASSERT_X(!QModulesPrivate::Core, "Initialization assumes that ModulesNames::Core is 0");
-const QVariant::Handler *HandlersManager::Handlers[QModulesPrivate::ModulesCount]
-                                        = { &qt_kernel_variant_handler, &qt_dummy_variant_handler,
-                                            &qt_dummy_variant_handler, &qt_custom_variant_handler };
-
-Q_CORE_EXPORT const QVariant::Handler *qcoreVariantHandler()
-{
-    return &qt_kernel_variant_handler;
-}
-
-Q_CORE_EXPORT void QVariantPrivate::registerHandler(const int /* Modules::Names */name, const QVariant::Handler *handler)
-{
-    handlerManager.registerHandler(static_cast<QModulesPrivate::Names>(name), handler);
-}
 
 /*!
     \class QVariant
@@ -1712,34 +459,6 @@ Q_CORE_EXPORT void QVariantPrivate::registerHandler(const int /* Modules::Names 
     Constructs an invalid variant.
 */
 
-
-/*!
-    \fn QVariant::QVariant(int typeId, const void *copy)
-
-    Constructs variant of type \a typeId, and initializes with
-    \a copy if \a copy is not \nullptr.
-
-    Note that you have to pass the address of the variable you want stored.
-
-    Usually, you never have to use this constructor, use QVariant::fromValue()
-    instead to construct variants from the pointer types represented by
-    \c QMetaType::VoidStar, and \c QMetaType::QObjectStar.
-
-    \sa QVariant::fromValue(), QMetaType::Type
-*/
-
-/*!
-    \fn QVariant::QVariant(Type type)
-
-    Constructs an uninitialized variant of type \a type. This will create a
-    variant in a special null state that if accessed will return a default
-    constructed value of the \a type.
-
-    \sa isNull()
-*/
-
-
-
 /*!
     \fn QVariant::create(int type, const void *copy)
 
@@ -1752,9 +471,6 @@ Q_CORE_EXPORT void QVariantPrivate::registerHandler(const int /* Modules::Names 
 void QVariant::create(int type, const void *copy)
 {
     d = Private(QMetaType(type));
-    if (Q_UNLIKELY(type && !d.type().isValid())) {
-        qWarning("Trying to construct an instance of an invalid type, type id: %i", type);
-    }
     customConstruct(&d, copy);
 }
 
@@ -1787,22 +503,12 @@ QVariant::QVariant(const QVariant &p)
 {
     if (d.is_shared) {
         d.data.shared->ref.ref();
-    } else if (d.type().isValid()) {
-        customConstruct(&d, p.constData());
-        d.is_null = p.d.is_null;
+        return;
     }
+    QMetaType t = d.type();
+    if (t.isValid())
+        t.construct(&d, p.constData());
 }
-
-#ifndef QT_NO_DATASTREAM
-/*!
-    Reads the variant from the data stream, \a s.
-*/
-QVariant::QVariant(QDataStream &s)
-{
-    d.is_null = true;
-    s >> *this;
-}
-#endif //QT_NO_DATASTREAM
 
 /*!
   \fn QVariant::QVariant(const QString &val)
@@ -1830,14 +536,6 @@ QVariant::QVariant(QDataStream &s)
     You can disable this operator by defining \c
     QT_NO_CAST_FROM_ASCII when you compile your applications.
 */
-
-#ifndef QT_NO_CAST_FROM_ASCII
-QVariant::QVariant(const char *val)
-{
-    QString s = QString::fromUtf8(val);
-    create(String, &s);
-}
-#endif
 
 /*!
   \fn QVariant::QVariant(const QStringList &val)
@@ -2067,139 +765,138 @@ QVariant::QVariant(const char *val)
   Constructs a new variant with the regular expression value \a re.
 */
 
-QVariant::QVariant(Type type)
-{ create(type, nullptr); }
+/*! \fn QVariant::QVariant(Type type)
+    \deprecated
+
+    Constructs an uninitialized variant of type \a type. This will create a
+    variant in a special null state that if accessed will return a default
+    constructed value of the \a type.
+
+    \sa isNull()
+*/
 
 /*!
-    \internal
-    flags is true if it is a pointer type
- */
-QVariant::QVariant(int typeId, const void *copy, uint flags)
-{
-    if (flags) { //type is a pointer type
-        d = Private(QMetaType(typeId));
-        d.data.ptr = *reinterpret_cast<void *const*>(copy);
-    } else {
-        create(typeId, copy);
-    }
-    d.is_null = false;
-}
+    Constructs variant of type \a type, and initializes with
+    \a copy if \a copy is not \nullptr.
 
-/*!
-    \internal
-    flags is true if it is a pointer type
- */
+    Note that you have to pass the address of the variable you want stored.
+
+    Usually, you never have to use this constructor, use QVariant::fromValue()
+    instead to construct variants from the pointer types represented by
+    \c QMetaType::VoidStar, and \c QMetaType::QObjectStar.
+
+    \sa QVariant::fromValue(), QMetaType::Type
+*/
 QVariant::QVariant(QMetaType type, const void *copy) : d(type)
 {
     customConstruct(&d, copy);
-    d.is_null = false;
 }
 
 QVariant::QVariant(int val)
-    : d(Int)
-{ d.data.i = val; }
+    : d(QMetaType::Int)
+{ d.set(val); }
 QVariant::QVariant(uint val)
-    : d(UInt)
-{ d.data.u = val; }
+    : d(QMetaType::UInt)
+{ d.set(val); }
 QVariant::QVariant(qlonglong val)
-    : d(LongLong)
-{ d.data.ll = val; }
+    : d(QMetaType::LongLong)
+{ d.set(val); }
 QVariant::QVariant(qulonglong val)
-    : d(ULongLong)
-{ d.data.ull = val; }
+    : d(QMetaType::ULongLong)
+{ d.set(val); }
 QVariant::QVariant(bool val)
-    : d(Bool)
-{ d.data.b = val; }
+    : d(QMetaType::Bool)
+{ d.set(val); }
 QVariant::QVariant(double val)
-    : d(Double)
-{ d.data.d = val; }
+    : d(QMetaType::Double)
+{ d.set(val); }
 QVariant::QVariant(float val)
     : d(QMetaType::Float)
-{ d.data.f = val; }
+{ d.set(val); }
 
 QVariant::QVariant(const QByteArray &val)
-    : d(ByteArray)
+    : d(QMetaType::QByteArray)
 { v_construct<QByteArray>(&d, val); }
 QVariant::QVariant(const QBitArray &val)
-    : d(BitArray)
+    : d(QMetaType::QBitArray)
 { v_construct<QBitArray>(&d, val);  }
 QVariant::QVariant(const QString &val)
-    : d(String)
+    : d(QMetaType::QString)
 { v_construct<QString>(&d, val);  }
 QVariant::QVariant(QChar val)
-    : d(Char)
+    : d(QMetaType::QChar)
 { v_construct<QChar>(&d, val);  }
 QVariant::QVariant(QLatin1String val)
-    : d(String)
+    : d(QMetaType::QString)
 { v_construct<QString>(&d, val); }
 QVariant::QVariant(const QStringList &val)
-    : d(StringList)
+    : d(QMetaType::QStringList)
 { v_construct<QStringList>(&d, val); }
 
 QVariant::QVariant(QDate val)
-    : d(Date)
+    : d(QMetaType::QDate)
 { v_construct<QDate>(&d, val); }
 QVariant::QVariant(QTime val)
-    : d(Time)
+    : d(QMetaType::QTime)
 { v_construct<QTime>(&d, val); }
 QVariant::QVariant(const QDateTime &val)
-    : d(DateTime)
+    : d(QMetaType::QDateTime)
 { v_construct<QDateTime>(&d, val); }
 #if QT_CONFIG(easingcurve)
 QVariant::QVariant(const QEasingCurve &val)
-    : d(EasingCurve)
+    : d(QMetaType::QEasingCurve)
 { v_construct<QEasingCurve>(&d, val); }
 #endif
 QVariant::QVariant(const QList<QVariant> &list)
-    : d(List)
+    : d(QMetaType::QVariantList)
 { v_construct<QVariantList>(&d, list); }
 QVariant::QVariant(const QMap<QString, QVariant> &map)
-    : d(Map)
+    : d(QMetaType::QVariantMap)
 { v_construct<QVariantMap>(&d, map); }
 QVariant::QVariant(const QHash<QString, QVariant> &hash)
-    : d(Hash)
+    : d(QMetaType::QVariantHash)
 { v_construct<QVariantHash>(&d, hash); }
 #ifndef QT_NO_GEOM_VARIANT
 QVariant::QVariant(const QPoint &pt)
-    : d(Point)
+    : d(QMetaType::QPoint)
 { v_construct<QPoint>(&d, pt); }
 QVariant::QVariant(const QPointF &pt)
-    : d(PointF)
+    : d(QMetaType::QPointF)
 { v_construct<QPointF>(&d, pt); }
 QVariant::QVariant(const QRectF &r)
-    : d(RectF)
+    : d(QMetaType::QRectF)
 { v_construct<QRectF>(&d, r); }
 QVariant::QVariant(const QLineF &l)
-    : d(LineF)
+    : d(QMetaType::QLineF)
 { v_construct<QLineF>(&d, l); }
 QVariant::QVariant(const QLine &l)
-    : d(Line)
+    : d(QMetaType::QLine)
 { v_construct<QLine>(&d, l); }
 QVariant::QVariant(const QRect &r)
-    : d(Rect)
+    : d(QMetaType::QRect)
 { v_construct<QRect>(&d, r); }
 QVariant::QVariant(const QSize &s)
-    : d(Size)
+    : d(QMetaType::QSize)
 { v_construct<QSize>(&d, s); }
 QVariant::QVariant(const QSizeF &s)
-    : d(SizeF)
+    : d(QMetaType::QSizeF)
 { v_construct<QSizeF>(&d, s); }
 #endif
 #ifndef QT_BOOTSTRAPPED
 QVariant::QVariant(const QUrl &u)
-    : d(Url)
+    : d(QMetaType::QUrl)
 { v_construct<QUrl>(&d, u); }
 #endif
 QVariant::QVariant(const QLocale &l)
-    : d(Locale)
+    : d(QMetaType::QLocale)
 { v_construct<QLocale>(&d, l); }
 #if QT_CONFIG(regularexpression)
 QVariant::QVariant(const QRegularExpression &re)
-    : d(RegularExpression)
+    : d(QMetaType::QRegularExpression)
 { v_construct<QRegularExpression>(&d, re); }
 #endif // QT_CONFIG(regularexpression)
 QVariant::QVariant(const QUuid &uuid)
-    : d(Uuid)
+    : d(QMetaType::QUuid)
 { v_construct<QUuid>(&d, uuid); }
 #ifndef QT_BOOTSTRAPPED
 QVariant::QVariant(const QJsonValue &jsonValue)
@@ -2217,14 +914,16 @@ QVariant::QVariant(const QJsonDocument &jsonDocument)
 #endif // QT_BOOTSTRAPPED
 #if QT_CONFIG(itemmodel)
 QVariant::QVariant(const QModelIndex &modelIndex)
-    : d(ModelIndex)
+    : d(QMetaType::QModelIndex)
 { v_construct<QModelIndex>(&d, modelIndex); }
 QVariant::QVariant(const QPersistentModelIndex &modelIndex)
-    : d(PersistentModelIndex)
+    : d(QMetaType::QPersistentModelIndex)
 { v_construct<QPersistentModelIndex>(&d, modelIndex); }
 #endif
 
-/*!
+/*! \fn QVariant::Type QVariant::type() const
+    \deprecated
+
     Returns the storage type of the value stored in the variant.
     Although this function is declared as returning QVariant::Type,
     the return value should be interpreted as QMetaType::Type. In
@@ -2257,23 +956,19 @@ QVariant::QVariant(const QPersistentModelIndex &modelIndex)
 
     \sa userType(), metaType()
 */
-QVariant::Type QVariant::type() const
-{
-    int type = d.type().id();
-    return type >= QMetaType::User ? UserType : static_cast<Type>(type);
-}
-/*!
-    Returns the storage type of the value stored in the variant. For
-    non-user types, this is the same as type().
+
+/*! \fn int QVariant::userType() const
+    \fn int QVariant::typeId() const
+
+    Returns the storage type of the value stored in the variant. This is
+    the same as metaType().id().
 
     \sa type(), metaType()
 */
-int QVariant::userType() const
-{
-    return d.type().id();
-}
 
 /*!
+    \since 6.0
+
     Returns the QMetaType of the value stored in the variant.
 */
 QMetaType QVariant::metaType() const
@@ -2284,7 +979,7 @@ QMetaType QVariant::metaType() const
 /*!
     Assigns the value of the variant \a variant to this variant.
 */
-QVariant& QVariant::operator=(const QVariant &variant)
+QVariant &QVariant::operator=(const QVariant &variant)
 {
     if (this == &variant)
         return *this;
@@ -2295,8 +990,9 @@ QVariant& QVariant::operator=(const QVariant &variant)
         d = variant.d;
     } else {
         d = variant.d;
-        customConstruct(&d, reinterpret_cast<const void *>(&variant.d.data));
-        d.is_null = variant.d.is_null;
+        QMetaType t = d.type();
+        if (t.isValid())
+            t.construct(&d, variant.constData());
     }
 
     return *this;
@@ -2342,8 +1038,7 @@ void QVariant::detach()
 */
 const char *QVariant::typeName() const
 {
-    // Cannot use d.type().name because we must return a char*
-    return QMetaType::typeName(d.type().id());
+    return d.type().name();
 }
 
 /*!
@@ -2358,29 +1053,25 @@ void QVariant::clear()
 }
 
 /*!
+    \fn const char *QVariant::typeToName(int typeId)
+    \deprecated Use QMetaType instead
+
     Converts the int representation of the storage type, \a typeId, to
     its string representation.
 
     Returns \nullptr if the type is QMetaType::UnknownType or doesn't exist.
 */
-const char *QVariant::typeToName(int typeId)
-{
-    return QMetaType::typeName(typeId);
-}
-
 
 /*!
+    \fn QVariant::Type QVariant::nameToType(const char *name)
+    \deprecated Use QMetaType instead
+
     Converts the string representation of the storage type given in \a
     name, to its enum representation.
 
     If the string representation cannot be converted to any enum
     representation, the variant is set to \c Invalid.
 */
-QVariant::Type QVariant::nameToType(const char *name)
-{
-    int metaType = QMetaType::type(name);
-    return metaType <= int(UserType) ? QVariant::Type(metaType) : UserType;
-}
 
 #ifndef QT_NO_DATASTREAM
 enum { MapFromThreeCount = 36 };
@@ -2430,6 +1121,18 @@ static const ushort mapIdFromQt3ToCurrent[MapFromThreeCount] =
 #endif
 };
 
+// enum values needed to map Qt5 based type id's to Qt6 based ones
+enum Qt5Types {
+    Qt5UserType = 1024,
+    Qt5LastCoreType = QMetaType::QCborMap,
+    Qt5FirstGuiType = 64,
+    Qt5LastGuiType = 87,
+    Qt5SizePolicy = 121,
+    Qt5RegExp = 27,
+    Qt5KeySequence = 75,
+    Qt5QQuaternion = 85
+};
+
 /*!
     Internal function for loading a variant from stream \a s. Use the
     stream operators instead.
@@ -2443,35 +1146,46 @@ void QVariant::load(QDataStream &s)
     quint32 typeId;
     s >> typeId;
     if (s.version() < QDataStream::Qt_4_0) {
+        // map to Qt 5 ids
         if (typeId >= MapFromThreeCount)
             return;
         typeId = mapIdFromQt3ToCurrent[typeId];
     } else if (s.version() < QDataStream::Qt_5_0) {
+        // map to Qt 5 type ids
         if (typeId == 127 /* QVariant::UserType */) {
-            typeId = QMetaType::User;
-        } else if (typeId >= 128 && typeId != QVariant::UserType) {
+            typeId = Qt5UserType;
+        } else if (typeId >= 128 && typeId != Qt5UserType) {
             // In Qt4 id == 128 was FirstExtCoreType. In Qt5 ExtCoreTypes set was merged to CoreTypes
             // by moving all ids down by 97.
             typeId -= 97;
         } else if (typeId == 75 /* QSizePolicy */) {
-            typeId = QMetaType::QSizePolicy;
+            typeId = Qt5SizePolicy;
         } else if (typeId > 75 && typeId <= 86) {
             // and as a result these types received lower ids too
             // QKeySequence QPen QTextLength QTextFormat QTransform QMatrix4x4 QVector2D QVector3D QVector4D QQuaternion
             typeId -=1;
         }
     }
+    if (s.version() < QDataStream::Qt_6_0) {
+        // map from Qt 5 to Qt 6 values
+        if (typeId == Qt5UserType) {
+            typeId = QMetaType::User;
+        } else if (typeId >= Qt5FirstGuiType && typeId <= Qt5LastGuiType) {
+            typeId += QMetaType::FirstGuiType - Qt5FirstGuiType;
+        } else if (typeId == Qt5SizePolicy) {
+            typeId = QMetaType::QSizePolicy;
+        } else if (typeId == Qt5RegExp) {
+            typeId = QMetaType::fromName("QRegExp").id();
+        }
+    }
 
     qint8 is_null = false;
     if (s.version() >= QDataStream::Qt_4_2)
         s >> is_null;
-    if (typeId == 27) {
-        // used to be QRegExp in Qt 4/5
-        typeId = QMetaType::type("QRegExp");
-    } else if (typeId == QVariant::UserType) {
+    if (typeId == QMetaType::User) {
         QByteArray name;
         s >> name;
-        typeId = QMetaType::type(name.constData());
+        typeId = QMetaType::fromName(name).id();
         if (typeId == QMetaType::UnknownType) {
             s.setStatus(QDataStream::ReadCorruptData);
             qWarning("QVariant::load: unknown user type with name %s.", name.constData());
@@ -2483,7 +1197,7 @@ void QVariant::load(QDataStream &s)
 
     if (!isValid()) {
         if (s.version() < QDataStream::Qt_5_0) {
-        // Since we wrote something, we should read something
+            // Since we wrote something, we should read something
             QString x;
             s >> x;
         }
@@ -2492,9 +1206,10 @@ void QVariant::load(QDataStream &s)
     }
 
     // const cast is safe since we operate on a newly constructed variant
-    if (!QMetaType::load(s, d.type().id(), const_cast<void *>(constData()))) {
+    void *data = const_cast<void *>(constData());
+    if (!d.type().load(s, data)) {
         s.setStatus(QDataStream::ReadCorruptData);
-        qWarning("QVariant::load: unable to load type %d.", d.type().id());
+        qWarning("QVariant::load: unable to load type %d.", d.typeId());
     }
 }
 
@@ -2506,11 +1221,32 @@ void QVariant::load(QDataStream &s)
 */
 void QVariant::save(QDataStream &s) const
 {
-    quint32 typeId = d.type().id();
+    quint32 typeId = d.typeId();
     bool saveAsUserType = false;
     if (typeId >= QMetaType::User) {
         typeId = QMetaType::User;
         saveAsUserType = true;
+    }
+    if (s.version() < QDataStream::Qt_6_0) {
+        // map to Qt 5 values
+        if (typeId == QMetaType::User) {
+            typeId = Qt5UserType;
+            if (!strcmp(d.type().name(), "QRegExp")) {
+                typeId = 27; // QRegExp in Qt 4/5
+            }
+        } else if (typeId > Qt5LastCoreType && typeId <= QMetaType::LastCoreType) {
+            // the type didn't exist in Qt 5
+            typeId = Qt5UserType;
+            saveAsUserType = true;
+        } else if (typeId >= QMetaType::FirstGuiType && typeId <= QMetaType::LastGuiType) {
+            typeId -= QMetaType::FirstGuiType - Qt5FirstGuiType;
+            if (typeId > Qt5LastGuiType) {
+                typeId = Qt5UserType;
+                saveAsUserType = true;
+            }
+        } else if (typeId == QMetaType::QSizePolicy) {
+            typeId = Qt5SizePolicy;
+        }
     }
     if (s.version() < QDataStream::Qt_4_0) {
         int i;
@@ -2525,41 +1261,32 @@ void QVariant::save(QDataStream &s) const
             return;
         }
     } else if (s.version() < QDataStream::Qt_5_0) {
-        if (typeId == QMetaType::User) {
+        if (typeId == Qt5UserType) {
             typeId = 127; // QVariant::UserType had this value in Qt4
             saveAsUserType = true;
-        } else if (typeId >= 128 - 97 && typeId <= LastCoreType) {
+        } else if (typeId >= 128 - 97 && typeId <= Qt5LastCoreType) {
             // In Qt4 id == 128 was FirstExtCoreType. In Qt5 ExtCoreTypes set was merged to CoreTypes
             // by moving all ids down by 97.
             typeId += 97;
-        } else if (typeId == QMetaType::QSizePolicy) {
+        } else if (typeId == Qt5SizePolicy) {
             typeId = 75;
-#if QT_CONFIG(shortcut)
-        } else if (typeId >= QMetaType::QKeySequence && typeId <= QMetaType::QQuaternion) {
-#else
-        } else if (typeId >= QMetaType::QPen && typeId <= QMetaType::QQuaternion) {
-#endif
+        } else if (typeId >= Qt5KeySequence && typeId <= Qt5QQuaternion) {
             // and as a result these types received lower ids too
-            typeId +=1;
-        } else if (typeId == QMetaType::QPolygonF || typeId == QMetaType::QUuid) {
+            typeId += 1;
+        } else if (typeId > Qt5QQuaternion || typeId == QMetaType::QUuid) {
             // These existed in Qt 4 only as a custom type
             typeId = 127;
             saveAsUserType = true;
         }
     }
     const char *typeName = nullptr;
-    if (saveAsUserType) {
-        typeName = QMetaType::typeName(d.type().id());
-        if (!strcmp(typeName, "QRegExp")) {
-            typeId = 27; // QRegExp in Qt 4/5
-            typeName = nullptr;
-        }
-    }
+    if (saveAsUserType)
+        typeName = d.type().name();
     s << typeId;
     if (s.version() >= QDataStream::Qt_4_2)
         s << qint8(d.is_null);
     if (typeName)
-        s << QMetaType::typeName(userType());
+        s << d.type().name();
 
     if (!isValid()) {
         if (s.version() < QDataStream::Qt_5_0)
@@ -2567,9 +1294,9 @@ void QVariant::save(QDataStream &s) const
         return;
     }
 
-    if (!QMetaType::save(s, d.type().id(), constData())) {
+    if (!d.type().save(s, constData())) {
         qWarning("QVariant::save: unable to save type '%s' (type id: %d).\n",
-                 QMetaType::typeName(d.type().id()), d.type().id());
+                 d.type().name(), d.typeId());
         Q_ASSERT_X(false, "QVariant::save", "Invalid type to save");
     }
 }
@@ -2581,7 +1308,7 @@ void QVariant::save(QDataStream &s) const
 
     \sa{Serializing Qt Data Types}{Format of the QDataStream operators}
 */
-QDataStream& operator>>(QDataStream &s, QVariant &p)
+QDataStream &operator>>(QDataStream &s, QVariant &p)
 {
     p.load(s);
     return s;
@@ -2592,34 +1319,23 @@ QDataStream& operator>>(QDataStream &s, QVariant &p)
 
     \sa{Serializing Qt Data Types}{Format of the QDataStream operators}
 */
-QDataStream& operator<<(QDataStream &s, const QVariant &p)
+QDataStream &operator<<(QDataStream &s, const QVariant &p)
 {
     p.save(s);
     return s;
 }
 
-/*!
+/*! \fn QDataStream& operator>>(QDataStream &s, QVariant::Type &p)
+    \deprecated
+
     Reads a variant type \a p in enum representation from the stream \a s.
 */
-QDataStream& operator>>(QDataStream &s, QVariant::Type &p)
-{
-    quint32 u;
-    s >> u;
-    p = (QVariant::Type)u;
 
-    return s;
-}
+/*! \fn QDataStream& operator<<(QDataStream &s, const QVariant::Type p)
+    \deprecated
 
-/*!
     Writes a variant type \a p to the stream \a s.
 */
-QDataStream& operator<<(QDataStream &s, const QVariant::Type p)
-{
-    s << static_cast<quint32>(p);
-
-    return s;
-}
-
 #endif //QT_NO_DATASTREAM
 
 /*!
@@ -2628,24 +1344,6 @@ QDataStream& operator<<(QDataStream &s, const QVariant::Type p)
     Returns \c true if the storage type of this variant is not
     QMetaType::UnknownType; otherwise returns \c false.
 */
-
-template<typename T>
-inline T qVariantToHelper(const QVariant::Private &d)
-{
-    QMetaType targetType = QMetaType::fromType<T>();
-    if (d.type() == targetType)
-        return *v_cast<T>(&d);
-
-    T ret;
-    if (d.type().id() >= QMetaType::User || targetType.id() >= QMetaType::User) {
-        const void * const from = constData(d);
-        if (QMetaType::convert(from, d.type().id(), &ret, targetType.id()))
-            return ret;
-    }
-
-    handlerManager[d.type().id()]->convert(&d, targetType.id(), &ret, nullptr);
-    return ret;
-}
 
 /*!
     \fn QStringList QVariant::toStringList() const
@@ -2659,7 +1357,7 @@ inline T qVariantToHelper(const QVariant::Private &d)
 */
 QStringList QVariant::toStringList() const
 {
-    return qVariantToHelper<QStringList>(d);
+    return qvariant_cast<QStringList>(*this);
 }
 
 /*!
@@ -2679,7 +1377,7 @@ QStringList QVariant::toStringList() const
 */
 QString QVariant::toString() const
 {
-    return qVariantToHelper<QString>(d);
+    return qvariant_cast<QString>(*this);
 }
 
 /*!
@@ -2690,7 +1388,7 @@ QString QVariant::toString() const
 */
 QVariantMap QVariant::toMap() const
 {
-    return qVariantToHelper<QVariantMap>(d);
+    return qvariant_cast<QVariantMap>(*this);
 }
 
 /*!
@@ -2701,7 +1399,7 @@ QVariantMap QVariant::toMap() const
 */
 QVariantHash QVariant::toHash() const
 {
-    return qVariantToHelper<QVariantHash>(d);
+    return qvariant_cast<QVariantHash>(*this);
 }
 
 /*!
@@ -2718,7 +1416,7 @@ QVariantHash QVariant::toHash() const
 */
 QDate QVariant::toDate() const
 {
-    return qVariantToHelper<QDate>(d);
+    return qvariant_cast<QDate>(*this);
 }
 
 /*!
@@ -2735,7 +1433,7 @@ QDate QVariant::toDate() const
 */
 QTime QVariant::toTime() const
 {
-    return qVariantToHelper<QTime>(d);
+    return qvariant_cast<QTime>(*this);
 }
 
 /*!
@@ -2752,7 +1450,7 @@ QTime QVariant::toTime() const
 */
 QDateTime QVariant::toDateTime() const
 {
-    return qVariantToHelper<QDateTime>(d);
+    return qvariant_cast<QDateTime>(*this);
 }
 
 /*!
@@ -2767,7 +1465,7 @@ QDateTime QVariant::toDateTime() const
 #if QT_CONFIG(easingcurve)
 QEasingCurve QVariant::toEasingCurve() const
 {
-    return qVariantToHelper<QEasingCurve>(d);
+    return qvariant_cast<QEasingCurve>(*this);
 }
 #endif
 
@@ -2782,7 +1480,7 @@ QEasingCurve QVariant::toEasingCurve() const
 */
 QByteArray QVariant::toByteArray() const
 {
-    return qVariantToHelper<QByteArray>(d);
+    return qvariant_cast<QByteArray>(*this);
 }
 
 #ifndef QT_NO_GEOM_VARIANT
@@ -2797,7 +1495,7 @@ QByteArray QVariant::toByteArray() const
 */
 QPoint QVariant::toPoint() const
 {
-    return qVariantToHelper<QPoint>(d);
+    return qvariant_cast<QPoint>(*this);
 }
 
 /*!
@@ -2810,7 +1508,7 @@ QPoint QVariant::toPoint() const
 */
 QRect QVariant::toRect() const
 {
-    return qVariantToHelper<QRect>(d);
+    return qvariant_cast<QRect>(*this);
 }
 
 /*!
@@ -2823,7 +1521,7 @@ QRect QVariant::toRect() const
 */
 QSize QVariant::toSize() const
 {
-    return qVariantToHelper<QSize>(d);
+    return qvariant_cast<QSize>(*this);
 }
 
 /*!
@@ -2836,7 +1534,7 @@ QSize QVariant::toSize() const
 */
 QSizeF QVariant::toSizeF() const
 {
-    return qVariantToHelper<QSizeF>(d);
+    return qvariant_cast<QSizeF>(*this);
 }
 
 /*!
@@ -2850,7 +1548,7 @@ QSizeF QVariant::toSizeF() const
 */
 QRectF QVariant::toRectF() const
 {
-    return qVariantToHelper<QRectF>(d);
+    return qvariant_cast<QRectF>(*this);
 }
 
 /*!
@@ -2863,7 +1561,7 @@ QRectF QVariant::toRectF() const
 */
 QLineF QVariant::toLineF() const
 {
-    return qVariantToHelper<QLineF>(d);
+    return qvariant_cast<QLineF>(*this);
 }
 
 /*!
@@ -2876,7 +1574,7 @@ QLineF QVariant::toLineF() const
 */
 QLine QVariant::toLine() const
 {
-    return qVariantToHelper<QLine>(d);
+    return qvariant_cast<QLine>(*this);
 }
 
 /*!
@@ -2890,7 +1588,7 @@ QLine QVariant::toLine() const
 */
 QPointF QVariant::toPointF() const
 {
-    return qVariantToHelper<QPointF>(d);
+    return qvariant_cast<QPointF>(*this);
 }
 
 #endif // QT_NO_GEOM_VARIANT
@@ -2906,7 +1604,7 @@ QPointF QVariant::toPointF() const
 */
 QUrl QVariant::toUrl() const
 {
-    return qVariantToHelper<QUrl>(d);
+    return qvariant_cast<QUrl>(*this);
 }
 #endif
 
@@ -2920,7 +1618,7 @@ QUrl QVariant::toUrl() const
 */
 QLocale QVariant::toLocale() const
 {
-    return qVariantToHelper<QLocale>(d);
+    return qvariant_cast<QLocale>(*this);
 }
 
 #if QT_CONFIG(regularexpression)
@@ -2935,7 +1633,7 @@ QLocale QVariant::toLocale() const
 */
 QRegularExpression QVariant::toRegularExpression() const
 {
-    return qVariantToHelper<QRegularExpression>(d);
+    return qvariant_cast<QRegularExpression>(*this);
 }
 #endif // QT_CONFIG(regularexpression)
 
@@ -2950,7 +1648,7 @@ QRegularExpression QVariant::toRegularExpression() const
 */
 QModelIndex QVariant::toModelIndex() const
 {
-    return qVariantToHelper<QModelIndex>(d);
+    return qvariant_cast<QModelIndex>(*this);
 }
 
 /*!
@@ -2963,7 +1661,7 @@ QModelIndex QVariant::toModelIndex() const
 */
 QPersistentModelIndex QVariant::toPersistentModelIndex() const
 {
-    return qVariantToHelper<QPersistentModelIndex>(d);
+    return qvariant_cast<QPersistentModelIndex>(*this);
 }
 #endif // QT_CONFIG(itemmodel)
 
@@ -2978,7 +1676,7 @@ QPersistentModelIndex QVariant::toPersistentModelIndex() const
 */
 QUuid QVariant::toUuid() const
 {
-    return qVariantToHelper<QUuid>(d);
+    return qvariant_cast<QUuid>(*this);
 }
 
 #ifndef QT_BOOTSTRAPPED
@@ -2992,7 +1690,7 @@ QUuid QVariant::toUuid() const
 */
 QJsonValue QVariant::toJsonValue() const
 {
-    return qVariantToHelper<QJsonValue>(d);
+    return qvariant_cast<QJsonValue>(*this);
 }
 
 /*!
@@ -3005,7 +1703,7 @@ QJsonValue QVariant::toJsonValue() const
 */
 QJsonObject QVariant::toJsonObject() const
 {
-    return qVariantToHelper<QJsonObject>(d);
+    return qvariant_cast<QJsonObject>(*this);
 }
 
 /*!
@@ -3018,7 +1716,7 @@ QJsonObject QVariant::toJsonObject() const
 */
 QJsonArray QVariant::toJsonArray() const
 {
-    return qVariantToHelper<QJsonArray>(d);
+    return qvariant_cast<QJsonArray>(*this);
 }
 
 /*!
@@ -3031,7 +1729,7 @@ QJsonArray QVariant::toJsonArray() const
 */
 QJsonDocument QVariant::toJsonDocument() const
 {
-    return qVariantToHelper<QJsonDocument>(d);
+    return qvariant_cast<QJsonDocument>(*this);
 }
 #endif // QT_BOOTSTRAPPED
 
@@ -3046,7 +1744,7 @@ QJsonDocument QVariant::toJsonDocument() const
 */
 QChar QVariant::toChar() const
 {
-    return qVariantToHelper<QChar>(d);
+    return qvariant_cast<QChar>(*this);
 }
 
 /*!
@@ -3057,27 +1755,23 @@ QChar QVariant::toChar() const
 */
 QBitArray QVariant::toBitArray() const
 {
-    return qVariantToHelper<QBitArray>(d);
+    return qvariant_cast<QBitArray>(*this);
 }
 
 template <typename T>
-inline T qNumVariantToHelper(const QVariant::Private &d,
-                             const HandlersManager &handlerManager, bool *ok, const T& val)
+inline T qNumVariantToHelper(const QVariant::Private &d, bool *ok, const T& val)
 {
-    const uint t = qMetaTypeId<T>();
+    QMetaType t = QMetaType::fromType<T>();
     if (ok)
         *ok = true;
 
-    if (d.type().id() == t)
+    if (d.type() == t)
         return val;
 
     T ret = 0;
-    if ((d.type().id() >= QMetaType::User || t >= QMetaType::User)
-        && QMetaType::convert(constData(d), d.type().id(), &ret, t))
-        return ret;
-
-    if (!handlerManager[d.type().id()]->convert(&d, t, &ret, ok) && ok)
-        *ok = false;
+    bool success = QMetaType::convert(d.type(), d.storage(), t, &ret);
+    if (ok)
+        *ok = success;
     return ret;
 }
 
@@ -3100,7 +1794,7 @@ inline T qNumVariantToHelper(const QVariant::Private &d,
 */
 int QVariant::toInt(bool *ok) const
 {
-    return qNumVariantToHelper<int>(d, handlerManager, ok, d.data.i);
+    return qNumVariantToHelper<int>(d, ok, d.get<int>());
 }
 
 /*!
@@ -3122,7 +1816,7 @@ int QVariant::toInt(bool *ok) const
 */
 uint QVariant::toUInt(bool *ok) const
 {
-    return qNumVariantToHelper<uint>(d, handlerManager, ok, d.data.u);
+    return qNumVariantToHelper<uint>(d, ok, d.get<unsigned int>());
 }
 
 /*!
@@ -3139,7 +1833,7 @@ uint QVariant::toUInt(bool *ok) const
 */
 qlonglong QVariant::toLongLong(bool *ok) const
 {
-    return qNumVariantToHelper<qlonglong>(d, handlerManager, ok, d.data.ll);
+    return qNumVariantToHelper<qlonglong>(d, ok, d.get<qlonglong>());
 }
 
 /*!
@@ -3156,7 +1850,7 @@ qlonglong QVariant::toLongLong(bool *ok) const
 */
 qulonglong QVariant::toULongLong(bool *ok) const
 {
-    return qNumVariantToHelper<qulonglong>(d, handlerManager, ok, d.data.ull);
+    return qNumVariantToHelper<qulonglong>(d, ok, d.get<qulonglong>());
 }
 
 /*!
@@ -3173,12 +1867,12 @@ qulonglong QVariant::toULongLong(bool *ok) const
 */
 bool QVariant::toBool() const
 {
-    if (d.type() == QMetaType::fromType<bool>())
-        return d.data.b;
+    auto boolType = QMetaType::fromType<bool>();
+    if (d.type() == boolType)
+        return d.get<bool>();
 
     bool res = false;
-    handlerManager[d.type().id()]->convert(&d, Bool, &res, nullptr);
-
+    QMetaType::convert(d.type(), constData(), boolType, &res);
     return res;
 }
 
@@ -3196,7 +1890,7 @@ bool QVariant::toBool() const
 */
 double QVariant::toDouble(bool *ok) const
 {
-    return qNumVariantToHelper<double>(d, handlerManager, ok, d.data.d);
+    return qNumVariantToHelper<double>(d, ok, d.get<double>());
 }
 
 /*!
@@ -3215,7 +1909,7 @@ double QVariant::toDouble(bool *ok) const
 */
 float QVariant::toFloat(bool *ok) const
 {
-    return qNumVariantToHelper<float>(d, handlerManager, ok, d.data.f);
+    return qNumVariantToHelper<float>(d, ok, d.get<float>());
 }
 
 /*!
@@ -3234,7 +1928,7 @@ float QVariant::toFloat(bool *ok) const
 */
 qreal QVariant::toReal(bool *ok) const
 {
-    return qNumVariantToHelper<qreal>(d, handlerManager, ok, d.data.real);
+    return qNumVariantToHelper<qreal>(d, ok, d.get<qreal>());
 }
 
 /*!
@@ -3246,434 +1940,33 @@ qreal QVariant::toReal(bool *ok) const
 */
 QVariantList QVariant::toList() const
 {
-    return qVariantToHelper<QVariantList>(d);
+    return qvariant_cast<QVariantList>(*this);
 }
-
-
-static const quint32 qCanConvertMatrix[QMetaType::LastCoreType + 1] =
-{
-/*Invalid*/     0,
-
-/*Bool*/          1 << QMetaType::Double     | 1 << QMetaType::Int        | 1 << QMetaType::UInt
-                | 1 << QMetaType::LongLong   | 1 << QMetaType::ULongLong  | 1 << QMetaType::QByteArray
-                | 1 << QMetaType::QString     | 1 << QMetaType::QChar,
-
-/*Int*/           1 << QMetaType::UInt       | 1 << QMetaType::QString     | 1 << QMetaType::Double
-                | 1 << QMetaType::Bool       | 1 << QMetaType::LongLong   | 1 << QMetaType::ULongLong
-                | 1 << QMetaType::QChar       | 1 << QMetaType::QByteArray  | 1 << QMetaType::Int,
-
-/*UInt*/          1 << QMetaType::Int        | 1 << QMetaType::QString     | 1 << QMetaType::Double
-                | 1 << QMetaType::Bool       | 1 << QMetaType::LongLong   | 1 << QMetaType::ULongLong
-                | 1 << QMetaType::QChar       | 1 << QMetaType::QByteArray,
-
-/*LLong*/         1 << QMetaType::Int        | 1 << QMetaType::QString     | 1 << QMetaType::Double
-                | 1 << QMetaType::Bool       | 1 << QMetaType::UInt       | 1 << QMetaType::ULongLong
-                | 1 << QMetaType::QChar       | 1 << QMetaType::QByteArray,
-
-/*ULlong*/        1 << QMetaType::Int        | 1 << QMetaType::QString     | 1 << QMetaType::Double
-                | 1 << QMetaType::Bool       | 1 << QMetaType::UInt       | 1 << QMetaType::LongLong
-                | 1 << QMetaType::QChar       | 1 << QMetaType::QByteArray,
-
-/*double*/        1 << QMetaType::Int        | 1 << QMetaType::QString     | 1 << QMetaType::ULongLong
-                | 1 << QMetaType::Bool       | 1 << QMetaType::UInt       | 1 << QMetaType::LongLong
-                | 1 << QMetaType::QByteArray,
-
-/*QChar*/         1 << QMetaType::Int        | 1 << QMetaType::UInt       | 1 << QMetaType::LongLong
-                | 1 << QMetaType::ULongLong,
-
-/*QMap*/          0,
-
-/*QList*/         1 << QMetaType::QStringList,
-
-/*QString*/       1 << QMetaType::QStringList | 1 << QMetaType::QByteArray  | 1 << QMetaType::Int
-                | 1 << QMetaType::UInt       | 1 << QMetaType::Bool       | 1 << QMetaType::Double
-                | 1 << QMetaType::QDate       | 1 << QMetaType::QTime       | 1 << QMetaType::QDateTime
-                | 1 << QMetaType::LongLong   | 1 << QMetaType::ULongLong  | 1 << QMetaType::QChar
-                | 1 << QMetaType::QUrl        | 1 << QMetaType::QUuid,
-
-/*QStringList*/   1 << QMetaType::QVariantList       | 1 << QMetaType::QString,
-
-/*QByteArray*/    1 << QMetaType::QString     | 1 << QMetaType::Int        | 1 << QMetaType::UInt | 1 << QMetaType::Bool
-                | 1 << QMetaType::Double     | 1 << QMetaType::LongLong   | 1 << QMetaType::ULongLong
-                | 1 << QMetaType::QUuid,
-
-/*QBitArray*/     0,
-
-/*QDate*/         1 << QMetaType::QString     | 1 << QMetaType::QDateTime,
-
-/*QTime*/         1 << QMetaType::QString     | 1 << QMetaType::QDateTime,
-
-/*QDateTime*/     1 << QMetaType::QString     | 1 << QMetaType::QDate,
-
-/*QUrl*/          1 << QMetaType::QString,
-
-/*QLocale*/       0,
-
-/*QRect*/         1 << QMetaType::QRectF,
-
-/*QRectF*/        1 << QMetaType::QRect,
-
-/*QSize*/         1 << QMetaType::QSizeF,
-
-/*QSizeF*/        1 << QMetaType::QSize,
-
-/*QLine*/         1 << QMetaType::QLineF,
-
-/*QLineF*/        1 << QMetaType::QLine,
-
-/*QPoint*/        1 << QMetaType::QPointF,
-
-/*QPointF*/       1 << QMetaType::QPoint,
-
-/*unused, was: QRegExp*/       0,
-
-/*QHash*/         0,
-
-/*QEasingCurve*/  0,
-
-/*QUuid*/         1 << QMetaType::QString     | 1 << QMetaType::QByteArray,
-};
-static const size_t qCanConvertMatrixMaximumTargetType = 8 * sizeof(*qCanConvertMatrix);
-
-#ifndef QT_BOOTSTRAPPED
-/*
-    Returns \c true if from inherits to.
-*/
-static bool canConvertMetaObject(const QMetaObject *from, const QMetaObject *to)
-{
-    if (from && to == &QObject::staticMetaObject)
-        return true;
-
-    while (from) {
-        if (from == to)
-            return true;
-        from = from->superClass();
-    }
-
-    return false;
-}
-#endif
-
-static bool canConvertMetaObject(int fromId, int toId, QObject *fromObject)
-{
-#ifndef QT_BOOTSTRAPPED
-    QMetaType toType(toId);
-    if ((QMetaType::typeFlags(fromId) & QMetaType::PointerToQObject) && (toType.flags() & QMetaType::PointerToQObject)) {
-        if (!fromObject)
-            return true;
-        return canConvertMetaObject(fromObject->metaObject(), toType.metaObject());
-    }
-#else
-    Q_UNUSED(fromId);
-    Q_UNUSED(toId);
-    Q_UNUSED(fromObject);
-#endif
-    return false;
-}
-
 
 /*!
+    \fn bool QVariant::canConvert(int targetTypeId) const
+    \overload
+    \obsolete
+
+    \sa QMetaType::canConvert()
+*/
+
+/*!
+    \fn bool QVariant::canConvert(QMetaType type) const
+    \since 6.0
+
     Returns \c true if the variant's type can be cast to the requested
-    type, \a targetTypeId. Such casting is done automatically when calling the
+    type, \a type. Such casting is done automatically when calling the
     toInt(), toBool(), ... methods.
 
-    The following casts are done automatically:
-
-    \table
-    \header \li Type \li Automatically Cast To
-    \row \li \l QMetaType::Bool \li \l QMetaType::QChar, \l QMetaType::Double,
-        \l QMetaType::Int, \l QMetaType::LongLong, \l QMetaType::QString,
-        \l QMetaType::UInt, \l QMetaType::ULongLong
-    \row \li \l QMetaType::QByteArray \li \l QMetaType::Double,
-        \l QMetaType::Int, \l QMetaType::LongLong, \l QMetaType::QString,
-        \l QMetaType::UInt, \l QMetaType::ULongLong, \l QMetaType::QUuid
-    \row \li \l QMetaType::QChar \li \l QMetaType::Bool, \l QMetaType::Int,
-        \l QMetaType::UInt, \l QMetaType::LongLong, \l QMetaType::ULongLong
-    \row \li \l QMetaType::QColor \li \l QMetaType::QString
-    \row \li \l QMetaType::QDate \li \l QMetaType::QDateTime,
-        \l QMetaType::QString
-    \row \li \l QMetaType::QDateTime \li \l QMetaType::QDate,
-        \l QMetaType::QString, \l QMetaType::QTime
-    \row \li \l QMetaType::Double \li \l QMetaType::Bool, \l QMetaType::Int,
-        \l QMetaType::LongLong, \l QMetaType::QString, \l QMetaType::UInt,
-        \l QMetaType::ULongLong
-    \row \li \l QMetaType::QFont \li \l QMetaType::QString
-    \row \li \l QMetaType::Int \li \l QMetaType::Bool, \l QMetaType::QChar,
-        \l QMetaType::Double, \l QMetaType::LongLong, \l QMetaType::QString,
-        \l QMetaType::UInt, \l QMetaType::ULongLong
-    \row \li \l QMetaType::QKeySequence \li \l QMetaType::Int,
-        \l QMetaType::QString
-    \row \li \l QMetaType::QVariantList \li \l QMetaType::QStringList (if the
-        list's items can be converted to QStrings)
-    \row \li \l QMetaType::LongLong \li \l QMetaType::Bool,
-        \l QMetaType::QByteArray, \l QMetaType::QChar, \l QMetaType::Double,
-        \l QMetaType::Int, \l QMetaType::QString, \l QMetaType::UInt,
-        \l QMetaType::ULongLong
-    \row \li \l QMetaType::QPoint \li QMetaType::QPointF
-    \row \li \l QMetaType::QRect \li QMetaType::QRectF
-    \row \li \l QMetaType::QString \li \l QMetaType::Bool,
-        \l QMetaType::QByteArray, \l QMetaType::QChar, \l QMetaType::QColor,
-        \l QMetaType::QDate, \l QMetaType::QDateTime, \l QMetaType::Double,
-        \l QMetaType::QFont, \l QMetaType::Int, \l QMetaType::QKeySequence,
-        \l QMetaType::LongLong, \l QMetaType::QStringList, \l QMetaType::QTime,
-        \l QMetaType::UInt, \l QMetaType::ULongLong, \l QMetaType::QUuid
-    \row \li \l QMetaType::QStringList \li \l QMetaType::QVariantList,
-        \l QMetaType::QString (if the list contains exactly one item)
-    \row \li \l QMetaType::QTime \li \l QMetaType::QString
-    \row \li \l QMetaType::UInt \li \l QMetaType::Bool, \l QMetaType::QChar,
-        \l QMetaType::Double, \l QMetaType::Int, \l QMetaType::LongLong,
-        \l QMetaType::QString, \l QMetaType::ULongLong
-    \row \li \l QMetaType::ULongLong \li \l QMetaType::Bool,
-        \l QMetaType::QChar, \l QMetaType::Double, \l QMetaType::Int,
-        \l QMetaType::LongLong, \l QMetaType::QString, \l QMetaType::UInt
-    \row \li \l QMetaType::QUuid \li \l QMetaType::QByteArray, \l QMetaType::QString
-    \endtable
-
-    A QVariant containing a pointer to a type derived from QObject will also return true for this
-    function if a qobject_cast to the type described by \a targetTypeId would succeed. Note that
-    this only works for QObject subclasses which use the Q_OBJECT macro.
-
-    A QVariant containing a sequential container will also return true for this
-    function if the \a targetTypeId is QVariantList. It is possible to iterate over
-    the contents of the container without extracting it as a (copied) QVariantList:
-
-    \snippet code/src_corelib_kernel_qvariant.cpp 9
-
-    This requires that the value_type of the container is itself a metatype.
-
-    Similarly, a QVariant containing a sequential container will also return true for this
-    function the \a targetTypeId is QVariantHash or QVariantMap. It is possible to iterate over
-    the contents of the container without extracting it as a (copied) QVariantHash or QVariantMap:
-
-    \snippet code/src_corelib_kernel_qvariant.cpp 10
-
-    \sa convert(), QSequentialIterable, Q_DECLARE_SEQUENTIAL_CONTAINER_METATYPE(), QAssociativeIterable,
-        Q_DECLARE_ASSOCIATIVE_CONTAINER_METATYPE()
+    \sa QMetaType::canConvert()
 */
-bool QVariant::canConvert(int targetTypeId) const
-{
-    if (d.type().id() == targetTypeId)
-        return true;
 
-#if QT_CONFIG(itemmodel)
-    if ((targetTypeId == QMetaType::QModelIndex
-         && d.type().id() == QMetaType::QPersistentModelIndex)
-        || (targetTypeId == QMetaType::QPersistentModelIndex
-            && d.type().id() == QMetaType::QModelIndex))
-        return true;
-#endif
-
-    if (targetTypeId == QMetaType::QVariantList
-        && (d.type().id() == QMetaType::QVariantList || d.type().id() == QMetaType::QStringList
-            || d.type().id() == QMetaType::QByteArrayList
-            || QMetaType::hasRegisteredConverterFunction(
-                    d.type().id(), qMetaTypeId<QtMetaTypePrivate::QSequentialIterableImpl>()))) {
-        return true;
-    }
-
-    if ((targetTypeId == QMetaType::QVariantHash || targetTypeId == QMetaType::QVariantMap)
-        && (d.type().id() == QMetaType::QVariantMap || d.type().id() == QMetaType::QVariantHash
-            || QMetaType::hasRegisteredConverterFunction(
-                    d.type().id(), qMetaTypeId<QtMetaTypePrivate::QAssociativeIterableImpl>()))) {
-        return true;
-    }
-
-    if (targetTypeId == qMetaTypeId<QPair<QVariant, QVariant>>()
-        && QMetaType::hasRegisteredConverterFunction(
-                d.type().id(), qMetaTypeId<QtMetaTypePrivate::QPairVariantInterfaceImpl>())) {
-        return true;
-    }
-
-    if ((d.type().id() >= QMetaType::User || targetTypeId >= QMetaType::User)
-        && QMetaType::hasRegisteredConverterFunction(d.type().id(), targetTypeId)) {
-        return true;
-    }
-
-    // TODO Reimplement this function, currently it works but it is a historical mess.
-    uint currentType = d.type().id();
-    if (currentType == QMetaType::SChar || currentType == QMetaType::Char)
-        currentType = QMetaType::UInt;
-    if (targetTypeId == QMetaType::SChar || currentType == QMetaType::Char)
-        targetTypeId = QMetaType::UInt;
-    if (currentType == QMetaType::Short || currentType == QMetaType::UShort)
-        currentType = QMetaType::Int;
-    if (targetTypeId == QMetaType::Short || currentType == QMetaType::UShort)
-        targetTypeId = QMetaType::Int;
-    if (currentType == QMetaType::Float)
-        currentType = QMetaType::Double;
-    if (targetTypeId == QMetaType::Float)
-        targetTypeId = QMetaType::Double;
-
-    if (currentType == uint(targetTypeId))
-        return true;
-
-    if (targetTypeId < 0)
-        return false;
-    if (targetTypeId >= QMetaType::User) {
-        if (QMetaType::typeFlags(targetTypeId) & QMetaType::IsEnumeration) {
-            targetTypeId = QMetaType::Int;
-        } else {
-            return canConvertMetaObject(currentType, targetTypeId, d.data.o);
-        }
-    }
-
-    if (currentType == QMetaType::QJsonValue || targetTypeId == QMetaType::QJsonValue) {
-        switch (currentType == QMetaType::QJsonValue ? targetTypeId : currentType) {
-        case QMetaType::Nullptr:
-        case QMetaType::QString:
-        case QMetaType::Bool:
-        case QMetaType::Int:
-        case QMetaType::UInt:
-        case QMetaType::Double:
-        case QMetaType::Float:
-        case QMetaType::ULong:
-        case QMetaType::Long:
-        case QMetaType::LongLong:
-        case QMetaType::ULongLong:
-        case QMetaType::UShort:
-        case QMetaType::UChar:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-        case QMetaType::QVariantList:
-        case QMetaType::QVariantMap:
-        case QMetaType::QVariantHash:
-        case QMetaType::QCborValue:
-        case QMetaType::QCborArray:
-        case QMetaType::QCborMap:
-            return true;
-        default:
-            return false;
-        }
-    }
-    if (currentType == QMetaType::QJsonArray)
-        return targetTypeId == QMetaType::QVariantList || targetTypeId == QMetaType::QCborValue
-                || targetTypeId == QMetaType::QCborArray;
-    if (currentType == QMetaType::QJsonObject)
-        return targetTypeId == QMetaType::QVariantMap || targetTypeId == QMetaType::QVariantHash
-                || targetTypeId == QMetaType::QCborValue || targetTypeId == QMetaType::QCborMap;
-
-    if (currentType == QMetaType::QCborValue || targetTypeId == QMetaType::QCborValue) {
-        switch (currentType == QMetaType::QCborValue ? targetTypeId : currentType) {
-        case QMetaType::UnknownType:
-        case QMetaType::Nullptr:
-        case QMetaType::Bool:
-        case QMetaType::Int:
-        case QMetaType::UInt:
-        case QMetaType::Double:
-        case QMetaType::Float:
-        case QMetaType::ULong:
-        case QMetaType::Long:
-        case QMetaType::LongLong:
-        case QMetaType::ULongLong:
-        case QMetaType::UShort:
-        case QMetaType::UChar:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::Short:
-        case QMetaType::QString:
-        case QMetaType::QByteArray:
-        case QMetaType::QDateTime:
-        case QMetaType::QUrl:
-#if QT_CONFIG(regularexpression)
-        case QMetaType::QRegularExpression:
-#endif
-        case QMetaType::QUuid:
-        case QMetaType::QVariantList:
-        case QMetaType::QVariantMap:
-        case QMetaType::QVariantHash:
-        case QMetaType::QJsonValue:
-        case QMetaType::QJsonArray:
-        case QMetaType::QJsonObject:
-        case QMetaType::QJsonDocument:
-        case QMetaType::QCborArray:
-        case QMetaType::QCborMap:
-        case QMetaType::QCborSimpleType:
-            return true;
-        default:
-            return false;
-        }
-    }
-    if (currentType == QMetaType::QCborArray)
-        return targetTypeId == QMetaType::QVariantList || targetTypeId == QMetaType::QCborValue
-                || targetTypeId == QMetaType::QJsonArray;
-    if (currentType == QMetaType::QCborMap)
-        return targetTypeId == QMetaType::QVariantMap || targetTypeId == QMetaType::QVariantHash
-                || targetTypeId == QMetaType::QCborValue || targetTypeId == QMetaType::QJsonObject;
-
-    // FIXME It should be LastCoreType intead of Uuid
-    if (currentType > int(QMetaType::QUuid) || targetTypeId > int(QMetaType::QUuid)) {
-        switch (uint(targetTypeId)) {
-        case QVariant::Int:
-#if QT_CONFIG(shortcut)
-            if (currentType == QVariant::KeySequence)
-                return true;
-            Q_FALLTHROUGH();
-#endif
-        case QVariant::UInt:
-        case QVariant::LongLong:
-        case QVariant::ULongLong:
-               return currentType == QMetaType::ULong
-                   || currentType == QMetaType::Long
-                   || currentType == QMetaType::UShort
-                   || currentType == QMetaType::UChar
-                   || currentType == QMetaType::Char
-                   || currentType == QMetaType::SChar
-                   || currentType == QMetaType::Short
-                   || QMetaType::typeFlags(currentType) & QMetaType::IsEnumeration;
-        case QVariant::Image:
-            return currentType == QVariant::Pixmap || currentType == QVariant::Bitmap;
-        case QVariant::Pixmap:
-            return currentType == QVariant::Image || currentType == QVariant::Bitmap
-                              || currentType == QVariant::Brush;
-        case QVariant::Bitmap:
-            return currentType == QVariant::Pixmap || currentType == QVariant::Image;
-        case QVariant::ByteArray:
-            return currentType == QVariant::Color || currentType == QMetaType::Nullptr
-                              || ((QMetaType::typeFlags(currentType) & QMetaType::IsEnumeration) && QMetaType::metaObjectForType(currentType));
-        case QVariant::String:
-            return currentType == QVariant::Font
-                   || currentType == QVariant::Color || currentType == QMetaType::Nullptr
-#if QT_CONFIG(shortcut)
-                   || currentType == QVariant::KeySequence
-#endif
-                   || ((QMetaType::typeFlags(currentType) & QMetaType::IsEnumeration) && QMetaType::metaObjectForType(currentType));
-#if QT_CONFIG(shortcut)
-        case QVariant::KeySequence:
-            return currentType == QVariant::String || currentType == QVariant::Int;
-#endif
-        case QVariant::Font:
-            return currentType == QVariant::String;
-        case QVariant::Color:
-            return currentType == QVariant::String || currentType == QVariant::ByteArray
-                              || currentType == QVariant::Brush;
-        case QVariant::Brush:
-            return currentType == QVariant::Color || currentType == QVariant::Pixmap;
-        case QMetaType::Long:
-        case QMetaType::Char:
-        case QMetaType::SChar:
-        case QMetaType::UChar:
-        case QMetaType::ULong:
-        case QMetaType::Short:
-        case QMetaType::UShort:
-            return currentType == QVariant::Int
-                || (currentType < qCanConvertMatrixMaximumTargetType
-                    && qCanConvertMatrix[QVariant::Int] & (1U << currentType))
-                || QMetaType::typeFlags(currentType) & QMetaType::IsEnumeration;
-        case QMetaType::QObjectStar:
-            return canConvertMetaObject(currentType, targetTypeId, d.data.o);
-        default:
-            return false;
-        }
-    }
-
-    if (targetTypeId == String && currentType == StringList)
-        return v_cast<QStringList>(&d)->count() == 1;
-    return currentType < qCanConvertMatrixMaximumTargetType
-        && qCanConvertMatrix[targetTypeId] & (1U << currentType);
-}
 
 /*!
+    \fn bool QVariant::convert(int targetTypeId)
+    \obsolete
+
     Casts the variant to the requested type, \a targetTypeId. If the cast cannot be
     done, the variant is still changed to the requested type, but is left in a cleared
     null state similar to that constructed by QVariant(Type).
@@ -3693,108 +1986,119 @@ bool QVariant::canConvert(int targetTypeId) const
     \sa canConvert(int targetTypeId), clear()
 */
 
-bool QVariant::convert(int targetTypeId)
+/*!
+    Casts the variant to the requested type, \a targetType. If the cast cannot be
+    done, the variant is still changed to the requested type, but is left in a cleared
+    null state similar to that constructed by QVariant(Type).
+
+    Returns \c true if the current type of the variant was successfully cast;
+    otherwise returns \c false.
+
+    A QVariant containing a pointer to a type derived from QObject will also convert
+    and return true for this function if a qobject_cast to the type described
+    by \a targetType would succeed. Note that this only works for QObject subclasses
+    which use the Q_OBJECT macro.
+
+    \note converting QVariants that are null due to not being initialized or having
+    failed a previous conversion will always fail, changing the type, remaining null,
+    and returning \c false.
+
+    \since 6.0
+
+    \sa canConvert(int targetTypeId), clear()
+*/
+
+bool QVariant::convert(QMetaType targetType)
 {
-    if (d.type().id() == targetTypeId)
-        return true;
+    if (d.type() == targetType)
+        return targetType.isValid();
 
     QVariant oldValue = *this;
 
     clear();
-    if (!oldValue.canConvert(targetTypeId))
+    create(targetType.id(), nullptr);
+    if (!oldValue.canConvert(targetType))
         return false;
 
-    create(targetTypeId, nullptr);
     // Fail if the value is not initialized or was forced null by a previous failed convert.
-    if (oldValue.d.is_null && oldValue.d.type().id() != QMetaType::Nullptr)
+    if (oldValue.d.is_null && oldValue.d.typeId() != QMetaType::Nullptr)
         return false;
 
-    if ((QMetaType::typeFlags(oldValue.userType()) & QMetaType::PointerToQObject) && (QMetaType::typeFlags(targetTypeId) & QMetaType::PointerToQObject)) {
-        create(targetTypeId, &oldValue.d.data.o);
-        return true;
-    }
-
-    bool isOk = true;
-    int converterType = std::max(oldValue.userType(), targetTypeId);
-    if (!handlerManager[converterType]->convert(&oldValue.d, targetTypeId, data(), &isOk))
-        isOk = false;
-    d.is_null = !isOk;
-    return isOk;
+    bool ok = QMetaType::convert(oldValue.d.type(), oldValue.constData(), targetType, data());
+    d.is_null = !ok;
+    return ok;
 }
 
 /*!
-  \fn bool QVariant::convert(const int type, void *ptr) const
+  \fn bool QVariant::convert(int type, void *ptr) const
   \internal
   Created for qvariant_cast() usage
 */
-bool QVariant::convert(const int type, void *ptr) const
+bool QVariant::convert(int type, void *ptr) const
 {
-    return handlerManager[type]->convert(&d, type, ptr, nullptr);
+    return QMetaType::convert(d.type(), constData(), QMetaType(type), ptr);
 }
 
+/*!
+  \internal
+*/
+bool QVariant::view(int type, void *ptr)
+{
+    return QMetaType::view(d.type(), data(), QMetaType(type), ptr);
+}
 
 /*!
-    \fn bool operator==(const QVariant &v1, const QVariant &v2)
-
-    \relates QVariant
+    \fn bool QVariant::operator==(const QVariant &v1, const QVariant &v2)
 
     Returns \c true if \a v1 and \a v2 are equal; otherwise returns \c false.
 
-    If \a v1 and \a v2 have the same \l{QVariant::}{type()}, the
-    type's equality operator is used for comparison. If not, it is
-    attempted to \l{QVariant::}{convert()} \a v2 to the same type as
-    \a v1. See \l{QVariant::}{canConvert()} for a list of possible
-    conversions.
+    QVariant uses the equality operator of the type() contained to check for
+    equality.
+
+    Variants of different types will always compare as not equal with a few
+    exceptions:
+
+    \list
+    \li If both types are numeric types (integers and floatins point numbers)
+    Qt will compare those types using standard C++ type promotion rules.
+    \li If one type is numeric and the other one a QString, Qt will try to
+    convert the QString to a matching numeric type and if successful compare
+    those.
+    \li If both variants contain pointers to QObject derived types, QVariant
+    will check whether the types are related and point to the same object.
+    \endlist
 
     The result of the function is not affected by the result of QVariant::isNull,
     which means that two values can be equal even if one of them is null and
     another is not.
-
-    \warning To make this function work with a custom type registered with
-    qRegisterMetaType(), its comparison operator must be registered using
-    QMetaType::registerComparators().
 */
-/*!
-    \fn bool operator!=(const QVariant &v1, const QVariant &v2)
 
-    \relates QVariant
+/*!
+    \fn bool QVariant::operator!=(const QVariant &v1, const QVariant &v2)
 
     Returns \c false if \a v1 and \a v2 are equal; otherwise returns \c true.
 
-    \warning To make this function work with a custom type registered with
-    qRegisterMetaType(), its comparison operator must be registered using
-    QMetaType::registerComparators().
-*/
+    QVariant uses the equality operator of the type() contained to check for
+    equality.
 
-/*! \fn bool QVariant::operator==(const QVariant &v) const
+    Variants of different types will always compare as not equal with a few
+    exceptions:
 
-    Compares this QVariant with \a v and returns \c true if they are
-    equal; otherwise returns \c false.
-
-    QVariant uses the equality operator of the type() it contains to
-    check for equality. QVariant will try to convert() \a v if its
-    type is not the same as this variant's type. See canConvert() for
-    a list of possible conversions.
-
-    \warning To make this function work with a custom type registered with
-    qRegisterMetaType(), its comparison operator must be registered using
-    QMetaType::registerComparators().
-*/
-
-/*!
-    \fn bool QVariant::operator!=(const QVariant &v) const
-
-    Compares this QVariant with \a v and returns \c true if they are not
-    equal; otherwise returns \c false.
-
-    \warning To make this function work with a custom type registered with
-    qRegisterMetaType(), its comparison operator must be registered using
-    QMetaType::registerComparators().
+    \list
+    \li If both types are numeric types (integers and floatins point numbers)
+    Qt will compare those types using standard C++ type promotion rules.
+    \li If one type is numeric and the other one a QString, Qt will try to
+    convert the QString to a matching numeric type and if successful compare
+    those.
+    \li If both variants contain pointers to QObject derived types, QVariant
+    will check whether the types are related and point to the same object.
+    \endlist
 */
 
 static bool qIsNumericType(uint tp)
 {
     static const qulonglong numericTypeBits =
+            Q_UINT64_C(1) << QMetaType::QString |
             Q_UINT64_C(1) << QMetaType::Bool |
             Q_UINT64_C(1) << QMetaType::Double |
             Q_UINT64_C(1) << QMetaType::Float |
@@ -3842,6 +2146,10 @@ static int numericTypePromotion(uint t1, uint t2)
     Q_ASSERT(qIsNumericType(t1));
     Q_ASSERT(qIsNumericType(t2));
 
+    if ((t1 == QMetaType::Bool && t2 == QMetaType::QString) ||
+        (t2 == QMetaType::Bool && t1 == QMetaType::QString))
+        return QMetaType::Bool;
+
     // C++ integral ranks: (4.13 Integer conversion rank [conv.rank])
     //   bool < signed char < short < int < long < long long
     //   unsigneds have the same rank as their signed counterparts
@@ -3883,152 +2191,275 @@ static int numericTypePromotion(uint t1, uint t2)
     return QMetaType::Int;
 }
 
-static int integralCompare(uint promotedType, const QVariant::Private *d1, const QVariant::Private *d2)
+static bool integralEquals(uint promotedType, const QVariant::Private *d1, const QVariant::Private *d2)
 {
     // use toLongLong to retrieve the data, it gets us all the bits
     bool ok;
-    qlonglong l1 = qConvertToNumber(d1, &ok);
-    Q_ASSERT(ok);
+    qlonglong l1 = qConvertToNumber(d1, &ok, promotedType == QMetaType::Bool);
+    if (!ok)
+        return false;
 
-    qlonglong l2 = qConvertToNumber(d2, &ok);
-    Q_ASSERT(ok);
+    qlonglong l2 = qConvertToNumber(d2, &ok, promotedType == QMetaType::Bool);
+    if (!ok)
+        return false;
 
+    if (promotedType == QMetaType::Bool)
+        return bool(l1) == bool(l2);
     if (promotedType == QMetaType::Int)
-        return int(l1) < int(l2) ? -1 : int(l1) == int(l2) ? 0 : 1;
+        return int(l1) == int(l2);
     if (promotedType == QMetaType::UInt)
-        return uint(l1) < uint(l2) ? -1 : uint(l1) == uint(l2) ? 0 : 1;
+        return uint(l1) == uint(l2);
     if (promotedType == QMetaType::LongLong)
-        return l1 < l2 ? -1 : l1 == l2 ? 0 : 1;
+        return l1 == l2;
     if (promotedType == QMetaType::ULongLong)
-        return qulonglong(l1) < qulonglong(l2) ? -1 : qulonglong(l1) == qulonglong(l2) ? 0 : 1;
+        return qulonglong(l1) == qulonglong(l2);
 
     Q_UNREACHABLE();
     return 0;
 }
 
-static int numericCompare(const QVariant::Private *d1, const QVariant::Private *d2)
+namespace {
+template<typename Numeric>
+int spaceShip(Numeric lhs, Numeric rhs)
 {
-    uint promotedType = numericTypePromotion(d1->type().id(), d2->type().id());
+    bool smaller;
+    if constexpr (std::is_same_v<Numeric, QObject *>)
+        smaller = std::less<QObject *>()(lhs, rhs); // can't use less all the time because of bool
+    else
+        smaller = lhs < rhs;
+    if (smaller)
+        return -1;
+    else if (lhs == rhs)
+        return 0;
+    else
+        return 1;
+}
+}
+
+static std::optional<int> integralCompare(uint promotedType, const QVariant::Private *d1, const QVariant::Private *d2)
+{
+    // use toLongLong to retrieve the data, it gets us all the bits
+    bool ok;
+    qlonglong l1 = qConvertToNumber(d1, &ok, promotedType == QMetaType::Bool);
+    if (!ok)
+        return std::nullopt;
+
+    qlonglong l2 = qConvertToNumber(d2, &ok, promotedType == QMetaType::Bool);
+    if (!ok)
+        return std::nullopt;
+
+    if (promotedType == QMetaType::Bool)
+        return spaceShip<bool>(l1, l2);
+    if (promotedType == QMetaType::Int)
+        return spaceShip<int>(l1, l2);
+    if (promotedType == QMetaType::UInt)
+        return spaceShip<uint>(l1, l2);
+    if (promotedType == QMetaType::LongLong)
+        return spaceShip<qlonglong>(l1, l2);
+    if (promotedType == QMetaType::ULongLong)
+        return spaceShip<qulonglong>(l1, l2);
+
+    Q_UNREACHABLE();
+    return 0;
+}
+
+static std::optional<int> numericCompare(const QVariant::Private *d1, const QVariant::Private *d2)
+{
+    uint promotedType = numericTypePromotion(d1->typeId(), d2->typeId());
     if (promotedType != QMetaType::QReal)
         return integralCompare(promotedType, d1, d2);
+    // qreal comparisons
+    bool ok;
+    qreal r1 = qConvertToRealNumber(d1, &ok);
+    if (!ok)
+        return std::nullopt;
+    qreal r2 = qConvertToRealNumber(d2, &ok);
+    if (!ok)
+        return std::nullopt;
+    if (r1 == r2)
+        return 0;
+
+    if (std::isnan(r1) || std::isnan(r2))
+        return std::nullopt;
+    return spaceShip<qreal>(r1, r2);
+}
+
+static bool numericEquals(const QVariant::Private *d1, const QVariant::Private *d2)
+{
+    uint promotedType = numericTypePromotion(d1->typeId(), d2->typeId());
+    if (promotedType != QMetaType::QReal)
+        return integralEquals(promotedType, d1, d2);
 
     // qreal comparisons
     bool ok;
     qreal r1 = qConvertToRealNumber(d1, &ok);
-    Q_ASSERT(ok);
+    if (!ok)
+        return false;
     qreal r2 = qConvertToRealNumber(d2, &ok);
-    Q_ASSERT(ok);
+    if (!ok)
+        return false;
     if (r1 == r2)
-        return 0;
+        return true;
 
-    // only do fuzzy comparisons for finite, non-zero numbers
-    int c1 = qFpClassify(r1);
-    int c2 = qFpClassify(r2);
-    if ((c1 == FP_NORMAL || c1 == FP_SUBNORMAL) && (c2 == FP_NORMAL || c2 == FP_SUBNORMAL)) {
-        if (qFuzzyCompare(r1, r2))
-            return 0;
-    }
-
-    return r1 < r2 ? -1 : 1;
+    return false;
 }
+
+#ifndef QT_BOOTSTRAPPED
+static bool canConvertMetaObject(QMetaType fromType, QMetaType toType)
+{
+    if ((fromType.flags() & QMetaType::PointerToQObject) && (toType.flags() & QMetaType::PointerToQObject)) {
+        return fromType.metaObject()->inherits(toType.metaObject()) ||
+                toType.metaObject()->inherits(fromType.metaObject());
+    }
+    return false;
+}
+
+static bool pointerEquals(const QVariant::Private *d1, const QVariant::Private *d2)
+{
+    // simply check whether both types point to the same data
+    return d1->get<QObject *>() == d2->get<QObject *>();
+}
+
+static int pointerCompare(const QVariant::Private *d1, const QVariant::Private *d2)
+{
+    return spaceShip<QObject *>(d1->get<QObject *>(), d2->get<QObject *>());
+}
+#endif
 
 /*!
     \internal
  */
-bool QVariant::cmp(const QVariant &v) const
+bool QVariant::equals(const QVariant &v) const
 {
-    auto cmp_helper = [](const QVariant::Private &d1, const QVariant::Private &d2) {
-        Q_ASSERT(d1.type() == d2.type());
-        if (d1.type().id() >= QMetaType::User) {
-            int result;
-            if (QMetaType::equals(QT_PREPEND_NAMESPACE(constData(d1)),
-                                  QT_PREPEND_NAMESPACE(constData(d2)), d1.type().id(), &result))
-                return result == 0;
-        }
-        return handlerManager[d1.type().id()]->compare(&d1, &d2);
-    };
+    auto metatype = d.type();
 
-    // try numerics first, with C++ type promotion rules (no conversion)
-    if (qIsNumericType(d.type().id()) && qIsNumericType(v.d.type().id()))
-        return numericCompare(&d, &v.d) == 0;
-
-    if (d.type() == v.d.type())
-        return cmp_helper(d, v.d);
-
-    QVariant v1 = *this;
-    QVariant v2 = v;
-    if (v2.canConvert(v1.d.type().id())) {
-        if (!v2.convert(v1.d.type().id()))
-            return false;
-    } else {
-        // try the opposite conversion, it might work
-        qSwap(v1, v2);
-        if (!v2.convert(v1.d.type().id()))
-            return false;
+    if (metatype != v.metaType()) {
+        // try numeric comparisons, with C++ type promotion rules (no conversion)
+        if (qIsNumericType(metatype.id()) && qIsNumericType(v.d.typeId()))
+            return numericEquals(&d, &v.d);
+#ifndef QT_BOOTSTRAPPED
+        // if both types are related pointers to QObjects, check if they point to the same object
+        if (canConvertMetaObject(metatype, v.metaType()))
+            return pointerEquals(&d, &v.d);
+#endif
+        return false;
     }
-    return cmp_helper(v1.d, v2.d);
+
+    // For historical reasons: QVariant() == QVariant()
+    if (!metatype.isValid())
+        return true;
+
+    return metatype.equals(d.storage(), v.d.storage());
 }
 
-/*!
-    \internal
- */
-
-const void *QVariant::constData() const
+static QPartialOrdering convertOptionalToPartialOrdering(const std::optional<int> &opt)
 {
-    return d.is_shared ? d.data.shared->ptr : reinterpret_cast<const void *>(&d.data);
+    if (!opt)
+        return QPartialOrdering::Unordered;
+    else if (*opt < 0)
+        return QPartialOrdering::Less;
+    else if (*opt == 0)
+        return QPartialOrdering::Equivalent;
+    else
+        return QPartialOrdering::Greater;
 }
 
 /*!
+    Compares the objects at \a lhs and \a rhs for ordering.
+
+    Returns QPartialOrdering::Unordered if comparison is not supported
+    or the values are unordered. Otherwise, returns
+    QPartialOrdering::Less, QPartialOrdering::Equivalent or
+    QPartialOrdering::Greater if \a lhs is less than, equivalent
+    to or greater than \a rhs, respectively.
+
+    If the variants contain data with a different metatype, the values are considered
+    unordered unless they are both of numeric or pointer types, where regular numeric or
+    pointer comparison rules will be used.
+    \note: If a numeric comparison is done and at least one value is NaN, QPartialOrdering::Unordered
+    is returned.
+
+    If both variants contain data of the same metatype, the method will use the
+    QMetaType::compare method to determine the ordering of the two variants, which can
+    also indicate that it can't establish an ordering between the two values.
+
+    \since 6.0
+    \sa QMetaType::compare(), QMetaType::isOrdered()
+*/
+QPartialOrdering QVariant::compare(const QVariant &lhs, const QVariant &rhs)
+{
+    QMetaType t = lhs.d.type();
+    if (t != rhs.d.type()) {
+        // try numeric comparisons, with C++ type promotion rules (no conversion)
+        if (qIsNumericType(lhs.d.typeId()) && qIsNumericType(rhs.d.typeId()))
+            return convertOptionalToPartialOrdering(numericCompare(&lhs.d, &rhs.d));
+#ifndef QT_BOOTSTRAPPED
+        if (canConvertMetaObject(lhs.metaType(), rhs.metaType()))
+            return convertOptionalToPartialOrdering(pointerCompare(&lhs.d, &rhs.d));
+#endif
+        return QPartialOrdering::Unordered;
+    }
+    return t.compare(lhs.constData(), rhs.constData());
+}
+
+/*!
+    \fn const void *QVariant::constData() const
     \fn const void* QVariant::data() const
 
-    \internal
-*/
+    Returns a pointer to the contained object as a generic void* that cannot be
+    written to.
+
+    \sa QMetaType
+ */
 
 /*!
-    \internal
+    Returns a pointer to the contained object as a generic void* that can be
+    written to.
+
+    This function detaches the QVariant. When called on a \l{isNull}{null-QVariant},
+    the QVariant will not be null after the call.
+
+    \sa QMetaType
 */
-void* QVariant::data()
+void *QVariant::data()
 {
     detach();
+    // set is_null to false, as the caller is likely to write some data into this variant
+    d.is_null = false;
     return const_cast<void *>(constData());
 }
 
-
 /*!
-    Returns \c true if this is a null variant, false otherwise. A variant is
-    considered null if it contains no initialized value, or the contained value
-    is \nullptr or is an instance of a built-in type that has an isNull
-    method, in which case the result would be the same as calling isNull on the
-    wrapped object.
+    Returns \c true if this is a null variant, false otherwise.
 
-    \warning Null variants is not a single state and two null variants may easily
-    return \c false on the == operator if they do not contain similar null values.
+    A variant is considered null if it contains no initialized value or a null pointer.
+
+    \note This behavior has been changed from Qt 5, where isNull() would also
+    return true if the variant contained an object of a builtin type with an isNull()
+    method that returned true for that object.
 
     \sa convert(int)
 */
 bool QVariant::isNull() const
 {
-    return handlerManager[d.type().id()]->isNull(&d);
+    if (d.is_null || !metaType().isValid())
+        return true;
+    if (metaType().flags() & QMetaType::IsPointer)
+        return d.get<void *>() == nullptr;
+    return false;
 }
 
 #ifndef QT_NO_DEBUG_STREAM
-QDebug operator<<(QDebug dbg, const QVariant &v)
+QDebug QVariant::qdebugHelper(QDebug dbg) const
 {
     QDebugStateSaver saver(dbg);
-    const uint typeId = v.d.type().id();
+    const uint typeId = d.typeId();
     dbg.nospace() << "QVariant(";
     if (typeId != QMetaType::UnknownType) {
-        dbg << QMetaType::typeName(typeId) << ", ";
-        bool userStream = false;
-        bool canConvertToString = false;
-        if (typeId >= QMetaType::User) {
-            userStream = QMetaType::debugStream(dbg, constData(v.d), typeId);
-            canConvertToString = v.canConvert<QString>();
-        }
-        if (!userStream && canConvertToString)
-            dbg << v.toString();
-        else if (!userStream)
-            handlerManager[typeId]->debugStream(dbg, v);
+        dbg << d.type().name() << ", ";
+        bool streamed = d.type().debugStream(dbg, d.storage());
+        if (!streamed && canConvert<QString>())
+            dbg << toString();
     } else {
         dbg << "Invalid";
     }
@@ -4036,19 +2467,26 @@ QDebug operator<<(QDebug dbg, const QVariant &v)
     return dbg;
 }
 
+#if QT_DEPRECATED_SINCE(6, 0)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+
 QDebug operator<<(QDebug dbg, const QVariant::Type p)
 {
     QDebugStateSaver saver(dbg);
     dbg.nospace() << "QVariant::"
                   << (int(p) != int(QMetaType::UnknownType)
-                     ? QMetaType::typeName(p)
+                     ? QMetaType(p).name()
                      : "Invalid");
     return dbg;
 }
+
+QT_WARNING_POP
 #endif
 
+#endif
 
-/*! \fn template<typename T> void QVariant::setValue(const T &value)
+/*! \fn template<typename T> void QVariant::setValue(T &&value)
 
     Stores a copy of \a value. If \c{T} is a type that QVariant
     doesn't support, QMetaType is used to store the value. A compile
@@ -4060,6 +2498,18 @@ QDebug operator<<(QDebug dbg, const QVariant::Type p)
 
     \sa value(), fromValue(), canConvert()
  */
+
+/*! \fn template<typename T> void QVariant::setValue(const QVariant &value)
+
+    Copies \a value over this QVariant. It is equivalent to simply
+    assigning \a value to this QVariant.
+*/
+
+/*! \fn template<typename T> void QVariant::setValue(QVariant &&value)
+
+    Moves \a value over this QVariant. It is equivalent to simply
+    move assigning \a value to this QVariant.
+*/
 
 /*! \fn template<typename T> T QVariant::value() const
 
@@ -4089,6 +2539,18 @@ QDebug operator<<(QDebug dbg, const QVariant::Type p)
     \sa setValue(), fromValue(), canConvert(), Q_DECLARE_SEQUENTIAL_CONTAINER_METATYPE()
 */
 
+/*! \fn template<typename T> T QVariant::view()
+
+    Returns a mutable view of template type \c{T} on the stored value.
+    Call canView() to find out whether such a view is supported.
+    If no such view can be created, returns the stored value converted to the
+    template type \c{T}. Call canConvert() to find out whether a type can be
+    converted. If the value can neither be viewed nor converted, a
+    \l{default-constructed value} will be returned.
+
+    \sa canView(), Q_DECLARE_SEQUENTIAL_CONTAINER_METATYPE()
+*/
+
 /*! \fn bool QVariant::canConvert() const
 
     Returns \c true if the variant can be converted to the template type \c{T},
@@ -4103,6 +2565,14 @@ QDebug operator<<(QDebug dbg, const QVariant::Type p)
     for QObject subclasses which use the Q_OBJECT macro.
 
     \sa convert()
+*/
+
+/*! \fn bool QVariant::canView() const
+
+    Returns \c true if a mutable view of the template type \c{T} can be created on this variant,
+    otherwise \c false.
+
+    \sa value()
 */
 
 /*! \fn template<typename T> static QVariant QVariant::fromValue(const T &value)
@@ -4132,46 +2602,6 @@ QDebug operator<<(QDebug dbg, const QVariant::Type p)
 
     \sa fromValue()
 */
-
-#if QT_DEPRECATED_SINCE(5, 14)
-/*!
-    \fn template<typename T> QVariant qVariantFromValue(const T &value)
-    \relates QVariant
-    \obsolete
-
-    Returns a variant containing a copy of the given \a value
-    with template type \c{T}.
-
-    This function is equivalent to QVariant::fromValue(\a value).
-
-    \note This function was provided as a workaround for MSVC 6
-    which did not support member template functions. It is advised
-    to use the other form in new code.
-
-    For example, a QObject pointer can be stored in a variant with the
-    following code:
-
-    \snippet code/src_corelib_kernel_qvariant.cpp 8
-
-    \sa QVariant::fromValue()
-*/
-
-/*! \fn template<typename T> void qVariantSetValue(QVariant &variant, const T &value)
-    \relates QVariant
-    \obsolete
-
-    Sets the contents of the given \a variant to a copy of the
-    \a value with the specified template type \c{T}.
-
-    This function is equivalent to QVariant::setValue(\a value).
-
-    \note This function was provided as a workaround for MSVC 6
-    which did not support member template functions. It is advised
-    to use the other form in new code.
-
-    \sa QVariant::setValue()
-*/
-#endif
 
 /*!
     \fn template<typename T> T qvariant_cast(const QVariant &value)
@@ -4289,663 +2719,157 @@ QDebug operator<<(QDebug dbg, const QVariant::Type p)
 */
 
 /*!
-    \class QSequentialIterable
-    \since 5.2
-    \inmodule QtCore
-    \brief The QSequentialIterable class is an iterable interface for a container in a QVariant.
+    \internal
+ */
+const void *QtPrivate::QVariantTypeCoercer::convert(const QVariant &value, const QMetaType &type)
+{
+    if (type == QMetaType::fromType<QVariant>())
+        return &value;
 
-    This class allows several methods of accessing the elements of a container held within
-    a QVariant. An instance of QSequentialIterable can be extracted from a QVariant if it can
-    be converted to a QVariantList.
+    if (type == value.metaType())
+        return value.constData();
 
-    \snippet code/src_corelib_kernel_qvariant.cpp 9
+    if (value.canConvert(type)) {
+        converted = value;
+        if (converted.convert(type))
+            return converted.constData();
+    }
 
-    The container itself is not copied before iterating over it.
-
-    \sa QVariant
-*/
+    return nullptr;
+}
 
 /*!
     \internal
-*/
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-QSequentialIterable::QSequentialIterable(QtMetaTypePrivate::QSequentialIterableImpl impl)
-#else
-QSequentialIterable::QSequentialIterable(const QtMetaTypePrivate::QSequentialIterableImpl &impl)
-#endif
-  : m_impl(impl)
+ */
+const void *QtPrivate::QVariantTypeCoercer::coerce(const QVariant &value, const QMetaType &type)
 {
-}
+    if (const void *result = convert(value, type))
+        return result;
 
-QSequentialIterable::const_iterator::const_iterator(const QSequentialIterable &iter, QAtomicInt *ref_)
-  : m_impl(iter.m_impl), ref(ref_)
-{
-    ref->ref();
-}
-
-QSequentialIterable::const_iterator::const_iterator(const QtMetaTypePrivate::QSequentialIterableImpl &impl, QAtomicInt *ref_)
-  : m_impl(impl), ref(ref_)
-{
-    ref->ref();
-}
-
-void QSequentialIterable::const_iterator::begin()
-{
-    m_impl.moveToBegin();
-}
-
-void QSequentialIterable::const_iterator::end()
-{
-    m_impl.moveToEnd();
-}
-
-/*! \fn QSequentialIterable::const_iterator QSequentialIterable::begin() const
-
-    Returns a QSequentialIterable::const_iterator for the beginning of the container. This
-    can be used in stl-style iteration.
-
-    \sa end()
-*/
-QSequentialIterable::const_iterator QSequentialIterable::begin() const
-{
-    const_iterator it(*this, new QAtomicInt(0));
-    it.begin();
-    return it;
+    converted = QVariant(type);
+    return converted.constData();
 }
 
 /*!
-    Returns a QSequentialIterable::const_iterator for the end of the container. This
-    can be used in stl-style iteration.
-
-    \sa begin()
-*/
-QSequentialIterable::const_iterator QSequentialIterable::end() const
-{
-    const_iterator it(*this, new QAtomicInt(0));
-    it.end();
-    return it;
-}
-
-static const QVariant variantFromVariantDataHelper(const QtMetaTypePrivate::VariantData &d) {
-    QVariant v;
-    if (d.metaTypeId == qMetaTypeId<QVariant>())
-        v =  *reinterpret_cast<const QVariant*>(d.data);
-    else
-        v = QVariant(d.metaTypeId, d.data, d.flags & ~QVariantConstructionFlags::ShouldDeleteVariantData);
-    if (d.flags & QVariantConstructionFlags::ShouldDeleteVariantData)
-        QMetaType::destroy(d.metaTypeId, const_cast<void *>(d.data));
-    return v;
-}
-
-/*!
-    Returns the element at position \a idx in the container.
-*/
-QVariant QSequentialIterable::at(int idx) const
-{
-    const QtMetaTypePrivate::VariantData d = m_impl.at(idx);
-    return variantFromVariantDataHelper(d);
-}
-
-/*!
-    Returns the number of elements in the container.
-*/
-int QSequentialIterable::size() const
-{
-    return m_impl.size();
-}
-
-/*!
-    Returns whether it is possible to iterate over the container in reverse. This
-    corresponds to the std::bidirectional_iterator_tag iterator trait of the
-    const_iterator of the container.
-*/
-bool QSequentialIterable::canReverseIterate() const
-{
-    return m_impl._iteratorCapabilities & QtMetaTypePrivate::BiDirectionalCapability;
-}
-
-/*!
-    \class QSequentialIterable::const_iterator
-    \since 5.2
+    \class QVariantRef
+    \since 6.0
     \inmodule QtCore
-    \brief The QSequentialIterable::const_iterator allows iteration over a container in a QVariant.
+    \brief The QVariantRef acts as a non-const reference to a QVariant.
 
-    A QSequentialIterable::const_iterator can only be created by a QSequentialIterable instance,
-    and can be used in a way similar to other stl-style iterators.
-
-    \snippet code/src_corelib_kernel_qvariant.cpp 9
-
-    \sa QSequentialIterable
+    As the generic iterators don't actually instantiate a QVariant on each
+    step, they cannot return a reference to one from operator*(). QVariantRef
+    provides the same functionality as an actual reference to a QVariant would,
+    but is backed by a pointer given as template parameter. The template is
+    implemented for pointers of type QSequentialIterator and
+    QAssociativeIterator.
 */
 
+/*!
+    \fn template<typename Pointer> QVariantRef<Pointer>::QVariantRef(const Pointer *pointer)
+
+    Creates a QVariantRef from an \a pointer.
+ */
 
 /*!
-    Destroys the QSequentialIterable::const_iterator.
+    \fn template<typename Pointer> QVariantRef<Pointer> &QVariantRef<Pointer>::operator=(const QVariant &value)
+
+    Assigns a new \a value to the value pointed to by the pointer this
+    QVariantRef refers to.
+ */
+
+/*!
+    \fn template<typename Pointer> QVariantRef<Pointer> &QVariantRef<Pointer>::operator=(const QVariantRef &value)
+
+    Assigns a new \a value to the value pointed to by the pointer this
+    QVariantRef refers to.
+ */
+
+/*!
+    \fn template<typename Pointer> QVariantRef<Pointer> &QVariantRef<Pointer>::operator=(QVariantRef &&value)
+
+    Assigns a new \a value to the value pointed to by the pointer this
+    QVariantRef refers to.
 */
-QSequentialIterable::const_iterator::~const_iterator() {
-    if (!ref->deref()) {
-        m_impl.destroyIter();
-        delete ref;
-    }
-}
 
 /*!
-    Creates a copy of \a other.
+    \fn template<typename Pointer> QVariantRef<Pointer>::operator QVariant() const
+
+    Resolves the QVariantRef to an actual QVariant.
 */
-QSequentialIterable::const_iterator::const_iterator(const const_iterator &other)
-  : m_impl(other.m_impl), ref(other.ref)
-{
-    ref->ref();
-}
 
 /*!
-    Assigns \a other to this.
+    \fn template<typename Pointer> void swap(QVariantRef<Pointer> a, QVariantRef<Pointer> b)
+
+    Swaps the values pointed to by the pointers the QVariantRefs
+    \a a and \a b refer to.
 */
-QSequentialIterable::const_iterator&
-QSequentialIterable::const_iterator::operator=(const const_iterator &other)
-{
-    other.ref->ref();
-    if (!ref->deref()) {
-        m_impl.destroyIter();
-        delete ref;
-    }
-    m_impl = other.m_impl;
-    ref = other.ref;
-    return *this;
-}
 
 /*!
-    Returns the current item, converted to a QVariant.
-*/
-const QVariant QSequentialIterable::const_iterator::operator*() const
-{
-    const QtMetaTypePrivate::VariantData d = m_impl.getCurrent();
-    return variantFromVariantDataHelper(d);
-}
-
-/*!
-    Returns \c true if \a other points to the same item as this
-    iterator; otherwise returns \c false.
-
-    \sa operator!=()
-*/
-bool QSequentialIterable::const_iterator::operator==(const const_iterator &other) const
-{
-    return m_impl.equal(other.m_impl);
-}
-
-/*!
-    Returns \c true if \a other points to a different item than this
-    iterator; otherwise returns \c false.
-
-    \sa operator==()
-*/
-bool QSequentialIterable::const_iterator::operator!=(const const_iterator &other) const
-{
-    return !m_impl.equal(other.m_impl);
-}
-
-/*!
-    The prefix ++ operator (\c{++it}) advances the iterator to the
-    next item in the container and returns an iterator to the new current
-    item.
-
-    Calling this function on QSequentialIterable::end() leads to undefined results.
-
-    \sa operator--()
-*/
-QSequentialIterable::const_iterator &QSequentialIterable::const_iterator::operator++()
-{
-    m_impl.advance(1);
-    return *this;
-}
-
-/*!
-    \overload
-
-    The postfix ++ operator (\c{it++}) advances the iterator to the
-    next item in the container and returns an iterator to the previously
-    current item.
-*/
-QSequentialIterable::const_iterator QSequentialIterable::const_iterator::operator++(int)
-{
-    QtMetaTypePrivate::QSequentialIterableImpl impl;
-    impl.copy(m_impl);
-    m_impl.advance(1);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-/*!
-    The prefix -- operator (\c{--it}) makes the preceding item
-    current and returns an iterator to the new current item.
-
-    Calling this function on QSequentialIterable::begin() leads to undefined results.
-
-    If the container in the QVariant does not support bi-directional iteration, calling this function
-    leads to undefined results.
-
-    \sa operator++(), canReverseIterate()
-*/
-QSequentialIterable::const_iterator &QSequentialIterable::const_iterator::operator--()
-{
-    m_impl.advance(-1);
-    return *this;
-}
-
-/*!
-    \overload
-
-    The postfix -- operator (\c{it--}) makes the preceding item
-    current and returns an iterator to the previously current item.
-
-    If the container in the QVariant does not support bi-directional iteration, calling this function
-    leads to undefined results.
-
-    \sa canReverseIterate()
-*/
-QSequentialIterable::const_iterator QSequentialIterable::const_iterator::operator--(int)
-{
-    QtMetaTypePrivate::QSequentialIterableImpl impl;
-    impl.copy(m_impl);
-    m_impl.advance(-1);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-/*!
-    Advances the iterator by \a j items.
-
-    \sa operator-=(), operator+()
-*/
-QSequentialIterable::const_iterator &QSequentialIterable::const_iterator::operator+=(int j)
-{
-    m_impl.advance(j);
-    return *this;
-}
-
-/*!
-    Makes the iterator go back by \a j items.
-
-    If the container in the QVariant does not support bi-directional iteration, calling this function
-    leads to undefined results.
-
-    \sa operator+=(), operator-(), canReverseIterate()
-*/
-QSequentialIterable::const_iterator &QSequentialIterable::const_iterator::operator-=(int j)
-{
-    m_impl.advance(-j);
-    return *this;
-}
-
-/*!
-    Returns an iterator to the item at \a j positions forward from
-    this iterator.
-
-    \sa operator-(), operator+=()
-*/
-QSequentialIterable::const_iterator QSequentialIterable::const_iterator::operator+(int j) const
-{
-    QtMetaTypePrivate::QSequentialIterableImpl impl;
-    impl.copy(m_impl);
-    impl.advance(j);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-/*!
-    Returns an iterator to the item at \a j positions backward from
-    this iterator.
-
-    If the container in the QVariant does not support bi-directional iteration, calling this function
-    leads to undefined results.
-
-    \sa operator+(), operator-=(), canReverseIterate()
-*/
-QSequentialIterable::const_iterator QSequentialIterable::const_iterator::operator-(int j) const
-{
-    QtMetaTypePrivate::QSequentialIterableImpl impl;
-    impl.copy(m_impl);
-    impl.advance(-j);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-/*!
-    \class QAssociativeIterable
-    \since 5.2
+    \class QVariantConstPointer
+    \since 6.0
     \inmodule QtCore
-    \brief The QAssociativeIterable class is an iterable interface for an associative container in a QVariant.
+    \brief Emulated const pointer to QVariant based on a pointer.
 
-    This class allows several methods of accessing the elements of an associative container held within
-    a QVariant. An instance of QAssociativeIterable can be extracted from a QVariant if it can
-    be converted to a QVariantHash or QVariantMap.
-
-    \snippet code/src_corelib_kernel_qvariant.cpp 10
-
-    The container itself is not copied before iterating over it.
-
-    \sa QVariant
+    QVariantConstPointer wraps a QVariant and returns it from its operator*().
+    This makes it suitable as replacement for an actual const pointer. We cannot
+    return an actual const pointer from generic iterators as the iterators don't
+    hold an actual QVariant.
 */
 
 /*!
-    \internal
-*/
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-QAssociativeIterable::QAssociativeIterable(QtMetaTypePrivate::QAssociativeIterableImpl impl)
-#else
-QAssociativeIterable::QAssociativeIterable(const QtMetaTypePrivate::QAssociativeIterableImpl &impl)
-#endif
-  : m_impl(impl)
+    Constructs a QVariantConstPointer from a \a variant.
+ */
+QVariantConstPointer::QVariantConstPointer(QVariant variant)
+    : m_variant(std::move(variant))
 {
-}
-
-QAssociativeIterable::const_iterator::const_iterator(const QAssociativeIterable &iter, QAtomicInt *ref_)
-  : m_impl(iter.m_impl), ref(ref_)
-{
-    ref->ref();
-}
-
-QAssociativeIterable::const_iterator::const_iterator(const QtMetaTypePrivate::QAssociativeIterableImpl &impl, QAtomicInt *ref_)
-  : m_impl(impl), ref(ref_)
-{
-    ref->ref();
-}
-
-void QAssociativeIterable::const_iterator::begin()
-{
-    m_impl.begin();
-}
-
-void QAssociativeIterable::const_iterator::end()
-{
-    m_impl.end();
-}
-
-void QAssociativeIterable::const_iterator::find(const QVariant &key)
-{
-    Q_ASSERT(key.userType() == m_impl._metaType_id_key);
-    const QtMetaTypePrivate::VariantData dkey(key.userType(), key.constData(), 0 /*key.flags()*/);
-    m_impl.find(dkey);
 }
 
 /*!
-    Returns a QAssociativeIterable::const_iterator for the beginning of the container. This
-    can be used in stl-style iteration.
-
-    \sa end()
-*/
-QAssociativeIterable::const_iterator QAssociativeIterable::begin() const
+    Dereferences the QVariantConstPointer to retrieve its internal QVariant.
+ */
+QVariant QVariantConstPointer::operator*() const
 {
-    const_iterator it(*this, new QAtomicInt(0));
-    it.begin();
-    return it;
+    return m_variant;
 }
 
 /*!
-    Returns a QAssociativeIterable::const_iterator for the end of the container. This
-    can be used in stl-style iteration.
-
-    \sa begin()
-*/
-QAssociativeIterable::const_iterator QAssociativeIterable::end() const
+    Returns a const pointer to the QVariant, conforming to the
+    conventions for operator->().
+ */
+const QVariant *QVariantConstPointer::operator->() const
 {
-    const_iterator it(*this, new QAtomicInt(0));
-    it.end();
-    return it;
+    return &m_variant;
 }
 
 /*!
-    \since 5.5
-
-    Returns a QAssociativeIterable::const_iterator for the given key \a key
-    in the container, if the types are convertible.
-
-    If the key is not found, returns end().
-
-    This can be used in stl-style iteration.
-
-    \sa begin(), end(), value()
-*/
-QAssociativeIterable::const_iterator QAssociativeIterable::find(const QVariant &key) const
-{
-    const_iterator it(*this, new QAtomicInt(0));
-    QVariant key_ = key;
-    if (key_.canConvert(m_impl._metaType_id_key) && key_.convert(m_impl._metaType_id_key))
-        it.find(key_);
-    else
-        it.end();
-    return it;
-}
-
-/*!
-    Returns the value for the given \a key in the container, if the types are convertible.
-
-    \sa find()
-*/
-QVariant QAssociativeIterable::value(const QVariant &key) const
-{
-    const const_iterator it = find(key);
-    if (it == end())
-        return QVariant();
-    return *it;
-}
-
-/*!
-    Returns the number of elements in the container.
-*/
-int QAssociativeIterable::size() const
-{
-    return m_impl.size();
-}
-
-/*!
-    \class QAssociativeIterable::const_iterator
-    \since 5.2
+    \class QVariantPointer
+    \since 6.0
     \inmodule QtCore
-    \brief The QAssociativeIterable::const_iterator allows iteration over a container in a QVariant.
+    \brief QVariantPointer is a template class that emulates a pointer to QVariant based on a pointer.
 
-    A QAssociativeIterable::const_iterator can only be created by a QAssociativeIterable instance,
-    and can be used in a way similar to other stl-style iterators.
-
-    \snippet code/src_corelib_kernel_qvariant.cpp 10
-
-    \sa QAssociativeIterable
+    QVariantConstPointer wraps a pointer and returns QVariantRef to it from its
+    operator*(). This makes it suitable as replacement for an actual pointer. We
+    cannot return an actual pointer from generic iterators as the iterators don't
+    hold an actual QVariant.
 */
-
 
 /*!
-    Destroys the QAssociativeIterable::const_iterator.
-*/
-QAssociativeIterable::const_iterator::~const_iterator()
-{
-    if (!ref->deref()) {
-        m_impl.destroyIter();
-        delete ref;
-    }
-}
+    \fn template<typename Pointer> QVariantPointer<Pointer>::QVariantPointer(const Pointer *pointer)
+
+    Constructs a QVariantPointer from the given \a pointer.
+ */
 
 /*!
-    Creates a copy of \a other.
-*/
-QAssociativeIterable::const_iterator::const_iterator(const const_iterator &other)
-  : m_impl(other.m_impl), ref(other.ref)
-{
-    ref->ref();
-}
+    \fn template<typename Pointer> QVariantRef<Pointer> QVariantPointer<Pointer>::operator*() const
+
+    Dereferences the QVariantPointer to a QVariantRef.
+ */
 
 /*!
-    Assigns \a other to this.
-*/
-QAssociativeIterable::const_iterator&
-QAssociativeIterable::const_iterator::operator=(const const_iterator &other)
-{
-    other.ref->ref();
-    if (!ref->deref()) {
-        m_impl.destroyIter();
-        delete ref;
-    }
-    m_impl = other.m_impl;
-    ref = other.ref;
-    return *this;
-}
+    \fn template<typename Pointer> Pointer QVariantPointer<Pointer>::operator->() const
 
-/*!
-    Returns the current value, converted to a QVariant.
-*/
-const QVariant QAssociativeIterable::const_iterator::operator*() const
-{
-    const QtMetaTypePrivate::VariantData d = m_impl.getCurrentValue();
-    return variantFromVariantDataHelper(d);
-}
-
-/*!
-    Returns the current key, converted to a QVariant.
-*/
-const QVariant QAssociativeIterable::const_iterator::key() const
-{
-    const QtMetaTypePrivate::VariantData d = m_impl.getCurrentKey();
-    return variantFromVariantDataHelper(d);
-}
-
-/*!
-    Returns the current value, converted to a QVariant.
-*/
-const QVariant QAssociativeIterable::const_iterator::value() const
-{
-    return operator*();
-}
-
-/*!
-    Returns \c true if \a other points to the same item as this
-    iterator; otherwise returns \c false.
-
-    \sa operator!=()
-*/
-bool QAssociativeIterable::const_iterator::operator==(const const_iterator &other) const
-{
-    return m_impl.equal(other.m_impl);
-}
-
-/*!
-    Returns \c true if \a other points to a different item than this
-    iterator; otherwise returns \c false.
-
-    \sa operator==()
-*/
-bool QAssociativeIterable::const_iterator::operator!=(const const_iterator &other) const
-{
-    return !m_impl.equal(other.m_impl);
-}
-
-/*!
-    The prefix ++ operator (\c{++it}) advances the iterator to the
-    next item in the container and returns an iterator to the new current
-    item.
-
-    Calling this function on QAssociativeIterable::end() leads to undefined results.
-
-    \sa operator--()
-*/
-QAssociativeIterable::const_iterator &QAssociativeIterable::const_iterator::operator++()
-{
-    m_impl.advance(1);
-    return *this;
-}
-
-/*!
-    \overload
-
-    The postfix ++ operator (\c{it++}) advances the iterator to the
-    next item in the container and returns an iterator to the previously
-    current item.
-*/
-QAssociativeIterable::const_iterator QAssociativeIterable::const_iterator::operator++(int)
-{
-    QtMetaTypePrivate::QAssociativeIterableImpl impl;
-    impl.copy(m_impl);
-    m_impl.advance(1);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-/*!
-    The prefix -- operator (\c{--it}) makes the preceding item
-    current and returns an iterator to the new current item.
-
-    Calling this function on QAssociativeIterable::begin() leads to undefined results.
-
-    \sa operator++()
-*/
-QAssociativeIterable::const_iterator &QAssociativeIterable::const_iterator::operator--()
-{
-    m_impl.advance(-1);
-    return *this;
-}
-
-/*!
-    \overload
-
-    The postfix -- operator (\c{it--}) makes the preceding item
-    current and returns an iterator to the previously current item.
-*/
-QAssociativeIterable::const_iterator QAssociativeIterable::const_iterator::operator--(int)
-{
-    QtMetaTypePrivate::QAssociativeIterableImpl impl;
-    impl.copy(m_impl);
-    m_impl.advance(-1);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-/*!
-    Advances the iterator by \a j items.
-
-    \sa operator-=(), operator+()
-*/
-QAssociativeIterable::const_iterator &QAssociativeIterable::const_iterator::operator+=(int j)
-{
-    m_impl.advance(j);
-    return *this;
-}
-
-/*!
-    Makes the iterator go back by \a j items.
-
-    \sa operator+=(), operator-()
-*/
-QAssociativeIterable::const_iterator &QAssociativeIterable::const_iterator::operator-=(int j)
-{
-    m_impl.advance(-j);
-    return *this;
-}
-
-/*!
-    Returns an iterator to the item at \a j positions forward from
-    this iterator.
-
-    \sa operator-(), operator+=()
-*/
-QAssociativeIterable::const_iterator QAssociativeIterable::const_iterator::operator+(int j) const
-{
-    QtMetaTypePrivate::QAssociativeIterableImpl impl;
-    impl.copy(m_impl);
-    impl.advance(j);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-/*!
-    Returns an iterator to the item at \a j positions backward from
-    this iterator.
-
-    \sa operator+(), operator-=()
-*/
-QAssociativeIterable::const_iterator QAssociativeIterable::const_iterator::operator-(int j) const
-{
-    QtMetaTypePrivate::QAssociativeIterableImpl impl;
-    impl.copy(m_impl);
-    impl.advance(-j);
-    return const_iterator(impl, new QAtomicInt(0));
-}
-
-QVariant::Private::~Private()
-{
-    QtMetaTypePrivate::derefAndDestroy(
-            reinterpret_cast<QtPrivate::QMetaTypeInterface *>(packedType << 2));
-}
+    Dereferences and returns the pointer. The pointer is expected to also
+    implement operator->().
+ */
 
 QT_END_NAMESPACE

@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QtCore/QSettings>
 #include <private/qsettings_p.h>
@@ -189,6 +189,7 @@ private slots:
     void embeddedZeroByte_data();
     void embeddedZeroByte();
     void spaceAfterComment();
+    void floatAsQVariant();
 
     void testXdg();
 private:
@@ -721,11 +722,11 @@ void tst_QSettings::embeddedZeroByte()
         QSettings settings("QtProject", "tst_qsettings");
         QVariant outValue = settings.value(QTest::currentDataTag());
 
-        switch (value.type()) {
-        case QVariant::ByteArray:
+        switch (value.typeId()) {
+        case QMetaType::QByteArray:
             QCOMPARE(outValue.toByteArray(), value.toByteArray());
             break;
-        case QVariant::String:
+        case QMetaType::QString:
             QCOMPARE(outValue.toString(), value.toString());
             break;
         default:
@@ -763,6 +764,20 @@ void tst_QSettings::spaceAfterComment()
     settings.beginGroup("SpacedGroup");
     QCOMPARE(settings.value("bar"), QVariant(7));
     settings.endGroup();
+}
+
+// test if a qvariant-encoded float can be read
+void tst_QSettings::floatAsQVariant()
+{
+    QVERIFY(QFile::exists(":/float.ini"));
+    QSettings s(":/float.ini", QSettings::IniFormat);
+
+    s.beginGroup("test");
+    QCOMPARE(s.value("float").toDouble(), 0.5);
+    QCOMPARE(s.value("float_qvariant").toDouble(), 0.5);
+
+    QCOMPARE(s.value("float").toFloat(), 0.5);
+    QCOMPARE(s.value("float_qvariant").toFloat(), 0.5);
 }
 
 void tst_QSettings::testErrorHandling_data()
@@ -929,11 +944,12 @@ void tst_QSettings::testIniParsing()
 
     if ( settings.status() == QSettings::NoError ) { // else no point proceeding
         QVariant v = settings.value(key);
-        QVERIFY(v.canConvert(expect.type()));
+        if (expect.isValid())
+            QVERIFY(v.canConvert(expect.type()));
         // check some types so as to give prettier error messages
-        if ( v.type() == QVariant::String ) {
+        if ( v.typeId() == QMetaType::QString ) {
             QCOMPARE(v.toString(), expect.toString());
-        } else if ( v.type() == QVariant::Int ) {
+        } else if ( v.typeId() == QMetaType::Int ) {
             QCOMPARE(v.toInt(), expect.toInt());
         } else {
             QCOMPARE(v, expect);
@@ -1089,6 +1105,14 @@ void tst_QSettings::setValue()
     settings.setValue("key 2", QString("false"));
     QCOMPARE(settings.value("key 2", true).toBool(), false);
 
+    settings.setValue("key 2", double(1234.56));
+    QCOMPARE(settings.value("key 2").toDouble(), double(1234.56));
+    QCOMPARE(settings.value("key 2").toString().left(7), QString::number(double(1234.56)));
+
+    settings.setValue("key 2", float(1234.56));
+    QCOMPARE(settings.value("key 2").toFloat(), float(1234.56));
+    QCOMPARE(settings.value("key 2").toString().left(7), QString::number(float(1234.56)));
+
     // The following block should not compile.
 /*
     settings.setValue("key 2", "true");
@@ -1115,7 +1139,7 @@ void tst_QSettings::setValue()
     QCOMPARE(settings.value("key 2").toStringList(), QStringList() << "" << "a" << "" << "bc" << "");
 
     settings.setValue("key 3", QList<QVariant>());
-    QCOMPARE(settings.value("key 3").toList(), QList<QVariant>());
+    QVERIFY(settings.value("key 3").toList().isEmpty());
     settings.setValue("key 3", QList<QVariant>() << 1 << QString("a"));
     QCOMPARE(settings.value("key 3").toList(), QList<QVariant>() << 1 << QString("a"));
 
@@ -2029,7 +2053,7 @@ int numThreadSafetyFailures;
 class SettingsThread : public QThread
 {
 public:
-    void run();
+    void run() override;
     void start(int n) { param = n; QThread::start(); }
 
 private:
@@ -2816,8 +2840,6 @@ void tst_QSettings::testEscapes()
     testVariant(QString("Hello, World!"), QString("Hello, World!"), toString);
     testVariant(QString("@Hello World!"), QString("@@Hello World!"), toString);
     testVariant(QString("@@Hello World!"), QString("@@@Hello World!"), toString);
-    testVariant(QByteArray("Hello World!"), QString("@ByteArray(Hello World!)"), toString);
-    testVariant(QByteArray("@Hello World!"), QString("@ByteArray(@Hello World!)"), toString);
     testVariant(QVariant(100), QString("100"), toString);
     testVariant(QStringList() << "ene" << "due" << "rike", QString::fromLatin1("@Variant(\x0\x0\x0\xb\x0\x0\x0\x3\x0\x0\x0\x6\x0\x65\x0n\x0\x65\x0\x0\x0\x6\x0\x64\x0u\x0\x65\x0\x0\x0\x8\x0r\x0i\x0k\x0\x65)", 50), toStringList);
     testVariant(QRect(1, 2, 3, 4), QString("@Rect(1 2 3 4)"), toRect);
@@ -3026,7 +3048,7 @@ void tst_QSettings::isWritable()
         QSettings s3(format, QSettings::SystemScope, "foo.org", "Something Different");
 
         if (s1.status() == QSettings::NoError && s1.contains("foo")) {
-#if defined(Q_OS_MACX)
+#if defined(Q_OS_MACOS)
             QVERIFY(s1.isWritable());
             if (format == QSettings::NativeFormat) {
                 QVERIFY(!s2.isWritable());

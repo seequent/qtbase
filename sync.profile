@@ -11,24 +11,14 @@
     "QtTest" => "$basedir/src/testlib",
     "QtDBus" => "$basedir/src/dbus",
     "QtConcurrent" => "$basedir/src/concurrent",
-    "QtLinuxAccessibilitySupport" => "$basedir/src/platformsupport/linuxaccessibility",
     "QtDeviceDiscoverySupport" => "$basedir/src/platformsupport/devicediscovery",
-    "QtEventDispatcherSupport" => "$basedir/src/platformsupport/eventdispatchers",
-    "QtFontDatabaseSupport" => "$basedir/src/platformsupport/fontdatabases",
     "QtInputSupport" => "$basedir/src/platformsupport/input",
-    "QtXkbCommonSupport" => "$basedir/src/platformsupport/input/xkbcommon",
-    "QtServiceSupport" => "$basedir/src/platformsupport/services",
-    "QtThemeSupport" => "$basedir/src/platformsupport/themes",
-    "QtEglSupport" => "$basedir/src/platformsupport/eglconvenience",
     "QtFbSupport" => "$basedir/src/platformsupport/fbconvenience",
-    "QtGlxSupport" => "$basedir/src/platformsupport/glxconvenience",
     "QtKmsSupport" => "$basedir/src/platformsupport/kmsconvenience",
-    "QtEdidSupport" => "$basedir/src/platformsupport/edid",
-    "QtLinuxOfonoSupport" => "$basedir/src/platformsupport/linuxofono",
-    "QtPlatformHeaders" => "$basedir/src/platformheaders",
     "QtZlib" => "!>$basedir/src/corelib;$basedir/src/3rdparty/zlib",
-    "QtOpenGLExtensions" => "$basedir/src/openglextensions",
     "QtEglFSDeviceIntegration" => "$basedir/src/plugins/platforms/eglfs",
+    "QtEglFsKmsSupport" => "$basedir/src/plugins/platforms/eglfs/deviceintegration/eglfs_kms_support",
+    "QtEglFsKmsGbmSupport" => "$basedir/src/plugins/platforms/eglfs/deviceintegration/eglfs_kms",
     "QtMockPlugins1" => "$basedir/tests/auto/cmake/mockplugins/mockplugins1",
     "QtMockPlugins2" => "$basedir/tests/auto/cmake/mockplugins/mockplugins2",
     "QtMockPlugins3" => "$basedir/tests/auto/cmake/mockplugins/mockplugins3",
@@ -44,7 +34,7 @@
     "qconfig.h" => "QtConfig",
     "qplugin.h" => "QtPlugin",
     "qalgorithms.h" => "QtAlgorithms",
-    "qlist.h" => "QList",
+    "qvector.h" => "QVector",
     "qcontainerfwd.h" => "QtContainerFwd",
     "qdebug.h" => "QtDebug",
     "qevent.h" => "QtEvents",
@@ -60,6 +50,7 @@
     "qtconcurrentfilter.h" => "QtConcurrentFilter",
     "qtconcurrentrun.h" => "QtConcurrentRun",
     "qpassworddigestor.h" => "QPasswordDigestor",
+    "qutf8stringview.h" => "QUtf8StringView",
 );
 %deprecatedheaders = (
     "QtGui" =>  {
@@ -77,7 +68,7 @@
     }
 );
 
-@qpa_headers = ( qr/^(?!qplatformheaderhelper)qplatform/, qr/^qwindowsystem/ );
+@qpa_headers = ( qr/^qplatform/, qr/^qwindowsystem/ );
 my @internal_zlib_headers = ( "crc32.h", "deflate.h", "gzguts.h", "inffast.h", "inffixed.h", "inflate.h", "inftrees.h", "trees.h", "zutil.h" );
 my @zlib_headers = ( "zconf.h", "zlib.h" );
 @ignore_headers = ( @internal_zlib_headers );

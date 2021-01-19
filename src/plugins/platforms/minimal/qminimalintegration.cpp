@@ -47,16 +47,16 @@
 
 #include <QtGui/private/qfreetypefontdatabase_p.h>
 #if defined(Q_OS_WIN)
-#  include <QtFontDatabaseSupport/private/qwindowsfontdatabase_p.h>
+#  include <QtGui/private/qwindowsfontdatabase_p.h>
 #  if QT_CONFIG(freetype)
-#    include <QtFontDatabaseSupport/private/qwindowsfontdatabase_ft_p.h>
+#    include <QtGui/private/qwindowsfontdatabase_ft_p.h>
 #  endif
 #elif defined(Q_OS_DARWIN)
 #  include <QtGui/private/qcoretextfontdatabase_p.h>
 #endif
 
 #if QT_CONFIG(fontconfig)
-#  include <QtFontDatabaseSupport/private/qgenericunixfontdatabase_p.h>
+#  include <QtGui/private/qgenericunixfontdatabase_p.h>
 #  include <qpa/qplatformfontdatabase.h>
 #endif
 
@@ -65,7 +65,7 @@
 #endif
 
 #if !defined(Q_OS_WIN)
-#include <QtEventDispatcherSupport/private/qgenericunixeventdispatcher_p.h>
+#include <QtGui/private/qgenericunixeventdispatcher_p.h>
 #else
 #include <QtCore/private/qeventdispatcher_win_p.h>
 #endif
@@ -119,6 +119,7 @@ bool QMinimalIntegration::hasCapability(QPlatformIntegration::Capability cap) co
     switch (cap) {
     case ThreadedPixmaps: return true;
     case MultipleWindows: return true;
+    case RhiBasedRendering: return false;
     default: return QPlatformIntegration::hasCapability(cap);
     }
 }

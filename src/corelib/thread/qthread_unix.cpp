@@ -104,7 +104,7 @@ QT_BEGIN_NAMESPACE
 
 #if QT_CONFIG(thread)
 
-Q_STATIC_ASSERT(sizeof(pthread_t) <= sizeof(Qt::HANDLE));
+static_assert(sizeof(pthread_t) <= sizeof(Qt::HANDLE));
 
 enum { ThreadPriorityResetFlag = 0x80000000 };
 
@@ -116,18 +116,11 @@ static pthread_key_t current_thread_data_key;
 
 static void destroy_current_thread_data(void *p)
 {
-#if defined(Q_OS_VXWORKS)
-    // Calling setspecific(..., 0) sets the value to 0 for ALL threads.
-    // The 'set to 1' workaround adds a bit of an overhead though,
-    // since this function is called twice now.
-    if (p == (void *)1)
-        return;
-#endif
-    // POSIX says the value in our key is set to zero before calling
-    // this destructor function, so we need to set it back to the
-    // right value...
-    pthread_setspecific(current_thread_data_key, p);
     QThreadData *data = static_cast<QThreadData *>(p);
+    // thread_local variables are set to zero before calling this destructor function,
+    // if they are internally using pthread-specific data management,
+    // so we need to set it back to the right value...
+    currentThreadData = data;
     if (data->isAdopted) {
         QThread *thread = data->thread.loadAcquire();
         Q_ASSERT(thread);
@@ -138,14 +131,8 @@ static void destroy_current_thread_data(void *p)
     data->deref();
 
     // ... but we must reset it to zero before returning so we aren't
-    // called again (POSIX allows implementations to call destructor
-    // functions repeatedly until all values are zero)
-    pthread_setspecific(current_thread_data_key,
-#if defined(Q_OS_VXWORKS)
-                                                 (void *)1);
-#else
-                                                 nullptr);
-#endif
+    // leaving a dangling pointer.
+    currentThreadData = nullptr;
 }
 
 static void create_current_thread_data_key()
@@ -248,7 +235,7 @@ void QAdoptedThread::init()
 */
 
 extern "C" {
-typedef void*(*QtThreadCallback)(void*);
+typedef void *(*QtThreadCallback)(void *);
 }
 
 #endif // QT_CONFIG(thread)
@@ -321,6 +308,7 @@ void *QThreadPrivate::start(void *arg)
         }
 
         data->ensureEventDispatcher();
+        data->eventDispatcher.loadRelaxed()->startingUp();
 
 #if (defined(Q_OS_LINUX) || defined(Q_OS_MAC) || defined(Q_OS_QNX))
         {
@@ -788,7 +776,7 @@ void QThread::setTerminationEnabled(bool enabled)
     Q_ASSERT_X(thr != nullptr, "QThread::setTerminationEnabled()",
                "Current thread was not started with QThread.");
 
-    Q_UNUSED(thr)
+    Q_UNUSED(thr);
 #if defined(Q_OS_ANDROID)
     Q_UNUSED(enabled);
 #else

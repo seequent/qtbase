@@ -387,22 +387,33 @@ void _formatStackVariable(QTextStream &str, const char *className, QStringView v
     }
 }
 
+enum OverloadUse {
+    UseOverload,
+    UseOverloadWhenNoArguments, // Use overload only when the argument list is empty,
+                                // in this case there is no chance of connecting
+                                // mismatching T against const T &
+    DontUseOverload
+};
+
 // Format a member function for a signal slot connection
 static void formatMemberFnPtr(QTextStream &str, const SignalSlot &s,
-                              bool useQOverload = false)
+                              OverloadUse useQOverload = DontUseOverload)
 {
     const int parenPos = s.signature.indexOf(QLatin1Char('('));
     Q_ASSERT(parenPos >= 0);
-    if (useQOverload) {
-        const auto parameters = s.signature.midRef(parenPos + 1,
-                                                   s.signature.size() - parenPos - 2);
-        str << "qOverload<" << parameters << ">(";
-    }
+    const auto functionName = QStringView{s.signature}.left(parenPos);
 
-    const auto functionName = s.signature.leftRef(parenPos);
+    const auto parameters = QStringView{s.signature}.mid(parenPos + 1,
+                                               s.signature.size() - parenPos - 2);
+    const bool withOverload = useQOverload == UseOverload ||
+            (useQOverload == UseOverloadWhenNoArguments && parameters.isEmpty());
+
+    if (withOverload)
+        str << "qOverload<" << parameters << ">(";
+
     str << '&' << s.className << "::" << functionName;
 
-    if (useQOverload)
+    if (withOverload)
         str << ')';
 }
 
@@ -413,7 +424,7 @@ static void formatMemberFnPtrConnection(QTextStream &str,
     str << "QObject::connect(" << sender.name << ", ";
     formatMemberFnPtr(str, sender);
     str << ", " << receiver.name << ", ";
-    formatMemberFnPtr(str, receiver);
+    formatMemberFnPtr(str, receiver, UseOverloadWhenNoArguments);
     str << ')';
 }
 
@@ -441,9 +452,9 @@ void formatConnection(QTextStream &str, const SignalSlot &sender, const SignalSl
         break;
     case Language::Python:
         str << sender.name << '.'
-            << sender.signature.leftRef(sender.signature.indexOf(QLatin1Char('(')))
+            << QStringView{sender.signature}.left(sender.signature.indexOf(QLatin1Char('(')))
             << ".connect(" << receiver.name << '.'
-            << receiver.signature.leftRef(receiver.signature.indexOf(QLatin1Char('(')))
+            << QStringView{receiver.signature}.left(receiver.signature.indexOf(QLatin1Char('(')))
             << ')';
         break;
     }

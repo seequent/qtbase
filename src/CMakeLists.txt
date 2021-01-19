@@ -5,8 +5,12 @@
 # should be built.
 # The order of evaluation matters.
 qt_feature_evaluate_features("${CMAKE_CURRENT_SOURCE_DIR}/corelib/configure.cmake")
-qt_feature_evaluate_features("${CMAKE_CURRENT_SOURCE_DIR}/network/configure.cmake")
-qt_feature_evaluate_features("${CMAKE_CURRENT_SOURCE_DIR}/gui/configure.cmake")
+if(QT_FEATURE_network)
+    qt_feature_evaluate_features("${CMAKE_CURRENT_SOURCE_DIR}/network/configure.cmake")
+endif()
+if(QT_FEATURE_gui)
+    qt_feature_evaluate_features("${CMAKE_CURRENT_SOURCE_DIR}/gui/configure.cmake")
+endif()
 
 add_subdirectory(3rdparty)
 
@@ -22,6 +26,8 @@ endfunction()
 
 find_or_build_bootstrap_names()
 
+add_subdirectory(entrypoint)
+
 add_subdirectory(corelib)
 if (QT_FEATURE_concurrent)
     add_subdirectory(concurrent)
@@ -31,6 +37,9 @@ if (QT_FEATURE_sql)
 endif()
 if (QT_FEATURE_network)
     add_subdirectory(network)
+    if (ANDROID)
+        add_subdirectory(network/android/jar)
+    endif()
 endif()
 if (QT_FEATURE_xml)
     add_subdirectory(xml)
@@ -45,7 +54,6 @@ if(QT_FEATURE_gui)
 
     if(QT_FEATURE_opengl)
         add_subdirectory(opengl)
-        add_subdirectory(openglextensions)
     endif()
 
     if(QT_FEATURE_widgets)
@@ -55,7 +63,6 @@ if(QT_FEATURE_gui)
         endif()
     endif()
     add_subdirectory(platformsupport)
-    add_subdirectory(platformheaders)
 endif()
 if (QT_FEATURE_testlib)
     add_subdirectory(testlib)
@@ -64,7 +71,5 @@ if(QT_FEATURE_gui AND QT_FEATURE_widgets)
    add_subdirectory(printsupport)
 endif()
 add_subdirectory(plugins)
-
-add_subdirectory(winmain)
 
 add_subdirectory(android)

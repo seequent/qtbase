@@ -107,11 +107,7 @@ public:
     // Call from QFileSystemWatcher::addPaths() to set up notifications on drives
     void addPath(const QString &path);
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     bool nativeEventFilter(const QByteArray &, void *messageIn, qintptr *) override;
-#else
-    bool nativeEventFilter(const QByteArray &, void *messageIn, long *) override;
-#endif
 
 signals:
     void driveAdded();
@@ -258,11 +254,7 @@ inline void QWindowsRemovableDriveListener::handleDbtDriveArrivalRemoval(const M
     }
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 bool QWindowsRemovableDriveListener::nativeEventFilter(const QByteArray &, void *messageIn, qintptr *)
-#else
-bool QWindowsRemovableDriveListener::nativeEventFilter(const QByteArray &, void *messageIn, long *)
-#endif
 {
     const MSG *msg = reinterpret_cast<const MSG *>(messageIn);
     if (msg->message == WM_DEVICECHANGE) {
@@ -380,6 +372,7 @@ QStringList QWindowsFileSystemWatcherEngine::addPaths(const QStringList &paths,
             normalPath.chop(1);
         }
         QFileInfo fileInfo(normalPath);
+        fileInfo.stat();
         if (!fileInfo.exists())
             continue;
 
@@ -413,7 +406,7 @@ QStringList QWindowsFileSystemWatcherEngine::addPaths(const QStringList &paths,
         pathInfo = fileInfo;
 
         // Look for a thread
-        QWindowsFileSystemWatcherEngineThread *thread = 0;
+        QWindowsFileSystemWatcherEngineThread *thread = nullptr;
         QWindowsFileSystemWatcherEngine::Handle handle;
         QList<QWindowsFileSystemWatcherEngineThread *>::const_iterator jt, end;
         end = threads.constEnd();
@@ -603,7 +596,7 @@ QStringList QWindowsFileSystemWatcherEngine::removePaths(const QStringList &path
         }
     }
 
-    threads.removeAll(0);
+    threads.removeAll(nullptr);
     return unhandled;
 }
 
@@ -648,7 +641,7 @@ void QWindowsFileSystemWatcherEngineThread::run()
 {
     auto locker = qt_unique_lock(mutex);
     forever {
-        QVector<HANDLE> handlesCopy = handles;
+        QList<HANDLE> handlesCopy = handles;
         locker.unlock();
         DEBUG() << "QWindowsFileSystemWatcherThread" << this << "waiting on" << handlesCopy.count() << "handles";
         DWORD r = WaitForMultipleObjects(handlesCopy.count(), handlesCopy.constData(), false, INFINITE);

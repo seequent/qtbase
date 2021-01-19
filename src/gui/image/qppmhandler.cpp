@@ -41,13 +41,18 @@
 
 #ifndef QT_NO_IMAGEFORMAT_PPM
 
+#include <qdebug.h>
 #include <qimage.h>
-#include <qvariant.h>
-#include <qvector.h>
-#include <ctype.h>
+#include <qlist.h>
+#include <qloggingcategory.h>
 #include <qrgba64.h>
+#include <qvariant.h>
+
+#include <ctype.h>
 
 QT_BEGIN_NAMESPACE
+
+Q_DECLARE_LOGGING_CATEGORY(lcImageIo)
 
 /*****************************************************************************
   PBM/PGM/PPM (ASCII and RAW) image read/write functions
@@ -160,11 +165,8 @@ static bool read_pbm_body(QIODevice *device, char type, int w, int h, int mcc, Q
     }
     raw = type >= '4';
 
-    if (outImage->size() != QSize(w, h) || outImage->format() != format) {
-        *outImage = QImage(w, h, format);
-        if (outImage->isNull())
-            return false;
-    }
+    if (!QImageIOHandler::allocateImage(QSize(w, h), format, outImage))
+        return false;
 
     pbm_bpl = (qsizetype(w) * nbits + 7) / 8;   // bytes per scanline in PBM
 
@@ -370,7 +372,7 @@ static bool write_pbm_image(QIODevice *out, const QImage &sourceImage, const QBy
             qsizetype bpl = qsizetype(w) * (gray ? 1 : 3);
             uchar *buf = new uchar[bpl];
             if (image.format() == QImage::Format_Indexed8) {
-                QVector<QRgb> color = image.colorTable();
+                QList<QRgb> color = image.colorTable();
                 for (uint y=0; y<h; y++) {
                     const uchar *b = image.constScanLine(y);
                     uchar *p = buf;
@@ -476,7 +478,7 @@ bool QPpmHandler::canRead() const
 bool QPpmHandler::canRead(QIODevice *device, QByteArray *subType)
 {
     if (!device) {
-        qWarning("QPpmHandler::canRead() called with no device");
+        qCWarning(lcImageIo, "QPpmHandler::canRead() called with no device");
         return false;
     }
 

@@ -1158,7 +1158,7 @@ void PaintCommands::command_drawPolygon(QRegularExpressionMatch re)
         array.append(QPointF(convertToDouble(numbers.at(i)), convertToDouble(numbers.at(i+1))));
 
     if (m_verboseMode)
-        printf(" -(lance) drawPolygon(size=%d)\n", array.size());
+        printf(" -(lance) drawPolygon(size=%zd)\n", size_t(array.size()));
 
     m_painter->drawPolygon(array, caps.at(2).toLower() == "winding" ? Qt::WindingFill : Qt::OddEvenFill);
 }
@@ -1174,7 +1174,7 @@ void PaintCommands::command_drawPolyline(QRegularExpressionMatch re)
         array.append(QPointF(numbers.at(i).toFloat(),numbers.at(i+1).toFloat()));
 
     if (m_verboseMode)
-        printf(" -(lance) drawPolyline(size=%d)\n", array.size());
+        printf(" -(lance) drawPolyline(size=%zd)\n", size_t(array.size()));
 
     m_painter->drawPolyline(array.toPolygon());
 }
@@ -1499,7 +1499,7 @@ void PaintCommands::command_path_addPolygon(QRegularExpressionMatch re)
         array.append(QPointF(numbers.at(i).toFloat(),numbers.at(i+1).toFloat()));
 
     if (m_verboseMode)
-        printf(" -(lance) path_addPolygon(name=%s, size=%d)\n", qPrintable(name), array.size());
+        printf(" -(lance) path_addPolygon(name=%s, size=%zd)\n", qPrintable(name), size_t(array.size()));
 
     m_pathMap[name].addPolygon(array);
 }
@@ -2295,7 +2295,7 @@ void PaintCommands::command_pixmap_setDevicePixelRatio(QRegularExpressionMatch r
 
     if (m_verboseMode)
         printf(" -(lance) pixmap_setDevicePixelRatio(%s), %.1f -> %.1f\n",
-               qPrintable(name), m_pixmapMap[name].devicePixelRatioF(), dpr);
+               qPrintable(name), m_pixmapMap[name].devicePixelRatio(), dpr);
 
     m_pixmapMap[name].setDevicePixelRatio(dpr);
 }
@@ -2374,7 +2374,7 @@ void PaintCommands::command_image_setDevicePixelRatio(QRegularExpressionMatch re
 
     if (m_verboseMode)
         printf(" -(lance) image_setDevicePixelRatio(%s), %.1f -> %.1f\n",
-               qPrintable(name), m_imageMap[name].devicePixelRatioF(), dpr);
+               qPrintable(name), m_imageMap[name].devicePixelRatio(), dpr);
 
     m_imageMap[name].setDevicePixelRatio(dpr);
 }
@@ -2733,12 +2733,12 @@ void PaintCommands::command_pen_setDashPattern(QRegularExpressionMatch re)
     QString cap = caps.at(1);
     QStringList numbers = cap.split(separators, Qt::SkipEmptyParts);
 
-    QVector<qreal> pattern;
+    QList<qreal> pattern;
     for (int i=0; i<numbers.size(); ++i)
         pattern.append(convertToDouble(numbers.at(i)));
 
     if (m_verboseMode)
-        printf(" -(lance) pen_setDashPattern(size=%d)\n", pattern.size());
+        printf(" -(lance) pen_setDashPattern(size=%zd)\n", size_t(pattern.size()));
 
     QPen p = m_painter->pen();
     p.setDashPattern(pattern);
@@ -2774,7 +2774,7 @@ void PaintCommands::command_drawConvexPolygon(QRegularExpressionMatch re)
         array.append(QPointF(convertToDouble(numbers.at(i)), convertToDouble(numbers.at(i+1))));
 
     if (m_verboseMode)
-        printf(" -(lance) drawConvexPolygon(size=%d)\n", array.size());
+        printf(" -(lance) drawConvexPolygon(size=%zd)\n", size_t(array.size()));
 
 
     m_painter->drawConvexPolygon(array);

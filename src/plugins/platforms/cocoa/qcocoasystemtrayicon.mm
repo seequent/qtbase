@@ -204,6 +204,7 @@ void QCocoaSystemTrayIcon::updateIcon(const QIcon &icon)
         r.moveCenter(fullHeightPixmap.rect().center());
         p.drawPixmap(r, pixmap);
     }
+    fullHeightPixmap.setDevicePixelRatio(devicePixelRatio);
 
     auto *nsimage = [NSImage imageFromQImage:fullHeightPixmap.toImage()];
     [nsimage setTemplate:icon.isMask()];
@@ -271,7 +272,7 @@ void QCocoaSystemTrayIcon::statusItemClicked()
         activationReason = QPlatformSystemTrayIcon::DoubleClick;
     } else {
         auto mouseButton = cocoaButton2QtButton(mouseEvent);
-        if (mouseButton == Qt::MidButton)
+        if (mouseButton == Qt::MiddleButton)
             activationReason = QPlatformSystemTrayIcon::MiddleClick;
         else if (mouseButton == Qt::RightButton)
             activationReason = QPlatformSystemTrayIcon::Context;

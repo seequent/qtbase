@@ -27,9 +27,10 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtGui>
 #include <QtWidgets>
+#include <QSignalSpy>
 
 #include <qsqldriver.h>
 #include <qsqldatabase.h>
@@ -97,7 +98,7 @@ private:
 class DBTestModel: public QSqlQueryModel
 {
 public:
-    DBTestModel(QObject *parent = 0): QSqlQueryModel(parent) {}
+    DBTestModel(QObject *parent = nullptr): QSqlQueryModel(parent) {}
     QModelIndex indexInQuery(const QModelIndex &item) const { return QSqlQueryModel::indexInQuery(item); }
 };
 
@@ -417,9 +418,9 @@ void tst_QSqlQueryModel::record()
     QCOMPARE(rec.fieldName(0), isToUpper ? QString("ID") : QString("id"));
     QCOMPARE(rec.fieldName(1), isToUpper ? QString("NAME") : QString("name"));
     QCOMPARE(rec.fieldName(2), isToUpper ? QString("TITLE") : QString("title"));
-    QCOMPARE(rec.value(0), QVariant(rec.field(0).type()));
-    QCOMPARE(rec.value(1), QVariant(rec.field(1).type()));
-    QCOMPARE(rec.value(2), QVariant(rec.field(2).type()));
+    QCOMPARE(rec.value(0), QVariant(rec.field(0).metaType()));
+    QCOMPARE(rec.value(1), QVariant(rec.field(1).metaType()));
+    QCOMPARE(rec.value(2), QVariant(rec.field(2).metaType()));
 
     rec = model.record(0);
     QCOMPARE(rec.fieldName(0), isToUpper ? QString("ID") : QString("id"));
@@ -582,7 +583,7 @@ class NestedResetsTest: public QSqlQueryModel
     Q_OBJECT
 
 public:
-    NestedResetsTest(QObject* parent = 0) : QSqlQueryModel(parent), gotAboutToBeReset(false), gotReset(false)
+    NestedResetsTest(QObject *parent = nullptr) : QSqlQueryModel(parent), gotAboutToBeReset(false), gotReset(false)
     {
         connect(this, SIGNAL(modelAboutToBeReset()), this, SLOT(modelAboutToBeResetSlot()));
         connect(this, SIGNAL(modelReset()), this, SLOT(modelResetSlot()));

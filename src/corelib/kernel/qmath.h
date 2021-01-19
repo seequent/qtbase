@@ -47,6 +47,10 @@
 #include <QtCore/qglobal.h>
 #include <QtCore/qalgorithms.h>
 
+#if __has_include(<bit>) && __cplusplus > 201703L
+#include <bit>
+#endif
+
 #ifndef _USE_MATH_DEFINES
 #  define _USE_MATH_DEFINES
 #  define undef_USE_MATH_DEFINES
@@ -65,85 +69,85 @@ QT_BEGIN_NAMESPACE
 
 extern Q_CORE_EXPORT const qreal qt_sine_table[QT_SINE_TABLE_SIZE];
 
-inline int qCeil(qreal v)
+template <typename T> int qCeil(T v)
 {
     using std::ceil;
     return int(ceil(v));
 }
 
-inline int qFloor(qreal v)
+template <typename T> int qFloor(T v)
 {
     using std::floor;
     return int(floor(v));
 }
 
-inline qreal qFabs(qreal v)
+template <typename T> auto qFabs(T v)
 {
     using std::fabs;
     return fabs(v);
 }
 
-inline qreal qSin(qreal v)
+template <typename T> auto qSin(T v)
 {
     using std::sin;
     return sin(v);
 }
 
-inline qreal qCos(qreal v)
+template <typename T> auto qCos(T v)
 {
     using std::cos;
     return cos(v);
 }
 
-inline qreal qTan(qreal v)
+template <typename T> auto qTan(T v)
 {
     using std::tan;
     return tan(v);
 }
 
-inline qreal qAcos(qreal v)
+template <typename T> auto qAcos(T v)
 {
     using std::acos;
     return acos(v);
 }
 
-inline qreal qAsin(qreal v)
+template <typename T> auto qAsin(T v)
 {
     using std::asin;
     return asin(v);
 }
 
-inline qreal qAtan(qreal v)
+template <typename T> auto qAtan(T v)
 {
     using std::atan;
     return atan(v);
 }
 
-inline qreal qAtan2(qreal y, qreal x)
+template <typename T1, typename T2> auto qAtan2(T1 y, T2 x)
 {
     using std::atan2;
     return atan2(y, x);
 }
 
-inline qreal qSqrt(qreal v)
+template <typename T> auto qSqrt(T v)
 {
     using std::sqrt;
     return sqrt(v);
 }
 
-inline qreal qLn(qreal v)
+template <typename T> auto qLn(T v)
 {
     using std::log;
     return log(v);
 }
 
-inline qreal qExp(qreal v)
+template <typename T> auto qExp(T v)
 {
     using std::exp;
     return exp(v);
 }
 
-inline qreal qPow(qreal x, qreal y)
+template <typename T1, typename T2> auto qPow(T1 x, T2 y)
 {
     using std::pow;
     return pow(x, y);
@@ -223,28 +227,49 @@ inline qreal qFastCos(qreal x)
     return qt_sine_table[si] - (qt_sine_table[ci] + 0.5 * qt_sine_table[si] * d) * d;
 }
 
-Q_DECL_CONSTEXPR inline float qDegreesToRadians(float degrees)
+constexpr inline float qDegreesToRadians(float degrees)
 {
-    return degrees * float(M_PI/180);
+    return degrees * float(M_PI / 180);
 }
 
-Q_DECL_CONSTEXPR inline double qDegreesToRadians(double degrees)
+constexpr inline double qDegreesToRadians(double degrees)
 {
     return degrees * (M_PI / 180);
 }
 
-Q_DECL_CONSTEXPR inline float qRadiansToDegrees(float radians)
+constexpr inline long double qDegreesToRadians(long double degrees)
 {
-    return radians * float(180/M_PI);
+    return degrees * (M_PI / 180);
 }
 
-Q_DECL_CONSTEXPR inline double qRadiansToDegrees(double radians)
+template <typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
+constexpr inline double qDegreesToRadians(T degrees)
+{
+    return qDegreesToRadians(static_cast<double>(degrees));
+}
+
+constexpr inline float qRadiansToDegrees(float radians)
+{
+    return radians * float(180 / M_PI);
+}
+
+constexpr inline double qRadiansToDegrees(double radians)
 {
     return radians * (180 / M_PI);
 }
 
+constexpr inline long double qRadiansToDegrees(long double radians)
+{
+    return radians * (180 / M_PI);
+}
+
+// A qRadiansToDegrees(Integral) overload isn't here; it's extremely
+// questionable that someone is manipulating quantities in radians
+// using integral datatypes...
+
 namespace QtPrivate {
-constexpr inline quint32 qConstexprNextPowerOfTwo(quint32 v) {
+constexpr inline quint32 qConstexprNextPowerOfTwo(quint32 v)
+{
     v |= v >> 1;
     v |= v >> 2;
     v |= v >> 4;
@@ -254,7 +279,8 @@ constexpr inline quint32 qConstexprNextPowerOfTwo(quint32 v) {
     return v;
 }
 
-constexpr inline quint64 qConstexprNextPowerOfTwo(quint64 v) {
+constexpr inline quint64 qConstexprNextPowerOfTwo(quint64 v)
+{
     v |= v >> 1;
     v |= v >> 2;
     v |= v >> 4;
@@ -278,7 +304,9 @@ constexpr inline quint64 qConstexprNextPowerOfTwo(qint64 v)
 
 constexpr inline quint32 qNextPowerOfTwo(quint32 v)
 {
-#if defined(QT_HAS_BUILTIN_CLZ)
+#if defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L
+    return std::bit_ceil(v + 1);
+#elif defined(QT_HAS_BUILTIN_CLZ)
     if (v == 0)
         return 1;
     return 2U << (31 ^ QAlgorithmsPrivate::qt_builtin_clz(v));
@@ -289,7 +317,9 @@ constexpr inline quint32 qNextPowerOfTwo(quint32 v)
 
 constexpr inline quint64 qNextPowerOfTwo(quint64 v)
 {
-#if defined(QT_HAS_BUILTIN_CLZLL)
+#if defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L
+    return std::bit_ceil(v + 1);
+#elif defined(QT_HAS_BUILTIN_CLZLL)
     if (v == 0)
         return 1;
     return Q_UINT64_C(2) << (63 ^ QAlgorithmsPrivate::qt_builtin_clzll(v));

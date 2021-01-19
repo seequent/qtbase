@@ -4,7 +4,7 @@
 ## windowmodality Binary:
 #####################################################################
 
-add_qt_manual_test(windowmodality
+qt_internal_add_manual_test(windowmodality
     GUI
     SOURCES
         dialog.ui

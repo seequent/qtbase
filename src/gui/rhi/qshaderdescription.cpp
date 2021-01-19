@@ -1,34 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Gui module
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,9 +43,6 @@
 #include <QDataStream>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QCborValue>
-#include <QCborMap>
-#include <QCborArray>
 
 QT_BEGIN_NAMESPACE
 
@@ -103,12 +103,13 @@ QT_BEGIN_NAMESPACE
     of 68 bytes and two members, a 4x4 matrix named \c mvp at offset 0, and a
     float \c opacity at offset 64.
 
-    All this is described by a QShaderDescription object. QShaderDescription
-    can also be serialized to JSON and CBOR, and can be deserialized
-    from CBOR. In practice this is rarely needed since QShader
-    takes care of the associated QShaderDescription automatically, but if the
-    QShaderDescription of the above shader would be written out as JSON, it
-    would look like the following:
+    All this is described by a QShaderDescription object. QShaderDescription can
+    be serialized to JSON and to a binary format via QDataStream, and can be
+    deserialized from this binary format. In practice this is rarely needed
+    since QShader takes care of the associated QShaderDescription automatically,
+    but if the QShaderDescription of the above shader would be written out as
+    JSON (like it is done by the \c qsb tool's \c{-d} option), it would look
+    like the following:
 
     \badcode
         {
@@ -220,6 +221,7 @@ QT_BEGIN_NAMESPACE
     \value SamplerCubeArray
     \value SamplerRect
     \value SamplerBuffer
+    \value SamplerExternalOES
     \value Image1D
     \value Image2D
     \value Image2DMS
@@ -337,74 +339,34 @@ bool QShaderDescription::isValid() const
         || !d->combinedImageSamplers.isEmpty() || !d->storageImages.isEmpty();
 }
 
-#if QT_CONFIG(cborstreamwriter)
-/*!
-   \return a serialized binary version of the data in CBOR (Concise Binary
-   Object Representation) format.
-
-   \sa QCborValue, toJson()
- */
-QByteArray QShaderDescription::toCbor() const
-{
-    return QCborValue::fromJsonValue(d->makeDoc().object()).toCbor();
-}
-#endif
-
 /*!
     \return a serialized JSON text version of the data.
 
     \note There is no deserialization method provided for JSON text.
 
-    \sa toCbor()
+    \sa serialize()
  */
 QByteArray QShaderDescription::toJson() const
 {
     return d->makeDoc().toJson();
 }
 
+/*!
+    Serializes this QShaderDescription to \a stream.
+
+    \sa deserialize(), toJson()
+ */
 void QShaderDescription::serialize(QDataStream *stream) const
 {
     d->writeToStream(stream);
 }
 
-#if QT_CONFIG(binaryjson) && QT_DEPRECATED_SINCE(5, 15)
 /*!
-    \deprecated
+    \return a new QShaderDescription loaded from \a stream. \a version specifies
+    the qsb version.
 
-    Deserializes the given binary JSON \a data and returns a new
-    QShaderDescription.
-
-    \sa fromCbor()
+    \sa serialize()
  */
-QShaderDescription QShaderDescription::fromBinaryJson(const QByteArray &data)
-{
-    QShaderDescription desc;
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    QShaderDescriptionPrivate::get(&desc)->loadDoc(QJsonDocument::fromBinaryData(data));
-QT_WARNING_POP
-    return desc;
-}
-#endif
-
-/*!
-    Deserializes the given CBOR \a data and returns a new QShaderDescription.
- */
-QShaderDescription QShaderDescription::fromCbor(const QByteArray &data)
-{
-    QShaderDescription desc;
-    const QCborValue cbor = QCborValue::fromCbor(data);
-    if (cbor.isMap()) {
-        const QJsonDocument doc(cbor.toMap().toJsonObject());
-        QShaderDescriptionPrivate::get(&desc)->loadDoc(doc);
-    }
-    if (cbor.isArray()) {
-        const QJsonDocument doc(cbor.toArray().toJsonArray());
-        QShaderDescriptionPrivate::get(&desc)->loadDoc(doc);
-    }
-    return desc;
-}
-
 QShaderDescription QShaderDescription::deserialize(QDataStream *stream, int version)
 {
     QShaderDescription desc;
@@ -417,7 +379,7 @@ QShaderDescription QShaderDescription::deserialize(QDataStream *stream, int vers
     called attributes) for the vertex stage, and inputs for other stages
     (sometimes called varyings).
  */
-QVector<QShaderDescription::InOutVariable> QShaderDescription::inputVariables() const
+QList<QShaderDescription::InOutVariable> QShaderDescription::inputVariables() const
 {
     return d->inVars;
 }
@@ -425,7 +387,7 @@ QVector<QShaderDescription::InOutVariable> QShaderDescription::inputVariables() 
 /*!
     \return the list of output variables.
  */
-QVector<QShaderDescription::InOutVariable> QShaderDescription::outputVariables() const
+QList<QShaderDescription::InOutVariable> QShaderDescription::outputVariables() const
 {
     return d->outVars;
 }
@@ -433,7 +395,7 @@ QVector<QShaderDescription::InOutVariable> QShaderDescription::outputVariables()
 /*!
     \return the list of uniform blocks.
  */
-QVector<QShaderDescription::UniformBlock> QShaderDescription::uniformBlocks() const
+QList<QShaderDescription::UniformBlock> QShaderDescription::uniformBlocks() const
 {
     return d->uniformBlocks;
 }
@@ -445,7 +407,7 @@ QVector<QShaderDescription::UniformBlock> QShaderDescription::uniformBlocks() co
     in combination with the Qt Rendering Hardware Interface since that
     currently has no support for them.
  */
-QVector<QShaderDescription::PushConstantBlock> QShaderDescription::pushConstantBlocks() const
+QList<QShaderDescription::PushConstantBlock> QShaderDescription::pushConstantBlocks() const
 {
     return d->pushConstantBlocks;
 }
@@ -516,7 +478,7 @@ QVector<QShaderDescription::PushConstantBlock> QShaderDescription::pushConstantB
     \note SSBOs are not available with some graphics APIs, such as, OpenGL 2.x or
     OpenGL ES older than 3.1.
  */
-QVector<QShaderDescription::StorageBlock> QShaderDescription::storageBlocks() const
+QList<QShaderDescription::StorageBlock> QShaderDescription::storageBlocks() const
 {
     return d->storageBlocks;
 }
@@ -543,7 +505,7 @@ QVector<QShaderDescription::StorageBlock> QShaderDescription::storageBlocks() co
     exist everywhere. For instance, a HLSL version will likely just use a
     Texture2D and SamplerState object with registers t1 and s1, respectively.
   */
-QVector<QShaderDescription::InOutVariable> QShaderDescription::combinedImageSamplers() const
+QList<QShaderDescription::InOutVariable> QShaderDescription::combinedImageSamplers() const
 {
     return d->combinedImageSamplers;
 }
@@ -570,7 +532,7 @@ QVector<QShaderDescription::InOutVariable> QShaderDescription::combinedImageSamp
     \note Separate image objects are not compatible with some graphics APIs,
     such as, OpenGL 2.x or OpenGL ES older than 3.1.
   */
-QVector<QShaderDescription::InOutVariable> QShaderDescription::storageImages() const
+QList<QShaderDescription::InOutVariable> QShaderDescription::storageImages() const
 {
     return d->storageImages;
 }
@@ -616,6 +578,7 @@ static struct TypeTab {
     { QLatin1String("samplerCubeArray"), QShaderDescription::SamplerCubeArray },
     { QLatin1String("samplerRect"), QShaderDescription::SamplerRect },
     { QLatin1String("samplerBuffer"), QShaderDescription::SamplerBuffer },
+    { QLatin1String("samplerExternalOES"), QShaderDescription::SamplerExternalOES },
 
     { QLatin1String("mat2x3"), QShaderDescription::Mat2x3 },
     { QLatin1String("mat2x4"), QShaderDescription::Mat2x4 },
@@ -676,15 +639,6 @@ static QString typeStr(const QShaderDescription::VariableType &t)
     return QString();
 }
 
-static QShaderDescription::VariableType mapType(const QString &t)
-{
-    for (size_t i = 0; i < sizeof(typeTab) / sizeof(TypeTab); ++i) {
-        if (typeTab[i].k == t)
-            return typeTab[i].v;
-    }
-    return QShaderDescription::Unknown;
-}
-
 static struct ImageFormatTab {
     QString k;
     QShaderDescription::ImageFormat v;
@@ -738,15 +692,6 @@ static QString imageFormatStr(const QShaderDescription::ImageFormat &f)
             return imageFormatTab[i].k;
     }
     return QString();
-}
-
-static QShaderDescription::ImageFormat mapImageFormat(const QString &f)
-{
-    for (size_t i = 0; i < sizeof(imageFormatTab) / sizeof(ImageFormatTab); ++i) {
-        if (imageFormatTab[i].k == f)
-            return imageFormatTab[i].v;
-    }
-    return QShaderDescription::ImageFormatUnknown;
 }
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -1126,29 +1071,6 @@ void QShaderDescriptionPrivate::writeToStream(QDataStream *stream)
         (*stream) << localSize[i];
 }
 
-static QShaderDescription::InOutVariable inOutVar(const QJsonObject &obj)
-{
-    QShaderDescription::InOutVariable var;
-    var.name = obj[nameKey].toString().toUtf8();
-    var.type = mapType(obj[typeKey].toString());
-    if (obj.contains(locationKey))
-        var.location = obj[locationKey].toInt();
-    if (obj.contains(bindingKey))
-        var.binding = obj[bindingKey].toInt();
-    if (obj.contains(setKey))
-        var.descriptorSet = obj[setKey].toInt();
-    if (obj.contains(imageFormatKey))
-        var.imageFormat = mapImageFormat(obj[imageFormatKey].toString());
-    if (obj.contains(imageFlagsKey))
-        var.imageFlags = QShaderDescription::ImageFlags(obj[imageFlagsKey].toInt());
-    if (obj.contains(arrayDimsKey)) {
-        QJsonArray dimArr = obj[arrayDimsKey].toArray();
-        for (int i = 0; i < dimArr.count(); ++i)
-            var.arrayDims.append(dimArr.at(i).toInt());
-    }
-    return var;
-}
-
 static void deserializeDecorations(QDataStream *stream, int version, QShaderDescription::InOutVariable *v)
 {
     (*stream) >> v->location;
@@ -1181,32 +1103,6 @@ static QShaderDescription::InOutVariable deserializeInOutVar(QDataStream *stream
     return var;
 }
 
-static QShaderDescription::BlockVariable blockVar(const QJsonObject &obj)
-{
-    QShaderDescription::BlockVariable var;
-    var.name = obj[nameKey].toString().toUtf8();
-    var.type = mapType(obj[typeKey].toString());
-    var.offset = obj[offsetKey].toInt();
-    var.size = obj[sizeKey].toInt();
-    if (obj.contains(arrayDimsKey)) {
-        QJsonArray dimArr = obj[arrayDimsKey].toArray();
-        for (int i = 0; i < dimArr.count(); ++i)
-            var.arrayDims.append(dimArr.at(i).toInt());
-    }
-    if (obj.contains(arrayStrideKey))
-        var.arrayStride = obj[arrayStrideKey].toInt();
-    if (obj.contains(matrixStrideKey))
-        var.matrixStride = obj[matrixStrideKey].toInt();
-    if (obj.contains(matrixRowMajorKey))
-        var.matrixIsRowMajor = obj[matrixRowMajorKey].toBool();
-    if (obj.contains(structMembersKey)) {
-        QJsonArray arr = obj[structMembersKey].toArray();
-        for (int i = 0; i < arr.count(); ++i)
-            var.structMembers.append(blockVar(arr.at(i).toObject()));
-    }
-    return var;
-}
-
 static QShaderDescription::BlockVariable deserializeBlockMemberVar(QDataStream *stream, int version)
 {
     QShaderDescription::BlockVariable var;
@@ -1231,110 +1127,6 @@ static QShaderDescription::BlockVariable deserializeBlockMemberVar(QDataStream *
     for (int i = 0; i < count; ++i)
         var.structMembers[i] = deserializeBlockMemberVar(stream, version);
     return var;
-}
-
-void QShaderDescriptionPrivate::loadDoc(const QJsonDocument &doc)
-{
-    if (doc.isNull()) {
-        qWarning("QShaderDescription: JSON document is empty");
-        return;
-    }
-
-    Q_ASSERT(ref.loadRelaxed() == 1); // must be detached
-
-    inVars.clear();
-    outVars.clear();
-    uniformBlocks.clear();
-    pushConstantBlocks.clear();
-    storageBlocks.clear();
-    combinedImageSamplers.clear();
-    storageImages.clear();
-
-    QJsonObject root = doc.object();
-
-    if (root.contains(inputsKey)) {
-        QJsonArray inputs = root[inputsKey].toArray();
-        for (int i = 0; i < inputs.count(); ++i)
-            inVars.append(inOutVar(inputs[i].toObject()));
-    }
-
-    if (root.contains(outputsKey)) {
-        QJsonArray outputs = root[outputsKey].toArray();
-        for (int i = 0; i < outputs.count(); ++i)
-            outVars.append(inOutVar(outputs[i].toObject()));
-    }
-
-    if (root.contains(uniformBlocksKey)) {
-        QJsonArray ubs = root[uniformBlocksKey].toArray();
-        for (int i = 0; i < ubs.count(); ++i) {
-            QJsonObject ubObj = ubs[i].toObject();
-            QShaderDescription::UniformBlock ub;
-            ub.blockName = ubObj[blockNameKey].toString().toUtf8();
-            ub.structName = ubObj[structNameKey].toString().toUtf8();
-            ub.size = ubObj[sizeKey].toInt();
-            if (ubObj.contains(bindingKey))
-                ub.binding = ubObj[bindingKey].toInt();
-            if (ubObj.contains(setKey))
-                ub.descriptorSet = ubObj[setKey].toInt();
-            QJsonArray members = ubObj[membersKey].toArray();
-            for (const QJsonValue &member : members)
-                ub.members.append(blockVar(member.toObject()));
-            uniformBlocks.append(ub);
-        }
-    }
-
-    if (root.contains(pushConstantBlocksKey)) {
-        QJsonArray pcs = root[pushConstantBlocksKey].toArray();
-        for (int i = 0; i < pcs.count(); ++i) {
-            QJsonObject pcObj = pcs[i].toObject();
-            QShaderDescription::PushConstantBlock pc;
-            pc.name = pcObj[nameKey].toString().toUtf8();
-            pc.size = pcObj[sizeKey].toInt();
-            QJsonArray members = pcObj[membersKey].toArray();
-            for (const QJsonValue &member : members)
-                pc.members.append(blockVar(member.toObject()));
-            pushConstantBlocks.append(pc);
-        }
-    }
-
-    if (root.contains(storageBlocksKey)) {
-        QJsonArray ubs = root[storageBlocksKey].toArray();
-        for (int i = 0; i < ubs.count(); ++i) {
-            QJsonObject sbObj = ubs[i].toObject();
-            QShaderDescription::StorageBlock sb;
-            sb.blockName = sbObj[blockNameKey].toString().toUtf8();
-            sb.instanceName = sbObj[instanceNameKey].toString().toUtf8();
-            sb.knownSize = sbObj[knownSizeKey].toInt();
-            if (sbObj.contains(bindingKey))
-                sb.binding = sbObj[bindingKey].toInt();
-            if (sbObj.contains(setKey))
-                sb.descriptorSet = sbObj[setKey].toInt();
-            QJsonArray members = sbObj[membersKey].toArray();
-            for (const QJsonValue &member : members)
-                sb.members.append(blockVar(member.toObject()));
-            storageBlocks.append(sb);
-        }
-    }
-
-    if (root.contains(combinedImageSamplersKey)) {
-        QJsonArray samplers = root[combinedImageSamplersKey].toArray();
-        for (int i = 0; i < samplers.count(); ++i)
-            combinedImageSamplers.append(inOutVar(samplers[i].toObject()));
-    }
-
-    if (root.contains(storageImagesKey)) {
-        QJsonArray images = root[storageImagesKey].toArray();
-        for (int i = 0; i < images.count(); ++i)
-            storageImages.append(inOutVar(images[i].toObject()));
-    }
-
-    if (root.contains(localSizeKey)) {
-        QJsonArray localSizeArr = root[localSizeKey].toArray();
-        if (localSizeArr.count() == 3) {
-            for (int i = 0; i < 3; ++i)
-                localSize[i] = localSizeArr[i].toInt();
-        }
-    }
 }
 
 void QShaderDescriptionPrivate::loadFromStream(QDataStream *stream, int version)
@@ -1436,7 +1228,7 @@ void QShaderDescriptionPrivate::loadFromStream(QDataStream *stream, int version)
 
     \relates QShaderDescription
  */
-bool operator==(const QShaderDescription &lhs, const QShaderDescription &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderDescription &lhs, const QShaderDescription &rhs) noexcept
 {
     if (lhs.d == rhs.d)
         return true;
@@ -1457,7 +1249,7 @@ bool operator==(const QShaderDescription &lhs, const QShaderDescription &rhs) Q_
 
     \relates QShaderDescription::InOutVariable
  */
-bool operator==(const QShaderDescription::InOutVariable &lhs, const QShaderDescription::InOutVariable &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderDescription::InOutVariable &lhs, const QShaderDescription::InOutVariable &rhs) noexcept
 {
     return lhs.name == rhs.name
             && lhs.type == rhs.type
@@ -1475,7 +1267,7 @@ bool operator==(const QShaderDescription::InOutVariable &lhs, const QShaderDescr
 
     \relates QShaderDescription::BlockVariable
  */
-bool operator==(const QShaderDescription::BlockVariable &lhs, const QShaderDescription::BlockVariable &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderDescription::BlockVariable &lhs, const QShaderDescription::BlockVariable &rhs) noexcept
 {
     return lhs.name == rhs.name
             && lhs.type == rhs.type
@@ -1494,7 +1286,7 @@ bool operator==(const QShaderDescription::BlockVariable &lhs, const QShaderDescr
 
     \relates QShaderDescription::UniformBlock
  */
-bool operator==(const QShaderDescription::UniformBlock &lhs, const QShaderDescription::UniformBlock &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderDescription::UniformBlock &lhs, const QShaderDescription::UniformBlock &rhs) noexcept
 {
     return lhs.blockName == rhs.blockName
             && lhs.structName == rhs.structName
@@ -1510,7 +1302,7 @@ bool operator==(const QShaderDescription::UniformBlock &lhs, const QShaderDescri
 
     \relates QShaderDescription::PushConstantBlock
  */
-bool operator==(const QShaderDescription::PushConstantBlock &lhs, const QShaderDescription::PushConstantBlock &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderDescription::PushConstantBlock &lhs, const QShaderDescription::PushConstantBlock &rhs) noexcept
 {
     return lhs.name == rhs.name
             && lhs.size == rhs.size
@@ -1523,7 +1315,7 @@ bool operator==(const QShaderDescription::PushConstantBlock &lhs, const QShaderD
 
     \relates QShaderDescription::StorageBlock
  */
-bool operator==(const QShaderDescription::StorageBlock &lhs, const QShaderDescription::StorageBlock &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderDescription::StorageBlock &lhs, const QShaderDescription::StorageBlock &rhs) noexcept
 {
     return lhs.blockName == rhs.blockName
             && lhs.instanceName == rhs.instanceName

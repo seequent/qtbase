@@ -561,7 +561,7 @@ bool QTextHtmlImporter::appendNodeText()
     const int initialCursorPosition = cursor.position();
     QTextCharFormat format = currentNode->charFormat;
 
-    if(wsm == QTextHtmlParserNode::WhiteSpacePre || wsm == QTextHtmlParserNode::WhiteSpacePreWrap)
+    if (wsm == QTextHtmlParserNode::WhiteSpacePre || wsm == QTextHtmlParserNode::WhiteSpacePreWrap)
         compressNextWhitespace = PreserveWhiteSpace;
 
     QString text = currentNode->text;
@@ -581,7 +581,7 @@ bool QTextHtmlImporter::appendNodeText()
 
             if (compressNextWhitespace == CollapseWhiteSpace)
                 compressNextWhitespace = RemoveWhiteSpace; // allow this one, and remove the ones coming next.
-            else if(compressNextWhitespace == RemoveWhiteSpace)
+            else if (compressNextWhitespace == RemoveWhiteSpace)
                 continue;
 
             if (wsm == QTextHtmlParserNode::WhiteSpacePre
@@ -891,10 +891,10 @@ QTextHtmlImporter::Table QTextHtmlImporter::scanTable(int tableNodeIdx)
     Table table;
     table.columns = 0;
 
-    QVector<QTextLength> columnWidths;
+    QList<QTextLength> columnWidths;
 
     int tableHeaderRowCount = 0;
-    QVector<int> rowNodes;
+    QList<int> rowNodes;
     rowNodes.reserve(at(tableNodeIdx).children.count());
     for (int row : at(tableNodeIdx).children) {
         switch (at(row).id) {
@@ -916,8 +916,8 @@ QTextHtmlImporter::Table QTextHtmlImporter::scanTable(int tableNodeIdx)
         }
     }
 
-    QVector<RowColSpanInfo> rowColSpans;
-    QVector<RowColSpanInfo> rowColSpanForColumn;
+    QList<RowColSpanInfo> rowColSpans;
+    QList<RowColSpanInfo> rowColSpanForColumn;
 
     int effectiveRow = 0;
     for (int row : qAsConst(rowNodes)) {
@@ -1256,15 +1256,6 @@ void QTextHtmlImporter::appendBlock(const QTextBlockFormat &format, QTextCharFor
 }
 
 #endif // QT_NO_TEXTHTMLPARSER
-
-/*!
-    \fn QTextDocumentFragment QTextDocumentFragment::fromHtml(const QString &text)
-
-    Returns a QTextDocumentFragment based on the arbitrary piece of
-    HTML in the given \a text. The formatting is preserved as much as
-    possible; for example, "<b>bold</b>" will become a document
-    fragment with the text "bold" with a bold character format.
-*/
 
 #ifndef QT_NO_TEXTHTMLPARSER
 /*!

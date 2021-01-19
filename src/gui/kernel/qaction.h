@@ -81,7 +81,7 @@ class Q_GUI_EXPORT QAction : public QObject
     Q_PROPERTY(Qt::ShortcutContext shortcutContext READ shortcutContext WRITE setShortcutContext NOTIFY changed)
     Q_PROPERTY(bool autoRepeat READ autoRepeat WRITE setAutoRepeat NOTIFY changed)
 #endif // QT_CONFIG(shortcut)
-    Q_PROPERTY(bool visible READ isVisible WRITE setVisible NOTIFY changed)
+    Q_PROPERTY(bool visible READ isVisible WRITE setVisible NOTIFY visibleChanged FINAL)
     Q_PROPERTY(MenuRole menuRole READ menuRole WRITE setMenuRole NOTIFY changed)
     Q_PROPERTY(bool iconVisibleInMenu READ isIconVisibleInMenu WRITE setIconVisibleInMenu NOTIFY changed)
     Q_PROPERTY(bool shortcutVisibleInContextMenu READ isShortcutVisibleInContextMenu WRITE setShortcutVisibleInContextMenu NOTIFY changed)
@@ -102,7 +102,7 @@ public:
 
     ~QAction();
 
-    QVector<QObject *> associatedObjects() const;
+    QList<QObject *> associatedObjects() const;
 
 #if QT_DEPRECATED_SINCE(6,0)
 #ifdef Q_CLANG_QDOC
@@ -250,6 +250,7 @@ Q_SIGNALS:
     void changed();
     void enabledChanged(bool enabled);
     void checkableChanged(bool checkable);
+    void visibleChanged();
     void triggered(bool checked = false);
     void hovered();
     void toggled(bool);

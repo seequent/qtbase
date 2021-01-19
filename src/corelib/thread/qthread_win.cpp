@@ -135,8 +135,8 @@ void QAdoptedThread::init()
     d_func()->id = GetCurrentThreadId();
 }
 
-static QVector<HANDLE> qt_adopted_thread_handles;
-static QVector<QThread *> qt_adopted_qthreads;
+static QList<HANDLE> qt_adopted_thread_handles;
+static QList<QThread *> qt_adopted_qthreads;
 static QBasicMutex qt_adopted_thread_watcher_mutex;
 static DWORD qt_adopted_thread_watcher_id = 0;
 static HANDLE qt_adopted_thread_wakeup = 0;
@@ -188,7 +188,7 @@ DWORD WINAPI qt_adopted_thread_watcher_function(LPVOID)
             break;
         }
 
-        QVector<HANDLE> handlesCopy = qt_adopted_thread_handles;
+        QList<HANDLE> handlesCopy = qt_adopted_thread_handles;
         qt_adopted_thread_watcher_mutex.unlock();
 
         DWORD ret = WAIT_TIMEOUT;
@@ -229,7 +229,7 @@ DWORD WINAPI qt_adopted_thread_watcher_function(LPVOID)
             QThread *thread = data->thread;
             Q_ASSERT(thread);
             auto thread_p = static_cast<QThreadPrivate *>(QObjectPrivate::get(thread));
-            Q_UNUSED(thread_p)
+            Q_UNUSED(thread_p);
             Q_ASSERT(!thread_p->finished);
             QThreadPrivate::finish(thread);
         }
@@ -312,6 +312,7 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
     }
 
     data->ensureEventDispatcher();
+    data->eventDispatcher.loadRelaxed()->startingUp();
 
 #if !defined(QT_NO_DEBUG) && defined(Q_CC_MSVC)
     // sets the name of the current thread.

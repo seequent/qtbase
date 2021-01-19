@@ -40,7 +40,7 @@ class QtTestTableModel: public QAbstractTableModel
 
 
 public:
-    QtTestTableModel(int rows = 0, int columns = 0, QObject *parent = 0)
+    QtTestTableModel(int rows = 0, int columns = 0, QObject *parent = nullptr)
         : QAbstractTableModel(parent),
           row_count(rows),
           column_count(columns) {}
@@ -229,7 +229,7 @@ void tst_QTableView::spanSelectColumn()
     }
 }
 
-typedef QVector<QRect> SpanList;
+typedef QList<QRect> SpanList;
 Q_DECLARE_METATYPE(SpanList)
 
 void spansData()

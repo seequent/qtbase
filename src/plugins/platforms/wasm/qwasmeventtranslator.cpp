@@ -43,6 +43,7 @@
 #include <QtCore/qdeadlinetimer.h>
 #include <private/qmakearray_p.h>
 #include <QtCore/qnamespace.h>
+#include <QCursor>
 
 #include <emscripten/bind.h>
 
@@ -305,7 +306,7 @@ static constexpr const auto DeadKeyShiftTbl = qMakeArray(
 
 // macOS CTRL <-> META switching. We most likely want to enable
 // the existing switching code in QtGui, but for now do it here.
-static bool g_usePlatformMacCtrlMetaSwitching = false;
+static bool g_usePlatformMacSpecifics = false;
 
 bool g_useNaturalScrolling = true; // natural scrolling is default on linux/windows
 
@@ -329,12 +330,40 @@ QWasmEventTranslator::QWasmEventTranslator(QWasmScreen *screen)
     , pressedButtons(Qt::NoButton)
     , resizeMode(QWasmWindow::ResizeNone)
 {
-    touchDevice = new QTouchDevice;
-    touchDevice->setType(QTouchDevice::TouchScreen);
-    touchDevice->setCapabilities(QTouchDevice::Position | QTouchDevice::Area | QTouchDevice::NormalizedPosition);
-    QWindowSystemInterface::registerTouchDevice(touchDevice);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    touchDevice = new QPointingDevice("touchscreen", 1, QInputDevice::DeviceType::TouchScreen,
+    QPointingDevice::PointerType::Finger,
+    QPointingDevice::Capability::Position | QPointingDevice::Capability::Area | QPointingDevice::Capability::NormalizedPosition,
+    10, 0);
+#else
+    touchDevice = new QPointingDevice;
+    touchDevice->setType(QInputDevice::DeviceType::TouchScreen);
+    touchDevice->setCapabilities(QPointingDevice::Capability::Position | QPointingDevice::Capability::Area | QPointingDevice::Capability::NormalizedPosition);
+#endif
+    QWindowSystemInterface::registerInputDevice(touchDevice);
 
     initEventHandlers();
+}
+
+QWasmEventTranslator::~QWasmEventTranslator()
+{
+    // deregister event handlers
+    QByteArray canvasSelector = "#" + screen()->canvasId().toUtf8();
+    emscripten_set_keydown_callback(canvasSelector.constData(), 0, 0, NULL);
+    emscripten_set_keyup_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_mousedown_callback(canvasSelector.constData(), 0, 0, NULL);
+    emscripten_set_mouseup_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_mousemove_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_focus_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_wheel_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_touchstart_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchend_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchmove_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchcancel_callback(canvasSelector.constData(),  0, 0, NULL);
 }
 
 void QWasmEventTranslator::initEventHandlers()
@@ -348,12 +377,12 @@ void QWasmEventTranslator::initEventHandlers()
     };
     Platform platform = Platform(emscripten::val::global("navigator")["platform"]
             .call<bool>("includes", emscripten::val("Mac")));
-    g_usePlatformMacCtrlMetaSwitching = (platform == MacOSPlatform);
+    g_usePlatformMacSpecifics = (platform == MacOSPlatform);
 
     if (platform == MacOSPlatform) {
         g_useNaturalScrolling = false; // make this !default on macOS
 
-        if (emscripten::val::global("window")["safari"].isUndefined()) {
+        if (!emscripten::val::global("window")["safari"].isUndefined()) {
             val canvas = screen()->canvas();
             canvas.call<void>("addEventListener",
                               val("wheel"),
@@ -385,7 +414,7 @@ QFlags<Qt::KeyboardModifier> QWasmEventTranslator::translatKeyModifier(const Eve
     if (event->shiftKey)
         keyModifier |= Qt::ShiftModifier;
     if (event->ctrlKey) {
-        if (g_usePlatformMacCtrlMetaSwitching)
+        if (g_usePlatformMacSpecifics)
             keyModifier |= Qt::MetaModifier;
         else
             keyModifier |= Qt::ControlModifier;
@@ -393,7 +422,7 @@ QFlags<Qt::KeyboardModifier> QWasmEventTranslator::translatKeyModifier(const Eve
     if (event->altKey)
         keyModifier |= Qt::AltModifier;
     if (event->metaKey) {
-        if (g_usePlatformMacCtrlMetaSwitching)
+        if (g_usePlatformMacSpecifics)
             keyModifier |= Qt::ControlModifier;
         else
             keyModifier |= Qt::MetaModifier;
@@ -433,20 +462,20 @@ Qt::Key QWasmEventTranslator::translateEmscriptKey(const EmscriptenKeyboardEvent
 {
     Qt::Key qtKey = Qt::Key_unknown;
 
-    if (qstrncmp(emscriptKey->code, "Key", 3) == 0 || qstrncmp(emscriptKey->code, "Numpad", 6) == 0 ||
-        qstrncmp(emscriptKey->code, "Digit", 5) == 0) {
-
-        emkb2qt_t searchKey{emscriptKey->code, 0}; // search emcsripten code
-        auto it1 = std::lower_bound(KeyTbl.cbegin(), KeyTbl.cend(), searchKey);
-        if (it1 != KeyTbl.end() && !(searchKey < *it1)) {
-            qtKey = static_cast<Qt::Key>(it1->qt);
-        }
-    } else if (qstrncmp(emscriptKey->key, "Dead", 4) == 0 ) {
+    if (qstrncmp(emscriptKey->key, "Dead", 4) == 0 ) {
         emkb2qt_t searchKey1{emscriptKey->code, 0};
         for (auto it1 = KeyTbl.cbegin(); it1 != KeyTbl.end(); ++it1)
             if (it1 != KeyTbl.end() && (qstrcmp(searchKey1.em, it1->em) == 0)) {
                 qtKey = static_cast<Qt::Key>(it1->qt);
             }
+
+    } else if (qstrncmp(emscriptKey->code, "Key", 3) == 0 || qstrncmp(emscriptKey->code, "Numpad", 6) == 0 ||
+                 qstrncmp(emscriptKey->code, "Digit", 5) == 0) {
+        emkb2qt_t searchKey{emscriptKey->code, 0}; // search emcsripten code
+        auto it1 = std::lower_bound(KeyTbl.cbegin(), KeyTbl.cend(), searchKey);
+        if (it1 != KeyTbl.end() && !(searchKey < *it1)) {
+            qtKey = static_cast<Qt::Key>(it1->qt);
+        }
     }
 
     if (qtKey == Qt::Key_unknown) {
@@ -545,7 +574,6 @@ void resizeWindow(QWindow *window, QWasmWindow::ResizeMode mode,
 
 void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEvent *mouseEvent)
 {
-    auto timestamp = emscripten_date_now();
     QPoint targetPoint(mouseEvent->targetX, mouseEvent->targetY);
     QPoint globalPoint = screen()->geometry().topLeft() + targetPoint;
 
@@ -553,8 +581,13 @@ void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEven
     Qt::MouseButton button = translateMouseButton(mouseEvent->button);
     Qt::KeyboardModifiers modifiers = translateMouseEventModifier(mouseEvent);
 
-    QWindow *window2 = screen()->compositor()->windowAt(globalPoint, 5);
+    QWindow *window2 = nullptr;
+    if (resizeMode == QWasmWindow::ResizeNone)
+        window2 = screen()->compositor()->windowAt(globalPoint, 5);
 
+    if (lastWindow && lastWindow->cursor() != Qt::ArrowCursor) {
+        lastWindow->setCursor(Qt::ArrowCursor);
+    }
     if (window2 == nullptr) {
         window2 = lastWindow;
     } else {
@@ -609,11 +642,17 @@ void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEven
 
         if (oldWindow)
             oldWindow->injectMouseReleased(localPoint, globalPoint, button, modifiers);
+        else
+            htmlWindow->injectMouseReleased(localPoint, globalPoint, button, modifiers);
         break;
     }
     case EMSCRIPTEN_EVENT_MOUSEMOVE: // drag event
     {
         buttonEventType = QEvent::MouseMove;
+
+        if (htmlWindow && htmlWindow->isPointOnResizeRegion(globalPoint))
+            window2->setCursor(cursorForMode(htmlWindow->resizeModeAtPoint(globalPoint)));
+
         if (!(htmlWindow->m_windowState & Qt::WindowFullScreen) && !(htmlWindow->m_windowState & Qt::WindowMaximized)) {
             if (resizeMode == QWasmWindow::ResizeNone && draggedWindow) {
                 draggedWindow->setX(draggedWindow->x() + mouseEvent->movementX);
@@ -637,7 +676,7 @@ void QWasmEventTranslator::processMouse(int eventType, const EmscriptenMouseEven
     }
     if (window2 && interior) {
         QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
-            window2, timestamp, localPoint, globalPoint, pressedButtons, button, buttonEventType, modifiers);
+            window2, getTimestamp(), localPoint, globalPoint, pressedButtons, button, buttonEventType, modifiers);
     }
 }
 
@@ -648,7 +687,7 @@ int QWasmEventTranslator::focus_cb(int /*eventType*/, const EmscriptenFocusEvent
 
 int QWasmEventTranslator::wheel_cb(int eventType, const EmscriptenWheelEvent *wheelEvent, void *userData)
 {
-    Q_UNUSED(eventType)
+    Q_UNUSED(eventType);
 
     QWasmEventTranslator *eventTranslator = static_cast<QWasmEventTranslator *>(userData);
     EmscriptenMouseEvent mouseEvent = wheelEvent->mouse;
@@ -671,7 +710,6 @@ int QWasmEventTranslator::wheel_cb(int eventType, const EmscriptenWheelEvent *wh
 
     QWasmEventTranslator *translator = (QWasmEventTranslator*)userData;
     Qt::KeyboardModifiers modifiers = translator->translateMouseEventModifier(&mouseEvent);
-    auto timestamp = emscripten_date_now();
     QPoint targetPoint(mouseEvent.targetX, mouseEvent.targetY);
     QPoint globalPoint = eventTranslator->screen()->geometry().topLeft() + targetPoint;
 
@@ -685,7 +723,7 @@ int QWasmEventTranslator::wheel_cb(int eventType, const EmscriptenWheelEvent *wh
     if (wheelEvent->deltaY != 0) pixelDelta.setY(wheelEvent->deltaY * scrollFactor);
     if (wheelEvent->deltaX != 0) pixelDelta.setX(wheelEvent->deltaX * scrollFactor);
 
-    QWindowSystemInterface::handleWheelEvent(window2, timestamp, localPoint,
+    QWindowSystemInterface::handleWheelEvent(window2, getTimestamp(), localPoint,
                                              globalPoint, QPoint(), pixelDelta, modifiers);
     QWasmEventDispatcher::maintainTimers();
 
@@ -738,22 +776,22 @@ int QWasmEventTranslator::handleTouch(int eventType, const EmscriptenTouchEvent 
         case EMSCRIPTEN_EVENT_TOUCHSTART:
             if (tp != pressedTouchIds.constEnd()) {
                 touchPoint.state = (stationaryTouchPoint
-                                    ? Qt::TouchPointStationary
-                                    : Qt::TouchPointMoved);
+                                    ? QEventPoint::State::Stationary
+                                    : QEventPoint::State::Updated);
             } else {
-                touchPoint.state = Qt::TouchPointPressed;
+                touchPoint.state = QEventPoint::State::Pressed;
             }
             pressedTouchIds.insert(touchPoint.id, touchPoint.normalPosition);
 
             break;
         case EMSCRIPTEN_EVENT_TOUCHEND:
-            touchPoint.state = Qt::TouchPointReleased;
+            touchPoint.state = QEventPoint::State::Released;
             pressedTouchIds.remove(touchPoint.id);
             break;
         case EMSCRIPTEN_EVENT_TOUCHMOVE:
             touchPoint.state = (stationaryTouchPoint
-                                ? Qt::TouchPointStationary
-                                : Qt::TouchPointMoved);
+                                ? QEventPoint::State::Stationary
+                                : QEventPoint::State::Updated);
 
             pressedTouchIds.insert(touchPoint.id, touchPoint.normalPosition);
             break;
@@ -778,7 +816,7 @@ int QWasmEventTranslator::handleTouch(int eventType, const EmscriptenTouchEvent 
 
 quint64 QWasmEventTranslator::getTimestamp()
 {
-    return QDeadlineTimer::current().deadlineNSecs() / 1000;
+    return emscripten_performance_now();
 }
 
 struct KeyMapping { Qt::Key from, to; };
@@ -838,12 +876,19 @@ static Qt::Key find(const KeyMapping (&map)[N], Qt::Key key) noexcept
 Qt::Key QWasmEventTranslator::translateDeadKey(Qt::Key deadKey, Qt::Key accentBaseKey)
 {
     Qt::Key wasmKey = Qt::Key_unknown;
+
+    if (deadKey == Qt::Key_QuoteLeft ) {
+        if (g_usePlatformMacSpecifics) { // ` macOS: Key_Dead_Grave
+            wasmKey = find(graveKeyTable, accentBaseKey);
+        } else {
+            wasmKey = find(diaeresisKeyTable, accentBaseKey);
+        }
+        return wasmKey;
+    }
+
     switch (deadKey) {
-#ifdef Q_OS_MACOS
-    case Qt::Key_QuoteLeft: // ` macOS: Key_Dead_Grave
-#else
+    //    case Qt::Key_QuoteLeft:
     case Qt::Key_O: // ´ Key_Dead_Grave
-#endif
         wasmKey = find(graveKeyTable, accentBaseKey);
         break;
     case Qt::Key_E: // ´ Key_Dead_Acute
@@ -853,9 +898,6 @@ Qt::Key QWasmEventTranslator::translateDeadKey(Qt::Key deadKey, Qt::Key accentBa
     case Qt::Key_N:// Key_Dead_Tilde
         wasmKey = find(tildeKeyTable, accentBaseKey);
         break;
-#ifndef Q_OS_MACOS
-    case Qt::Key_QuoteLeft:
-#endif
     case Qt::Key_U:// ¨ Key_Dead_Diaeresis
         wasmKey = find(diaeresisKeyTable, accentBaseKey);
         break;
@@ -962,6 +1004,29 @@ bool QWasmEventTranslator::processKeyboard(int eventType, const EmscriptenKeyboa
     QWasmEventDispatcher::maintainTimers();
 
     return accepted;
+}
+
+QCursor QWasmEventTranslator::cursorForMode(QWasmWindow::ResizeMode m)
+{
+    switch (m) {
+    case QWasmWindow::ResizeTopLeft:
+    case QWasmWindow::ResizeBottomRight:
+        return Qt::SizeFDiagCursor;
+        break;
+    case QWasmWindow::ResizeBottomLeft:
+    case QWasmWindow::ResizeTopRight:
+        return Qt::SizeBDiagCursor;
+        break;
+    case QWasmWindow::ResizeTop:
+    case QWasmWindow::ResizeBottom:
+        return Qt::SizeVerCursor;
+        break;
+    case QWasmWindow::ResizeLeft:
+    case QWasmWindow::ResizeRight:
+        return Qt::SizeHorCursor;
+        break;
+    }
+    return Qt::ArrowCursor;
 }
 
 QT_END_NAMESPACE

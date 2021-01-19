@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
@@ -27,10 +27,14 @@
 ****************************************************************************/
 #include <QCoreApplication>
 #include <QDebug>
+#include <QSemaphore>
+#include <QTestEventLoop>
+#include <QTimer>
+#include <QSignalSpy>
 
 #define QFUTURE_TEST
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qfuture.h>
 #include <qfuturewatcher.h>
 #include <qresultstore.h>
@@ -99,6 +103,7 @@ class tst_QFuture: public QObject
 private slots:
     void resultStore();
     void future();
+    void futureToVoid();
     void futureInterface();
     void refcounting();
     void cancel();
@@ -106,10 +111,11 @@ private slots:
     void multipleResults();
     void indexedResults();
     void progress();
+    void setProgressRange();
+    void progressWithRange();
     void progressText();
     void resultsAfterFinished();
     void resultsAsList();
-    void implicitConversions();
     void iterators();
     void iteratorsThread();
 #if QT_DEPRECATED_SINCE(6, 0)
@@ -136,7 +142,11 @@ private slots:
     void onFailedForMoveOnlyTypes();
 #endif
     void onCanceled();
+    void continuationsWithContext();
+#if 0
+    // TODO: enable when QFuture::takeResults() is enabled
     void takeResults();
+#endif
     void takeResult();
     void runAndTake();
     void resultsReadyAt_data();
@@ -144,6 +154,14 @@ private slots:
     void takeResultWorksForTypesWithoutDefaultCtor();
     void canceledFutureIsNotValid();
     void signalConnect();
+    void waitForFinished();
+
+    void rejectResultOverwrite_data();
+    void rejectResultOverwrite();
+    void rejectPendingResultOverwrite_data() { rejectResultOverwrite_data(); }
+    void rejectPendingResultOverwrite();
+
+    void createReadyFutures();
 
 private:
     using size_type = std::vector<int>::size_type;
@@ -191,8 +209,8 @@ void tst_QFuture::resultStore()
         QVERIFY(it == store.end());
     }
 
-    QVector<int> vec0 = QVector<int>() << 2 << 3;
-    QVector<int> vec1 = QVector<int>() << 4 << 5;
+    QList<int> vec0 = QList<int>() << 2 << 3;
+    QList<int> vec1 = QList<int>() << 4 << 5;
 
     {
         ResultStoreInt store;
@@ -600,6 +618,19 @@ void tst_QFuture::future()
     QCOMPARE(intFuture2.isFinished(), true);
 }
 
+void tst_QFuture::futureToVoid()
+{
+    QPromise<int> p;
+    QFuture<int> future = p.future();
+
+    p.start();
+    p.setProgressValue(42);
+    p.finish();
+
+    QFuture<void> voidFuture = QFuture<void>(future);
+    QCOMPARE(voidFuture.progressValue(), 42);
+}
+
 class IntResult : public QFutureInterface<int>
 {
 public:
@@ -644,7 +675,7 @@ void tst_QFuture::futureInterface()
         {
             QFutureInterface<int> i;
             i.reportStarted();
-            i.reportResult(10);
+            QVERIFY(i.reportResult(10));
             future = i.future();
             i.reportFinished();
         }
@@ -665,7 +696,7 @@ void tst_QFuture::futureInterface()
         QCOMPARE(intFuture.isStarted(), true);
         QCOMPARE(intFuture.isFinished(), false);
 
-        result.reportFinished(&value);
+        QVERIFY(result.reportFinished(&value));
 
         QCOMPARE(intFuture.isStarted(), true);
         QCOMPARE(intFuture.isFinished(), true);
@@ -688,6 +719,16 @@ void tst_QFuture::futureInterface()
 
         VoidResult a;
         a.run().waitForFinished();
+    }
+
+    {
+        QFutureInterface<int> i1;
+        QVERIFY(i1.reportResult(1));
+        QFutureInterface<int> i2;
+        QVERIFY(i2.reportResult(2));
+        swap(i1, i2);  // ADL must resolve this
+        QCOMPARE(i1.resultReference(0), 2);
+        QCOMPARE(i2.resultReference(0), 1);
     }
 }
 
@@ -797,7 +838,7 @@ void tst_QFuture::cancel()
         result = 3;
         futureInterface.reportResult(&result);
         futureInterface.reportFinished();
-        QCOMPARE(f.results(), QList<int>());
+        QVERIFY(f.results().isEmpty());
     }
 }
 
@@ -848,15 +889,15 @@ void tst_QFuture::multipleResults()
     int result;
 
     result = 1;
-    a.reportResult(&result);
+    QVERIFY(a.reportResult(&result));
     QCOMPARE(f.resultAt(0), 1);
 
     result = 2;
-    a.reportResult(&result);
+    QVERIFY(a.reportResult(&result));
     QCOMPARE(f.resultAt(1), 2);
 
     result = 3;
-    a.reportResult(&result);
+    QVERIFY(a.reportResult(&result));
 
     result = 4;
     a.reportFinished(&result);
@@ -867,13 +908,13 @@ void tst_QFuture::multipleResults()
     QList<int> fasit = QList<int>() << 1 << 2 << 3 << 4;
     {
         QList<int> results;
-        foreach(int result, f)
+        for (int result : qAsConst(f))
             results.append(result);
         QCOMPARE(results, fasit);
     }
     {
         QList<int> results;
-        foreach(int result, copy)
+        for (int result : qAsConst(copy))
             results.append(result);
         QCOMPARE(results, fasit);
     }
@@ -897,16 +938,16 @@ void tst_QFuture::indexedResults()
         QChar result;
 
         result = 'B';
-        Interface.reportResult(&result, 1);
+        QVERIFY(Interface.reportResult(&result, 1));
 
         QCOMPARE(f.resultAt(1), result);
 
         result = 'A';
-        Interface.reportResult(&result, 0);
+        QVERIFY(Interface.reportResult(&result, 0));
         QCOMPARE(f.resultAt(0), result);
 
         result = 'C';
-        Interface.reportResult(&result); // no index
+        QVERIFY(Interface.reportResult(&result)); // no index
         QCOMPARE(f.resultAt(2), result);
 
         Interface.reportFinished();
@@ -922,22 +963,22 @@ void tst_QFuture::indexedResults()
         int result;
 
         result = 0;
-        Interface.reportResult(&result, 0);
+        QVERIFY(Interface.reportResult(&result, 0));
         QVERIFY(f.isResultReadyAt(0));
         QCOMPARE(f.resultAt(0), 0);
 
         result = 3;
-        Interface.reportResult(&result, 3);
+        QVERIFY(Interface.reportResult(&result, 3));
         QVERIFY(f.isResultReadyAt(3));
         QCOMPARE(f.resultAt(3), 3);
 
         result = 2;
-        Interface.reportResult(&result, 2);
+        QVERIFY(Interface.reportResult(&result, 2));
         QVERIFY(f.isResultReadyAt(2));
         QCOMPARE(f.resultAt(2), 2);
 
         result = 4;
-        Interface.reportResult(&result); // no index
+        QVERIFY(Interface.reportResult(&result)); // no index
         QVERIFY(f.isResultReadyAt(4));
         QCOMPARE(f.resultAt(4), 4);
 
@@ -968,6 +1009,55 @@ void tst_QFuture::progress()
     QCOMPARE (f.progressValue(), 50);
 }
 
+void tst_QFuture::setProgressRange()
+{
+    QFutureInterface<int> i;
+
+    QCOMPARE(i.progressMinimum(), 0);
+    QCOMPARE(i.progressMaximum(), 0);
+
+    i.setProgressRange(10, 5);
+
+    QCOMPARE(i.progressMinimum(), 10);
+    QCOMPARE(i.progressMaximum(), 10);
+
+    i.setProgressRange(5, 10);
+
+    QCOMPARE(i.progressMinimum(), 5);
+    QCOMPARE(i.progressMaximum(), 10);
+}
+
+void tst_QFuture::progressWithRange()
+{
+    QFutureInterface<int> i;
+    QFuture<int> f;
+
+    i.reportStarted();
+    f = i.future();
+
+    QCOMPARE(i.progressValue(), 0);
+
+    i.setProgressRange(5, 10);
+
+    QCOMPARE(i.progressValue(), 5);
+
+    i.setProgressValue(20);
+
+    QCOMPARE(i.progressValue(), 5);
+
+    i.setProgressValue(9);
+
+    QCOMPARE(i.progressValue(), 9);
+
+    i.setProgressRange(5, 7);
+
+    QCOMPARE(i.progressValue(), 5);
+
+    i.reportFinished();
+
+    QCOMPARE(f.progressValue(), 5);
+}
+
 void tst_QFuture::progressText()
 {
     QFutureInterface<void> i;
@@ -994,7 +1084,7 @@ void tst_QFuture::resultsAfterFinished()
         QCOMPARE(f.resultCount(), 0);
 
         result = 1;
-        a.reportResult(&result);
+        QVERIFY(a.reportResult(&result));
         QCOMPARE(f.resultAt(0), 1);
 
         a.reportFinished();
@@ -1002,7 +1092,7 @@ void tst_QFuture::resultsAfterFinished()
         QCOMPARE(f.resultAt(0), 1);
         QCOMPARE(f.resultCount(), 1);
         result = 2;
-        a.reportResult(&result);
+        QVERIFY(!a.reportResult(&result));
         QCOMPARE(f.resultCount(), 1);
     }
     // cancel it
@@ -1015,7 +1105,7 @@ void tst_QFuture::resultsAfterFinished()
         QCOMPARE(f.resultCount(), 0);
 
         result = 1;
-        a.reportResult(&result);
+        QVERIFY(a.reportResult(&result));
         QCOMPARE(f.resultAt(0), 1);
         QCOMPARE(f.resultCount(), 1);
 
@@ -1025,7 +1115,7 @@ void tst_QFuture::resultsAfterFinished()
         QCOMPARE(f.resultCount(), 1);
 
         result = 2;
-        a.reportResult(&result);
+        QVERIFY(!a.reportResult(&result));
         a.reportFinished();
     }
 }
@@ -1038,33 +1128,14 @@ void tst_QFuture::resultsAsList()
 
     int result;
     result = 1;
-    a.reportResult(&result);
+    QVERIFY(a.reportResult(&result));
     result = 2;
-    a.reportResult(&result);
+    QVERIFY(a.reportResult(&result));
 
     a.reportFinished();
 
     QList<int> results = f.results();
     QCOMPARE(results, QList<int>() << 1 << 2);
-}
-
-/*
-    Test that QFuture<T> can be implicitly converted to T
-*/
-void tst_QFuture::implicitConversions()
-{
-    QFutureInterface<QString> iface;
-    iface.reportStarted();
-
-    QFuture<QString> f(&iface);
-
-    const QString input("FooBar 2000");
-    iface.reportFinished(&input);
-
-    const QString result = f;
-    QCOMPARE(result, input);
-    QCOMPARE(QString(f), input);
-    QCOMPARE(static_cast<QString>(f), input);
 }
 
 void tst_QFuture::iterators()
@@ -1115,13 +1186,13 @@ void tst_QFuture::iterators()
         QVERIFY(c2 != c1);
 
         int x1 = *i1;
-        Q_UNUSED(x1);
+        Q_UNUSED(x1)
         int x2 = *i2;
-        Q_UNUSED(x2);
+        Q_UNUSED(x2)
         int y1 = *c1;
-        Q_UNUSED(y1);
+        Q_UNUSED(y1)
         int y2 = *c2;
-        Q_UNUSED(y2);
+        Q_UNUSED(y2)
     }
 
     {
@@ -1173,10 +1244,10 @@ void tst_QFuture::iterators()
         QCOMPARE(x1, y1);
         QCOMPARE(x2, y2);
 
-        int i1Size = i1->size();
-        int i2Size = i2->size();
-        int c1Size = c1->size();
-        int c2Size = c2->size();
+        auto i1Size = i1->size();
+        auto i2Size = i2->size();
+        auto c1Size = c1->size();
+        auto c2Size = c2->size();
 
         QCOMPARE(i1Size, c1Size);
         QCOMPARE(i2Size, c2Size);
@@ -1481,12 +1552,10 @@ void tst_QFuture::voidConversions()
 
         QFuture<int> intFuture(&iface);
         int value = 10;
-        iface.reportFinished(&value);
+        QVERIFY(iface.reportFinished(&value));
 
         QFuture<void> voidFuture(intFuture);
         voidFuture = intFuture;
-
-        QVERIFY(voidFuture == intFuture);
     }
 
     {
@@ -1496,7 +1565,7 @@ void tst_QFuture::voidConversions()
             iface.reportStarted();
 
             QFuture<QList<int> > listFuture(&iface);
-            iface.reportResult(QList<int>() << 1 << 2 << 3);
+            QVERIFY(iface.reportResult(QList<int>() << 1 << 2 << 3));
             voidFuture = listFuture;
         }
         QCOMPARE(voidFuture.resultCount(), 0);
@@ -1623,7 +1692,7 @@ void tst_QFuture::exceptions()
         bool caught = false;
         try {
             foreach (int e, f.results()) {
-                Q_UNUSED(e);
+                Q_UNUSED(e)
                 QFAIL("did not get exception");
             }
         } catch (QException &) {
@@ -1690,7 +1759,7 @@ void tst_QFuture::nestedExceptions()
 {
     try {
         MyClass m;
-        Q_UNUSED(m);
+        Q_UNUSED(m)
         throw 0;
     } catch (int) {}
 
@@ -1701,7 +1770,7 @@ void tst_QFuture::nestedExceptions()
 
 void tst_QFuture::nonGlobalThreadPool()
 {
-    static Q_CONSTEXPR int Answer = 42;
+    static constexpr int Answer = 42;
 
     struct UselessTask : QRunnable, QFutureInterface<int>
     {
@@ -1718,7 +1787,7 @@ void tst_QFuture::nonGlobalThreadPool()
         void run() override
         {
             const int ms = 100 + (QRandomGenerator::global()->bounded(100) - 100/2);
-            QThread::msleep(ms);
+            QThread::msleep(ulong(ms));
             reportResult(Answer);
             reportFinished();
         }
@@ -1728,7 +1797,7 @@ void tst_QFuture::nonGlobalThreadPool()
 
     const int numTasks = QThread::idealThreadCount();
 
-    QVector<QFuture<int> > futures;
+    QList<QFuture<int>> futures;
     futures.reserve(numTasks);
 
     for (int i = 0; i < numTasks; ++i)
@@ -2756,6 +2825,85 @@ void tst_QFuture::onCanceled()
 #endif // QT_NO_EXCEPTIONS
 }
 
+void tst_QFuture::continuationsWithContext()
+{
+    QThread thread;
+    thread.start();
+
+    auto context = new QObject();
+    context->moveToThread(&thread);
+
+    auto tstThread = QThread::currentThread();
+
+    // .then()
+    {
+        auto future = QtFuture::makeReadyFuture(0)
+                              .then([&](int val) {
+                                  if (QThread::currentThread() != tstThread)
+                                      return 0;
+                                  return val + 1;
+                              })
+                              .then(context,
+                                    [&](int val) {
+                                        if (QThread::currentThread() != &thread)
+                                            return 0;
+                                        return val + 1;
+                                    })
+                              .then([&](int val) {
+                                  if (QThread::currentThread() != &thread)
+                                      return 0;
+                                  return val + 1;
+                              });
+        QCOMPARE(future.result(), 3);
+    }
+
+    // .onCanceled
+    {
+        auto future = createCanceledFuture<int>()
+                              .onCanceled(context,
+                                          [&] {
+                                              if (QThread::currentThread() != &thread)
+                                                  return 0;
+                                              return 1;
+                                          })
+                              .then([&](int val) {
+                                  if (QThread::currentThread() != &thread)
+                                      return 0;
+                                  return val + 1;
+                              });
+        QCOMPARE(future.result(), 2);
+    }
+
+#ifndef QT_NO_EXCEPTIONS
+    // .onFaled()
+    {
+        auto future = QtFuture::makeReadyFuture()
+                              .then([&] {
+                                  if (QThread::currentThread() != tstThread)
+                                      return 0;
+                                  throw std::runtime_error("error");
+                              })
+                              .onFailed(context,
+                                        [&] {
+                                            if (QThread::currentThread() != &thread)
+                                                return 0;
+                                            return 1;
+                                        })
+                              .then([&](int val) {
+                                  if (QThread::currentThread() != &thread)
+                                      return 0;
+                                  return val + 1;
+                              });
+        QCOMPARE(future.result(), 2);
+    }
+#endif // QT_NO_EXCEPTIONS
+
+    context->deleteLater();
+
+    thread.quit();
+    thread.wait();
+}
+
 void tst_QFuture::testSingleResult(const UniquePtr &p)
 {
     QVERIFY(p.get() != nullptr);
@@ -2769,7 +2917,7 @@ void tst_QFuture::testSingleResult(const std::vector<int> &v)
 template<class T>
 void tst_QFuture::testSingleResult(const T &unknown)
 {
-    Q_UNUSED(unknown);
+    Q_UNUSED(unknown)
 }
 
 
@@ -2818,6 +2966,7 @@ void tst_QFuture::testTakeResults(QFuture<T> future, size_type resultCount)
     testFutureTaken(copy);
 }
 
+#if 0
 void tst_QFuture::takeResults()
 {
     // Test takeResults() for movable types (whether or not copyable).
@@ -2833,8 +2982,8 @@ void tst_QFuture::takeResults()
     const int expectedCount = 10;
 
     for (int i = 0; i < expectedCount; ++i) {
-        moveIface.reportAndMoveResult(UniquePtr{new int(0b101010)}, i);
-        copyIface.reportAndMoveResult(std::vector<int>{1,2,3,4,5}, i);
+        QVERIFY(moveIface.reportAndMoveResult(UniquePtr{new int(0b101010)}, i));
+        QVERIFY(copyIface.reportAndMoveResult(std::vector<int>{1,2,3,4,5}, i));
     }
 
     moveIface.reportFinished();
@@ -2846,12 +2995,13 @@ void tst_QFuture::takeResults()
 
     testTakeResults(copyIface.future(), size_type(expectedCount));
 }
+#endif
 
 void tst_QFuture::takeResult()
 {
     QFutureInterface<UniquePtr> iface;
     iface.reportStarted();
-    iface.reportAndMoveResult(UniquePtr{new int(0b101010)}, 0);
+    QVERIFY(iface.reportAndMoveResult(UniquePtr{new int(0b101010)}, 0));
     iface.reportFinished();
 
     auto future = iface.future();
@@ -2892,7 +3042,10 @@ void tst_QFuture::runAndTake()
         QSKIP("Failed to run the task, nothing to test");
 
     gotcha = watcha.future();
+#if 0
+    // TODO: enable when QFuture::takeResults() is enabled
     testTakeResults(gotcha, size_type(1));
+#endif
 }
 
 void tst_QFuture::resultsReadyAt_data()
@@ -2932,9 +3085,9 @@ void tst_QFuture::resultsReadyAt()
     {
         int dummyResult = 0b101010;
         if (testMove)
-            iface.reportAndMoveResult(std::move(dummyResult), index);
+            QVERIFY(iface.reportAndMoveResult(std::move(dummyResult), index));
         else
-            iface.reportResult(&dummyResult, index);
+            QVERIFY(iface.reportResult(&dummyResult, index));
     };
 
     const QSignalSpy readyCounter(&watcher, &QFutureWatcher<int>::resultsReadyAt);
@@ -3064,6 +3217,278 @@ void tst_QFuture::signalConnect()
         QVERIFY(future.isCanceled());
         QVERIFY(!future.isValid());
     }
+}
+
+void tst_QFuture::waitForFinished()
+{
+#if !QT_CONFIG(cxx11_future)
+    QSKIP("This test requires QThread::create");
+#else
+    QFutureInterface<void> fi;
+    auto future = fi.future();
+
+    QScopedPointer<QThread> waitingThread (QThread::create([&] {
+        future.waitForFinished();
+    }));
+
+    waitingThread->start();
+
+    QVERIFY(!waitingThread->wait(200));
+    QVERIFY(!waitingThread->isFinished());
+
+    fi.reportStarted();
+    QVERIFY(!waitingThread->wait(200));
+    QVERIFY(!waitingThread->isFinished());
+
+    fi.reportFinished();
+
+    QVERIFY(waitingThread->wait());
+    QVERIFY(waitingThread->isFinished());
+#endif
+}
+
+void tst_QFuture::rejectResultOverwrite_data()
+{
+    QTest::addColumn<bool>("filterMode");
+    QTest::addColumn<QList<int>>("initResults");
+
+    QTest::addRow("filter-mode-on-1-result") << true << QList<int>({ 456 });
+    QTest::addRow("filter-mode-on-N-results") << true << QList<int>({ 456, 789 });
+    QTest::addRow("filter-mode-off-1-result") << false << QList<int>({ 456 });
+    QTest::addRow("filter-mode-off-N-results") << false << QList<int>({ 456, 789 });
+}
+
+void tst_QFuture::rejectResultOverwrite()
+{
+    QFETCH(bool, filterMode);
+    QFETCH(QList<int>, initResults);
+
+    QFutureInterface<int> iface;
+    iface.setFilterMode(filterMode);
+    auto f = iface.future();
+    QFutureWatcher<int> watcher;
+    watcher.setFuture(f);
+
+    QTestEventLoop eventProcessor;
+    // control the loop by suspend
+    connect(&watcher, &QFutureWatcher<int>::suspending, &eventProcessor, &QTestEventLoop::exitLoop);
+    // internal machinery always emits resultsReadyAt
+    QSignalSpy resultCounter(&watcher, &QFutureWatcher<int>::resultsReadyAt);
+
+    // init
+    if (initResults.size() == 1)
+        QVERIFY(iface.reportResult(initResults[0]));
+    else
+        QVERIFY(iface.reportResults(initResults));
+    QCOMPARE(f.resultCount(), initResults.size());
+    QCOMPARE(f.resultAt(0), initResults[0]);
+    QCOMPARE(f.results(), initResults);
+
+    QTimer::singleShot(50, [&f]() {
+        f.suspend(); // should exit the loop
+    });
+    // Run event loop, QCoreApplication::postEvent is in use
+    // in QFutureInterface:
+    eventProcessor.enterLoopMSecs(2000);
+    QVERIFY(!eventProcessor.timeout());
+    QCOMPARE(resultCounter.count(), 1);
+    f.resume();
+
+    // overwrite with lvalue
+    {
+        int result = -1;
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResult(result, 0));
+        QCOMPARE(f.resultCount(), originalCount);
+        QCOMPARE(f.resultAt(0), initResults[0]);
+    }
+    // overwrite with rvalue
+    {
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResult(-1, 0));
+        QCOMPARE(f.resultCount(), originalCount);
+        QCOMPARE(f.resultAt(0), initResults[0]);
+    }
+    // overwrite with array
+    {
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResults(QList<int> { -1, -2, -3 }, 0));
+        QCOMPARE(f.resultCount(), originalCount);
+        QCOMPARE(f.resultAt(0), initResults[0]);
+    }
+
+    // special case: add result by different index, overlapping with the vector
+    if (initResults.size() > 1) {
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResult(-1, 1));
+        QCOMPARE(f.resultCount(), originalCount);
+        QCOMPARE(f.resultAt(1), initResults[1]);
+    }
+
+    QTimer::singleShot(50, [&f]() {
+        f.suspend(); // should exit the loop
+    });
+    eventProcessor.enterLoopMSecs(2000);
+    QVERIFY(!eventProcessor.timeout());
+    QCOMPARE(resultCounter.count(), 1);
+    f.resume();
+    QCOMPARE(f.results(), initResults);
+}
+
+void tst_QFuture::rejectPendingResultOverwrite()
+{
+    QFETCH(bool, filterMode);
+    QFETCH(QList<int>, initResults);
+
+    QFutureInterface<int> iface;
+    iface.setFilterMode(filterMode);
+    auto f = iface.future();
+    QFutureWatcher<int> watcher;
+    watcher.setFuture(f);
+
+    QTestEventLoop eventProcessor;
+    // control the loop by suspend
+    connect(&watcher, &QFutureWatcher<int>::suspending, &eventProcessor, &QTestEventLoop::exitLoop);
+    // internal machinery always emits resultsReadyAt
+    QSignalSpy resultCounter(&watcher, &QFutureWatcher<int>::resultsReadyAt);
+
+    // init
+    if (initResults.size() == 1)
+        QVERIFY(iface.reportResult(initResults[0], 1));
+    else
+        QVERIFY(iface.reportResults(initResults, 1));
+    QCOMPARE(f.resultCount(), 0); // not visible yet
+    if (!filterMode) {
+        QCOMPARE(f.resultAt(1), initResults[0]);
+        QCOMPARE(f.results(), initResults);
+
+        QTimer::singleShot(50, [&f]() {
+            f.suspend(); // should exit the loop
+        });
+        // Run event loop, QCoreApplication::postEvent is in use
+        // in QFutureInterface:
+        eventProcessor.enterLoopMSecs(2000);
+        QVERIFY(!eventProcessor.timeout());
+        QCOMPARE(resultCounter.count(), 1);
+        f.resume();
+    }
+
+    // overwrite with lvalue
+    {
+        int result = -1;
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResult(result, 1));
+        QCOMPARE(f.resultCount(), originalCount);
+        if (!filterMode)
+            QCOMPARE(f.resultAt(1), initResults[0]);
+    }
+    // overwrite with rvalue
+    {
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResult(-1, 1));
+        QCOMPARE(f.resultCount(), originalCount);
+        if (!filterMode)
+            QCOMPARE(f.resultAt(1), initResults[0]);
+    }
+    // overwrite with array
+    {
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResults(QList<int> { -1, -2 }, 1));
+        QCOMPARE(f.resultCount(), originalCount);
+        if (!filterMode)
+            QCOMPARE(f.resultAt(1), initResults[0]);
+    }
+    // special case: add result by different index, overlapping with the vector
+    if (initResults.size() > 1) {
+        const auto originalCount = f.resultCount();
+        QVERIFY(!iface.reportResult(-1, 2));
+        QCOMPARE(f.resultCount(), originalCount);
+        if (!filterMode)
+            QCOMPARE(f.resultAt(2), initResults[1]);
+    }
+
+    if (!filterMode) {
+        QTimer::singleShot(50, [&f]() {
+            f.suspend(); // should exit the loop
+        });
+        eventProcessor.enterLoopMSecs(2000);
+        QVERIFY(!eventProcessor.timeout());
+        QCOMPARE(resultCounter.count(), 1);
+        f.resume();
+    }
+
+    QVERIFY(iface.reportResult(123, 0)); // make results at 0 and 1 accessible
+    QCOMPARE(f.resultCount(), initResults.size() + 1);
+    QCOMPARE(f.resultAt(1), initResults[0]);
+    initResults.prepend(123);
+    QCOMPARE(f.results(), initResults);
+}
+
+void tst_QFuture::createReadyFutures()
+{
+    // using const T &
+    {
+        const int val = 42;
+        QFuture<int> f = QtFuture::makeReadyFuture(val);
+        QCOMPARE(f.result(), val);
+    }
+
+    // using T
+    {
+        int val = 42;
+        QFuture<int> f = QtFuture::makeReadyFuture(val);
+        QCOMPARE(f.result(), val);
+    }
+
+    // using T &&
+    {
+        auto f = QtFuture::makeReadyFuture(std::make_unique<int>(42));
+        QCOMPARE(*f.takeResult(), 42);
+    }
+
+    // using void
+    {
+        auto f = QtFuture::makeReadyFuture();
+        QVERIFY(f.isStarted());
+        QVERIFY(!f.isRunning());
+        QVERIFY(f.isFinished());
+    }
+
+    // using const QList<T> &
+    {
+        const QList<int> values { 1, 2, 3 };
+        auto f = QtFuture::makeReadyFuture(values);
+        QCOMPARE(f.resultCount(), 3);
+        QCOMPARE(f.results(), values);
+    }
+
+#ifndef QT_NO_EXCEPTIONS
+    // using QException
+    {
+        QException e;
+        auto f = QtFuture::makeExceptionalFuture<int>(e);
+        bool caught = false;
+        try {
+            f.result();
+        } catch (QException &) {
+            caught = true;
+        }
+        QVERIFY(caught);
+    }
+
+    // using std::exception_ptr and QFuture<void>
+    {
+        auto exception = std::make_exception_ptr(TestException());
+        auto f = QtFuture::makeExceptionalFuture(exception);
+        bool caught = false;
+        try {
+            f.waitForFinished();
+        } catch (TestException &) {
+            caught = true;
+        }
+        QVERIFY(caught);
+    }
+#endif
 }
 
 QTEST_MAIN(tst_QFuture)

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -261,52 +261,13 @@ QItemSelectionRange QItemSelectionRange::intersected(const QItemSelectionRange &
 */
 
 /*!
-    Returns \c true if the selection range is less than the \a other
-    range given; otherwise returns \c false.
-
-    The less than calculation is not directly useful to developers - the way that ranges
-    with different parents compare is not defined. This operator only exists so that the
-    class can be used with QMap.
-
-*/
-bool QItemSelectionRange::operator<(const QItemSelectionRange &other) const
-{
-    // ### Qt 6: This is inconsistent with op== and needs to be fixed, nay,
-    // ###       removed, but cannot, because it was inline up to and including 5.9
-
-    // Comparing parents will compare the models, but if two equivalent ranges
-    // in two different models have invalid parents, they would appear the same
-    if (other.tl.model() == tl.model()) {
-        // parent has to be calculated, so we only do so once.
-        const QModelIndex topLeftParent = tl.parent();
-        const QModelIndex otherTopLeftParent = other.tl.parent();
-        if (topLeftParent == otherTopLeftParent) {
-            if (other.tl.row() == tl.row()) {
-                if (other.tl.column() == tl.column()) {
-                    if (other.br.row() == br.row()) {
-                        return br.column() < other.br.column();
-                    }
-                    return br.row() < other.br.row();
-                }
-                return tl.column() < other.tl.column();
-            }
-            return tl.row() < other.tl.row();
-        }
-        return topLeftParent < otherTopLeftParent;
-    }
-
-    std::less<const QAbstractItemModel *> less;
-    return less(tl.model(), other.tl.model());
-}
-
-/*!
     \fn bool QItemSelectionRange::isValid() const
 
     Returns \c true if the selection range is valid; otherwise returns \c false.
 
 */
 
-static void rowLengthsFromRange(const QItemSelectionRange &range, QVector<QPair<QPersistentModelIndex, uint> > &result)
+static void rowLengthsFromRange(const QItemSelectionRange &range, QList<QPair<QPersistentModelIndex, uint>> &result)
 {
     if (range.isValid() && range.model()) {
         const QModelIndex topLeft = range.topLeft();
@@ -495,9 +456,9 @@ QModelIndexList QItemSelection::indexes() const
     return qSelectionIndexes<QModelIndexList>(*this);
 }
 
-static QVector<QPair<QPersistentModelIndex, uint> > qSelectionPersistentRowLengths(const QItemSelection &sel)
+static QList<QPair<QPersistentModelIndex, uint>> qSelectionPersistentRowLengths(const QItemSelection &sel)
 {
-    QVector<QPair<QPersistentModelIndex, uint> > result;
+    QList<QPair<QPersistentModelIndex, uint>> result;
     for (const QItemSelectionRange &range : sel)
         rowLengthsFromRange(range, result);
     return result;
@@ -902,14 +863,14 @@ void QItemSelectionModelPrivate::_q_layoutAboutToBeChanged(const QList<QPersiste
         savedPersistentRowLengths = qSelectionPersistentRowLengths(ranges);
         savedPersistentCurrentRowLengths = qSelectionPersistentRowLengths(currentSelection);
     } else {
-        savedPersistentIndexes = qSelectionIndexes<QVector<QPersistentModelIndex>>(ranges);
-        savedPersistentCurrentIndexes = qSelectionIndexes<QVector<QPersistentModelIndex>>(currentSelection);
+        savedPersistentIndexes = qSelectionIndexes<QList<QPersistentModelIndex>>(ranges);
+        savedPersistentCurrentIndexes = qSelectionIndexes<QList<QPersistentModelIndex>>(currentSelection);
     }
 }
 /*!
     \internal
 */
-static QItemSelection mergeRowLengths(const QVector<QPair<QPersistentModelIndex, uint> > &rowLengths)
+static QItemSelection mergeRowLengths(const QList<QPair<QPersistentModelIndex, uint>> &rowLengths)
 {
     if (rowLengths.isEmpty())
       return QItemSelection();
@@ -949,7 +910,7 @@ static QItemSelection mergeRowLengths(const QVector<QPair<QPersistentModelIndex,
     Merges \a indexes into an item selection made up of ranges.
     Assumes that the indexes are sorted.
 */
-static QItemSelection mergeIndexes(const QVector<QPersistentModelIndex> &indexes)
+static QItemSelection mergeIndexes(const QList<QPersistentModelIndex> &indexes)
 {
     QItemSelection colSpans;
     // merge columns
@@ -1259,10 +1220,10 @@ struct IsNotValid {
     typedef bool result_type;
     struct is_transparent : std::true_type {};
     template <typename T>
-    Q_DECL_CONSTEXPR bool operator()(T &t) const noexcept(noexcept(t.isValid()))
+    constexpr bool operator()(T &t) const noexcept(noexcept(t.isValid()))
     { return !t.isValid(); }
     template <typename T>
-    Q_DECL_CONSTEXPR bool operator()(T *t) const noexcept(noexcept(t->isValid()))
+    constexpr bool operator()(T *t) const noexcept(noexcept(t->isValid()))
     { return !t->isValid(); }
 };
 }
@@ -1291,9 +1252,7 @@ void QItemSelectionModel::select(const QItemSelection &selection, QItemSelection
     // be too late if another model observer is connected to the same modelReset slot and is invoked first
     // it might call select() on this selection model before any such QItemSelectionModelPrivate::_q_modelReset() slot
     // is invoked, so it would not be cleared yet. We clear it invalid ranges in it here.
-    using namespace QtFunctionObjects;
-    d->ranges.erase(std::remove_if(d->ranges.begin(), d->ranges.end(), IsNotValid()),
-                    d->ranges.end());
+    d->ranges.removeIf(QtFunctionObjects::IsNotValid());
 
     QItemSelection old = d->ranges;
     old.merge(d->currentSelection, d->currentCommand);
@@ -1794,10 +1753,7 @@ const QItemSelection QItemSelectionModel::selection() const
     selected.merge(d->currentSelection, d->currentCommand);
     // make sure we have no invalid ranges
     // ###  should probably be handled more generic somewhere else
-    using namespace QtFunctionObjects;
-    selected.erase(std::remove_if(selected.begin(), selected.end(),
-                                  IsNotValid()),
-                   selected.end());
+    selected.removeIf(QtFunctionObjects::IsNotValid());
     return selected;
 }
 

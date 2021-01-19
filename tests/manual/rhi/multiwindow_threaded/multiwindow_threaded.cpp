@@ -268,7 +268,7 @@ struct Renderer
     QColor m_bgColor;
     int m_rotationAxis;
 
-    QVector<QRhiResource *> m_releasePool;
+    QList<QRhiResource *> m_releasePool;
     bool m_hasSwapChain = false;
     QRhiSwapChain *m_sc = nullptr;
     QRhiRenderBuffer *m_ds = nullptr;
@@ -613,7 +613,7 @@ void Renderer::render(bool newlyExposed, bool wakeBeforePresent)
     cb->setShaderResources();
     const QRhiCommandBuffer::VertexInput vbufBindings[] = {
         { m_vbuf, 0 },
-        { m_vbuf, 36 * 3 * sizeof(float) }
+        { m_vbuf, quint32(36 * 3 * sizeof(float)) }
     };
     cb->setVertexInput(0, 2, vbufBindings);
     cb->draw(36);
@@ -691,7 +691,7 @@ struct WindowAndRenderer
     Renderer *renderer;
 };
 
-QVector<WindowAndRenderer> windows;
+QList<WindowAndRenderer> windows;
 
 void createWindow()
 {
@@ -725,7 +725,6 @@ void closeWindow()
 
 int main(int argc, char **argv)
 {
-    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QApplication app(argc, argv);
 
 #if defined(Q_OS_WIN)

@@ -572,7 +572,7 @@ void QTextEditPrivate::_q_ensureVisible(const QRectF &_rect)
     of the movement keystrokes, for example, \e{Shift+Right}
     will select the character to the right, and \e{Shift+Ctrl+Right} will select the word to the right, etc.
 
-    \sa QTextDocument, QTextCursor, {Application Example},
+    \sa QTextDocument, QTextCursor, {Qt Widgets - Application Example},
         {Syntax Highlighter Example}, {Rich Text Processing}
 */
 
@@ -580,8 +580,9 @@ void QTextEditPrivate::_q_ensureVisible(const QRectF &_rect)
     \property QTextEdit::plainText
     \since 4.3
 
-    This property gets and sets the text editor's contents as plain
-    text. Previous contents are removed and undo/redo history is reset
+    \brief the text editor's contents as plain text.
+
+    Previous contents are removed and undo/redo history is reset
     when the property is set. currentCharFormat() is also reset, unless
     textCursor() is already at the beginning of the document.
 
@@ -598,7 +599,7 @@ void QTextEditPrivate::_q_ensureVisible(const QRectF &_rect)
 
 /*!
     \property QTextEdit::undoRedoEnabled
-    \brief whether undo and redo are enabled
+    \brief whether undo and redo are enabled.
 
     Users are only able to undo or redo actions if this property is
     true, and if there is an action that can be undone (or redone).
@@ -685,7 +686,7 @@ qreal QTextEdit::fontPointSize() const
 QString QTextEdit::fontFamily() const
 {
     Q_D(const QTextEdit);
-    return d->control->textCursor().charFormat().fontFamily();
+    return d->control->textCursor().charFormat().fontFamilies().toStringList().value(0, QString());
 }
 
 /*!
@@ -877,7 +878,7 @@ QTextCursor QTextEdit::textCursor() const
 void QTextEdit::setFontFamily(const QString &fontFamily)
 {
     QTextCharFormat fmt;
-    fmt.setFontFamily(fontFamily);
+    fmt.setFontFamilies({fontFamily});
     mergeCurrentCharFormat(fmt);
 }
 
@@ -1111,7 +1112,7 @@ bool QTextEdit::event(QEvent *e)
         d->sendControlEvent(e);
     }
 #else
-    Q_UNUSED(d)
+    Q_UNUSED(d);
 #endif // QT_NO_CONTEXTMENU
 #ifdef QT_KEYPAD_NAVIGATION
     if (e->type() == QEvent::EnterEditFocus || e->type() == QEvent::LeaveEditFocus) {
@@ -1914,7 +1915,7 @@ void QTextEdit::changeEvent(QEvent *e)
     if (e->type() == QEvent::ApplicationFontChange
         || e->type() == QEvent::FontChange) {
         d->control->document()->setDefaultFont(font());
-    }  else if(e->type() == QEvent::ActivationChange) {
+    }  else if (e->type() == QEvent::ActivationChange) {
         if (!isActiveWindow())
             d->autoScrollTimer.stop();
     } else if (e->type() == QEvent::EnabledChange) {

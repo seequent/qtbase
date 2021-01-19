@@ -4,7 +4,8 @@
 ## FbSupport Module:
 #####################################################################
 
-qt_add_module(FbSupport
+qt_internal_add_module(FbSupport
+    CONFIG_MODULE_NAME fb_support
     STATIC
     INTERNAL_MODULE
     SOURCES

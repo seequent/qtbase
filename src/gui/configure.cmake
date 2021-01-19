@@ -30,7 +30,7 @@ qt_find_package(ATSPI2 PROVIDED_TARGETS PkgConfig::ATSPI2 MODULE_NAME gui QMAKE_
 qt_find_package(DirectFB PROVIDED_TARGETS PkgConfig::DirectFB MODULE_NAME gui QMAKE_LIB directfb)
 qt_find_package(Libdrm PROVIDED_TARGETS Libdrm::Libdrm MODULE_NAME gui QMAKE_LIB drm)
 qt_find_package(EGL PROVIDED_TARGETS EGL::EGL MODULE_NAME gui QMAKE_LIB egl)
-qt_find_package(WrapSystemFreetype PROVIDED_TARGETS WrapSystemFreetype::WrapSystemFreetype MODULE_NAME gui QMAKE_LIB freetype)
+qt_find_package(WrapSystemFreetype 2.2.0 PROVIDED_TARGETS WrapSystemFreetype::WrapSystemFreetype MODULE_NAME gui QMAKE_LIB freetype)
 set_package_properties(WrapFreetype PROPERTIES TYPE REQUIRED)
 if(QT_FEATURE_system_zlib)
     qt_add_qmake_lib_dependency(freetype zlib)
@@ -38,7 +38,7 @@ endif()
 qt_find_package(Fontconfig PROVIDED_TARGETS Fontconfig::Fontconfig MODULE_NAME gui QMAKE_LIB fontconfig)
 qt_add_qmake_lib_dependency(fontconfig freetype)
 qt_find_package(gbm PROVIDED_TARGETS gbm::gbm MODULE_NAME gui QMAKE_LIB gbm)
-qt_find_package(WrapSystemHarfbuzz PROVIDED_TARGETS WrapSystemHarfbuzz::WrapSystemHarfbuzz MODULE_NAME gui QMAKE_LIB harfbuzz)
+qt_find_package(WrapSystemHarfbuzz 2.6.0 PROVIDED_TARGETS WrapSystemHarfbuzz::WrapSystemHarfbuzz MODULE_NAME gui QMAKE_LIB harfbuzz)
 qt_find_package(Libinput PROVIDED_TARGETS Libinput::Libinput MODULE_NAME gui QMAKE_LIB libinput)
 qt_find_package(JPEG PROVIDED_TARGETS JPEG::JPEG MODULE_NAME gui QMAKE_LIB libjpeg)
 qt_find_package(WrapSystemPNG PROVIDED_TARGETS WrapSystemPNG::WrapSystemPNG MODULE_NAME gui QMAKE_LIB libpng)
@@ -46,10 +46,10 @@ if(QT_FEATURE_system_zlib)
     qt_add_qmake_lib_dependency(libpng zlib)
 endif()
 qt_find_package(Mtdev PROVIDED_TARGETS PkgConfig::Mtdev MODULE_NAME gui QMAKE_LIB mtdev)
-qt_find_package(OpenGL PROVIDED_TARGETS OpenGL::GL MODULE_NAME gui QMAKE_LIB opengl)
+qt_find_package(WrapOpenGL PROVIDED_TARGETS WrapOpenGL::WrapOpenGL MODULE_NAME gui QMAKE_LIB opengl)
 qt_find_package(GLESv2 PROVIDED_TARGETS GLESv2::GLESv2 MODULE_NAME gui QMAKE_LIB opengl_es2)
 qt_find_package(Tslib PROVIDED_TARGETS PkgConfig::Tslib MODULE_NAME gui QMAKE_LIB tslib)
-qt_find_package(Vulkan PROVIDED_TARGETS Vulkan::Vulkan MODULE_NAME gui QMAKE_LIB vulkan)
+qt_find_package(Vulkan PROVIDED_TARGETS Vulkan::Vulkan MODULE_NAME gui QMAKE_LIB vulkan MARK_OPTIONAL) # special case
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
     qt_find_package(Wayland PROVIDED_TARGETS Wayland::Server MODULE_NAME gui QMAKE_LIB wayland_server)
 endif()
@@ -60,22 +60,22 @@ if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
     qt_find_package(X11 PROVIDED_TARGETS ${X11_SM_LIB} ${X11_ICE_LIB} MODULE_NAME gui QMAKE_LIB x11sm)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB 1.9 PROVIDED_TARGETS XCB::XCB MODULE_NAME gui QMAKE_LIB xcb)
+    qt_find_package(XCB 1.11 PROVIDED_TARGETS XCB::XCB MODULE_NAME gui QMAKE_LIB xcb)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS ICCCM PROVIDED_TARGETS XCB::ICCCM MODULE_NAME gui QMAKE_LIB xcb_icccm)
+    qt_find_package(XCB 0.3.9 COMPONENTS ICCCM PROVIDED_TARGETS XCB::ICCCM MODULE_NAME gui QMAKE_LIB xcb_icccm)
 endif()
 qt_add_qmake_lib_dependency(xcb_icccm xcb)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS IMAGE PROVIDED_TARGETS XCB::IMAGE MODULE_NAME gui QMAKE_LIB xcb_image)
+    qt_find_package(XCB 0.3.9 COMPONENTS IMAGE PROVIDED_TARGETS XCB::IMAGE MODULE_NAME gui QMAKE_LIB xcb_image)
 endif()
 qt_add_qmake_lib_dependency(xcb_image xcb_shm xcb)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS KEYSYMS PROVIDED_TARGETS XCB::KEYSYMS MODULE_NAME gui QMAKE_LIB xcb_keysyms)
+    qt_find_package(XCB 0.3.9 COMPONENTS KEYSYMS PROVIDED_TARGETS XCB::KEYSYMS MODULE_NAME gui QMAKE_LIB xcb_keysyms)
 endif()
 qt_add_qmake_lib_dependency(xcb_keysyms xcb)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS RENDERUTIL PROVIDED_TARGETS XCB::RENDERUTIL MODULE_NAME gui QMAKE_LIB xcb_renderutil)
+    qt_find_package(XCB 0.3.9 COMPONENTS RENDERUTIL PROVIDED_TARGETS XCB::RENDERUTIL MODULE_NAME gui QMAKE_LIB xcb_renderutil)
 endif()
 qt_add_qmake_lib_dependency(xcb_renderutil xcb xcb_render)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
@@ -99,10 +99,6 @@ if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
 endif()
 qt_add_qmake_lib_dependency(xcb_xfixes xcb)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS XINERAMA PROVIDED_TARGETS XCB::XINERAMA MODULE_NAME gui QMAKE_LIB xcb_xinerama)
-endif()
-qt_add_qmake_lib_dependency(xcb_xinerama xcb)
-if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
     qt_find_package(X11_XCB PROVIDED_TARGETS X11::XCB MODULE_NAME gui QMAKE_LIB xcb_xlib)
 endif()
 qt_add_qmake_lib_dependency(xcb_xlib xcb xlib)
@@ -119,17 +115,17 @@ if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
 endif()
 qt_add_qmake_lib_dependency(xcb_glx xcb)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XCB COMPONENTS XINPUT PROVIDED_TARGETS XCB::XINPUT MODULE_NAME gui QMAKE_LIB xcb_xinput)
+    qt_find_package(XCB 1.12 COMPONENTS XINPUT PROVIDED_TARGETS XCB::XINPUT MODULE_NAME gui QMAKE_LIB xcb_xinput)
 endif()
 qt_add_qmake_lib_dependency(xcb_xinput xcb)
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XKB 0.4.1 PROVIDED_TARGETS XKB::XKB MODULE_NAME gui QMAKE_LIB xkbcommon)
+    qt_find_package(XKB 0.5.0 PROVIDED_TARGETS XKB::XKB MODULE_NAME gui QMAKE_LIB xkbcommon)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XKB_COMMON_X11 0.4.1 PROVIDED_TARGETS PkgConfig::XKB_COMMON_X11 MODULE_NAME gui QMAKE_LIB xkbcommon_x11)
+    qt_find_package(XKB_COMMON_X11 0.5.0 PROVIDED_TARGETS PkgConfig::XKB_COMMON_X11 MODULE_NAME gui QMAKE_LIB xkbcommon_x11)
 endif()
 if((LINUX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
-    qt_find_package(XRender PROVIDED_TARGETS PkgConfig::XRender MODULE_NAME gui QMAKE_LIB xrender)
+    qt_find_package(XRender 0.6 PROVIDED_TARGETS PkgConfig::XRender MODULE_NAME gui QMAKE_LIB xrender)
 endif()
 qt_add_qmake_lib_dependency(xrender xlib)
 
@@ -278,6 +274,8 @@ qt_config_compile_test(egl_viv
     LABEL "i.Mx6 EGL"
     LIBRARIES
         EGL::EGL
+    COMPILE_OPTIONS # special case
+        "-DEGL_API_FB=1" # special case
     CODE
 "
 #include <EGL/egl.h>
@@ -491,7 +489,6 @@ qt_config_compile_test(xcb_syslibs
         XCB::SHM
         XCB::SYNC
         XCB::XFIXES
-        XCB::XINERAMA
         XCB::XKB
         XCB::XCB
     CODE
@@ -506,7 +503,6 @@ qt_config_compile_test(xcb_syslibs
 #include <xcb/shm.h>
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
-#include <xcb/xinerama.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xkb.h>
@@ -532,6 +528,69 @@ xcb_xkb_get_kbd_by_name_replies_key_names_value_list_sizeof(nullptr, 0, 0, 0, 0,
 }
 ")
 
+# special case begin
+# directwrite (assumes DirectWrite2)
+qt_config_compile_test(directwrite
+    LABEL "WINDOWS directwrite"
+    LIBRARIES
+        dwrite
+    CODE
+"#include <dwrite_2.h>
+int main(int, char **)
+{
+    IUnknown *factory = nullptr;
+    DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory2),
+                        &factory);
+    return 0;
+}
+")
+
+# directwrite3 (not present in MinGW)
+qt_config_compile_test(directwrite3
+    LABEL "WINDOWS directwrite3"
+    LIBRARIES
+        dwrite
+    CODE
+"#include <dwrite_3.h>
+int main(int, char **)
+{
+    IUnknown *factory = nullptr;
+    DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory3),
+                        &factory);
+    return 0;
+}
+")
+
+qt_config_compile_test(d2d1
+    LABEL "WINDOWS Direct2D"
+    LIBRARIES
+        d2d1
+    CODE
+"#include <d2d1.h>
+int main(int, char **)
+{
+    void *factory = nullptr;
+    D2D1_FACTORY_OPTIONS options;
+    ZeroMemory(&options, sizeof(D2D1_FACTORY_OPTIONS));
+    D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, GUID{}, &options, &factory);
+    return 0;
+}
+")
+
+qt_config_compile_test(d2d1_1
+    LABEL "WINDOWS Direct2D 1.1"
+    LIBRARIES
+        d2d1
+    CODE
+"#include <d2d1_1.h>
+int main(int, char **)
+{
+    ID2D1Factory1 *d2dFactory;
+    D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2dFactory);
+    return 0;
+}
+")
+# special case end
 
 
 #### Features
@@ -549,31 +608,21 @@ qt_feature("directfb" PRIVATE
 )
 qt_feature("directwrite" PRIVATE
     LABEL "DirectWrite"
-    CONDITION libs.dwrite OR FIXME
-    EMIT_IF WIN32
-)
-qt_feature("directwrite1" PRIVATE
-    LABEL "DirectWrite 1"
-    CONDITION libs.dwrite_1 OR FIXME
+    CONDITION TEST_directwrite # special case
     EMIT_IF WIN32
 )
 qt_feature("directwrite3" PRIVATE
     LABEL "DirectWrite 3"
-    CONDITION QT_FEATURE_directwrite1 AND libs.dwrite_3 OR FIXME
-    EMIT_IF WIN32
-)
-qt_feature("directwrite2" PRIVATE
-    LABEL "DirectWrite 2"
-    CONDITION QT_FEATURE_directwrite1 AND libs.dwrite_2 OR FIXME
+    CONDITION QT_FEATURE_directwrite AND TEST_directwrite3 # special case
     EMIT_IF WIN32
 )
 qt_feature("direct2d" PRIVATE
     LABEL "Direct 2D"
-    CONDITION WIN32 AND libs.d2d1 OR FIXME
+    CONDITION WIN32 AND NOT WINRT AND TEST_d2d1 # special case
 )
 qt_feature("direct2d1_1" PRIVATE
     LABEL "Direct 2D 1.1"
-    CONDITION QT_FEATURE_direct2d AND libs.d2d1_1 OR FIXME
+    CONDITION QT_FEATURE_direct2d AND TEST_d2d1_1 # special case
 )
 qt_feature("evdev" PRIVATE
     LABEL "evdev"
@@ -595,7 +644,7 @@ qt_feature("system-freetype" PRIVATE
 qt_feature("fontconfig" PUBLIC PRIVATE
     LABEL "Fontconfig"
     AUTODETECT NOT APPLE
-    CONDITION NOT MSVC AND QT_FEATURE_system_freetype AND FONTCONFIG_FOUND
+    CONDITION NOT WIN32 AND QT_FEATURE_system_freetype AND FONTCONFIG_FOUND
 )
 qt_feature_definition("fontconfig" "QT_NO_FONTCONFIG" NEGATE VALUE "1")
 qt_feature("gbm"
@@ -692,7 +741,7 @@ qt_feature("opengles32" PUBLIC
 qt_feature("opengl-desktop"
     LABEL "Desktop OpenGL"
     AUTODETECT NOT WIN32
-    CONDITION ( WIN32 AND ( MSVC OR OpenGL_FOUND ) ) OR ( NOT WATCHOS AND NOT WIN32 AND NOT WASM AND OpenGL_FOUND )
+    CONDITION ( WIN32 AND ( MSVC OR WrapOpenGL_FOUND ) ) OR ( NOT WATCHOS AND NOT WIN32 AND NOT WASM AND WrapOpenGL_FOUND )
     ENABLE INPUT_opengl STREQUAL 'desktop'
     DISABLE INPUT_opengl STREQUAL 'es2' OR INPUT_opengl STREQUAL 'dynamic' OR INPUT_opengl STREQUAL 'no'
 )
@@ -724,7 +773,7 @@ qt_feature("openvg" PUBLIC
     LABEL "OpenVG"
     CONDITION libs.openvg OR FIXME
 )
-qt_feature("egl" PUBLIC PRIVATE
+qt_feature("egl" PUBLIC
     LABEL "EGL"
     CONDITION ( QT_FEATURE_opengl OR QT_FEATURE_openvg ) AND EGL_FOUND AND ( QT_FEATURE_dlopen OR NOT UNIX OR INTEGRITY )
 )
@@ -812,6 +861,10 @@ qt_feature("system-png" PRIVATE
     ENABLE INPUT_libpng STREQUAL 'system'
     DISABLE INPUT_libpng STREQUAL 'qt'
 )
+qt_feature("imageio-text-loading" PRIVATE
+    LABEL "Image Text section loading"
+)
+qt_feature_definition("imageio-text-loading" "QT_NO_IMAGEIO_TEXT_LOADING" NEGATE)
 qt_feature("sessionmanager" PUBLIC
     SECTION "Kernel"
     LABEL "Session Management"
@@ -990,6 +1043,13 @@ qt_feature("standarditemmodel" PUBLIC
     CONDITION QT_FEATURE_itemmodel
 )
 qt_feature_definition("standarditemmodel" "QT_NO_STANDARDITEMMODEL" NEGATE VALUE "1")
+qt_feature("filesystemmodel" PUBLIC
+    SECTION "File I/O"
+    LABEL "QFileSystemModel"
+    PURPOSE "Provides a data model for the local filesystem."
+    CONDITION QT_FEATURE_itemmodel
+)
+qt_feature_definition("filesystemmodel" "QT_NO_FILESYSTEMMODEL" NEGATE VALUE "1")
 qt_feature("imageformatplugin" PUBLIC
     SECTION "Images"
     LABEL "QImageIOPlugin"
@@ -1215,8 +1275,9 @@ qt_configure_end_summary_section() # end of "GL integrations" section
 qt_configure_end_summary_section() # end of "XCB" section
 qt_configure_add_summary_section(NAME "Windows")
 qt_configure_add_summary_entry(ARGS "direct2d")
+qt_configure_add_summary_entry(ARGS "direct2d1_1") ### special case
 qt_configure_add_summary_entry(ARGS "directwrite")
-qt_configure_add_summary_entry(ARGS "directwrite2")
+qt_configure_add_summary_entry(ARGS "directwrite3")
 qt_configure_end_summary_section() # end of "Windows" section
 qt_configure_end_summary_section() # end of "QPA backends" section
 qt_configure_add_report_entry(
@@ -1228,11 +1289,6 @@ qt_configure_add_report_entry(
     TYPE NOTE
     MESSAGE "Disabling X11 Accessibility Bridge: D-Bus or AT-SPI is missing."
     CONDITION QT_FEATURE_accessibility AND QT_FEATURE_xcb AND NOT QT_FEATURE_accessibility_atspi_bridge
-)
-qt_configure_add_report_entry(
-    TYPE WARNING
-    MESSAGE "The [-no]-qpa-platform-guard argument is deprecated and has no effect."
-    CONDITION ( NOT INPUT_qpa_platform_guard STREQUAL '' )
 )
 qt_configure_add_report_entry(
     TYPE WARNING

@@ -184,7 +184,7 @@ QSettings *QLibraryInfoPrivate::findConfiguration()
 {
 #ifdef QT_BUILD_QMAKE
     QString qtconfig = qmake_libraryInfoFile();
-    if (QFile::exists(qtconfig))
+    if (!qtconfig.isEmpty())
         return new QSettings(qtconfig, QSettings::IniFormat);
 #else
     QString qtconfig = QStringLiteral(":/qt/etc/qt.conf");
@@ -207,6 +207,9 @@ QSettings *QLibraryInfoPrivate::findConfiguration()
 #endif
     if (QCoreApplication::instance()) {
         QDir pwd(QCoreApplication::applicationDirPath());
+        qtconfig = pwd.filePath(QLatin1String("qt" QT_STRINGIFY(QT_VERSION_MAJOR) ".conf"));
+        if (QFile::exists(qtconfig))
+            return new QSettings(qtconfig, QSettings::IniFormat);
         qtconfig = pwd.filePath(QLatin1String("qt.conf"));
         if (QFile::exists(qtconfig))
             return new QSettings(qtconfig, QSettings::IniFormat);
@@ -246,47 +249,6 @@ QSettings *QLibraryInfoPrivate::findConfiguration()
 
 QLibraryInfo::QLibraryInfo()
 { }
-
-/*!
-  \deprecated
-  This function used to return the person to whom this build of Qt is licensed, now returns an empty string.
-*/
-
-#if QT_DEPRECATED_SINCE(5, 8)
-QString
-QLibraryInfo::licensee()
-{
-    return QString();
-}
-#endif
-
-/*!
-  \deprecated
-  This function used to return the products that the license for this build of Qt has access to, now returns an empty string.
-*/
-
-#if QT_DEPRECATED_SINCE(5, 8)
-QString
-QLibraryInfo::licensedProducts()
-{
-    return QString();
-}
-#endif
-
-/*!
-    \since 4.6
-    \deprecated
-    This function used to return the installation date for this build of Qt, but now returns a constant date.
-*/
-#if QT_CONFIG(datestring)
-#if QT_DEPRECATED_SINCE(5, 5)
-QDate
-QLibraryInfo::buildDate()
-{
-    return QDate::fromString(QString::fromLatin1("2012-12-20"), Qt::ISODate);
-}
-#endif
-#endif // datestring
 
 #if defined(Q_CC_INTEL) // must be before GNU, Clang and MSVC because ICC/ICL claim to be them
 #  ifdef __INTEL_CLANG_COMPILER
@@ -397,7 +359,7 @@ QVersionNumber QLibraryInfo::version() noexcept
 #endif // QT_BUILD_QMAKE
 
 /*
- * To add a new entry in QLibrary::LibraryLocation, add it to the enum above the bootstrapped values and:
+ * To add a new entry in QLibrary::LibraryPath, add it to the enum above the bootstrapped values and:
  * - add its relative path in the qtConfEntries[] array below
  *   (the key is what appears in a qt.conf file)
  * - add a property name in qmake/property.cpp propList[] array
@@ -638,8 +600,8 @@ QString qmake_abslocation();
 
 static QString getPrefixFromHostBinDir(const char *hostBinDirToPrefixPath)
 {
-    const QFileInfo qmfi = QFileInfo(qmake_abslocation()).canonicalFilePath();
-    return QDir::cleanPath(qmfi.absolutePath() + QLatin1Char('/')
+    const QString canonicalQMakePath = QFileInfo(qmake_abslocation()).canonicalPath();
+    return QDir::cleanPath(canonicalQMakePath + QLatin1Char('/')
                            + QLatin1String(hostBinDirToPrefixPath));
 }
 
@@ -677,12 +639,20 @@ static QString getPrefix(
 }
 #endif // QT_BUILD_QMAKE_BOOTSTRAP
 
-/*!
-  Returns the location specified by \a loc.
+/*! \fn QString QLibraryInfo::location(LibraryLocation loc)
+    \obsolete Use path() instead.
+
+    Returns the path specified by \a loc.
+    \sa path()
 */
-QString
-QLibraryInfo::location(LibraryLocation loc)
+
+/*!
+    \since 6.0
+    Returns the path specified by \a p.
+*/
+QString QLibraryInfo::path(LibraryPath p)
 {
+    const LibraryPath loc = p;
 #ifdef QT_BUILD_QMAKE // ends inside rawLocation !
     QString ret = rawLocation(loc, FinalPaths);
 
@@ -694,9 +664,9 @@ QLibraryInfo::location(LibraryLocation loc)
 }
 
 QString
-QLibraryInfo::rawLocation(LibraryLocation loc, PathGroup group)
+QLibraryInfo::rawLocation(LibraryPath loc, PathGroup group)
 {
-#endif // QT_BUILD_QMAKE, started inside location !
+#endif // QT_BUILD_QMAKE, started inside path!
     QString ret;
     bool fromConf = false;
 #if QT_CONFIG(settings)
@@ -733,7 +703,7 @@ QLibraryInfo::rawLocation(LibraryLocation loc, PathGroup group)
         }
 #endif
 
-        if(!key.isNull()) {
+        if (!key.isNull()) {
             QSettings *config = QLibraryInfoPrivate::configuration();
             config->beginGroup(QLatin1String(
 #ifdef QT_BUILD_QMAKE
@@ -771,7 +741,7 @@ QLibraryInfo::rawLocation(LibraryLocation loc, PathGroup group)
                 int endIndex = ret.indexOf(QLatin1Char(')'), startIndex + 2);
                 if (endIndex < 0)
                     break;
-                QStringRef envVarName = ret.midRef(startIndex + 2, endIndex - startIndex - 2);
+                auto envVarName = QStringView{ret}.mid(startIndex + 2, endIndex - startIndex - 2);
                 QString value = QString::fromLocal8Bit(qgetenv(envVarName.toLocal8Bit().constData()));
                 ret.replace(startIndex, endIndex - startIndex + 1, value);
                 startIndex += value.length();
@@ -844,7 +814,7 @@ QLibraryInfo::rawLocation(LibraryLocation loc, PathGroup group)
             baseDir = prefixFromAppDirHelper();
         } else {
             // we make any other path absolute to the prefix directory
-            baseDir = location(PrefixPath);
+            baseDir = path(PrefixPath);
         }
 #endif // QT_BUILD_QMAKE
         ret = QDir::cleanPath(baseDir + QLatin1Char('/') + ret);
@@ -883,29 +853,33 @@ QStringList QLibraryInfo::platformPluginArguments(const QString &platformName)
 }
 
 /*!
-    \enum QLibraryInfo::LibraryLocation
+    \enum QLibraryInfo::LibraryPath
 
     \keyword library location
 
-    This enum type is used to specify a specific location
-    specifier:
+    This enum type is used to query for a specific path:
 
     \value PrefixPath The default prefix for all paths.
-    \value DocumentationPath The location for documentation upon install.
-    \value HeadersPath The location for all headers.
-    \value LibrariesPath The location of installed libraries.
-    \value LibraryExecutablesPath The location of installed executables required by libraries at runtime.
-    \value BinariesPath The location of installed Qt binaries (tools and applications).
-    \value PluginsPath The location of installed Qt plugins.
-    \value Qml2ImportsPath The location of installed QML extensions to import (QML 2.x).
-    \value ArchDataPath The location of general architecture-dependent Qt data.
-    \value DataPath The location of general architecture-independent Qt data.
-    \value TranslationsPath The location of translation information for Qt strings.
-    \value ExamplesPath The location for examples upon install.
-    \value TestsPath The location of installed Qt testcases.
-    \value SettingsPath The location for Qt settings. Not applicable on Windows.
+    \value DocumentationPath The path to documentation upon install.
+    \value HeadersPath The path to all headers.
+    \value LibrariesPath The path to installed libraries.
+    \value LibraryExecutablesPath The path to installed executables required by libraries at runtime.
+    \value BinariesPath The path to installed Qt binaries (tools and applications).
+    \value PluginsPath The path to installed Qt plugins.
+    \value Qml2ImportsPath The path to installed QML extensions to import (QML 2.x).
+    \value ArchDataPath The path to general architecture-dependent Qt data.
+    \value DataPath The path to general architecture-independent Qt data.
+    \value TranslationsPath The path to translation information for Qt strings.
+    \value ExamplesPath The path to examples upon install.
+    \value TestsPath The path to installed Qt testcases.
+    \value SettingsPath The path to Qt settings. Not applicable on Windows.
 
-    \sa location()
+    \sa path()
+*/
+
+/*!
+    \typealias QLibraryInfo::LibraryLocation
+    \obsolete Use LibraryPath with QLibraryInfo::path() instead.
 */
 
 QT_END_NAMESPACE

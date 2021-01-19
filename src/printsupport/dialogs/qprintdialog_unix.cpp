@@ -54,12 +54,11 @@
 #include <QtCore/qstringconverter.h>
 #include <QtGui/qevent.h>
 #if QT_CONFIG(filesystemmodel)
-#include <QtWidgets/qfilesystemmodel.h>
+#include <QtGui/qfilesystemmodel.h>
 #endif
 #include <QtWidgets/qstyleditemdelegate.h>
 #include <QtWidgets/qformlayout.h>
 #include <QtPrintSupport/qprinter.h>
-#include <QtGui/qrangecollection.h>
 
 #include <qpa/qplatformprintplugin.h>
 #include <qpa/qplatformprintersupport.h>
@@ -166,7 +165,7 @@ private:
     QPrintDevice *m_currentPrintDevice;
 
     QStringDecoder toUnicode;
-    QVector<QComboBox*> m_advancedOptionsCombos;
+    QList<QComboBox*> m_advancedOptionsCombos;
 #endif
 };
 
@@ -209,7 +208,7 @@ public:
     QUnixPrintWidget * const parent;
     QPrintPropertiesDialog *propertiesDialog;
     Ui::QPrintWidget widget;
-    QAbstractPrintDialog * q;
+    QPrintDialog * q;
     QPrinter *printer;
     QPrintDevice m_currentPrintDevice;
 
@@ -313,7 +312,7 @@ QPrintPropertiesDialog::QPrintPropertiesDialog(QPrinter *printer, QPrintDevice *
     });
 
 #else
-    Q_UNUSED(currentPrintDevice)
+    Q_UNUSED(currentPrintDevice);
     widget.tabs->setTabEnabled(advancedTabIndex, false);
 #endif
 }
@@ -805,7 +804,7 @@ void QPrintDialogPrivate::setupPrinter()
         p->setPrintRange(QPrinter::CurrentPage);
         p->setFromTo(0,0);
     } else if (options.printRange->isChecked()) {
-        if (q->isOptionEnabled(QPrintDialog::PrintPageRange)) {
+        if (q->testOption(QPrintDialog::PrintPageRange)) {
             p->setPrintRange(QPrinter::PageRange);
             p->setFromTo(options.from->value(), qMax(options.from->value(), options.to->value()));
         } else {
@@ -818,18 +817,21 @@ void QPrintDialogPrivate::setupPrinter()
 
 #if QT_CONFIG(cups)
     if (options.pagesRadioButton->isChecked()) {
-        p->setPrintRange(QPrinter::PageRange);
-        p->rangeCollection()->parse(options.pagesLineEdit->text());
+        const QPageRanges ranges = QPageRanges::fromString(options.pagesLineEdit->text());
+        if (!ranges.isEmpty()) {
+            p->setPrintRange(QPrinter::PageRange);
+            p->setPageRanges(ranges);
+        }
 
         // server-side page filtering
-        QCUPSSupport::setPageRange(p, p->rangeCollection()->toString());
+        QCUPSSupport::setPageRange(p, ranges.toString());
     }
 
     // page set
     if (p->printRange() == QPrinter::AllPages || p->printRange() == QPrinter::PageRange) {
         //If the application is selecting pages and the first page number is even then need to adjust the odd-even accordingly
         QCUPSSupport::PageSet pageSet = qvariant_cast<QCUPSSupport::PageSet>(options.pageSetCombo->itemData(options.pageSetCombo->currentIndex()));
-        if (q->isOptionEnabled(QPrintDialog::PrintPageRange)
+        if (q->testOption(QPrintDialog::PrintPageRange)
             && p->printRange() == QPrinter::PageRange
             && (q->fromPage() % 2 == 0)) {
 
@@ -849,7 +851,7 @@ void QPrintDialogPrivate::setupPrinter()
 
         // server-side page range, since we set the page range on the printer to 0-0/AllPages above,
         // we need to take the values directly from the widget as q->fromPage() will return 0
-        if (!q->isOptionEnabled(QPrintDialog::PrintPageRange) && options.printRange->isChecked())
+        if (!q->testOption(QPrintDialog::PrintPageRange) && options.printRange->isChecked())
             QCUPSSupport::setPageRange(p, options.from->value(), qMax(options.from->value(), options.to->value()));
     }
 #endif
@@ -898,19 +900,19 @@ void QPrintDialogPrivate::_q_checkFields()
 void QPrintDialogPrivate::updateWidgets()
 {
     Q_Q(QPrintDialog);
-    options.gbPrintRange->setVisible(q->isOptionEnabled(QPrintDialog::PrintPageRange) ||
-                                     q->isOptionEnabled(QPrintDialog::PrintSelection) ||
-                                     q->isOptionEnabled(QPrintDialog::PrintCurrentPage));
+    options.gbPrintRange->setVisible(q->testOption(QPrintDialog::PrintPageRange) ||
+                                     q->testOption(QPrintDialog::PrintSelection) ||
+                                     q->testOption(QPrintDialog::PrintCurrentPage));
 
-    options.printRange->setEnabled(q->isOptionEnabled(QPrintDialog::PrintPageRange));
-    options.printSelection->setVisible(q->isOptionEnabled(QPrintDialog::PrintSelection));
-    options.printCurrentPage->setVisible(q->isOptionEnabled(QPrintDialog::PrintCurrentPage));
-    options.collate->setVisible(q->isOptionEnabled(QPrintDialog::PrintCollateCopies));
+    options.printRange->setEnabled(q->testOption(QPrintDialog::PrintPageRange));
+    options.printSelection->setVisible(q->testOption(QPrintDialog::PrintSelection));
+    options.printCurrentPage->setVisible(q->testOption(QPrintDialog::PrintCurrentPage));
+    options.collate->setVisible(q->testOption(QPrintDialog::PrintCollateCopies));
 
 #if QT_CONFIG(cups)
     // Don't display Page Set if only Selection or Current Page are enabled
-    if (!q->isOptionEnabled(QPrintDialog::PrintPageRange)
-        && (q->isOptionEnabled(QPrintDialog::PrintSelection) || q->isOptionEnabled(QPrintDialog::PrintCurrentPage))) {
+    if (!q->testOption(QPrintDialog::PrintPageRange)
+        && (q->testOption(QPrintDialog::PrintSelection) || q->testOption(QPrintDialog::PrintCurrentPage))) {
         options.pageSetCombo->setVisible(false);
         options.pageSetLabel->setVisible(false);
     } else {
@@ -918,7 +920,7 @@ void QPrintDialogPrivate::updateWidgets()
         options.pageSetLabel->setVisible(true);
     }
 
-    if (!q->isOptionEnabled(QPrintDialog::PrintPageRange)) {
+    if (!q->testOption(QPrintDialog::PrintPageRange)) {
         // If we can do CUPS server side pages selection,
         // display the page range widgets
         options.gbPrintRange->setVisible(true);
@@ -940,7 +942,7 @@ void QPrintDialogPrivate::updateWidgets()
         options.pageSetCombo->setEnabled(true);
         break;
     case QPrintDialog::CurrentPage:
-        if (q->isOptionEnabled(QPrintDialog::PrintCurrentPage)) {
+        if (q->testOption(QPrintDialog::PrintCurrentPage)) {
             options.printCurrentPage->setChecked(true);
             options.pageSetCombo->setEnabled(false);
         }
@@ -1022,7 +1024,7 @@ void QPrintDialog::accept()
 {
     Q_D(QPrintDialog);
 #if QT_CONFIG(cups)
-    if (d->options.pagesRadioButton->isChecked() && printer()->rangeCollection()->isEmpty()) {
+    if (d->options.pagesRadioButton->isChecked() && printer()->pageRanges().isEmpty()) {
         QMessageBox::critical(this, tr("Invalid Pages Definition"),
                               tr("%1 does not follow the correct syntax. Please use ',' to separate "
                               "ranges and pages, '-' to define ranges and make sure ranges do "
@@ -1066,7 +1068,7 @@ QUnixPrintWidgetPrivate::QUnixPrintWidgetPrivate(QUnixPrintWidget *p, QPrinter *
 {
     q = nullptr;
     if (parent)
-        q = qobject_cast<QAbstractPrintDialog*> (parent->parent());
+        q = qobject_cast<QPrintDialog*> (parent->parent());
 
     widget.setupUi(parent);
 
@@ -1104,7 +1106,7 @@ QUnixPrintWidgetPrivate::QUnixPrintWidgetPrivate(QUnixPrintWidget *p, QPrinter *
 
 void QUnixPrintWidgetPrivate::updateWidget()
 {
-    const bool printToFile = q == nullptr || q->isOptionEnabled(QPrintDialog::PrintToFile);
+    const bool printToFile = q == nullptr || q->testOption(QPrintDialog::PrintToFile);
     if (printToFile && !filePrintersAdded) {
         if (widget.printers->count())
             widget.printers->insertSeparator(widget.printers->count());
@@ -1131,7 +1133,7 @@ void QUnixPrintWidgetPrivate::updateWidget()
     widget.lOutput->setVisible(printToFile);
     widget.fileBrowser->setVisible(printToFile);
 
-    widget.properties->setVisible(q->isOptionEnabled(QAbstractPrintDialog::PrintShowPageSize));
+    widget.properties->setVisible(q->testOption(QAbstractPrintDialog::PrintShowPageSize));
 }
 
 QUnixPrintWidgetPrivate::~QUnixPrintWidgetPrivate()
@@ -1278,7 +1280,7 @@ void QUnixPrintWidgetPrivate::setupPrinterProperties()
     QPrinter::OutputFormat outputFormat;
     QString printerName;
 
-    if (q->isOptionEnabled(QPrintDialog::PrintToFile)
+    if (q->testOption(QPrintDialog::PrintToFile)
         && (widget.printers->currentIndex() == widget.printers->count() - 1)) {// PDF
         outputFormat = QPrinter::PdfFormat;
     } else {

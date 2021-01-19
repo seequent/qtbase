@@ -57,6 +57,7 @@
 #include "QtCore/qhash.h"
 #include "QtCore/qmap.h"
 #include "QtCore/qshareddata.h"
+#include "QtCore/qdeadlinetimer.h"
 #include "private/qiodevice_p.h"
 
 QT_REQUIRE_CONFIG(processenvironment);
@@ -99,7 +100,7 @@ inline bool operator<(const QProcEnvKey &a, const QProcEnvKey &b)
     return a.compare(b, Qt::CaseInsensitive) < 0;
 }
 
-Q_DECLARE_TYPEINFO(QProcEnvKey, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QProcEnvKey, Q_RELOCATABLE_TYPE);
 
 typedef QString QProcEnvValue;
 #else
@@ -133,7 +134,7 @@ public:
     mutable QByteArray byteValue;
     mutable QString stringValue;
 };
-Q_DECLARE_TYPEINFO(QProcEnvValue, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QProcEnvValue, Q_RELOCATABLE_TYPE);
 #endif
 
 class QProcessEnvironmentPrivate: public QSharedData
@@ -147,7 +148,7 @@ public:
     inline Value prepareValue(const QString &value) const { return value; }
     inline QString valueToString(const Value &value) const { return value; }
 #else
-    struct NameMapMutexLocker : public QMutexLocker
+    struct NameMapMutexLocker : public QMutexLocker<QMutex>
     {
         NameMapMutexLocker(const QProcessEnvironmentPrivate *d) : QMutexLocker(&d->nameMapMutex) {}
     };
@@ -295,24 +296,31 @@ public:
     bool _q_canReadStandardError();
     bool _q_canWrite();
     bool _q_startupNotification();
-    bool _q_processDied();
+    void _q_processDied();
 
-    QProcess::ProcessChannelMode processChannelMode;
-    QProcess::InputChannelMode inputChannelMode;
-    QProcess::ProcessError processError;
-    QProcess::ProcessState processState;
+    QProcess::ProcessChannelMode processChannelMode = QProcess::SeparateChannels;
+    QProcess::InputChannelMode inputChannelMode = QProcess::ManagedInputChannel;
+    QProcess::ProcessError processError = QProcess::UnknownError;
+    QProcess::ProcessState processState = QProcess::NotRunning;
     QString workingDirectory;
-    Q_PID pid;
-    int sequenceNumber;
+#ifdef Q_OS_WIN
+    Q_PROCESS_INFORMATION *pid = nullptr;
+#else
+    qint64 pid = 0;
+#endif
 
-    bool dying;
-    bool emittedReadyRead;
-    bool emittedBytesWritten;
+    bool emittedReadyRead = false;
+    bool emittedBytesWritten = false;
 
     Channel stdinChannel;
     Channel stdoutChannel;
     Channel stderrChannel;
+    bool openChannels();
+    bool openChannelsForDetached();
     bool openChannel(Channel &channel);
+#if defined(Q_OS_UNIX)
+    void commitChannels();
+#endif
     void closeChannel(Channel *channel);
     void closeWriteChannel();
     bool tryReadFromChannel(Channel *channel); // obviously, only stdout and stderr
@@ -322,20 +330,21 @@ public:
 #if defined(Q_OS_WIN)
     QString nativeArguments;
     QProcess::CreateProcessArgumentModifier modifyCreateProcessArgs;
+#else
+    std::function<void(void)> childProcessModifier;
 #endif
     QProcessEnvironment environment;
 
-    Q_PIPE childStartedPipe[2];
+    Q_PIPE childStartedPipe[2] = {INVALID_Q_PIPE, INVALID_Q_PIPE};
     void destroyPipe(Q_PIPE pipe[2]);
 
-    QSocketNotifier *startupSocketNotifier;
-    QSocketNotifier *deathNotifier;
+    QSocketNotifier *stateNotifier = nullptr;
 
-    int forkfd;
+    int forkfd = -1;
 
 #ifdef Q_OS_WIN
-    QTimer *stdinWriteTrigger;
-    QWinEventNotifier *processFinishedNotifier;
+    QTimer *stdinWriteTrigger = nullptr;
+    QWinEventNotifier *processFinishedNotifier = nullptr;
 #endif
 
     void start(QIODevice::OpenMode mode);
@@ -344,13 +353,15 @@ public:
     void execChild(const char *workingDirectory, char **argv, char **envp);
 #endif
     bool processStarted(QString *errorMessage = nullptr);
+    void processFinished();
     void terminateProcess();
     void killProcess();
     void findExitCode();
 #ifdef Q_OS_UNIX
-    bool waitForDeadChild();
+    void waitForDeadChild();
 #endif
 #ifdef Q_OS_WIN
+    STARTUPINFOW createStartupInfo();
     bool callCreateProcess(QProcess::CreateProcessArguments *cpargs);
     bool drainOutputPipes();
     void flushPipeWriter();
@@ -359,14 +370,14 @@ public:
 
     bool startDetached(qint64 *pPid);
 
-    int exitCode;
-    QProcess::ExitStatus exitStatus;
-    bool crashed;
+    int exitCode = 0;
+    QProcess::ExitStatus exitStatus = QProcess::NormalExit;
+    bool crashed = false;
 
-    bool waitForStarted(int msecs = 30000);
-    bool waitForReadyRead(int msecs = 30000);
-    bool waitForBytesWritten(int msecs = 30000);
-    bool waitForFinished(int msecs = 30000);
+    bool waitForStarted(const QDeadlineTimer &deadline);
+    bool waitForReadyRead(const QDeadlineTimer &deadline);
+    bool waitForBytesWritten(const QDeadlineTimer &deadline);
+    bool waitForFinished(const QDeadlineTimer &deadline);
 
     qint64 bytesAvailableInChannel(const Channel *channel) const;
     qint64 readFromChannel(const Channel *channel, char *data, qint64 maxlen);

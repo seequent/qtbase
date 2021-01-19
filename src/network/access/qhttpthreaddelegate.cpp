@@ -169,7 +169,7 @@ static QByteArray makeCacheKey(QUrl &url, QNetworkProxy *proxy, const QString &p
         }
     }
 #else
-    Q_UNUSED(proxy)
+    Q_UNUSED(proxy);
 #endif
     if (!peerVerifyName.isEmpty())
         result += QLatin1Char(':') + peerVerifyName;
@@ -257,7 +257,7 @@ void QHttpThreadDelegate::startRequestSynchronously()
     synchronousRequestLoop.exec();
 
     connections.localData()->releaseEntry(cacheKey);
-    connections.setLocalData(0);
+    connections.setLocalData(nullptr);
 
 #ifdef QHTTPTHREADDELEGATE_DEBUG
     qDebug() << "QHttpThreadDelegate::startRequestSynchronously() thread=" << QThread::currentThreadId() << "finished";

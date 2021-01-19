@@ -55,6 +55,7 @@
 #include <QtGui/private/qopenglcontext_p.h>
 #include <QtOpenGL/private/qopenglframebufferobject_p.h>
 #include <QtOpenGL/private/qopenglpaintdevice_p.h>
+#include <QtOpenGL/qpa/qplatformbackingstoreopenglsupport.h>
 
 #include <QtWidgets/private/qwidget_p.h>
 
@@ -400,6 +401,19 @@ QT_BEGIN_NAMESPACE
   each frame. To restore the preserved behavior, call setUpdateBehavior() with
   \c PartialUpdate.
 
+  \note Displaying a QOpenGLWidget requires an alpha channel in the associated
+  top-level window's backing store due to the way composition with other
+  QWidget-based content works. If there is no alpha channel, the content
+  rendered by the QOpenGLWidget will not be visible. This can become
+  particularly relevant on Linux/X11 in remote display setups (such as, with
+  Xvnc), when using a color depth lower than 24. For example, a color depth of
+  16 will typically map to using a backing store image with the format
+  QImage::Format_RGB16 (RGB565), leaving no room for an alpha
+  channel. Therefore, if experiencing problems with getting the contents of a
+  QOpenGLWidget composited correctly with other the widgets in the window, make
+  sure the server (such as, vncserver) is configured with a 24 or 32 bit depth
+  instead of 16.
+
   \section1 Alternatives
 
   Adding a QOpenGLWidget into a window turns on OpenGL-based
@@ -479,7 +493,7 @@ QT_BEGIN_NAMESPACE
 class QOpenGLWidgetPaintDevicePrivate : public QOpenGLPaintDevicePrivate
 {
 public:
-    QOpenGLWidgetPaintDevicePrivate(QOpenGLWidget *widget)
+    explicit QOpenGLWidgetPaintDevicePrivate(QOpenGLWidget *widget)
         : QOpenGLPaintDevicePrivate(QSize()),
           w(widget) { }
 
@@ -492,7 +506,7 @@ public:
 class QOpenGLWidgetPaintDevice : public QOpenGLPaintDevice
 {
 public:
-    QOpenGLWidgetPaintDevice(QOpenGLWidget *widget)
+    explicit QOpenGLWidgetPaintDevice(QOpenGLWidget *widget)
         : QOpenGLPaintDevice(*new QOpenGLWidgetPaintDevicePrivate(widget)) { }
     void ensureActiveTarget() override;
 };
@@ -501,24 +515,7 @@ class QOpenGLWidgetPrivate : public QWidgetPrivate
 {
     Q_DECLARE_PUBLIC(QOpenGLWidget)
 public:
-    QOpenGLWidgetPrivate()
-        : context(nullptr),
-          fbo(nullptr),
-          resolvedFbo(nullptr),
-          surface(nullptr),
-          initialized(false),
-          fakeHidden(false),
-          inBackingStorePaint(false),
-          hasBeenComposed(false),
-          flushPending(false),
-          paintDevice(nullptr),
-          updateBehavior(QOpenGLWidget::NoPartialUpdate),
-          requestedSamples(0),
-          inPaintGL(false),
-          textureFormat(0)
-    {
-        requestedFormat = QSurfaceFormat::defaultFormat();
-    }
+    QOpenGLWidgetPrivate() = default;
 
     void reset();
     void recreateFbo();
@@ -541,21 +538,21 @@ public:
     void resizeViewportFramebuffer() override;
     void resolveSamples() override;
 
-    QOpenGLContext *context;
-    QOpenGLFramebufferObject *fbo;
-    QOpenGLFramebufferObject *resolvedFbo;
-    QOffscreenSurface *surface;
-    bool initialized;
-    bool fakeHidden;
-    bool inBackingStorePaint;
-    bool hasBeenComposed;
-    bool flushPending;
-    QOpenGLPaintDevice *paintDevice;
-    QSurfaceFormat requestedFormat;
-    QOpenGLWidget::UpdateBehavior updateBehavior;
-    int requestedSamples;
-    bool inPaintGL;
-    GLenum textureFormat;
+    QOpenGLContext *context = nullptr;
+    QOpenGLFramebufferObject *fbo = nullptr;
+    QOpenGLFramebufferObject *resolvedFbo = nullptr;
+    QOffscreenSurface *surface = nullptr;
+    QOpenGLPaintDevice *paintDevice = nullptr;
+    int requestedSamples = 0;
+    GLenum textureFormat = 0;
+    QSurfaceFormat requestedFormat = QSurfaceFormat::defaultFormat();
+    QOpenGLWidget::UpdateBehavior updateBehavior = QOpenGLWidget::NoPartialUpdate;
+    bool initialized = false;
+    bool fakeHidden = false;
+    bool inBackingStorePaint = false;
+    bool hasBeenComposed = false;
+    bool flushPending = false;
+    bool inPaintGL = false;
 };
 
 void QOpenGLWidgetPaintDevicePrivate::beginPaint()
@@ -694,7 +691,7 @@ void QOpenGLWidgetPrivate::recreateFbo()
     if (textureFormat)
         format.setInternalTextureFormat(textureFormat);
 
-    const QSize deviceSize = q->size() * q->devicePixelRatioF();
+    const QSize deviceSize = q->size() * q->devicePixelRatio();
     fbo = new QOpenGLFramebufferObject(deviceSize, format);
     if (samples > 0)
         resolvedFbo = new QOpenGLFramebufferObject(deviceSize);
@@ -706,7 +703,7 @@ void QOpenGLWidgetPrivate::recreateFbo()
     flushPending = true; // Make sure the FBO is initialized before use
 
     paintDevice->setSize(deviceSize);
-    paintDevice->setDevicePixelRatio(q->devicePixelRatioF());
+    paintDevice->setDevicePixelRatio(q->devicePixelRatio());
 
     emit q->resized();
 }
@@ -793,8 +790,8 @@ void QOpenGLWidgetPrivate::initialize()
     }
 
     paintDevice = new QOpenGLWidgetPaintDevice(q);
-    paintDevice->setSize(q->size() * q->devicePixelRatioF());
-    paintDevice->setDevicePixelRatio(q->devicePixelRatioF());
+    paintDevice->setSize(q->size() * q->devicePixelRatio());
+    paintDevice->setDevicePixelRatio(q->devicePixelRatio());
 
     context = ctx.take();
     initialized = true;
@@ -823,7 +820,7 @@ void QOpenGLWidgetPrivate::invokeUserPaint()
     QOpenGLFunctions *f = ctx->functions();
     QOpenGLContextPrivate::get(ctx)->defaultFboRedirect = fbo->handle();
 
-    f->glViewport(0, 0, q->width() * q->devicePixelRatioF(), q->height() * q->devicePixelRatioF());
+    f->glViewport(0, 0, q->width() * q->devicePixelRatio(), q->height() * q->devicePixelRatio());
     inPaintGL = true;
     q->paintGL();
     inPaintGL = false;
@@ -897,8 +894,8 @@ QImage QOpenGLWidgetPrivate::grabFramebuffer()
     }
 
     const bool hasAlpha = q->format().hasAlpha();
-    QImage res = qt_gl_read_framebuffer(q->size() * q->devicePixelRatioF(), hasAlpha, hasAlpha);
-    res.setDevicePixelRatio(q->devicePixelRatioF());
+    QImage res = qt_gl_read_framebuffer(q->size() * q->devicePixelRatio(), hasAlpha, hasAlpha);
+    res.setDevicePixelRatio(q->devicePixelRatio());
 
     // While we give no guarantees of what is going to be left bound, prefer the
     // multisample fbo instead of the resolved one. Clients may continue to
@@ -923,7 +920,7 @@ void QOpenGLWidgetPrivate::resizeViewportFramebuffer()
     if (!initialized)
         return;
 
-    if (!fbo || q->size() * q->devicePixelRatioF() != fbo->size()) {
+    if (!fbo || q->size() * q->devicePixelRatio() != fbo->size()) {
         recreateFbo();
         q->update();
     }
@@ -1272,7 +1269,7 @@ QImage QOpenGLWidget::grabFramebuffer()
 }
 
 /*!
-  \internal
+  \reimp
 */
 int QOpenGLWidget::metric(QPaintDevice::PaintDeviceMetric metric) const
 {
@@ -1342,7 +1339,7 @@ int QOpenGLWidget::metric(QPaintDevice::PaintDeviceMetric metric) const
 }
 
 /*!
-  \internal
+  \reimp
 */
 QPaintDevice *QOpenGLWidget::redirected(QPoint *p) const
 {
@@ -1354,7 +1351,7 @@ QPaintDevice *QOpenGLWidget::redirected(QPoint *p) const
 }
 
 /*!
-  \internal
+  \reimp
 */
 QPaintEngine *QOpenGLWidget::paintEngine() const
 {
@@ -1372,7 +1369,7 @@ QPaintEngine *QOpenGLWidget::paintEngine() const
 }
 
 /*!
-  \internal
+  \reimp
 */
 bool QOpenGLWidget::event(QEvent *e)
 {
@@ -1397,12 +1394,17 @@ bool QOpenGLWidget::event(QEvent *e)
         }
         if (!d->initialized && !size().isEmpty() && window()->windowHandle()) {
             d->initialize();
-            if (d->initialized)
+            if (d->initialized) {
                 d->recreateFbo();
+                // QTBUG-89812: generate a paint event, like resize would do,
+                // otherwise a QOpenGLWidget in a QDockWidget may not show the
+                // content upon (un)docking.
+                d->sendPaintEvent(QRect(QPoint(0, 0), size()));
+            }
         }
         break;
     case QEvent::ScreenChangeInternal:
-        if (d->initialized && d->paintDevice->devicePixelRatioF() != devicePixelRatioF())
+        if (d->initialized && d->paintDevice->devicePixelRatio() != devicePixelRatio())
             d->recreateFbo();
         break;
     default:
@@ -1410,6 +1412,8 @@ bool QOpenGLWidget::event(QEvent *e)
     }
     return QWidget::event(e);
 }
+
+Q_CONSTRUCTOR_FUNCTION(qt_registerDefaultPlatformBackingStoreOpenGLSupport);
 
 QT_END_NAMESPACE
 

@@ -61,6 +61,12 @@ namespace QtConcurrent {
     template <typename T>
     QFuture<T> run(QThreadPool *pool, Function function, ...);
 
+    template <typename T>
+    QFuture<T> runWithPromise(Function function, ...);
+
+    template <typename T>
+    QFuture<T> runWithPromise(QThreadPool *pool, Function function, ...);
+
 } // namespace QtConcurrent
 
 #else
@@ -71,16 +77,45 @@ template <class Function, class ...Args>
 [[nodiscard]]
 auto run(QThreadPool *pool, Function &&f, Args &&...args)
 {
-    return (new StoredFunctionCall<Function, Args...>(
-                std::forward<Function>(f), std::forward<Args>(args)...))
-                    ->start(pool);
+    DecayedTuple<Function, Args...> tuple { std::forward<Function>(f),
+                                            std::forward<Args>(args)... };
+    return TaskResolver<std::decay_t<Function>, std::decay_t<Args>...>::run(
+                std::move(tuple), TaskStartParameters { pool });
+}
+
+template <class Function, class ...Args>
+[[nodiscard]]
+auto run(QThreadPool *pool, std::reference_wrapper<const Function> &&functionWrapper,
+         Args &&...args)
+{
+    return run(pool, std::forward<const Function>(functionWrapper.get()),
+               std::forward<Args>(args)...);
 }
 
 template <class Function, class ...Args>
 [[nodiscard]]
 auto run(Function &&f, Args &&...args)
 {
-    return run(QThreadPool::globalInstance(), std::forward<Function>(f), std::forward<Args>(args)...);
+    return run(QThreadPool::globalInstance(), std::forward<Function>(f),
+               std::forward<Args>(args)...);
+}
+
+// overload with a Promise Type hint, takes thread pool
+template <class PromiseType, class Function, class ...Args>
+[[nodiscard]]
+auto run(QThreadPool *pool, Function &&f, Args &&...args)
+{
+    return (new StoredFunctionCallWithPromise<Function, PromiseType, Args...>(
+                std::forward<Function>(f), std::forward<Args>(args)...))->start(pool);
+}
+
+// overload with a Promise Type hint, uses global thread pool
+template <class PromiseType, class Function, class ...Args>
+[[nodiscard]]
+auto run(Function &&f, Args &&...args)
+{
+    return run<PromiseType>(QThreadPool::globalInstance(), std::forward<Function>(f),
+                            std::forward<Args>(args)...);
 }
 
 } //namespace QtConcurrent

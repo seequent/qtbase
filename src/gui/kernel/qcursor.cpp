@@ -480,8 +480,7 @@ QCursor::QCursor(Qt::CursorShape shape)
 }
 
 /*!
-    \fn bool operator==(const QCursor &lhs, const QCursor &rhs)
-    \relates QCursor
+    \fn bool QCursor::operator==(const QCursor &lhs, const QCursor &rhs)
     \since 5.10
 
     Equality operator. Returns \c true if \a lhs and \a rhs
@@ -519,8 +518,7 @@ bool operator==(const QCursor &lhs, const QCursor &rhs) noexcept
 }
 
 /*!
-    \fn bool operator!=(const QCursor &lhs, const QCursor &rhs)
-    \relates QCursor
+    \fn bool QCursor::operator!=(const QCursor &lhs, const QCursor &rhs)
     \since 5.10
 
     Inequality operator. Returns the equivalent of !(\a lhs == \a rhs).
@@ -688,7 +686,7 @@ QCursor &QCursor::operator=(const QCursor &c)
 */
 QCursor::operator QVariant() const
 {
-    return QVariant(QMetaType::QCursor, this);
+    return QVariant::fromValue(*this);
 }
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -721,7 +719,7 @@ QCursorData::~QCursorData()
 /*! \internal */
 void QCursorData::cleanup()
 {
-    if(!QCursorData::initialized)
+    if (!QCursorData::initialized)
         return;
 
     for (int shape = 0; shape <= Qt::LastCursor; ++shape) {

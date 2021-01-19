@@ -40,6 +40,7 @@
 #include <qauthenticator.h>
 #include <qauthenticator_p.h>
 #include <qdebug.h>
+#include <qloggingcategory.h>
 #include <qhash.h>
 #include <qbytearray.h>
 #include <qcryptographichash.h>
@@ -68,6 +69,9 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_DECLARE_LOGGING_CATEGORY(lcAuthenticator);
+Q_LOGGING_CATEGORY(lcAuthenticator, "qt.network.authenticator");
+
 static QByteArray qNtlmPhase1();
 static QByteArray qNtlmPhase3(QAuthenticatorPrivate *ctx, const QByteArray& phase2data);
 #if QT_CONFIG(sspi) // SSPI
@@ -77,6 +81,7 @@ static QByteArray qSspiStartup(QAuthenticatorPrivate *ctx, QAuthenticatorPrivate
 static QByteArray qSspiContinue(QAuthenticatorPrivate *ctx, QAuthenticatorPrivate::Method method,
                                 const QString& host, const QByteArray& challenge = QByteArray());
 #elif QT_CONFIG(gssapi) // GSSAPI
+static bool qGssapiTestGetCredentials(const QString &host);
 static QByteArray qGssapiStartup(QAuthenticatorPrivate *ctx, const QString& host);
 static QByteArray qGssapiContinue(QAuthenticatorPrivate *ctx,
                                   const QByteArray& challenge = QByteArray());
@@ -249,9 +254,11 @@ QString QAuthenticator::user() const
 */
 void QAuthenticator::setUser(const QString &user)
 {
-    detach();
-    d->user = user;
-    d->updateCredentials();
+    if (!d || d->user != user) {
+        detach();
+        d->user = user;
+        d->updateCredentials();
+    }
 }
 
 /*!
@@ -269,8 +276,10 @@ QString QAuthenticator::password() const
 */
 void QAuthenticator::setPassword(const QString &password)
 {
-    detach();
-    d->password = password;
+    if (!d || d->password != password) {
+        detach();
+        d->password = password;
+    }
 }
 
 /*!
@@ -300,8 +309,10 @@ QString QAuthenticator::realm() const
 */
 void QAuthenticator::setRealm(const QString &realm)
 {
-    detach();
-    d->realm = realm;
+    if (!d || d->realm != realm) {
+        detach();
+        d->realm = realm;
+    }
 }
 
 /*!
@@ -341,8 +352,10 @@ QVariantHash QAuthenticator::options() const
 */
 void QAuthenticator::setOption(const QString &opt, const QVariant &value)
 {
-    detach();
-    d->options.insert(opt, value);
+    if (option(opt) != value) {
+        detach();
+        d->options.insert(opt, value);
+    }
 }
 
 
@@ -410,8 +423,11 @@ void QAuthenticatorPrivate::updateCredentials()
     }
 }
 
-void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByteArray> > &values, bool isProxy)
+void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByteArray> > &values, bool isProxy, const QString &host)
 {
+#if !QT_CONFIG(gssapi)
+    Q_UNUSED(host);
+#endif
     const char *search = isProxy ? "proxy-authenticate" : "www-authenticate";
 
     method = None;
@@ -441,8 +457,17 @@ void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByt
             method = DigestMd5;
             headerVal = current.second.mid(7);
         } else if (method < Negotiate && str.startsWith("negotiate")) {
+#if QT_CONFIG(sspi) || QT_CONFIG(gssapi) // if it's not supported then we shouldn't try to use it
+#if QT_CONFIG(gssapi)
+            // For GSSAPI there needs to be a KDC set up for the host (afaict).
+            // So let's only conditionally use it if we can fetch the credentials.
+            // Sadly it's a bit slow because it requires a DNS lookup.
+            if (!qGssapiTestGetCredentials(host))
+                continue;
+#endif
             method = Negotiate;
             headerVal = current.second.mid(10);
+#endif
         }
     }
 
@@ -451,9 +476,20 @@ void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByt
     challenge = headerVal.trimmed();
     QHash<QByteArray, QByteArray> options = parseDigestAuthenticationChallenge(challenge);
 
+    // Sets phase to Start if this updates our realm and sets the two locations where we store
+    // realm
+    auto privSetRealm = [this](QString newRealm) {
+        if (newRealm != realm) {
+            if (phase == Done)
+                phase = Start;
+            realm = newRealm;
+            this->options[QLatin1String("realm")] = realm;
+        }
+    };
+
     switch(method) {
     case Basic:
-        this->options[QLatin1String("realm")] = realm = QString::fromLatin1(options.value("realm"));
+        privSetRealm(QString::fromLatin1(options.value("realm")));
         if (user.isEmpty() && password.isEmpty())
             phase = Done;
         break;
@@ -462,9 +498,11 @@ void QAuthenticatorPrivate::parseHttpResponse(const QList<QPair<QByteArray, QByt
         // work is done in calculateResponse()
         break;
     case DigestMd5: {
-        this->options[QLatin1String("realm")] = realm = QString::fromLatin1(options.value("realm"));
-        if (options.value("stale").compare("true", Qt::CaseInsensitive) == 0)
+        privSetRealm(QString::fromLatin1(options.value("realm")));
+        if (options.value("stale").compare("true", Qt::CaseInsensitive) == 0) {
             phase = Start;
+            nonceCount = 0;
+        }
         if (user.isEmpty() && password.isEmpty())
             phase = Done;
         break;
@@ -556,6 +594,7 @@ QByteArray QAuthenticatorPrivate::calculateResponse(const QByteArray &requestMet
                 phase = Phase2;
             } else {
                 phase = Done;
+                return "";
             }
         } else {
             QByteArray phase3Token;
@@ -568,6 +607,9 @@ QByteArray QAuthenticatorPrivate::calculateResponse(const QByteArray &requestMet
                 response = phase3Token.toBase64();
                 phase = Done;
                 challenge = "";
+            } else {
+                phase = Done;
+                return "";
             }
         }
 
@@ -1186,7 +1228,7 @@ QByteArray qEncodeHmacMd5(QByteArray &key, const QByteArray &message)
     hash.reset();
     // Adjust the key length to blockSize
 
-    if(blockSize < key.length()) {
+    if (blockSize < key.length()) {
         hash.addData(key);
         key = hash.result(); //MD5 will always return 16 bytes length output
     }
@@ -1238,7 +1280,7 @@ static QByteArray qCreatev2Hash(const QAuthenticatorPrivate *ctx,
     Q_ASSERT(phase3 != nullptr);
     // since v2 Hash is need for both NTLMv2 and LMv2 it is calculated
     // only once and stored and reused
-    if(phase3->v2Hash.size() == 0) {
+    if (phase3->v2Hash.size() == 0) {
         QCryptographicHash md4(QCryptographicHash::Md4);
         QByteArray passUnicode = qStringAsUcs2Le(ctx->password);
         md4.addData(passUnicode.data(), passUnicode.size());
@@ -1275,7 +1317,7 @@ static QByteArray qExtractServerTime(const QByteArray& targetInfoBuff)
     ds >> avId;
     ds >> avLen;
     while(avId != 0) {
-        if(avId == AVTIMESTAMP) {
+        if (avId == AVTIMESTAMP) {
             timeArray.resize(avLen);
             //avLen size of QByteArray is allocated
             ds.readRawData(timeArray.data(), avLen);
@@ -1310,13 +1352,13 @@ static QByteArray qEncodeNtlmv2Response(const QAuthenticatorPrivate *ctx,
     quint64 time = 0;
     QByteArray timeArray;
 
-    if(ch.targetInfo.len)
+    if (ch.targetInfo.len)
     {
         timeArray = qExtractServerTime(ch.targetInfoBuff);
     }
 
     //if server sends time, use it instead of current time
-    if(timeArray.size()) {
+    if (timeArray.size()) {
         ds.writeRawData(timeArray.constData(), timeArray.size());
     } else {
         // number of seconds between 1601 and the epoch (1970)
@@ -1400,7 +1442,7 @@ static bool qNtlmDecodePhase2(const QByteArray& data, QNtlmPhase2Block& ch)
     ds >> ch.targetInfo;
 
     if (ch.targetName.len > 0) {
-        if (ch.targetName.len + ch.targetName.offset > (unsigned)data.size())
+        if (qsizetype(ch.targetName.len + ch.targetName.offset) > data.size())
             return false;
 
         ch.targetNameStr = qStringFromUcs2Le(data.mid(ch.targetName.offset, ch.targetName.len));
@@ -1528,12 +1570,25 @@ static QByteArray qSspiStartup(QAuthenticatorPrivate *ctx, QAuthenticatorPrivate
         ctx->sspiWindowsHandles.reset(new QSSPIWindowsHandles);
     memset(&ctx->sspiWindowsHandles->credHandle, 0, sizeof(CredHandle));
 
+    SEC_WINNT_AUTH_IDENTITY auth;
+    auth.Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
+    bool useAuth = false;
+    if (method == QAuthenticatorPrivate::Negotiate && !ctx->user.isEmpty()) {
+        auth.Domain = const_cast<ushort *>(ctx->userDomain.utf16());
+        auth.DomainLength = ctx->userDomain.size();
+        auth.User = const_cast<ushort *>(ctx->user.utf16());
+        auth.UserLength = ctx->user.size();
+        auth.Password = const_cast<ushort *>(ctx->password.utf16());
+        auth.PasswordLength = ctx->password.size();
+        useAuth = true;
+    }
+
     // Acquire our credentials handle
     SECURITY_STATUS secStatus = pSecurityFunctionTable->AcquireCredentialsHandle(
-                nullptr,
-                (SEC_WCHAR*)(method == QAuthenticatorPrivate::Negotiate ? L"Negotiate" : L"NTLM"),
-                SECPKG_CRED_OUTBOUND, nullptr, nullptr, nullptr, nullptr,
-                &ctx->sspiWindowsHandles->credHandle, &expiry
+            nullptr,
+            (SEC_WCHAR *)(method == QAuthenticatorPrivate::Negotiate ? L"Negotiate" : L"NTLM"),
+            SECPKG_CRED_OUTBOUND, nullptr, useAuth ? &auth : nullptr, nullptr, nullptr,
+            &ctx->sspiWindowsHandles->credHandle, &expiry
     );
     if (secStatus != SEC_E_OK) {
         ctx->sspiWindowsHandles.reset(nullptr);
@@ -1622,7 +1677,7 @@ static void q_GSSAPI_error_int(const char *message, OM_uint32 stat, int type)
 
     do {
         gss_display_status(&minStat, stat, type, GSS_C_NO_OID, &msgCtx, &msg);
-        qDebug() << message << ": " << reinterpret_cast<const char*>(msg.value);
+        qCDebug(lcAuthenticator) << message << ": " << reinterpret_cast<const char*>(msg.value);
         gss_release_buffer(&minStat, &msg);
     } while (msgCtx);
 }
@@ -1637,26 +1692,36 @@ static void q_GSSAPI_error(const char *message, OM_uint32 majStat, OM_uint32 min
     q_GSSAPI_error_int(message, minStat, GSS_C_MECH_CODE);
 }
 
+static gss_name_t qGSsapiGetServiceName(const QString &host)
+{
+    QByteArray serviceName = "HTTPS@" + host.toLocal8Bit();
+    gss_buffer_desc nameDesc = {static_cast<std::size_t>(serviceName.size()), serviceName.data()};
+
+    gss_name_t importedName;
+    OM_uint32 minStat;
+    OM_uint32 majStat = gss_import_name(&minStat, &nameDesc,
+                              GSS_C_NT_HOSTBASED_SERVICE, &importedName);
+
+    if (majStat != GSS_S_COMPLETE) {
+        q_GSSAPI_error("gss_import_name error", majStat, minStat);
+        return nullptr;
+    }
+    return importedName;
+}
+
 // Send initial GSS authentication token
 static QByteArray qGssapiStartup(QAuthenticatorPrivate *ctx, const QString &host)
 {
-    OM_uint32 majStat, minStat;
-
     if (!ctx->gssApiHandles)
         ctx->gssApiHandles.reset(new QGssApiHandles);
 
     // Convert target name to internal form
-    QByteArray serviceName = QStringLiteral("HTTPS@%1").arg(host).toLocal8Bit();
-    gss_buffer_desc nameDesc = {static_cast<std::size_t>(serviceName.size()), serviceName.data()};
-
-    majStat = gss_import_name(&minStat, &nameDesc,
-                              GSS_C_NT_HOSTBASED_SERVICE, &ctx->gssApiHandles->targetName);
-
-    if (majStat != GSS_S_COMPLETE) {
-        q_GSSAPI_error("gss_import_name error", majStat, minStat);
+    gss_name_t name = qGSsapiGetServiceName(host);
+    if (name == nullptr) {
         ctx->gssApiHandles.reset(nullptr);
         return QByteArray();
     }
+    ctx->gssApiHandles->targetName = name;
 
     // Call qGssapiContinue with GSS_C_NO_CONTEXT to get initial packet
     ctx->gssApiHandles->gssCtx = GSS_C_NO_CONTEXT;
@@ -1708,6 +1773,28 @@ static QByteArray qGssapiContinue(QAuthenticatorPrivate *ctx, const QByteArray& 
     }
 
     return result;
+}
+
+static bool qGssapiTestGetCredentials(const QString &host)
+{
+    gss_name_t serviceName = qGSsapiGetServiceName(host);
+    if (!serviceName)
+        return false; // Something was wrong with the service name, so skip this
+    OM_uint32 minStat;
+    gss_cred_id_t cred;
+    OM_uint32 majStat = gss_acquire_cred(&minStat, serviceName, GSS_C_INDEFINITE,
+                                         GSS_C_NO_OID_SET, GSS_C_INITIATE, &cred, nullptr,
+                                         nullptr);
+
+    OM_uint32 ignored;
+    gss_release_name(&ignored, &serviceName);
+    gss_release_cred(&ignored, &cred);
+
+    if (majStat != GSS_S_COMPLETE) {
+        q_GSSAPI_error("gss_acquire_cred", majStat, minStat);
+        return false;
+    }
+    return true;
 }
 
 // ---------------------------- End of GSSAPI code ----------------------------------------------

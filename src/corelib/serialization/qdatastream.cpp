@@ -163,7 +163,7 @@ QT_BEGIN_NAMESPACE
     \section1 Reading and Writing Qt Collection Classes
 
     The Qt container classes can also be serialized to a QDataStream.
-    These include QList, QVector, QSet, QHash, and QMap.
+    These include QList, QSet, QHash, and QMap.
     The stream operators are declared as non-members of the classes.
 
     \target Serializing Qt Classes
@@ -302,7 +302,7 @@ QDataStream::QDataStream(QIODevice *d)
 }
 
 /*!
-    \fn QDataStream::QDataStream(QByteArray *a, QIODevice::OpenMode mode)
+    \fn QDataStream::QDataStream(QByteArray *a, OpenMode mode)
 
     Constructs a data stream that operates on a byte array, \a a. The
     \a mode describes how the device is to be used.
@@ -314,7 +314,7 @@ QDataStream::QDataStream(QIODevice *d)
     is created to wrap the byte array.
 */
 
-QDataStream::QDataStream(QByteArray *a, QIODevice::OpenMode flags)
+QDataStream::QDataStream(QByteArray *a, OpenMode flags)
 {
     QBuffer *buf = new QBuffer(a);
 #ifndef QT_NO_QOBJECT
@@ -395,19 +395,6 @@ void QDataStream::setDevice(QIODevice *d)
     }
     dev = d;
 }
-
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    \obsolete
-    Unsets the I/O device.
-    Use setDevice(nullptr) instead.
-*/
-
-void QDataStream::unsetDevice()
-{
-    setDevice(nullptr);
-}
-#endif
 
 /*!
     \fn bool QDataStream::atEnd() const
@@ -567,6 +554,8 @@ void QDataStream::setByteOrder(ByteOrder bo)
     \value Qt_5_13 Version 19 (Qt 5.13)
     \value Qt_5_14 Same as Qt_5_13
     \value Qt_5_15 Same as Qt_5_13
+    \value Qt_6_0 Version 20 (Qt 6.0)
+    \value Qt_6_1 Same as Qt_6_0
     \omitvalue Qt_DefaultCompiledVersion
 
     \sa setVersion(), version()
@@ -753,6 +742,14 @@ void QDataStream::abortTransaction()
 
     CHECK_STREAM_PRECOND(Q_VOID)
     dev->commitTransaction();
+}
+
+/*!
+   \internal
+*/
+bool QDataStream::isDeviceTransactionStarted() const
+{
+   return dev && dev->isTransactionStarted();
 }
 
 /*****************************************************************************
@@ -1026,9 +1023,11 @@ QDataStream &QDataStream::operator>>(char *&s)
 }
 
 /*!
- \overload
+    \overload
+    \since 6.0
 
- Reads a char from the stream into char \a chr.
+    Reads a 16bit wide char from the stream into \a c and
+    returns a reference to the stream.
 */
 QDataStream &QDataStream::operator>>(char16_t &c)
 {
@@ -1039,9 +1038,11 @@ QDataStream &QDataStream::operator>>(char16_t &c)
 }
 
 /*!
- \overload
+    \overload
+    \since 6.0
 
- Reads a char from the stream into char \a chr.
+    Reads a 32bit wide character from the stream into \a c and
+    returns a reference to the stream.
 */
 QDataStream &QDataStream::operator>>(char32_t &c)
 {
@@ -1119,6 +1120,16 @@ int QDataStream::readRawData(char *s, int len)
     return readBlock(s, len);
 }
 
+/*! \fn template <class T1, class T2> QDataStream &operator>>(QDataStream &in, std::pair<T1, T2> &pair)
+    \since 6.0
+    \relates QDataStream
+
+    Reads a pair from stream \a in into \a pair.
+
+    This function requires the T1 and T2 types to implement \c operator>>().
+
+    \sa {Serializing Qt Data Types}
+*/
 
 /*****************************************************************************
   QDataStream write functions
@@ -1356,7 +1367,7 @@ QDataStream &QDataStream::operator<<(const char *s)
         *this << (quint32)0;
         return *this;
     }
-    uint len = qstrlen(s) + 1;                        // also write null terminator
+    int len = int(qstrlen(s)) + 1;                        // also write null terminator
     *this << (quint32)len;                        // write length specifier
     writeRawData(s, len);
     return *this;
@@ -1445,6 +1456,18 @@ int QDataStream::skipRawData(int len)
         setStatus(ReadPastEnd);
     return skipResult;
 }
+
+/*!
+    \fn template <class T1, class T2> QDataStream &operator<<(QDataStream &out, const std::pair<T1, T2> &pair)
+    \since 6.0
+    \relates QDataStream
+
+    Writes the pair \a pair to stream \a out.
+
+    This function requires the T1 and T2 types to implement \c operator<<().
+
+    \sa {Serializing Qt Data Types}
+*/
 
 QT_END_NAMESPACE
 

@@ -40,7 +40,7 @@
 #include "qcalendarwidget.h"
 
 #include <qabstractitemmodel.h>
-#include <qitemdelegate.h>
+#include <qstyleditemdelegate.h>
 #include <qdatetime.h>
 #include <qtableview.h>
 #include <qlayout.h>
@@ -107,7 +107,7 @@ QString QCalendarDateSectionValidator::highlightString(const QString &str, int p
     if (pos == 0)
         return QLatin1String("<b>") + str + QLatin1String("</b>");
     int startPos = str.length() - pos;
-    return str.midRef(0, startPos) + QLatin1String("<b>") + str.midRef(startPos, pos) + QLatin1String("</b>");
+    return QStringView{str}.mid(0, startPos) + QLatin1String("<b>") + QStringView{str}.mid(startPos, pos) + QLatin1String("</b>");
 
 }
 
@@ -426,7 +426,7 @@ QString QCalendarYearValidator::text(QDate date, QCalendar cal, int repeat) cons
 ///////////////////////////////////
 
 struct SectionToken {
-    Q_DECL_CONSTEXPR SectionToken(QCalendarDateSectionValidator *v, int rep)
+    constexpr SectionToken(QCalendarDateSectionValidator *v, int rep)
         : validator(v), repeat(rep) {}
 
     QCalendarDateSectionValidator *validator;
@@ -548,7 +548,7 @@ void QCalendarDateValidator::setFormat(const QString &format)
     bool quoting = false;
     QString separator;
     while (pos < format.size()) {
-        const QStringRef mid = format.midRef(pos);
+        const QStringView mid = QStringView{format}.mid(pos);
         int offset = 1;
 
         if (mid.startsWith(quote)) {
@@ -826,27 +826,23 @@ class StaticDayOfWeekAssociativeArray {
     bool contained[7];
     T data[7];
 
-    static Q_DECL_CONSTEXPR int day2idx(Qt::DayOfWeek day) noexcept { return int(day) - 1; } // alt: day % 7
+    static constexpr int day2idx(Qt::DayOfWeek day) noexcept { return int(day) - 1; } // alt: day % 7
 public:
-    Q_DECL_CONSTEXPR StaticDayOfWeekAssociativeArray() noexcept(noexcept(T()))
-#ifdef Q_COMPILER_CONSTEXPR
+    constexpr StaticDayOfWeekAssociativeArray() noexcept(noexcept(T()))
         : contained{}, data{}   // arrays require uniform initialization
-#else
-        : contained(), data()
-#endif
     {}
 
-    Q_DECL_CONSTEXPR bool contains(Qt::DayOfWeek day) const noexcept { return contained[day2idx(day)]; }
-    Q_DECL_CONSTEXPR const T &value(Qt::DayOfWeek day) const noexcept { return data[day2idx(day)]; }
+    constexpr bool contains(Qt::DayOfWeek day) const noexcept { return contained[day2idx(day)]; }
+    constexpr const T &value(Qt::DayOfWeek day) const noexcept { return data[day2idx(day)]; }
 
-    Q_DECL_RELAXED_CONSTEXPR T &operator[](Qt::DayOfWeek day) noexcept
+    constexpr T &operator[](Qt::DayOfWeek day) noexcept
     {
         const int idx = day2idx(day);
         contained[idx] = true;
         return data[idx];
     }
 
-    Q_DECL_RELAXED_CONSTEXPR void insert(Qt::DayOfWeek day, T v) noexcept
+    constexpr void insert(Qt::DayOfWeek day, T v) noexcept
     {
         operator[](day).swap(v);
     }
@@ -860,37 +856,22 @@ class QCalendarModel : public QAbstractTableModel
 public:
     QCalendarModel(QObject *parent = nullptr);
 
-    int rowCount(const QModelIndex &) const override
-        { return RowCount + m_firstRow; }
-    int columnCount(const QModelIndex &) const override
-        { return ColumnCount + m_firstColumn; }
+    int rowCount(const QModelIndex &parent) const override
+    {
+        if (parent.isValid())
+            return 0;
+        return RowCount + m_firstRow;
+    }
+
+    int columnCount(const QModelIndex &parent) const override
+    {
+        if (parent.isValid())
+            return 0;
+        return ColumnCount + m_firstColumn;
+    }
+
     QVariant data(const QModelIndex &index, int role) const override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
-
-    bool insertRows(int row, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginInsertRows(parent, row, row + count - 1);
-        endInsertRows();
-        return true;
-    }
-    bool insertColumns(int column, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginInsertColumns(parent, column, column + count - 1);
-        endInsertColumns();
-        return true;
-    }
-    bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginRemoveRows(parent, row, row + count - 1);
-        endRemoveRows();
-        return true;
-    }
-    bool removeColumns(int column, int count, const QModelIndex &parent = QModelIndex()) override
-    {
-        beginRemoveColumns(parent, column, column + count - 1);
-        endRemoveColumns();
-        return true;
-    }
 
     void showMonth(int year, int month);
     void setDate(QDate d);
@@ -955,7 +936,7 @@ public:
 
     void internalUpdate() { updateGeometries(); }
     void setReadOnly(bool enable);
-    virtual void keyboardSearch(const QString & search) override { Q_UNUSED(search) }
+    virtual void keyboardSearch(const QString &) override {}
 
 signals:
     void showDate(QDate date);
@@ -1157,7 +1138,7 @@ QTextCharFormat QCalendarModel::formatForCell(int row, int col) const
     if (!header) {
         QDate date = dateForCell(row, col);
         format.merge(m_dateFormats.value(date));
-        if(date < m_minimumDate || date > m_maximumDate)
+        if (date < m_minimumDate || date > m_maximumDate)
             format.setBackground(pal.brush(cg, QPalette::Window));
         if (m_shownMonth != date.month(m_calendar))
             format.setForeground(pal.brush(QPalette::Disabled, QPalette::Text));
@@ -1173,7 +1154,7 @@ QVariant QCalendarModel::data(const QModelIndex &index, int role) const
     int row = index.row();
     int column = index.column();
 
-    if(role == Qt::DisplayRole) {
+    if (role == Qt::DisplayRole) {
         if (m_weekNumbersShown && column == HeaderColumn
             && row >= m_firstRow && row < m_firstRow + RowCount) {
             QDate date = dateForCell(row, columnForDayOfWeek(Qt::Monday));
@@ -1303,11 +1284,13 @@ void QCalendarModel::setHorizontalHeaderFormat(QCalendarWidget::HorizontalHeader
     int oldFormat = m_horizontalHeaderFormat;
     m_horizontalHeaderFormat = format;
     if (oldFormat == QCalendarWidget::NoHorizontalHeader) {
+        beginInsertRows(QModelIndex(), 0, 0);
         m_firstRow = 1;
-        insertRow(0);
+        endInsertRows();
     } else if (m_horizontalHeaderFormat == QCalendarWidget::NoHorizontalHeader) {
+        beginRemoveRows(QModelIndex(), 0, 0);
         m_firstRow = 0;
-        removeRow(0);
+        endRemoveRows();
     }
     internalUpdate();
 }
@@ -1338,11 +1321,13 @@ void QCalendarModel::setWeekNumbersShown(bool show)
 
     m_weekNumbersShown = show;
     if (show) {
+        beginInsertColumns(QModelIndex(), 0, 0);
         m_firstColumn = 1;
-        insertColumn(0);
+        endInsertColumns();
     } else {
+        beginRemoveColumns(QModelIndex(), 0, 0);
         m_firstColumn = 0;
-        removeColumn(0);
+        endRemoveColumns();
     }
     internalUpdate();
 }
@@ -1594,13 +1579,12 @@ void QCalendarView::mouseReleaseEvent(QMouseEvent *event)
     }
 }
 
-// ### Qt6: QStyledItemDelegate
-class QCalendarDelegate : public QItemDelegate
+class QCalendarDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
 public:
     QCalendarDelegate(QCalendarWidgetPrivate *w, QObject *parent = nullptr)
-        : QItemDelegate(parent), calendarWidgetPrivate(w)
+        : QStyledItemDelegate(parent), calendarWidgetPrivate(w)
             { }
     virtual void paint(QPainter *painter, const QStyleOptionViewItem &option,
                 const QModelIndex &index) const override;
@@ -1621,7 +1605,7 @@ public:
 protected:
     void paintEvent(QPaintEvent *e) override
     {
-        Q_UNUSED(e)
+        Q_UNUSED(e);
 
         QStyleOptionToolButton opt;
         initStyleOption(&opt);
@@ -1717,7 +1701,7 @@ void QCalendarDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opt
         QRect rect = option.rect;
         calendarWidgetPrivate->paintCell(painter, rect, date);
     } else {
-        QItemDelegate::paint(painter, option, index);
+        QStyledItemDelegate::paint(painter, option, index);
     }
 }
 
@@ -1728,7 +1712,7 @@ void QCalendarDelegate::paintCell(QPainter *painter, const QRect &rect, QDate da
     int col = -1;
     calendarWidgetPrivate->m_model->cellForDate(date, &row, &col);
     QModelIndex idx = calendarWidgetPrivate->m_model->index(row, col);
-    QItemDelegate::paint(painter, storedOption, idx);
+    QStyledItemDelegate::paint(painter, storedOption, idx);
 }
 
 QCalendarWidgetPrivate::QCalendarWidgetPrivate()
@@ -1939,7 +1923,6 @@ void QCalendarWidgetPrivate::_q_nextMonthClicked()
 void QCalendarWidgetPrivate::_q_yearEditingFinished()
 {
     Q_Q(QCalendarWidget);
-    yearButton->setText(q->locale().toString(yearEdit->value()));
     yearEdit->hide();
     q->setFocusPolicy(oldFocusPolicy);
     qApp->removeEventFilter(q);
@@ -1948,6 +1931,7 @@ void QCalendarWidgetPrivate::_q_yearEditingFinished()
     QDate currentDate = getCurrentDate();
     int newYear = q->locale().toInt(yearEdit->text());
     currentDate = currentDate.addYears(newYear - currentDate.year(m_model->m_calendar), m_model->m_calendar);
+    yearButton->setText(q->locale().toString(currentDate, u"yyyy", m_model->m_calendar));
     updateCurrentPage(currentDate);
 }
 
@@ -2311,7 +2295,7 @@ QSize QCalendarWidget::minimumSizeHint() const
     Paints the cell specified by the given \a date, using the given \a painter and \a rect.
 */
 
-void QCalendarWidget::paintCell(QPainter *painter, QRect rect, QDate date) const
+void QCalendarWidget::paintCell(QPainter *painter, const QRect &rect, QDate date) const
 {
     Q_D(const QCalendarWidget);
     d->m_delegate->paintCell(painter, rect, date);
@@ -3177,7 +3161,7 @@ void QCalendarWidget::resizeEvent(QResizeEvent * event)
     // XXX Should really use a QWidgetStack for yearEdit and yearButton,
     // XXX here we hide the year edit when the layout is likely to break
     // XXX the manual positioning of the yearEdit over the yearButton.
-    if(d->yearEdit->isVisible() && event->size().width() != event->oldSize().width())
+    if (d->yearEdit->isVisible() && event->size().width() != event->oldSize().width())
         d->_q_yearEditingFinished();
 
     QWidget::resizeEvent(event);

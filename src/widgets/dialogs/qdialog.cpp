@@ -49,7 +49,6 @@
 #endif
 
 #include "qevent.h"
-#include <private/qdesktopwidget_p.h>
 #include "qapplication.h"
 #include "qlayout.h"
 #if QT_CONFIG(sizegrip)
@@ -872,23 +871,31 @@ void QDialog::showEvent(QShowEvent *event)
 /*! \internal */
 void QDialog::adjustPosition(QWidget* w)
 {
+    Q_D(QDialog);
 
     if (const QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme())
         if (theme->themeHint(QPlatformTheme::WindowAutoPlacement).toBool())
             return;
     QPoint p(0, 0);
-    int extraw = 0, extrah = 0, scrn = 0;
-    if (w)
-        w = w->window();
-    QRect desk;
+    int extraw = 0, extrah = 0;
+    const QWindow *parentWindow = nullptr;
     if (w) {
-        scrn = QDesktopWidgetPrivate::screenNumber(w);
-    } else if (QGuiApplication::primaryScreen()->virtualSiblings().size() > 1) {
-        scrn = QDesktopWidgetPrivate::screenNumber(QCursor::pos());
+        w = w->window();
     } else {
-        scrn = QDesktopWidgetPrivate::screenNumber(this);
+        parentWindow = d->transientParentWindow();
     }
-    desk = QDesktopWidgetPrivate::availableGeometry(scrn);
+    QRect desk;
+    QScreen *scrn = nullptr;
+    if (w)
+        scrn = w->screen();
+    else if (parentWindow)
+        scrn = parentWindow->screen();
+    else if (QGuiApplication::primaryScreen()->virtualSiblings().size() > 1)
+        scrn = QGuiApplication::screenAt(QCursor::pos());
+    else
+        scrn = screen();
+    if (scrn)
+        desk = scrn->availableGeometry();
 
     QWidgetList list = QApplication::topLevelWidgets();
     for (int i = 0; (extraw == 0 || extrah == 0) && i < list.size(); ++i) {
@@ -919,6 +926,11 @@ void QDialog::adjustPosition(QWidget* w)
             pp = w->mapToGlobal(QPoint(0,0));
         p = QPoint(pp.x() + w->width()/2,
                     pp.y() + w->height()/ 2);
+    } else if (parentWindow) {
+        // QTBUG-63406: Widget-based dialog in QML, which has no Widget parent
+        // but a transient parent window.
+        QPoint pp = parentWindow->mapToGlobal(QPoint(0, 0));
+        p = QPoint(pp.x() + parentWindow->width() / 2, pp.y() + parentWindow->height() / 2);
     } else {
         // p = middle of the desktop
         p = QPoint(desk.x() + desk.width()/2, desk.y() + desk.height()/2);
@@ -942,9 +954,9 @@ void QDialog::adjustPosition(QWidget* w)
     // QTBUG-52735: Manually set the correct target screen since scaling in a
     // subsequent call to QWindow::resize() may otherwise use the wrong factor
     // if the screen changed notification is still in an event queue.
-    if (scrn >= 0) {
+    if (scrn) {
         if (QWindow *window = windowHandle())
-            window->setScreen(QGuiApplication::screens().at(scrn));
+            window->setScreen(scrn);
     }
 
     move(p);

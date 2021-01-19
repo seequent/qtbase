@@ -79,7 +79,7 @@ struct TaskStartParameters
 };
 
 template <typename T>
-class RunFunctionTaskBase : public QFutureInterface<T> , public QRunnable
+class RunFunctionTaskBase : public QRunnable
 {
 public:
     QFuture<T> start()
@@ -89,10 +89,10 @@ public:
 
     QFuture<T> start(const TaskStartParameters &parameters)
     {
-        this->setThreadPool(parameters.threadPool);
-        this->setRunnable(this);
-        this->reportStarted();
-        QFuture<T> theFuture = this->future();
+        promise.setThreadPool(parameters.threadPool);
+        promise.setRunnable(this);
+        promise.reportStarted();
+        QFuture<T> theFuture = promise.future();
         parameters.threadPool->start(this, parameters.priority);
         return theFuture;
     }
@@ -100,66 +100,53 @@ public:
     // For backward compatibility
     QFuture<T> start(QThreadPool *pool) { return start({pool, 0});  }
 
-    void run() override {}
+    void run() override
+    {
+        if (promise.isCanceled()) {
+            promise.reportFinished();
+            return;
+        }
+#ifndef QT_NO_EXCEPTIONS
+        try {
+#endif
+            runFunctor();
+#ifndef QT_NO_EXCEPTIONS
+        } catch (QException &e) {
+            promise.reportException(e);
+        } catch (...) {
+            promise.reportException(QUnhandledException(std::current_exception()));
+        }
+#endif
+
+        reportResult();
+
+        promise.reportFinished();
+    }
+
+protected:
     virtual void runFunctor() = 0;
+    virtual void reportResult() {}
+
+    QFutureInterface<T> promise;
 };
 
 template <typename T>
 class RunFunctionTask : public RunFunctionTaskBase<T>
 {
-public:
-    void run() override
+protected:
+    void reportResult() override
     {
-        if (this->isCanceled()) {
-            this->reportFinished();
-            return;
-        }
-#ifndef QT_NO_EXCEPTIONS
-        try {
-#endif
-            this->runFunctor();
-#ifndef QT_NO_EXCEPTIONS
-        } catch (QException &e) {
-            QFutureInterface<T>::reportException(e);
-        } catch (...) {
-            QFutureInterface<T>::reportException(QUnhandledException());
-        }
-#endif
-
         if constexpr (std::is_move_constructible_v<T>)
-            this->reportAndMoveResult(std::move(result));
+            this->promise.reportAndMoveResult(std::move(result));
         else if constexpr (std::is_copy_constructible_v<T>)
-            this->reportResult(result);
-
-        this->reportFinished();
+            this->promise.reportResult(result);
     }
+
     T result;
 };
 
 template <>
-class RunFunctionTask<void> : public RunFunctionTaskBase<void>
-{
-public:
-    void run() override
-    {
-        if (this->isCanceled()) {
-            this->reportFinished();
-            return;
-        }
-#ifndef QT_NO_EXCEPTIONS
-        try {
-#endif
-            this->runFunctor();
-#ifndef QT_NO_EXCEPTIONS
-        } catch (QException &e) {
-            QFutureInterface<void>::reportException(e);
-        } catch (...) {
-            QFutureInterface<void>::reportException(QUnhandledException());
-        }
-#endif
-        this->reportFinished();
-    }
-};
+class RunFunctionTask<void> : public RunFunctionTaskBase<void> {};
 
 } //namespace QtConcurrent
 

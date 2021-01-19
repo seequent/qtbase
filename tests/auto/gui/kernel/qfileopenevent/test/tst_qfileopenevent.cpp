@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 #include <QtCore/QTemporaryDir>
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtGui/qevent.h>
 
 class tst_qfileopenevent : public QObject
@@ -55,7 +55,7 @@ private:
     QByteArray readFileContent(QFileOpenEvent& event);
     bool appendFileContent(QFileOpenEvent& event, const QByteArray& writeContent);
 
-    bool event(QEvent *);
+    bool event(QEvent *) override;
 
     QTemporaryDir m_temporaryDir;
     QString m_originalCurrent;

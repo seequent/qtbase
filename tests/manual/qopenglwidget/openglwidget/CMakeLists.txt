@@ -4,7 +4,7 @@
 ## openglwidget Binary:
 #####################################################################
 
-add_qt_manual_test(openglwidget
+qt_internal_add_manual_test(openglwidget
     GUI
     SOURCES
         main.cpp

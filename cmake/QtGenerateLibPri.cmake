@@ -4,10 +4,16 @@
 # IN_FILES: path to the qt_lib_XXX.cmake files
 # OUT_FILE: path to the generated qt_lib_XXX.pri file
 # CONFIGS: the configurations Qt is being built with
+# LIBRARY_SUFFIXES: list of known library extensions, e.g. .so;.a on Linux
+# LIBRARY_PREFIXES: list of known library prefies, e.g. the "lib" in "libz" on on Linux
+# LINK_LIBRARY_FLAG: flag used to link a shared library to an executable, e.g. -l on UNIX
 #
 # QMAKE_LIBS_XXX values are split into QMAKE_LIBS_XXX_DEBUG and QMAKE_LIBS_XXX_RELEASE if
 # debug_and_release was detected. The CMake configuration "Debug" is considered for the _DEBUG
 # values. The first config that is not "Debug" is treated as _RELEASE.
+#
+# The library values are transformed from an absolute path into link flags
+# aka from "/usr/lib/x86_64-linux-gnu/libcups.so" to "-lcups".
 
 cmake_policy(SET CMP0057 NEW)
 
@@ -17,7 +23,7 @@ function(qmake_list out_var)
 
     # Surround values that contain spaces with double quotes.
     foreach(v ${ARGN})
-        if(v MATCHES " ")
+        if(v MATCHES " " AND NOT MATCHES "^-framework")
             set(v "\"${v}\"")
         endif()
         list(APPEND result ${v})
@@ -26,6 +32,8 @@ function(qmake_list out_var)
     list(JOIN result " " result)
     set(${out_var} ${result} PARENT_SCOPE)
 endfunction()
+
+include("${CMAKE_CURRENT_LIST_DIR}/QtGenerateLibHelpers.cmake")
 
 list(POP_FRONT IN_FILES in_pri_file)
 file(READ ${in_pri_file} content)
@@ -50,12 +58,14 @@ foreach(lib ${known_libs})
     if(is_debug_and_release)
         set(value_debug ${QMAKE_LIBS_${lib}_DEBUG})
         set(value_release ${QMAKE_LIBS_${lib}_${release_cfg}})
+        qt_transform_absolute_library_paths_to_link_flags(value_debug "${value_debug}")
+        qt_transform_absolute_library_paths_to_link_flags(value_release "${value_release}")
+
         if(value_debug STREQUAL value_release)
-            if(value_debug)
-                qmake_list(value_debug ${value_debug})
-                string(APPEND content "QMAKE_LIBS_${lib} = ${value_debug}\n")
-            endif()
+            qmake_list(value_debug ${value_debug})
+            string(APPEND content "QMAKE_LIBS_${lib} = ${value_debug}\n")
         else()
+            string(APPEND content "QMAKE_LIBS_${lib} =\n")
             if(value_debug)
                 qmake_list(value_debug ${value_debug})
                 string(APPEND content "QMAKE_LIBS_${lib}_DEBUG = ${value_debug}\n")
@@ -75,10 +85,15 @@ foreach(lib ${known_libs})
     string(TOUPPER ${cfg} cfg)
     foreach(infix ${configuration_independent_infixes})
         set(value ${QMAKE_${infix}_${lib}_${cfg}})
-        if(value)
-            qmake_list(value ${value})
-            string(APPEND content "QMAKE_${infix}_${lib} = ${value}\n")
+        if(infix STREQUAL "LIBS")
+            qt_transform_absolute_library_paths_to_link_flags(value "${value}")
+        elseif("${value}" STREQUAL "")
+            # Do not write empty entries, but ensure to write at least
+            # the QMAKE_LIBS_FOO entry to make the lib 'foo' known.
+            continue()
         endif()
+        qmake_list(value ${value})
+        string(APPEND content "QMAKE_${infix}_${lib} = ${value}\n")
     endforeach()
 endforeach()
 file(WRITE "${OUT_FILE}" "${content}")

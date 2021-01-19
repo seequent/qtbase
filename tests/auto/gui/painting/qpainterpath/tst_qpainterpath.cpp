@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <qfile.h>
 #include <qpainterpath.h>
@@ -902,7 +902,7 @@ void tst_QPainterPath::testArcMoveTo_data()
     QTest::addColumn<QRectF>("rect");
     QTest::addColumn<qreal>("angle");
 
-    static Q_CONSTEXPR QRectF rects[] = {
+    static constexpr QRectF rects[] = {
         QRectF(100, 100, 100, 100),
         QRectF(100, 100, -100, 100),
         QRectF(100, 100, 100, -100),
@@ -955,17 +955,11 @@ void tst_QPainterPath::operators()
     QCOMPARE(test, expected);
 }
 
-static inline bool pathFuzzyCompare(double p1, double p2)
+template <typename T>
+static inline bool pathFuzzyCompare(T p1, T p2)
 {
     return qAbs(p1 - p2) < 0.001;
 }
-
-
-static inline bool pathFuzzyCompare(float p1, float p2)
-{
-    return qAbs(p1 - p2) < 0.001;
-}
-
 
 void tst_QPainterPath::testArcMoveTo()
 {
@@ -1345,7 +1339,7 @@ void tst_QPainterPath::translate()
     shape -= QRect(225, 175, 50, 50);
     QPainterPath complexPath;
     complexPath.addRegion(shape);
-    QVector<QPointF> untranslatedElements;
+    QList<QPointF> untranslatedElements;
     for (int i = 0; i < complexPath.elementCount(); ++i)
         untranslatedElements.append(QPointF(complexPath.elementAt(i)));
 

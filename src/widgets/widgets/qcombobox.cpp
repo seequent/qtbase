@@ -44,7 +44,6 @@
 #include <qpa/qplatformmenu.h>
 #include <qlineedit.h>
 #include <qapplication.h>
-#include <private/qdesktopwidget_p.h>
 #include <qlistview.h>
 #if QT_CONFIG(tableview)
 #include <qtableview.h>
@@ -161,7 +160,7 @@ QStyleOptionMenuItem QComboMenuDelegate::getStyleOption(const QStyleOptionViewIt
     }
     menuOption.text = index.model()->data(index, Qt::DisplayRole).toString()
                            .replace(QLatin1Char('&'), QLatin1String("&&"));
-    menuOption.tabWidth = 0;
+    menuOption.reservedShortcutWidth = 0;
     menuOption.maxIconWidth =  option.decorationSize.width() + 4;
     menuOption.menuRect = option.rect;
     menuOption.rect = option.rect;
@@ -320,12 +319,12 @@ void QComboBoxPrivate::trySetValidIndex()
         setCurrentIndex(QModelIndex());
 }
 
-QRect QComboBoxPrivate::popupGeometry() const
+QRect QComboBoxPrivate::popupGeometry(const QPoint &globalPosition) const
 {
     Q_Q(const QComboBox);
     return QStylePrivate::useFullScreenForPopup()
-        ? QWidgetPrivate::screenGeometry(q)
-        : QWidgetPrivate::availableScreenGeometry(q);
+        ? QWidgetPrivate::screenGeometry(q, globalPosition)
+        : QWidgetPrivate::availableScreenGeometry(q, globalPosition);
 }
 
 bool QComboBoxPrivate::updateHoverControl(const QPoint &pos)
@@ -753,7 +752,7 @@ bool QComboBoxPrivateContainer::eventFilter(QObject *o, QEvent *e)
 #ifdef QT_KEYPAD_NAVIGATION
         case Qt::Key_Select:
 #endif
-            if (view->currentIndex().isValid() && (view->currentIndex().flags() & Qt::ItemIsEnabled) ) {
+            if (view->currentIndex().isValid() && view->currentIndex().flags().testFlag(Qt::ItemIsEnabled)) {
                 combo->hidePopup();
                 emit itemSelected(view->currentIndex());
             }
@@ -799,8 +798,8 @@ bool QComboBoxPrivateContainer::eventFilter(QObject *o, QEvent *e)
         QMouseEvent *m = static_cast<QMouseEvent *>(e);
         if (isVisible() && view->rect().contains(m->position().toPoint()) && view->currentIndex().isValid()
             && !blockMouseReleaseTimer.isActive() && !ignoreEvent
-            && (view->currentIndex().flags() & Qt::ItemIsEnabled)
-            && (view->currentIndex().flags() & Qt::ItemIsSelectable)) {
+            && (view->currentIndex().flags().testFlag(Qt::ItemIsEnabled))
+            && (view->currentIndex().flags().testFlag(Qt::ItemIsSelectable))) {
             combo->hidePopup();
             emit itemSelected(view->currentIndex());
             return true;
@@ -849,7 +848,7 @@ void QComboBoxPrivateContainer::mousePressEvent(QMouseEvent *e)
 void QComboBoxPrivateContainer::mouseReleaseEvent(QMouseEvent *e)
 {
     Q_UNUSED(e);
-    if (!blockMouseReleaseTimer.isActive()){
+    if (!blockMouseReleaseTimer.isActive()) {
         combo->hidePopup();
         emit resetButton();
     }
@@ -1362,7 +1361,7 @@ void QComboBoxPrivate::_q_returnPressed()
             break;
         case QComboBox::InsertAlphabetically:
             index = 0;
-            for (int i=0; i< q->count(); i++, index++ ) {
+            for (int i = 0; i < q->count(); ++i, ++index) {
                 if (text.toLower() < q->itemText(i).toLower())
                     break;
             }
@@ -1782,6 +1781,7 @@ void QComboBox::setEditable(bool editable)
             view()->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         }
         QLineEdit *le = new QLineEdit(this);
+        le->setPalette(palette());
         setLineEdit(le);
     } else {
         if (style()->styleHint(QStyle::SH_ComboBox_Popup, &opt, this)) {
@@ -2192,10 +2192,9 @@ QString QComboBox::currentText() const
     Q_D(const QComboBox);
     if (d->lineEdit)
         return d->lineEdit->text();
-    else if (d->currentIndex.isValid())
+    if (d->currentIndex.isValid())
         return d->itemText(d->currentIndex);
-    else
-        return d->placeholderText;
+    return {};
 }
 
 /*!
@@ -2234,7 +2233,7 @@ QIcon QComboBox::itemIcon(int index) const
 
 /*!
    Returns the data for the given \a role in the given \a index in the
-   combobox, or QVariant::Invalid if there is no data for this role.
+   combobox, or an invalid QVariant if there is no data for this role.
 */
 QVariant QComboBox::itemData(int index, int role) const
 {
@@ -2518,7 +2517,7 @@ bool QComboBoxPrivate::showNativePopup()
     int itemsCount = q->count();
     m_platformMenu->setTag(quintptr(itemsCount));
 
-    QPlatformMenuItem *currentItem = 0;
+    QPlatformMenuItem *currentItem = nullptr;
     int currentIndex = q->currentIndex();
 
     for (int i = 0; i < itemsCount; ++i) {
@@ -2608,12 +2607,14 @@ void QComboBox::showPopup()
 #endif
 
     // set current item and select it
-    view()->selectionModel()->setCurrentIndex(d->currentIndex,
-                                              QItemSelectionModel::ClearAndSelect);
+    QItemSelectionModel::SelectionFlags selectionMode = QItemSelectionModel::ClearAndSelect;
+    if (view()->selectionBehavior() == QAbstractItemView::SelectRows)
+        selectionMode.setFlag(QItemSelectionModel::Rows);
+    view()->selectionModel()->setCurrentIndex(d->currentIndex, selectionMode);
     QComboBoxPrivateContainer* container = d->viewContainer();
     QRect listRect(style->subControlRect(QStyle::CC_ComboBox, &opt,
                                          QStyle::SC_ComboBoxListBoxPopup, this));
-    QRect screen = d->popupGeometry();
+    QRect screen = d->popupGeometry(mapToGlobal(listRect.topLeft()));
 
     QPoint below = mapToGlobal(listRect.bottomLeft());
     int belowHeight = screen.bottom() - below.y();
@@ -2969,7 +2970,7 @@ void QComboBox::changeEvent(QEvent *e)
             d->updateLineEditGeometry();
         d->setLayoutItemMargins(QStyle::SE_ComboBoxLayoutItem);
 
-        if (e->type() == QEvent::MacSizeChange){
+        if (e->type() == QEvent::MacSizeChange) {
             QPlatformTheme::Font f = QPlatformTheme::SystemFont;
             if (testAttribute(Qt::WA_MacSmallSize))
                 f = QPlatformTheme::SmallFont;

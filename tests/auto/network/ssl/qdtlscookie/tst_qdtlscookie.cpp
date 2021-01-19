@@ -26,7 +26,8 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QTestEventLoop>
 
 #include <QtNetwork/qhostaddress.h>
 #include <QtNetwork/qsslsocket.h>
@@ -288,6 +289,20 @@ void tst_QDtlsCookie::verifyClient()
                                           clientPort), true);
     QCOMPARE(anotherListener.verifiedHello(), dgram);
     QCOMPARE(anotherListener.dtlsError(), QDtlsError::NoError);
+
+    // Now, let's test if a DTLS server is able to create a new TLS session
+    // re-using the client's 'Hello' with a cookie inside:
+    QDtls session(QSslSocket::SslServerMode);
+    auto dtlsConf = QSslConfiguration::defaultDtlsConfiguration();
+    dtlsConf.setDtlsCookieVerificationEnabled(true);
+    session.setDtlsConfiguration(dtlsConf);
+    session.setPeer(clientAddress, clientPort);
+    // Borrow a secret and hash algorithm:
+    session.setCookieGeneratorParameters(listener.cookieGeneratorParameters());
+    // Trigger TLS state machine change to think it accepted a cookie and started
+    // a handshake:
+    QVERIFY(session.doHandshake(&serverSocket, dgram));
+
     // Now let's use a wrong port:
     QCOMPARE(listener.verifyClient(&serverSocket, dgram, clientAddress, serverPort), false);
     // Invalid cookie, no verified hello message:

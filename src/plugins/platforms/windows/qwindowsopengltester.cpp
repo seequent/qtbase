@@ -69,7 +69,7 @@ static GpuDescription adapterIdentifierToGpuDescription(const D3DADAPTER_IDENTIF
     result.deviceId = adapterIdentifier.DeviceId;
     result.revision = adapterIdentifier.Revision;
     result.subSysId = adapterIdentifier.SubSysId;
-    QVector<int> version(4, 0);
+    QList<int> version(4, 0);
     version[0] = HIWORD(adapterIdentifier.DriverVersion.HighPart); // Product
     version[1] = LOWORD(adapterIdentifier.DriverVersion.HighPart); // Version
     version[2] = HIWORD(adapterIdentifier.DriverVersion.LowPart); // Sub version
@@ -169,9 +169,9 @@ GpuDescription GpuDescription::detect()
     return result;
 }
 
-QVector<GpuDescription> GpuDescription::detectAll()
+QList<GpuDescription> GpuDescription::detectAll()
 {
-    QVector<GpuDescription> result;
+    QList<GpuDescription> result;
     QDirect3D9Handle direct3D9;
     if (const UINT adapterCount = direct3D9.adapterCount()) {
         for (UINT adp = 0; adp < adapterCount; ++adp) {
@@ -263,7 +263,7 @@ static inline QString resolveBugListFile(const QString &fileName)
         return fileName;
     // Try QLibraryInfo::SettingsPath which is typically empty unless specified in qt.conf,
     // then resolve via QStandardPaths::ConfigLocation.
-    const QString settingsPath = QLibraryInfo::location(QLibraryInfo::SettingsPath);
+    const QString settingsPath = QLibraryInfo::path(QLibraryInfo::SettingsPath);
     if (!settingsPath.isEmpty()) { // SettingsPath is empty unless specified in qt.conf.
         const QFileInfo fi(settingsPath + u'/' + fileName);
         if (fi.isFile())
@@ -281,9 +281,9 @@ QWindowsOpenGLTester::Renderers QWindowsOpenGLTester::detectSupportedRenderers(c
                                                                                Renderer requested)
 {
 #if defined(QT_NO_OPENGL)
-    Q_UNUSED(gpu)
-    Q_UNUSED(requested)
-    return 0;
+    Q_UNUSED(gpu);
+    Q_UNUSED(requested);
+    return {};
 #else
     QOpenGLConfig::Gpu qgpu = QOpenGLConfig::Gpu::fromDevice(gpu.vendorId, gpu.deviceId, gpu.driverVersion, gpu.description);
     SupportedRenderersCache *srCache = supportedRenderersCache();

@@ -32,10 +32,11 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QUrl>
-#include <QXmlDefaultHandler>
 #include <QXmlStreamReader>
+#include <QBuffer>
+#include <QStack>
 
 #include "qc14n.h"
 
@@ -240,8 +241,8 @@ public:
      */
     class MissedBaseline
     {
-        friend class QVector<MissedBaseline>;
-        MissedBaseline() {} // for QVector, don't use
+        friend class QList<MissedBaseline>;
+        MissedBaseline() {} // for QList, don't use
     public:
         MissedBaseline(const QString &aId,
                        const QByteArray &aExpected,
@@ -265,8 +266,8 @@ public:
         QByteArray  output;
     };
 
-    QVector<GeneralFailure> failures;
-    QVector<MissedBaseline> missedBaselines;
+    QList<GeneralFailure> failures;
+    QList<MissedBaseline> missedBaselines;
 
     /**
      * The count of how many tests that were run.
@@ -853,7 +854,7 @@ void tst_QXmlStream::addExtraNamespaceDeclarations()
 
 class EntityResolver : public QXmlStreamEntityResolver {
 public:
-    QString resolveUndeclaredEntity(const QString &name) {
+    QString resolveUndeclaredEntity(const QString &name) override {
         static int count = 0;
         return name.toUpper() + QString::number(++count);
     }
@@ -1467,7 +1468,7 @@ void tst_QXmlStream::crashInXmlStreamReader() const
 class FakeBuffer : public QBuffer
 {
 protected:
-    qint64 writeData(const char *c, qint64 i)
+    qint64 writeData(const char *c, qint64 i) override
     {
         qint64 ai = qMin(m_capacity, i);
         m_capacity -= ai;

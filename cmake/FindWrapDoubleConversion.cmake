@@ -7,7 +7,7 @@ endif()
 
 set(WrapDoubleConversion_FOUND OFF)
 
-find_package(double-conversion)
+find_package(double-conversion QUIET)
 if (double-conversion_FOUND)
     include(FeatureSummary)
     set_package_properties(double-conversion PROPERTIES TYPE REQUIRED)
@@ -17,3 +17,6 @@ if (double-conversion_FOUND)
     set(WrapDoubleConversion_FOUND ON)
     return()
 endif()
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(WrapDoubleConversion DEFAULT_MSG WrapDoubleConversion_FOUND)

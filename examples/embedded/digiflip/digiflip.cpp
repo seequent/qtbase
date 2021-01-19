@@ -73,7 +73,7 @@ public:
         connect(&m_animator, SIGNAL(frameChanged(int)), SLOT(update()));
         m_animator.setFrameRange(0, 100);
         m_animator.setDuration(600);
-        m_animator.setCurveShape(QTimeLine::EaseInOutCurve);
+        m_animator.setEasingCurve(QEasingCurve::InOutSine);
     }
 
     void setTransition(int tr) {
@@ -298,7 +298,7 @@ class DigiFlip : public QMainWindow
     Q_OBJECT
 
 public:
-    DigiFlip(QWidget *parent = 0)
+    DigiFlip(QWidget *parent = nullptr)
         : QMainWindow(parent)
     {
         m_hour = new Digits(this);

@@ -7,7 +7,7 @@
 # Collect test data
 list(APPEND test_data "./typeFlags.bin")
 
-add_qt_test(tst_qmetatype
+qt_internal_add_test(tst_qmetatype
     SOURCES
         tst_qmetatype.cpp
     DEFINES
@@ -16,14 +16,14 @@ add_qt_test(tst_qmetatype
         ../../../other/qvariant_common
     PUBLIC_LIBRARIES
         Qt::CorePrivate
-        Threads::Threads # special case
+        Qt::Gui
     TESTDATA ${test_data}
 )
 
 ## Scopes:
 #####################################################################
 
-extend_target(tst_qmetatype CONDITION MSVC
+qt_internal_extend_target(tst_qmetatype CONDITION MSVC
     COMPILE_OPTIONS
         /bigobj
 )
@@ -32,7 +32,7 @@ extend_target(tst_qmetatype CONDITION MSVC
 # QMAKE_CFLAGS_RELEASE = "--O2" "--g"
 # QMAKE_CXXFLAGS_RELEASE = "--O2" "--g"
 
-extend_target(tst_qmetatype CONDITION CLANG AND (TEST_architecture_arch STREQUAL "arm")
+qt_internal_extend_target(tst_qmetatype CONDITION CLANG AND (TEST_architecture_arch STREQUAL "arm")
     DEFINES
         TST_QMETATYPE_BROKEN_COMPILER
 )

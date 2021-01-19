@@ -65,8 +65,8 @@
 class QSslContext;
 #endif
 
+#include <QtCore/qlist.h>
 #include <QtCore/qstringlist.h>
-#include <QtCore/qvector.h>
 #include <private/qringbuffer_p.h>
 
 #if defined(Q_OS_MAC)
@@ -83,7 +83,7 @@ class QSslContext;
 
 QT_BEGIN_NAMESPACE
 
-#if defined(Q_OS_MACX)
+#if defined(Q_OS_MACOS)
     typedef CFDataRef (*PtrSecCertificateCopyData)(SecCertificateRef);
     typedef OSStatus (*PtrSecTrustSettingsCopyCertificates)(int, CFArrayRef*);
     typedef OSStatus (*PtrSecTrustCopyAnchorCertificates)(CFArrayRef*);
@@ -146,8 +146,8 @@ public:
     static void setDefaultSupportedCiphers(const QList<QSslCipher> &ciphers);
     static void resetDefaultCiphers();
 
-    static QVector<QSslEllipticCurve> supportedEllipticCurves();
-    static void setDefaultSupportedEllipticCurves(const QVector<QSslEllipticCurve> &curves);
+    static QList<QSslEllipticCurve> supportedEllipticCurves();
+    static void setDefaultSupportedEllipticCurves(const QList<QSslEllipticCurve> &curves);
     static void resetDefaultEllipticCurves();
 
     static QList<QSslCertificate> defaultCaCertificates();
@@ -190,7 +190,6 @@ public:
 
     virtual qint64 peek(char *data, qint64 maxSize) override;
     virtual QByteArray peek(qint64 maxSize) override;
-    qint64 skip(qint64 maxSize) override;
     bool flush() override;
 
     // Platform specific functions
@@ -219,9 +218,10 @@ protected:
     bool paused;
     bool flushTriggered;
     bool systemOrSslErrorDetected = false;
-    QVector<QOcspResponse> ocspResponses;
+    QList<QOcspResponse> ocspResponses;
     bool handshakeInterrupted = false;
     bool fetchAuthorityInformation = false;
+    QSslCertificate caToFetch;
 };
 
 #if QT_CONFIG(securetransport) || QT_CONFIG(schannel)

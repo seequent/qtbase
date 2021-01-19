@@ -6,7 +6,7 @@
 
 #### Libraries
 
-qt_find_package(GTK3 PROVIDED_TARGETS PkgConfig::GTK3 MODULE_NAME widgets QMAKE_LIB gtk3)
+qt_find_package(GTK3 3.6 PROVIDED_TARGETS PkgConfig::GTK3 MODULE_NAME widgets QMAKE_LIB gtk3)
 
 
 #### Tests
@@ -50,13 +50,6 @@ qt_feature("effects" PRIVATE
     LABEL "Effects"
     PURPOSE "Provides special widget effects (e.g. fading and scrolling)."
 )
-qt_feature("filesystemmodel" PUBLIC
-    SECTION "File I/O"
-    LABEL "QFileSystemModel"
-    PURPOSE "Provides a data model for the local filesystem."
-    CONDITION QT_FEATURE_itemmodel
-)
-qt_feature_definition("filesystemmodel" "QT_NO_FILESYSTEMMODEL" NEGATE VALUE "1")
 qt_feature("itemviews" PUBLIC
     SECTION "ItemViews"
     LABEL "The Model/View Framework"
@@ -100,7 +93,7 @@ qt_feature("datetimeedit" PUBLIC
     SECTION "Widgets"
     LABEL "QDateTimeEdit"
     PURPOSE "Supports editing dates and times."
-    CONDITION QT_FEATURE_calendarwidget AND QT_FEATURE_datestring AND QT_FEATURE_textdate AND QT_FEATURE_datetimeparser
+    CONDITION QT_FEATURE_calendarwidget AND QT_FEATURE_datetimeparser
 )
 qt_feature_definition("datetimeedit" "QT_NO_DATETIMEEDIT" NEGATE VALUE "1")
 qt_feature("stackedwidget" PUBLIC
@@ -440,7 +433,7 @@ qt_feature("filedialog" PUBLIC
     SECTION "Dialogs"
     LABEL "QFileDialog"
     PURPOSE "Provides a dialog widget for selecting files or directories."
-    CONDITION ( QT_FEATURE_buttongroup ) AND ( QT_FEATURE_combobox ) AND ( QT_FEATURE_dialog ) AND ( QT_FEATURE_dialogbuttonbox ) AND ( QT_FEATURE_label ) AND ( QT_FEATURE_proxymodel ) AND ( QT_FEATURE_splitter ) AND ( QT_FEATURE_stackedwidget ) AND ( QT_FEATURE_treeview ) AND ( QT_FEATURE_toolbutton )
+    CONDITION ( QT_FEATURE_buttongroup ) AND ( QT_FEATURE_combobox ) AND ( QT_FEATURE_dialog ) AND ( QT_FEATURE_dialogbuttonbox ) AND ( QT_FEATURE_filesystemmodel ) AND ( QT_FEATURE_label ) AND ( QT_FEATURE_proxymodel ) AND ( QT_FEATURE_splitter ) AND ( QT_FEATURE_stackedwidget ) AND ( QT_FEATURE_treeview ) AND ( QT_FEATURE_toolbutton )
 )
 qt_feature_definition("filedialog" "QT_NO_FILEDIALOG" NEGATE VALUE "1")
 qt_feature("fontdialog" PUBLIC

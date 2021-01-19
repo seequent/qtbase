@@ -25,10 +25,14 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QUndoGroup>
 #include <QUndoStack>
 #include <QAction>
+#include <QSignalSpy>
+#include <QProcess>
+#include <QLibraryInfo>
+#include <QTranslator>
 
 /******************************************************************************
 ** Commands
@@ -38,10 +42,10 @@ class InsertCommand : public QUndoCommand
 {
 public:
     InsertCommand(QString *str, int idx, const QString &text,
-                    QUndoCommand *parent = 0);
+                    QUndoCommand *parent = nullptr);
 
-    virtual void undo();
-    virtual void redo();
+    virtual void undo() override;
+    virtual void redo() override;
 
 private:
     QString *m_str;
@@ -52,10 +56,10 @@ private:
 class RemoveCommand : public QUndoCommand
 {
 public:
-    RemoveCommand(QString *str, int idx, int len, QUndoCommand *parent = 0);
+    RemoveCommand(QString *str, int idx, int len, QUndoCommand *parent = nullptr);
 
-    virtual void undo();
-    virtual void redo();
+    virtual void undo() override;
+    virtual void redo() override;
 
 private:
     QString *m_str;
@@ -66,12 +70,12 @@ private:
 class AppendCommand : public QUndoCommand
 {
 public:
-    AppendCommand(QString *str, const QString &text, QUndoCommand *parent = 0);
+    AppendCommand(QString *str, const QString &text, QUndoCommand *parent = nullptr);
 
-    virtual void undo();
-    virtual void redo();
-    virtual int id() const;
-    virtual bool mergeWith(const QUndoCommand *other);
+    virtual void undo() override;
+    virtual void redo() override;
+    virtual int id() const override;
+    virtual bool mergeWith(const QUndoCommand *other) override;
 
     bool merged;
 
@@ -237,23 +241,24 @@ void tst_QUndoGroup::addRemoveStack()
     QUndoGroup group;
 
     QUndoStack stack1(&group);
-    QCOMPARE(group.stacks(), QList<QUndoStack*>() << &stack1);
+    QCOMPARE(group.stacks(), {&stack1});
 
     QUndoStack stack2;
+    QUndoStack *expected12[] = {&stack1, &stack2};
     group.addStack(&stack2);
-    QCOMPARE(group.stacks(), QList<QUndoStack*>() << &stack1 << &stack2);
+    QCOMPARE(group.stacks(), expected12);
 
     group.addStack(&stack1);
-    QCOMPARE(group.stacks(), QList<QUndoStack*>() << &stack1 << &stack2);
+    QCOMPARE(group.stacks(), expected12);
 
     group.removeStack(&stack1);
-    QCOMPARE(group.stacks(), QList<QUndoStack*>() << &stack2);
+    QCOMPARE(group.stacks(), {&stack2});
 
     group.removeStack(&stack1);
-    QCOMPARE(group.stacks(), QList<QUndoStack*>() << &stack2);
+    QCOMPARE(group.stacks(), {&stack2});
 
     group.removeStack(&stack2);
-    QCOMPARE(group.stacks(), QList<QUndoStack*>());
+    QVERIFY(group.stacks().isEmpty());
 }
 
 void tst_QUndoGroup::deleteStack()
@@ -280,7 +285,7 @@ void tst_QUndoGroup::deleteStack()
     QCOMPARE(group.activeStack(), stack1);
 
     delete stack1;
-    QCOMPARE(group.stacks(), QList<QUndoStack*>() << stack3);
+    QCOMPARE(group.stacks(), {stack3});
     QCOMPARE(group.activeStack(), nullptr);
 
     stack3->setActive(false);
@@ -290,7 +295,7 @@ void tst_QUndoGroup::deleteStack()
     QCOMPARE(group.activeStack(), stack3);
 
     group.removeStack(stack3);
-    QCOMPARE(group.stacks(), QList<QUndoStack*>());
+    QVERIFY(group.stacks().isEmpty());
     QCOMPARE(group.activeStack(), nullptr);
 
     delete stack3;
@@ -591,7 +596,7 @@ void tst_QUndoGroup::commandTextFormat()
 #if !QT_CONFIG(process)
     QSKIP("No QProcess available");
 #else
-    QString binDir = QLibraryInfo::location(QLibraryInfo::BinariesPath);
+    QString binDir = QLibraryInfo::path(QLibraryInfo::BinariesPath);
 
     if (QProcess::execute(binDir + "/lrelease -version") != 0)
         QSKIP("lrelease is missing or broken");

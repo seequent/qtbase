@@ -30,7 +30,7 @@ file(GLOB_RECURSE test_data_glob
     *.svgz)
 list(APPEND test_data ${test_data_glob})
 
-add_qt_test(tst_qicon
+qt_internal_add_test(tst_qicon
     SOURCES
         tst_qicon.cpp
     PUBLIC_LIBRARIES
@@ -59,15 +59,17 @@ set(tst_qicon_resource_files
     "./styles/commonstyle/images/standardbutton-open-128.png"
     "./styles/commonstyle/images/standardbutton-open-16.png"
     "./styles/commonstyle/images/standardbutton-open-32.png"
+    "./styles/commonstyle/images/standardbutton-open-64.png"
     "./styles/commonstyle/images/standardbutton-save-128.png"
     "./styles/commonstyle/images/standardbutton-save-16.png"
     "./styles/commonstyle/images/standardbutton-save-32.png"
+    "./styles/commonstyle/images/standardbutton-save-64.png"
     "image.png"
     "rect.png"
     "tst_qicon.cpp"
 )
 
-add_qt_resource(tst_qicon "tst_qicon"
+qt_internal_add_resource(tst_qicon "tst_qicon"
     PREFIX
         "/"
     FILES
@@ -77,7 +79,7 @@ set(qmake_immediate_resource_files
     "tst_qicon.cpp"
 )
 
-add_qt_resource(tst_qicon "qmake_immediate"
+qt_internal_add_resource(tst_qicon "qmake_immediate"
     PREFIX
         "/"
     FILES
@@ -88,7 +90,7 @@ add_qt_resource(tst_qicon "qmake_immediate"
 ## Scopes:
 #####################################################################
 
-extend_target(tst_qicon CONDITION TARGET Qt::Widgets
+qt_internal_extend_target(tst_qicon CONDITION TARGET Qt::Widgets
     PUBLIC_LIBRARIES
         Qt::Widgets
 )

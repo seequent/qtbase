@@ -4,14 +4,12 @@
 ## tst_qthread Test:
 #####################################################################
 
-add_qt_test(tst_qthread
+qt_internal_add_test(tst_qthread
     SOURCES
         ../../../../shared/emulationdetector.h
         tst_qthread.cpp
     INCLUDE_DIRECTORIES
         ../../../../shared
-    LIBRARIES # special case
-        Threads::Threads # special case
 )
 
 ## Scopes:

@@ -27,7 +27,9 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QTimer>
+
 #include <qfont.h>
 #include <qfontmetrics.h>
 #include <qtooltip.h>
@@ -64,7 +66,7 @@ class Widget_task183679 : public QWidget
 {
     Q_OBJECT
 public:
-    Widget_task183679(QWidget *parent = 0) : QWidget(parent) {}
+    Widget_task183679(QWidget *parent = nullptr) : QWidget(parent) {}
 
     void showDelayedToolTip(int msecs)
     {

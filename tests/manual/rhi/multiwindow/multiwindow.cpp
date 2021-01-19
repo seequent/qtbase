@@ -169,7 +169,7 @@ void destroyRhi()
 }
 
 struct {
-    QVector<QWindow *> windows;
+    QList<QWindow *> windows;
 
     QRhiBuffer *vbuf = nullptr;
     QRhiBuffer *ubuf = nullptr;
@@ -295,7 +295,7 @@ protected:
     bool m_newlyExposed = false;
 
     QMatrix4x4 m_proj;
-    QVector<QRhiResource *> m_releasePool;
+    QList<QRhiResource *> m_releasePool;
 
     bool m_hasSwapChain = false;
     QRhiSwapChain *m_sc = nullptr;
@@ -330,12 +330,10 @@ Window::Window(const QString &title, const QColor &bgColor, int axis, bool noVSy
 #endif
         break;
     case D3D11:
-        setSurfaceType(OpenGLSurface); // not a typo
+        setSurfaceType(Direct3DSurface);
         break;
     case Metal:
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 12, 0))
         setSurfaceType(MetalSurface);
-#endif
         break;
     default:
         break;
@@ -525,7 +523,6 @@ void closeWindow()
 
 int main(int argc, char **argv)
 {
-    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QApplication app(argc, argv);
 
 #if defined(Q_OS_WIN)

@@ -157,7 +157,7 @@ static QByteArray qt_prettyDebug(const char *data, int len, int maxLength)
 }
 
 
-#define WS_ERROR_DEBUG(x) verboseWSErrorDebug(x);
+#define WS_ERROR_DEBUG(x) verboseWSErrorDebug(x)
 
 #else
 
@@ -1444,10 +1444,8 @@ qint64 QNativeSocketEnginePrivate::nativeWrite(const char *data, qint64 len)
 
         int err;
         if (socketRet != SOCKET_ERROR) {
-            if (ret == len)
+            if (ret == len || bytesToSend != qint64(bytesWritten))
                 break;
-            else
-                continue;
         } else if ((err = WSAGetLastError()) == WSAEWOULDBLOCK) {
             break;
         } else if (err == WSAENOBUFS) {

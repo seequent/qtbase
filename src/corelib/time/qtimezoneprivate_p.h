@@ -1,5 +1,6 @@
 /****************************************************************************
 **
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Copyright (C) 2013 John Layt <jlayt@kde.org>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -52,9 +53,9 @@
 // We mean it.
 //
 
+#include "qlist.h"
 #include "qtimezone.h"
 #include "private/qlocale_p.h"
-#include "qvector.h"
 
 #if QT_CONFIG(icu)
 #include <unicode/ucal.h>
@@ -85,7 +86,7 @@ public:
         int standardTimeOffset;
         int daylightTimeOffset;
     };
-    typedef QVector<Data> DataList;
+    typedef QList<Data> DataList;
 
     // Create null time zone
     QTimeZonePrivate();
@@ -144,7 +145,8 @@ public:
     static QTimeZone::OffsetData invalidOffsetData();
     static QTimeZone::OffsetData toOffsetData(const Data &data);
     static bool isValidId(const QByteArray &ianaId);
-    static QString isoOffsetFormat(int offsetFromUtc);
+    static QString isoOffsetFormat(int offsetFromUtc,
+                                   QTimeZone::NameType mode = QTimeZone::OffsetName);
 
     static QByteArray ianaIdToWindowsId(const QByteArray &ianaId);
     static QByteArray windowsIdToDefaultIanaId(const QByteArray &windowsId);
@@ -155,12 +157,12 @@ public:
                                                  QLocale::Country country);
 
     // returns "UTC" QString and QByteArray
-    Q_REQUIRED_RESULT static inline QString utcQString()
+    [[nodiscard]] static inline QString utcQString()
     {
         return QStringLiteral("UTC");
     }
 
-    Q_REQUIRED_RESULT static inline QByteArray utcQByteArray()
+    [[nodiscard]] static inline QByteArray utcQByteArray()
     {
         return QByteArrayLiteral("UTC");
     }
@@ -168,7 +170,7 @@ public:
 protected:
     QByteArray m_id;
 };
-Q_DECLARE_TYPEINFO(QTimeZonePrivate::Data, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QTimeZonePrivate::Data, Q_RELOCATABLE_TYPE);
 
 template<> QTimeZonePrivate *QSharedDataPointer<QTimeZonePrivate>::clone();
 
@@ -180,7 +182,7 @@ public:
     // Create named time zone
     QUtcTimeZonePrivate(const QByteArray &utcId);
     // Create offset from UTC
-    QUtcTimeZonePrivate(int offsetSeconds);
+    QUtcTimeZonePrivate(qint32 offsetSeconds);
     // Create custom offset from UTC
     QUtcTimeZonePrivate(const QByteArray &zoneId, int offsetSeconds, const QString &name,
                         const QString &abbreviation, QLocale::Country country,
@@ -285,17 +287,17 @@ struct QTzTransitionRule
     quint8 abbreviationIndex;
 };
 Q_DECLARE_TYPEINFO(QTzTransitionRule, Q_PRIMITIVE_TYPE);
-Q_DECL_CONSTEXPR inline bool operator==(const QTzTransitionRule &lhs, const QTzTransitionRule &rhs) noexcept
+constexpr inline bool operator==(const QTzTransitionRule &lhs, const QTzTransitionRule &rhs) noexcept
 { return lhs.stdOffset == rhs.stdOffset && lhs.dstOffset == rhs.dstOffset && lhs.abbreviationIndex == rhs.abbreviationIndex; }
-Q_DECL_CONSTEXPR inline bool operator!=(const QTzTransitionRule &lhs, const QTzTransitionRule &rhs) noexcept
+constexpr inline bool operator!=(const QTzTransitionRule &lhs, const QTzTransitionRule &rhs) noexcept
 { return !operator==(lhs, rhs); }
 
 // These are stored separately from QTzTimeZonePrivate so that they can be
 // cached, avoiding the need to re-parse them from disk constantly.
 struct QTzTimeZoneCacheEntry
 {
-    QVector<QTzTransitionTime> m_tranTimes;
-    QVector<QTzTransitionRule> m_tranRules;
+    QList<QTzTransitionTime> m_tranTimes;
+    QList<QTzTransitionRule> m_tranRules;
     QList<QByteArray> m_abbreviations;
     QByteArray m_posixRule;
 };
@@ -344,14 +346,14 @@ public:
 
 private:
     void init(const QByteArray &ianaId);
-    QVector<QTimeZonePrivate::Data> getPosixTransitions(qint64 msNear) const;
+    QList<QTimeZonePrivate::Data> getPosixTransitions(qint64 msNear) const;
 
     Data dataForTzTransition(QTzTransitionTime tran) const;
 #if QT_CONFIG(icu)
     mutable QSharedDataPointer<QTimeZonePrivate> m_icu;
 #endif
     QTzTimeZoneCacheEntry cached_data;
-    QVector<QTzTransitionTime> tranCache() const { return cached_data.m_tranTimes; }
+    QList<QTzTransitionTime> tranCache() const { return cached_data.m_tranTimes; }
 };
 #endif // Q_OS_UNIX
 

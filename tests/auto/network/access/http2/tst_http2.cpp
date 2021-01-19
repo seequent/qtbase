@@ -26,7 +26,11 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QTestEventLoop>
+#include <QScopeGuard>
+#include <QRandomGenerator>
+#include <QSignalSpy>
 
 #include "http2srv.h"
 
@@ -789,12 +793,22 @@ void tst_Http2::contentEncoding_data()
         QByteArray expected;
     };
 
-    QVector<ContentEncodingData> contentEncodingData;
+    QList<ContentEncodingData> contentEncodingData;
     contentEncodingData.emplace_back(
             "gzip", QByteArray::fromBase64("H4sIAAAAAAAAA8tIzcnJVyjPL8pJAQCFEUoNCwAAAA=="),
             "hello world");
     contentEncodingData.emplace_back(
             "deflate", QByteArray::fromBase64("eJzLSM3JyVcozy/KSQEAGgsEXQ=="), "hello world");
+
+#if QT_CONFIG(brotli)
+    contentEncodingData.emplace_back("br", QByteArray::fromBase64("DwWAaGVsbG8gd29ybGQD"),
+                                     "hello world");
+#endif
+
+#if QT_CONFIG(zstd)
+    contentEncodingData.emplace_back(
+            "zstd", QByteArray::fromBase64("KLUv/QRYWQAAaGVsbG8gd29ybGRoaR6y"), "hello world");
+#endif
 
     // Loop through and add the data...
     for (const auto &data : contentEncodingData) {
@@ -930,7 +944,7 @@ void tst_Http2::sendRequest(int streamNumber,
 
     QNetworkRequest request(url);
     request.setAttribute(QNetworkRequest::Http2AllowedAttribute, QVariant(true));
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, QVariant(true));
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("text/plain"));
     request.setPriority(priority);
     request.setHttp2Configuration(h2Config);
@@ -990,12 +1004,12 @@ void tst_Http2::invalidFrame()
 
 void tst_Http2::invalidRequest(quint32 streamID)
 {
-    Q_UNUSED(streamID)
+    Q_UNUSED(streamID);
 }
 
 void tst_Http2::decompressionFailed(quint32 streamID)
 {
-    Q_UNUSED(streamID)
+    Q_UNUSED(streamID);
 }
 
 void tst_Http2::receivedRequest(quint32 streamID)
@@ -1021,7 +1035,7 @@ void tst_Http2::receivedData(quint32 streamID)
 
 void tst_Http2::windowUpdated(quint32 streamID)
 {
-    Q_UNUSED(streamID)
+    Q_UNUSED(streamID);
 
     ++windowUpdates;
 }

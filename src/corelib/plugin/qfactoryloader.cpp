@@ -133,22 +133,6 @@ QJsonDocument qJsonFromRawLibraryMetaData(const char *raw, qsizetype sectionSize
     raw += metaDataSignatureLength();
     sectionSize -= metaDataSignatureLength();
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    if (Q_UNLIKELY(raw[-1] == ' ')) {
-        // the size of the embedded JSON object can be found 8 bytes into the data (see qjson_p.h)
-        uint size = qFromLittleEndian<uint>(raw + 8);
-        // but the maximum size of binary JSON is 128 MB
-        size = qMin(size, 128U * 1024 * 1024);
-        // and it doesn't include the size of the header (8 bytes)
-        size += 8;
-        // finally, it can't be bigger than the file or section size
-        size = qMin(sectionSize, qsizetype(size));
-
-        QByteArray json(raw, size);
-        return QJsonDocument::fromBinaryData(json);
-    }
-#endif
-
     return jsonFromCborMetaData(raw, sectionSize, errMsg);
 }
 QT_WARNING_POP
@@ -157,7 +141,7 @@ class QFactoryLoaderPrivate : public QObjectPrivate
 {
     Q_DECLARE_PUBLIC(QFactoryLoader)
 public:
-    QFactoryLoaderPrivate(){}
+    QFactoryLoaderPrivate() { }
     QByteArray iid;
 #if QT_CONFIG(library)
     ~QFactoryLoaderPrivate();
@@ -178,11 +162,8 @@ Q_GLOBAL_STATIC(QRecursiveMutex, qt_factoryloader_mutex)
 
 QFactoryLoaderPrivate::~QFactoryLoaderPrivate()
 {
-    for (int i = 0; i < libraryList.count(); ++i) {
-        QLibraryPrivate *library = libraryList.at(i);
-        library->unload();
+    for (QLibraryPrivate *library : qAsConst(libraryList))
         library->release();
-    }
 }
 
 void QFactoryLoader::update()
@@ -404,7 +385,7 @@ QObject *QFactoryLoader::instance(int index) const
     lock.unlock();
 #endif
 
-    QVector<QStaticPlugin> staticPlugins = QPluginLoader::staticPlugins();
+    QList<QStaticPlugin> staticPlugins = QPluginLoader::staticPlugins();
     for (int i = 0; i < staticPlugins.count(); ++i) {
         const QJsonObject object = staticPlugins.at(i).metaData();
         if (object.value(QLatin1String("IID")) != QLatin1String(d->iid.constData(), d->iid.size()))

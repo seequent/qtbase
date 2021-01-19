@@ -86,7 +86,7 @@ int QAccessibleMenu::childCount() const
 QAccessibleInterface *QAccessibleMenu::childAt(int x, int y) const
 {
     QAction *act = menu()->actionAt(menu()->mapFromGlobal(QPoint(x,y)));
-    if(act && act->isSeparator())
+    if (act && act->isSeparator())
         act = nullptr;
     return act ? getOrCreateMenu(menu(), act) : nullptr;
 }
@@ -117,8 +117,8 @@ QAccessibleInterface *QAccessibleMenu::child(int index) const
 QAccessibleInterface *QAccessibleMenu::parent() const
 {
     if (QAction *menuAction = menu()->menuAction()) {
-        QVector<QObject*> parentCandidates;
-        const QVector<QObject*> associatedObjects = menuAction->associatedObjects();
+        QList<QObject *> parentCandidates;
+        const QList<QObject *> associatedObjects = menuAction->associatedObjects();
         parentCandidates.reserve(associatedObjects.size() + 1);
         parentCandidates << menu()->parentWidget() << associatedObjects;
         for (QObject *object : qAsConst(parentCandidates)) {

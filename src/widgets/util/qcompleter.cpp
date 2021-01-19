@@ -149,7 +149,7 @@
 #include "QtCore/qstringlistmodel.h"
 #endif
 #if QT_CONFIG(filesystemmodel)
-#include "QtWidgets/qfilesystemmodel.h"
+#include "QtGui/qfilesystemmodel.h"
 #endif
 #include "QtWidgets/qheaderview.h"
 #if QT_CONFIG(listview)
@@ -158,7 +158,7 @@
 #include "QtWidgets/qapplication.h"
 #include "QtGui/qevent.h"
 #include <private/qapplication_p.h>
-#include <private/qdesktopwidget_p.h>
+#include <private/qwidget_p.h>
 #if QT_CONFIG(lineedit)
 #include "QtWidgets/qlineedit.h"
 #endif
@@ -474,8 +474,8 @@ QMatchData QCompletionEngine::filterHistory()
 #else
     const bool isFsModel = false;
 #endif
-    Q_UNUSED(isFsModel)
-    QVector<int> v;
+    Q_UNUSED(isFsModel);
+    QList<int> v;
     QIndexMapper im(v);
     QMatchData m(im, -1, true);
 
@@ -587,7 +587,8 @@ QIndexMapper QSortedModelEngine::indexHint(QString part, const QModelIndex& pare
     const CacheItem::const_iterator it = map.lowerBound(part);
 
     // look backward for first valid hint
-    for(CacheItem::const_iterator it1 = it; it1-- != map.constBegin();) {
+    for (CacheItem::const_iterator it1 = it; it1 != map.constBegin();) {
+        --it1;
         const QMatchData& value = it1.value();
         if (value.isValid()) {
             if (order == Qt::AscendingOrder) {
@@ -783,7 +784,7 @@ QMatchData QUnsortedModelEngine::filter(const QString& part, const QModelIndex& 
 {
     QMatchData hint;
 
-    QVector<int> v;
+    QList<int> v;
     QIndexMapper im(v);
     QMatchData m(im, -1, true);
 
@@ -984,7 +985,7 @@ static bool completeOnLoaded(const QFileSystemModel *model,
     // The user is typing something within that directory and is not in a subdirectory yet.
     const auto separator = QLatin1Char('/');
     return prefix.startsWith(path, caseSensitivity) && prefix.at(pathSize) == separator
-        && !prefix.rightRef(prefixSize - pathSize - 1).contains(separator);
+        && !QStringView{prefix}.right(prefixSize - pathSize - 1).contains(separator);
 }
 
 void QCompleterPrivate::_q_fileSystemModelDirectoryLoaded(const QString &path)

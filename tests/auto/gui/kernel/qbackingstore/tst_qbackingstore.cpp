@@ -30,7 +30,7 @@
 #include <qbackingstore.h>
 #include <qpainter.h>
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QEvent>
 
@@ -53,12 +53,12 @@ public:
     {
     }
 
-    void resizeEvent(QResizeEvent *)
+    void resizeEvent(QResizeEvent *) override
     {
         backingStore.resize(size());
     }
 
-    void exposeEvent(QExposeEvent *event)
+    void exposeEvent(QExposeEvent *event) override
     {
         QRect rect(QPoint(), size());
 
@@ -70,7 +70,10 @@ public:
 
         backingStore.endPaint();
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
         backingStore.flush(event->region().boundingRect());
+QT_WARNING_POP
     }
 
 private:

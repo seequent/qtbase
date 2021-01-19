@@ -366,11 +366,6 @@ static void qt_fusion_draw_mdibutton(QPainter *painter, const QStyleOptionTitleB
     painter->drawPoint(tmp.right() , tmp.bottom() - 1);
 }
 
-static QWindow *qt_getWindow(const QWidget *widget)
-{
-    return widget ? QWidgetPrivate::get(widget)->windowHandle(QWidgetPrivate::WindowHandleMode::Closest) : nullptr;
-}
-
 /*
     \internal
 */
@@ -1002,7 +997,7 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
             d->tabBarcloseButtonIcon = proxy()->standardIcon(SP_DialogCloseButton, option, widget);
         if ((option->state & State_Enabled) && (option->state & State_MouseOver))
             proxy()->drawPrimitive(PE_PanelButtonCommand, option, painter, widget);
-        QPixmap pixmap = d->tabBarcloseButtonIcon.pixmap(qt_getWindow(widget), QSize(16, 16), QIcon::Normal, QIcon::On);
+        QPixmap pixmap = d->tabBarcloseButtonIcon.pixmap(QSize(16, 16), painter->device()->devicePixelRatio(), QIcon::Normal, QIcon::On);
         proxy()->drawItemPixmap(painter, option->rect, Qt::AlignCenter, pixmap);
     }
         break;
@@ -1042,7 +1037,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             if (!cb->currentIcon.isNull()) {
                 QIcon::Mode mode = cb->state & State_Enabled ? QIcon::Normal
                                                              : QIcon::Disabled;
-                QPixmap pixmap = cb->currentIcon.pixmap(qt_getWindow(widget), cb->iconSize, mode);
+                QPixmap pixmap = cb->currentIcon.pixmap(cb->iconSize, painter->device()->devicePixelRatio(), mode);
                 QRect iconRect(editRect);
                 iconRect.setWidth(cb->iconSize.width() + 4);
                 iconRect = alignedRect(cb->direction,
@@ -1096,7 +1091,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             QColor dimHighlight(qMin(highlight.red()/2 + 110, 255),
                                 qMin(highlight.green()/2 + 110, 255),
                                 qMin(highlight.blue()/2 + 110, 255));
-            dimHighlight.setAlpha(widget && widget->isTopLevel() ? 255 : 80);
+            dimHighlight.setAlpha(widget && widget->isWindow() ? 255 : 80);
             QLinearGradient gradient(rect.topLeft(), QPoint(rect.bottomLeft().x(), rect.bottomLeft().y()));
             gradient.setColorAt(0, dimHighlight.lighter(120));
             gradient.setColorAt(1, dimHighlight);
@@ -1369,8 +1364,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             bool indeterminate = (bar->minimum == 0 && bar->maximum == 0);
             bool complete = bar->progress == bar->maximum;
 
-            // Get extra style options if version 2
-            vertical = (bar->orientation == Qt::Vertical);
+            vertical = !(bar->state & QStyle::State_Horizontal);
             inverted = bar->invertedAppearance;
 
             // If the orientation is vertical, we use a transform to rotate
@@ -1479,7 +1473,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
 
             painter->save();
             bool vertical = false, inverted = false;
-            vertical = (bar->orientation == Qt::Vertical);
+            vertical = !(bar->state & QStyle::State_Horizontal);
             inverted = bar->invertedAppearance;
             if (vertical)
                 rect = QRect(rect.left(), rect.top(), rect.height(), rect.width()); // flip width and height
@@ -1656,9 +1650,9 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
                     iconSize = combo->iconSize();
 #endif
                 if (checked)
-                    pixmap = menuItem->icon.pixmap(qt_getWindow(widget), iconSize, mode, QIcon::On);
+                    pixmap = menuItem->icon.pixmap(iconSize, painter->device()->devicePixelRatio(), mode, QIcon::On);
                 else
-                    pixmap = menuItem->icon.pixmap(qt_getWindow(widget), iconSize, mode);
+                    pixmap = menuItem->icon.pixmap(iconSize, painter->device()->devicePixelRatio(), mode);
 
                 const int pixw = pixmap.width() / pixmap.devicePixelRatio();
                 const int pixh = pixmap.height() / pixmap.devicePixelRatio();
@@ -1686,7 +1680,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             }
             int x, y, w, h;
             menuitem->rect.getRect(&x, &y, &w, &h);
-            int tab = menuitem->tabWidth;
+            int tab = menuitem->reservedShortcutWidth;
             QColor discol;
             if (dis) {
                 discol = menuitem->palette.text().color();
@@ -1697,7 +1691,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
 
             QRect textRect(xpos, y + windowsItemVMargin, w - xm - windowsRightBorder - tab + 1, h - 2 * windowsItemVMargin);
             QRect vTextRect = visualRect(opt->direction, menuitem->rect, textRect);
-            QStringRef s(&menuitem->text);
+            QStringView s(menuitem->text);
             if (!s.isEmpty()) {                     // draw text
                 p->save();
                 int t = s.indexOf(QLatin1Char('\t'));
@@ -1769,14 +1763,6 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             QStyleOptionButton subopt = *btn;
             subopt.rect = subElementRect(SE_PushButtonContents, btn, widget);
             proxy()->drawControl(CE_PushButtonLabel, &subopt, painter, widget);
-        }
-        break;
-    case CE_PushButtonLabel:
-        if (const QStyleOptionButton *button = qstyleoption_cast<const QStyleOptionButton *>(option)) {
-            QStyleOptionButton b(*button);
-            // no PM_ButtonShiftHorizontal and PM_ButtonShiftVertical for fusion style
-            b.state &= ~(State_On | State_Sunken);
-            QCommonStyle::drawControl(element, &b, painter, widget);
         }
         break;
     case CE_MenuBarEmptyArea:
@@ -3443,7 +3429,12 @@ QRect QFusionStyle::subControlRect(ComplexControl control, const QStyleOptionCom
                 QRect frameRect = option->rect.adjusted(0, 0, 0, -groupBoxBottomMargin);
                 int margin = 3;
                 int leftMarginExtension = 0;
-                int topMargin = qMax(pixelMetric(PM_ExclusiveIndicatorHeight), option->fontMetrics.height()) + groupBoxTopMargin;
+                const int exclusiveIndicatorHeight = option->subControls.testFlag(SC_GroupBoxCheckBox) ?
+                                                        pixelMetric(PM_ExclusiveIndicatorHeight) : 0;
+                const int fontMetricsHeight = groupBox->text.isEmpty() ? 0 :
+                                                groupBox->fontMetrics.height();
+                const int topMargin = qMax(exclusiveIndicatorHeight, fontMetricsHeight) +
+                                        groupBoxTopMargin;
                 return frameRect.adjusted(leftMarginExtension + margin, margin + topMargin, -margin, -margin - groupBoxBottomMargin);
             }
 

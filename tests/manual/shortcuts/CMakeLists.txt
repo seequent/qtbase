@@ -4,7 +4,7 @@
 ## shortcuts Binary:
 #####################################################################
 
-add_qt_manual_test(shortcuts
+qt_internal_add_manual_test(shortcuts
     GUI
     SOURCES
         main.cpp

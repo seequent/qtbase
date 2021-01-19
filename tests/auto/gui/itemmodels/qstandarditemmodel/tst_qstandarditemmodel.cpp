@@ -27,10 +27,13 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
-
+#include <QTest>
 #include <QStandardItemModel>
 #include <QTreeView>
+#include <QSignalSpy>
+#include <QAbstractItemModelTester>
+
+#include <private/qabstractitemmodel_p.h>
 #include <private/qtreeview_p.h>
 
 class tst_QStandardItemModel : public QObject
@@ -126,6 +129,7 @@ private slots:
 #endif
     void removeRowsAndColumns();
 
+    void defaultItemRoles();
     void itemRoleNames();
     void getMimeDataWithInvalidModelIndex();
     void supportedDragDropActions();
@@ -136,10 +140,10 @@ private slots:
 private:
     QStandardItemModel *m_model = nullptr;
     QPersistentModelIndex persistent;
-    QVector<QModelIndex> rcParent = QVector<QModelIndex>(8);
-    QVector<int> rcFirst = QVector<int>(8, 0);
-    QVector<int> rcLast = QVector<int>(8, 0);
-    QVector<int> currentRoles;
+    QList<QModelIndex> rcParent = QList<QModelIndex>(8);
+    QList<int> rcFirst = QList<int>(8, 0);
+    QList<int> rcLast = QList<int>(8, 0);
+    QList<int> currentRoles;
 
     //return true if models have the same structure, and all child have the same text
     static bool compareModels(QStandardItemModel *model1, QStandardItemModel *model2);
@@ -191,11 +195,10 @@ void tst_QStandardItemModel::init()
     connect(m_model, &QStandardItemModel::columnsRemoved,
             this, &tst_QStandardItemModel::columnsRemoved);
 
-    connect(m_model, &QAbstractItemModel::dataChanged,
-            this, [this](const QModelIndex &, const QModelIndex &, const QVector<int> &roles)
-    {
-        currentRoles = roles;
-    });
+    connect(m_model, &QAbstractItemModel::dataChanged, this,
+            [this](const QModelIndex &, const QModelIndex &, const QList<int> &roles) {
+                currentRoles = roles;
+            });
 
     rcFirst.fill(-1);
     rcLast.fill(-1);
@@ -721,17 +724,17 @@ void tst_QStandardItemModel::data()
     currentRoles.clear();
     // bad args
     m_model->setData(QModelIndex(), "bla", Qt::DisplayRole);
-    QCOMPARE(currentRoles, QVector<int>{});
+    QVERIFY(currentRoles.isEmpty());
 
     QIcon icon;
     for (int r = 0; r < m_model->rowCount(); ++r) {
         for (int c = 0; c < m_model->columnCount(); ++c) {
             m_model->setData(m_model->index(r,c), "initialitem", Qt::DisplayRole);
-            QCOMPARE(currentRoles, QVector<int>({Qt::DisplayRole, Qt::EditRole}));
+            QCOMPARE(currentRoles, QList<int>({ Qt::DisplayRole, Qt::EditRole }));
             m_model->setData(m_model->index(r,c), "tooltip", Qt::ToolTipRole);
-            QCOMPARE(currentRoles, QVector<int>{Qt::ToolTipRole});
+            QCOMPARE(currentRoles, QList<int> { Qt::ToolTipRole });
             m_model->setData(m_model->index(r,c), icon, Qt::DecorationRole);
-            QCOMPARE(currentRoles, QVector<int>{Qt::DecorationRole});
+            QCOMPARE(currentRoles, QList<int> { Qt::DecorationRole });
         }
     }
 
@@ -748,7 +751,7 @@ void tst_QStandardItemModel::clearItemData()
 {
     currentRoles.clear();
     QVERIFY(!m_model->clearItemData(QModelIndex()));
-    QCOMPARE(currentRoles, QVector<int>{});
+    QVERIFY(currentRoles.isEmpty());
     const QModelIndex idx = m_model->index(0, 0);
     const QMap<int, QVariant> oldData = m_model->itemData(idx);
     m_model->setData(idx, QLatin1String("initialitem"), Qt::DisplayRole);
@@ -760,7 +763,7 @@ void tst_QStandardItemModel::clearItemData()
     QCOMPARE(idx.data(Qt::ToolTipRole), QVariant());
     QCOMPARE(idx.data(Qt::DisplayRole), QVariant());
     QCOMPARE(idx.data(Qt::EditRole), QVariant());
-    QCOMPARE(currentRoles, QVector<int>{});
+    QVERIFY(currentRoles.isEmpty());
     m_model->setItemData(idx, oldData);
     currentRoles.clear();
 }
@@ -1559,8 +1562,8 @@ void tst_QStandardItemModel::removeRowsAndColumns()
         for (int r = 0; r < row_list.count(); r++) \
             QCOMPARE(model.item(r,c)->text() , row_list[r] + QLatin1Char('x') + col_list[c]);
 
-    QVector<QString> row_list = QString("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20").split(',').toVector();
-    QVector<QString> col_list = row_list;
+    QStringList row_list = QString("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20").split(',');
+    QStringList col_list = row_list;
     QStandardItemModel model;
     for (int c = 0; c < col_list.count(); c++)
         for (int r = 0; r < row_list.count(); r++)
@@ -1598,10 +1601,16 @@ void tst_QStandardItemModel::removeRowsAndColumns()
     VERIFY_MODEL
 }
 
+void tst_QStandardItemModel::defaultItemRoles()
+{
+    QStandardItemModel model;
+    QCOMPARE(model.roleNames(), QAbstractItemModelPrivate::defaultRoleNames());
+}
+
 void tst_QStandardItemModel::itemRoleNames()
 {
-    QVector<QString> row_list = QString("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20").split(',').toVector();
-    QVector<QString> col_list = row_list;
+    QStringList row_list = QString("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20").split(',');
+    QStringList col_list = row_list;
     QStandardItemModel model;
     for (int c = 0; c < col_list.count(); c++)
         for (int r = 0; r < row_list.count(); r++)

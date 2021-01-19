@@ -310,21 +310,13 @@ inline int q_round_bound(qreal d) //### (int)(qreal) INT_MAX != INT_MAX for sing
 
 void QGraphicsViewPrivate::translateTouchEvent(QGraphicsViewPrivate *d, QTouchEvent *touchEvent)
 {
-    QList<QTouchEvent::TouchPoint> touchPoints = touchEvent->touchPoints();
-    for (int i = 0; i < touchPoints.count(); ++i) {
-        QTouchEvent::TouchPoint &touchPoint = touchPoints[i];
-        const QSizeF ellipseDiameters = touchPoint.ellipseDiameters();
+    for (int i = 0; i < touchEvent->pointCount(); ++i) {
+        auto &pt = touchEvent->point(i);
         // the scene will set the item local pos, startPos, lastPos, and rect before delivering to
         // an item, but for now those functions are returning the view's local coordinates
-        touchPoint.setScenePos(d->mapToScene(touchPoint.position()));
-        touchPoint.setStartScenePos(d->mapToScene(touchPoint.pressPosition()));
-        touchPoint.setLastScenePos(d->mapToScene(touchPoint.lastPos()));
-        touchPoint.setEllipseDiameters(ellipseDiameters);
-
+        QMutableEventPoint::from(pt).setScenePosition(d->mapToScene(pt.position()));
         // screenPos, startScreenPos, and lastScreenPos are already set
     }
-
-    touchEvent->setTouchPoints(touchPoints);
 }
 
 /*!
@@ -348,7 +340,6 @@ QGraphicsViewPrivate::QGraphicsViewPrivate()
       hasUpdateClip(false),
       mousePressButton(Qt::NoButton),
       leftIndent(0), topIndent(0),
-      lastMouseEvent(QEvent::None, QPointF(), QPointF(), QPointF(), Qt::NoButton, { }, { }),
       alignment(Qt::AlignCenter),
       transformationAnchor(QGraphicsView::AnchorViewCenter), resizeAnchor(QGraphicsView::NoAnchor),
       viewportUpdateMode(QGraphicsView::MinimalViewportUpdate),
@@ -636,7 +627,8 @@ void QGraphicsViewPrivate::replayLastMouseEvent()
 {
     if (!useLastMouseEvent || !scene)
         return;
-    mouseMoveEventHandler(&lastMouseEvent);
+    QSinglePointEvent *spe = static_cast<QSinglePointEvent *>(&lastMouseEvent);
+    mouseMoveEventHandler(static_cast<QMouseEvent *>(spe));
 }
 
 /*!
@@ -645,8 +637,7 @@ void QGraphicsViewPrivate::replayLastMouseEvent()
 void QGraphicsViewPrivate::storeMouseEvent(QMouseEvent *event)
 {
     useLastMouseEvent = true;
-    lastMouseEvent = QMouseEvent(QEvent::MouseMove, event->position(), event->scenePosition(), event->globalPosition(),
-                                 event->button(), event->buttons(), event->modifiers());
+    lastMouseEvent = *event;
 }
 
 void QGraphicsViewPrivate::mouseMoveEventHandler(QMouseEvent *event)
@@ -903,8 +894,8 @@ void QGraphicsViewPrivate::populateSceneDragDropEvent(QGraphicsSceneDragDropEven
     dest->setWidget(viewport);
     dest->setSource(qobject_cast<QWidget *>(source->source()));
 #else
-    Q_UNUSED(dest)
-    Q_UNUSED(source)
+    Q_UNUSED(dest);
+    Q_UNUSED(source);
 #endif
 }
 
@@ -1762,7 +1753,7 @@ void QGraphicsView::setScene(QGraphicsScene *scene)
             QEvent windowDeactivate(QEvent::WindowDeactivate);
             QCoreApplication::sendEvent(d->scene, &windowDeactivate);
         }
-        if(hasFocus())
+        if (hasFocus())
             d->scene->clearFocus();
     }
 
@@ -2664,7 +2655,7 @@ void QGraphicsView::updateScene(const QList<QRectF> &rects)
         return;
 
     // Extract and reset dirty scene rect info.
-    QVector<QRect> dirtyViewportRects;
+    QList<QRect> dirtyViewportRects;
     dirtyViewportRects.reserve(d->dirtyRegion.rectCount() + rects.count());
     for (const QRect &dirtyRect : d->dirtyRegion)
         dirtyViewportRects += dirtyRect;
@@ -2879,11 +2870,10 @@ bool QGraphicsView::viewportEvent(QEvent *event)
                 d->scene->d_func()->removePopup(d->scene->d_func()->popupWidgets.constFirst());
         }
         d->useLastMouseEvent = false;
-        // a hack to pass a viewport pointer to the scene inside the leave event
-        Q_ASSERT(event->d == nullptr);
-        QScopedValueRollback<QEventPrivate *> rb(event->d);
-        event->d = reinterpret_cast<QEventPrivate *>(viewport());
-        QCoreApplication::sendEvent(d->scene, event);
+        QGraphicsSceneEvent leaveEvent(QEvent::GraphicsSceneLeave);
+        leaveEvent.setWidget(viewport());
+        QCoreApplication::sendEvent(d->scene, &leaveEvent);
+        event->setAccepted(leaveEvent.isAccepted());
         break;
     }
 #if QT_CONFIG(tooltip)
@@ -2929,7 +2919,7 @@ bool QGraphicsView::viewportEvent(QEvent *event)
         if (d->scene && d->sceneInteractionAllowed) {
             // Convert and deliver the touch event to the scene.
             QTouchEvent *touchEvent = static_cast<QTouchEvent *>(event);
-            touchEvent->setTarget(viewport());
+            QMutableTouchEvent::from(touchEvent)->setTarget(viewport());
             QGraphicsViewPrivate::translateTouchEvent(d, touchEvent);
             QCoreApplication::sendEvent(d->scene, touchEvent);
         } else {
@@ -3458,7 +3448,7 @@ void QGraphicsView::paintEvent(QPaintEvent *event)
         // Recreate the background pixmap, and flag the whole background as
         // exposed.
         if (d->mustResizeBackgroundPixmap) {
-            const qreal dpr = d->viewport->devicePixelRatioF();
+            const qreal dpr = d->viewport->devicePixelRatio();
             d->backgroundPixmap = QPixmap(viewport()->size() * dpr);
             d->backgroundPixmap.setDevicePixelRatio(dpr);
             QBrush bgBrush = viewport()->palette().brush(viewport()->backgroundRole());

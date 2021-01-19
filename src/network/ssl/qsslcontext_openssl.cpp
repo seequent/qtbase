@@ -54,6 +54,13 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_GLOBAL_STATIC(bool, forceSecurityLevel)
+
+Q_NETWORK_EXPORT void qt_ForceTlsSecurityLevel()
+{
+    *forceSecurityLevel() = true;
+}
+
 // defined in qsslsocket_openssl.cpp:
 extern int q_X509Callback(int ok, X509_STORE_CTX *ctx);
 extern "C" int q_X509CallbackDirect(int ok, X509_STORE_CTX *ctx);
@@ -187,7 +194,7 @@ SSL* QSslContext::createSsl()
     }
 
 #ifndef OPENSSL_NO_NEXTPROTONEG
-    QList<QByteArray> protocols = sslConfiguration.d->nextAllowedProtocols;
+    QList<QByteArray> protocols = sslConfiguration.d.constData()->nextAllowedProtocols;
     if (!protocols.isEmpty()) {
         m_supportedNPNVersions.clear();
         for (int a = 0; a < protocols.count(); ++a) {
@@ -334,6 +341,10 @@ init_context:
         return;
     }
 
+    // A nasty hacked OpenSSL using a level that will make our auto-tests fail:
+    if (q_SSL_CTX_get_security_level(sslContext->ctx) > 1 && *forceSecurityLevel())
+        q_SSL_CTX_set_security_level(sslContext->ctx, 1);
+
     const long anyVersion =
 #if QT_CONFIG(dtls)
                             isDtls ? DTLS_ANY_VERSION : TLS_ANY_VERSION;
@@ -437,16 +448,13 @@ init_context:
     auto filterCiphers = [](const QList<QSslCipher> &ciphers, bool selectTls13)
     {
         QByteArray cipherString;
-        bool first = true;
 
-        for (const QSslCipher &cipher : qAsConst(ciphers)) {
+        for (const QSslCipher &cipher : ciphers) {
             const bool isTls13Cipher = cipher.protocol() == QSsl::TlsV1_3 || cipher.protocol() == QSsl::TlsV1_3OrLater;
             if (selectTls13 != isTls13Cipher)
                 continue;
 
-            if (first)
-                first = false;
-            else
+            if (cipherString.size())
                 cipherString.append(':');
             cipherString.append(cipher.name().toLatin1());
         }
@@ -530,7 +538,7 @@ init_context:
     if (!sslContext->sslConfiguration.localCertificate().isNull()) {
         // Require a private key as well.
         if (sslContext->sslConfiguration.privateKey().isNull()) {
-            sslContext->errorStr = QSslSocket::tr("Cannot provide a certificate with no key, %1").arg(QSslSocketBackendPrivate::getErrorsFromOpenSsl());
+            sslContext->errorStr = QSslSocket::tr("Cannot provide a certificate with no key");
             sslContext->errorCode = QSslError::UnspecifiedError;
             return;
         }
@@ -559,14 +567,15 @@ init_context:
                 q_EVP_PKEY_set1_EC_KEY(sslContext->pkey, reinterpret_cast<EC_KEY *>(configuration.d->privateKey.handle()));
 #endif
         }
+        auto pkey = sslContext->pkey;
+        if (configuration.d->privateKey.algorithm() == QSsl::Opaque)
+            sslContext->pkey = nullptr; // Don't free the private key, it belongs to QSslKey
 
-        if (!q_SSL_CTX_use_PrivateKey(sslContext->ctx, sslContext->pkey)) {
+        if (!q_SSL_CTX_use_PrivateKey(sslContext->ctx, pkey)) {
             sslContext->errorStr = QSslSocket::tr("Error loading private key, %1").arg(QSslSocketBackendPrivate::getErrorsFromOpenSsl());
             sslContext->errorCode = QSslError::UnspecifiedError;
             return;
         }
-        if (configuration.d->privateKey.algorithm() == QSsl::Opaque)
-            sslContext->pkey = nullptr; // Don't free the private key, it belongs to QSslKey
 
         // Check if the certificate matches the private key.
         if (!q_SSL_CTX_check_private_key(sslContext->ctx)) {
@@ -658,7 +667,7 @@ init_context:
         q_SSL_CTX_use_psk_identity_hint(sslContext->ctx, sslContext->sslConfiguration.preSharedKeyIdentityHint().constData());
 #endif // !OPENSSL_NO_PSK
 
-    const QVector<QSslEllipticCurve> qcurves = sslContext->sslConfiguration.ellipticCurves();
+    const auto qcurves = sslContext->sslConfiguration.ellipticCurves();
     if (!qcurves.isEmpty()) {
 #ifdef OPENSSL_NO_EC
         sslContext->errorStr = msgErrorSettingEllipticCurves(QSslSocket::tr("OpenSSL version with disabled elliptic curves"));
@@ -712,7 +721,7 @@ void QSslContext::applyBackendConfig(QSslContext *sslContext)
             if (i.key() == "Qt-OCSP-response") // This never goes to SSL_CONF_cmd().
                 continue;
 
-            if (!i.value().canConvert(QMetaType::QByteArray)) {
+            if (!i.value().canConvert(QMetaType(QMetaType::QByteArray))) {
                 sslContext->errorCode = QSslError::UnspecifiedError;
                 sslContext->errorStr = msgErrorSettingBackendConfig(
                 QSslSocket::tr("Expecting QByteArray for %1").arg(

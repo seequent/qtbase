@@ -43,19 +43,17 @@
 #include <QtGui/private/qguiapplication_p.h>
 #include <QGuiApplication>
 #include <QOpenGLContext>
-#if QT_CONFIG(opengl)
-#include <QtOpenGL/qpa/qplatformbackingstoreopenglsupport.h>
-#endif
 #include <QOffscreenSurface>
+#include <QtGui/private/qoffscreensurface_p.h>
 #include <QThread>
-#include <QTouchDevice>
 
-#include <QtEglSupport/private/qeglpbuffer_p.h>
+#include <QtGui/private/qeglpbuffer_p.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <qpa/qplatformwindow.h>
 #include <qpa/qplatformoffscreensurface.h>
 
 #include "androidjnimain.h"
+#include "androidjniaccessibility.h"
 #include "qabstracteventdispatcher.h"
 #include "qandroideventdispatcher.h"
 #include "qandroidplatformbackingstore.h"
@@ -71,7 +69,7 @@
 #include "qandroidsystemlocale.h"
 #include "qandroidplatformoffscreensurface.h"
 
-#include <QtPlatformHeaders/QEGLNativeContext>
+#include <jni.h>
 
 #if QT_CONFIG(vulkan)
 #include "qandroidplatformvulkanwindow.h"
@@ -152,6 +150,12 @@ void QAndroidPlatformNativeInterface::customEvent(QEvent *event)
     QMutexLocker lock(QtAndroid::platformInterfaceMutex());
     QAndroidPlatformIntegration *api = static_cast<QAndroidPlatformIntegration *>(QGuiApplicationPrivate::platformIntegration());
     QtAndroid::setAndroidPlatformIntegration(api);
+
+#ifndef QT_NO_ACCESSIBILITY
+    // Android accessibility activation event might have been already received
+    api->accessibility()->setActive(QtAndroidAccessibility::isActive());
+#endif // QT_NO_ACCESSIBILITY
+
     api->flushPendingUpdates();
 }
 
@@ -208,12 +212,12 @@ QAndroidPlatformIntegration::QAndroidPlatformIntegration(const QStringList &para
         if (touchScreen == QJNIObjectPrivate::getStaticField<jint>("android/content/res/Configuration", "TOUCHSCREEN_FINGER")
                 || touchScreen == QJNIObjectPrivate::getStaticField<jint>("android/content/res/Configuration", "TOUCHSCREEN_STYLUS"))
         {
-            m_touchDevice = new QTouchDevice;
-            m_touchDevice->setType(QTouchDevice::TouchScreen);
-            m_touchDevice->setCapabilities(QTouchDevice::Position
-                                         | QTouchDevice::Area
-                                         | QTouchDevice::Pressure
-                                         | QTouchDevice::NormalizedPosition);
+            m_touchDevice = new QPointingDevice;
+            m_touchDevice->setType(QInputDevice::DeviceType::TouchScreen);
+            m_touchDevice->setCapabilities(QPointingDevice::Capability::Position
+                                         | QPointingDevice::Capability::Area
+                                         | QPointingDevice::Capability::Pressure
+                                         | QPointingDevice::Capability::NormalizedPosition);
 
             QJNIObjectPrivate pm = javaActivity.callObjectMethod("getPackageManager", "()Landroid/content/pm/PackageManager;");
             Q_ASSERT(pm.isValid());
@@ -227,7 +231,7 @@ QAndroidPlatformIntegration::QAndroidPlatformIntegration(const QStringList &para
                                             QJNIObjectPrivate::getStaticObjectField("android/content/pm/PackageManager", "FEATURE_TOUCHSCREEN_MULTITOUCH", "Ljava/lang/String;").object())) {
                 m_touchDevice->setMaximumTouchPoints(2);
             }
-            QWindowSystemInterface::registerTouchDevice(m_touchDevice);
+            QWindowSystemInterface::registerInputDevice(m_touchDevice);
         }
 
         auto contentResolver = javaActivity.callObjectMethod("getContentResolver", "()Landroid/content/ContentResolver;");
@@ -301,9 +305,13 @@ QPlatformOpenGLContext *QAndroidPlatformIntegration::createPlatformOpenGLContext
     format.setRedBufferSize(8);
     format.setGreenBufferSize(8);
     format.setBlueBufferSize(8);
-    auto ctx = new QAndroidPlatformOpenGLContext(format, context->shareHandle(), m_eglDisplay, context->nativeHandle());
-    context->setNativeHandle(QVariant::fromValue<QEGLNativeContext>(QEGLNativeContext(ctx->eglContext(), m_eglDisplay)));
+    auto ctx = new QAndroidPlatformOpenGLContext(format, context->shareHandle(), m_eglDisplay);
     return ctx;
+}
+
+QOpenGLContext *QAndroidPlatformIntegration::createOpenGLContext(EGLContext context, EGLDisplay display, QOpenGLContext *shareContext) const
+{
+    return QEGLPlatformContext::createFrom<QAndroidPlatformOpenGLContext>(context, display, m_eglDisplay, shareContext);
 }
 
 QPlatformOffscreenSurface *QAndroidPlatformIntegration::createPlatformOffscreenSurface(QOffscreenSurface *surface) const
@@ -317,14 +325,18 @@ QPlatformOffscreenSurface *QAndroidPlatformIntegration::createPlatformOffscreenS
     format.setGreenBufferSize(8);
     format.setBlueBufferSize(8);
 
-    if (surface->nativeHandle()) {
-        // Adopt existing offscreen Surface
-        // The expectation is that nativeHandle is an ANativeWindow* representing
-        // an android.view.Surface
-        return new QAndroidPlatformOffscreenSurface(m_eglDisplay, format, surface);
-    }
-
     return new QEGLPbuffer(m_eglDisplay, format, surface);
+}
+
+QOffscreenSurface *QAndroidPlatformIntegration::createOffscreenSurface(ANativeWindow *nativeSurface) const
+{
+    if (!QtAndroid::activity() || !nativeSurface)
+        return nullptr;
+
+    auto *surface = new QOffscreenSurface;
+    auto *surfacePrivate = QOffscreenSurfacePrivate::get(surface);
+    surfacePrivate->platformOffscreenSurface = new QAndroidPlatformOffscreenSurface(nativeSurface, m_eglDisplay, surface);
+    return surface;
 }
 
 QPlatformWindow *QAndroidPlatformIntegration::createPlatformWindow(QWindow *window) const

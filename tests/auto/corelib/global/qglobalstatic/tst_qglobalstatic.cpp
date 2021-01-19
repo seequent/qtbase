@@ -28,7 +28,8 @@
 ****************************************************************************/
 
 #include <QtCore/QThread>
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QReadWriteLock>
 
 #if defined(Q_OS_UNIX)
 #include <sys/resource.h>
@@ -182,10 +183,10 @@ void tst_QGlobalStatic::threadStressTest()
     {
     public:
         QReadWriteLock *lock;
-        void run()
+        void run() override
         {
             QReadLocker l(lock);
-            //usleep(qrand() * 200 / RAND_MAX);
+            //usleep(QRandomGenerator::global()->generate(200));
             // thundering herd
             try {
                 threadStressTestGS();

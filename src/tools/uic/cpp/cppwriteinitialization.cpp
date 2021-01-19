@@ -136,8 +136,29 @@ namespace {
     // Check on properties. Filter out empty legacy pixmap/icon properties
     // as Designer pre 4.4 used to remove missing resource references.
     // This can no longer be handled by the code as we have 'setIcon(QIcon())' as well as 'QIcon icon'
-    static bool checkProperty(const QString &fileName, const DomProperty *p) {
+    static bool checkProperty(const CustomWidgetsInfo *customWidgetsInfo,
+                              const QString &fileName, const QString &className,
+                              const DomProperty *p) {
         switch (p->kind()) {
+        // ### fixme Qt 7 remove this: Exclude deprecated properties of Qt 5.
+        case DomProperty::Set:
+            if (p->attributeName() == u"features"
+                && customWidgetsInfo->extends(className, QLatin1String("QDockWidget"))
+                && p->elementSet() == u"QDockWidget::AllDockWidgetFeatures") {
+                const QString msg = fileName + QLatin1String(": Warning: Deprecated enum value QDockWidget::AllDockWidgetFeatures was encountered.");
+                qWarning("%s", qPrintable(msg));
+                return false;
+            }
+            break;
+        case DomProperty::Enum:
+            if (p->attributeName() == u"sizeAdjustPolicy"
+                && customWidgetsInfo->extends(className, QLatin1String("QComboBox"))
+                && p->elementEnum() == u"QComboBox::AdjustToMinimumContentsLength") {
+                const QString msg = fileName + QLatin1String(": Warning: Deprecated enum value QComboBox::AdjustToMinimumContentsLength was encountered.");
+                qWarning("%s", qPrintable(msg));
+                return false;
+            }
+            break;
         case DomProperty::IconSet:
             if (const DomResourceIcon *dri = p->elementIconSet()) {
                 if (!isIconFormat44(dri)) {
@@ -649,7 +670,7 @@ void WriteInitialization::acceptWidget(DomWidget *node)
     }
 
     if (node->elementLayout().isEmpty())
-        m_layoutChain.push(0);
+        m_layoutChain.push(nullptr);
 
     m_layoutWidget = false;
     if (className == QLatin1String("QWidget") && !node->hasAttributeNative()) {
@@ -662,7 +683,7 @@ void WriteInitialization::acceptWidget(DomWidget *node)
         }
     }
     m_widgetChain.push(node);
-    m_layoutChain.push(0);
+    m_layoutChain.push(nullptr);
     TreeWalker::acceptWidget(node);
     m_layoutChain.pop();
     m_widgetChain.pop();
@@ -1204,7 +1225,7 @@ void WriteInitialization::writeProperties(const QString &varName,
     bool frameShadowEncountered = false;
 
     for (const DomProperty *p : lst) {
-        if (!checkProperty(m_option.inputFile, p))
+        if (!checkProperty(m_uic->customWidgetsInfo(), m_option.inputFile, className, p))
             continue;
         QString propertyName = p->attributeName();
         QString propertyValue;
@@ -1295,8 +1316,9 @@ void WriteInitialization::writeProperties(const QString &varName,
             qWarning("Widget '%s': Deprecated property QLCDNumber::numDigits encountered. It has been replaced by QLCDNumber::digitCount.",
                      qPrintable(varName));
             propertyName = QLatin1String("digitCount");
-        } else if (propertyName == QLatin1String("frameShadow"))
+        } else if (propertyName == QLatin1String("frameShadow")) {
             frameShadowEncountered = true;
+        }
 
         bool stdset = m_stdsetdef;
         if (p->hasAttributeStdset())
@@ -1308,7 +1330,7 @@ void WriteInitialization::writeProperties(const QString &varName,
             QTextStream str(&setFunction);
             if (stdset) {
                 str << language::derefPointer <<"set" << propertyName.at(0).toUpper()
-                    << propertyName.midRef(1) << '(';
+                    << QStringView{propertyName}.mid(1) << '(';
             } else {
                 str << language::derefPointer << QLatin1String("setProperty(\"")
                     << propertyName << "\", ";
@@ -1602,8 +1624,8 @@ QString WriteInitialization::writeFontProperties(const DomFont *f)
     m_output << m_indent << language::stackVariable("QFont", fontName)
         << language::eol;
     if (f->hasElementFamily() && !f->elementFamily().isEmpty()) {
-        m_output << m_indent << fontName << ".setFamily("
-            << language::qstring(f->elementFamily(), m_dindent) << ")" << language::eol;
+        m_output << m_indent << fontName << ".setFamilies(QStringList{"
+            << language::qstring(f->elementFamily(), m_dindent) << "})" << language::eol;
     }
     if (f->hasElementPointSize() && f->elementPointSize() > 0) {
          m_output << m_indent << fontName << ".setPointSize(" << f->elementPointSize()
@@ -1621,10 +1643,6 @@ QString WriteInitialization::writeFontProperties(const DomFont *f)
     if (f->hasElementUnderline()) {
         m_output << m_indent << fontName << ".setUnderline("
             << language::boolValue(f->elementUnderline()) << ')' << language::eol;
-    }
-    if (f->hasElementWeight() && f->elementWeight() > 0) {
-        m_output << m_indent << fontName << ".setWeight("
-            << f->elementWeight() << ")" << language::eol;
     }
     if (f->hasElementStrikeOut()) {
          m_output << m_indent << fontName << ".setStrikeOut("
@@ -2156,7 +2174,7 @@ void WriteInitialization::addInitializer(Item *item,
     if (!value.isEmpty()) {
         QString setter;
         QTextStream str(&setter);
-        str << language::derefPointer << "set" << name.at(0).toUpper() << name.midRef(1) << '(';
+        str << language::derefPointer << "set" << name.at(0).toUpper() << QStringView{name}.mid(1) << '(';
         if (column >= 0)
             str << column << ", ";
         str << value << ");";
@@ -2338,7 +2356,7 @@ void WriteInitialization::initializeTreeWidget(DomWidget *w)
     conditions an item is needed needs to be done bottom-up, the whole process makes
     two passes, storing the intermediate result in a recursive StringInitializerListMap.
 */
-WriteInitialization::Items WriteInitialization::initializeTreeWidgetItems(const QVector<DomItem *> &domItems)
+WriteInitialization::Items WriteInitialization::initializeTreeWidgetItems(const QList<DomItem *> &domItems)
 {
     // items
     Items items;

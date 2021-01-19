@@ -75,6 +75,7 @@ class QMouseEvent;
 class QWheelEvent;
 class QHoverEvent;
 class QKeyEvent;
+class QEnterEvent;
 class QFocusEvent;
 class QPaintEvent;
 class QMoveEvent;
@@ -229,7 +230,10 @@ public:
     void setStyle(QStyle *);
     // Widget types and states
 
+#if QT_DEPRECATED_SINCE(6, 2)
+    QT_DEPRECATED_VERSION_X_6_1("Use isWindow()")
     bool isTopLevel() const;
+#endif
     bool isWindow() const;
 
     bool isModal() const;
@@ -295,11 +299,17 @@ public:
 
     // Widget coordinate mapping
 
+    QPointF mapToGlobal(const QPointF &) const;
     QPoint mapToGlobal(const QPoint &) const;
+    QPointF mapFromGlobal(const QPointF &) const;
     QPoint mapFromGlobal(const QPoint &) const;
+    QPointF mapToParent(const QPointF &) const;
     QPoint mapToParent(const QPoint &) const;
+    QPointF mapFromParent(const QPointF &) const;
     QPoint mapFromParent(const QPoint &) const;
+    QPointF mapTo(const QWidget *, const QPointF &) const;
     QPoint mapTo(const QWidget *, const QPoint &) const;
+    QPointF mapFrom(const QWidget *, const QPointF &) const;
     QPoint mapFrom(const QWidget *, const QPoint &) const;
 
     QWidget *window() const;
@@ -592,10 +602,9 @@ public:
 
     QWindow *windowHandle() const;
     QScreen *screen() const;
+    void setScreen(QScreen *);
 
     static QWidget *createWindowContainer(QWindow *window, QWidget *parent=nullptr, Qt::WindowFlags flags=Qt::WindowFlags());
-
-    friend class QDesktopScreenWidget;
 
 Q_SIGNALS:
     void windowTitleChanged(const QString &title);
@@ -617,7 +626,7 @@ protected:
     virtual void keyReleaseEvent(QKeyEvent *event);
     virtual void focusInEvent(QFocusEvent *event);
     virtual void focusOutEvent(QFocusEvent *event);
-    virtual void enterEvent(QEvent *event);
+    virtual void enterEvent(QEnterEvent *event);
     virtual void leaveEvent(QEvent *event);
     virtual void paintEvent(QPaintEvent *event);
     virtual void moveEvent(QMoveEvent *event);
@@ -661,7 +670,7 @@ public:
     void setInputMethodHints(Qt::InputMethodHints hints);
 
 protected Q_SLOTS:
-    void updateMicroFocus();
+    void updateMicroFocus(Qt::InputMethodQuery query = Qt::ImQueryAll);
 protected:
 
     void create(WId = 0, bool initializeWindow = true,

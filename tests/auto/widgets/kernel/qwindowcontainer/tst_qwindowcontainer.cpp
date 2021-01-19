@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <qapplication.h>
 #include <qwindow.h>
@@ -49,7 +49,8 @@ public:
     {
     }
 
-    void exposeEvent(QExposeEvent *) {
+    void exposeEvent(QExposeEvent *) override
+    {
         if (isExposed())
             ++numberOfExposes;
         else

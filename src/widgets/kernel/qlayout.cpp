@@ -106,11 +106,16 @@ static int menuBarHeightForWidth(QWidget *menubar, int w)
 
 /*!
     Constructs a new top-level QLayout, with parent \a parent.
-    \a parent may not be \nullptr.
 
     The layout is set directly as the top-level layout for
     \a parent. There can be only one top-level layout for a
     widget. It is returned by QWidget::layout().
+
+    If \a parent is \nullptr, then you must insert this layout
+    into another layout, or set it as a widget's layout using
+    QWidget::setLayout().
+
+    \sa QWidget::setLayout()
 */
 QLayout::QLayout(QWidget *parent)
     : QObject(*new QLayoutPrivate, parent)
@@ -119,18 +124,6 @@ QLayout::QLayout(QWidget *parent)
         return;
     parent->setLayout(this);
 }
-
-/*!
-    Constructs a new child QLayout.
-
-    This layout has to be inserted into another layout before geometry
-    management will work.
-*/
-QLayout::QLayout()
-    : QObject(*new QLayoutPrivate, nullptr)
-{
-}
-
 
 /*! \internal
  */
@@ -357,6 +350,19 @@ void QLayout::setContentsMargins(int left, int top, int right, int bottom)
 void QLayout::setContentsMargins(const QMargins &margins)
 {
     setContentsMargins(margins.left(), margins.top(), margins.right(), margins.bottom());
+}
+
+/*!
+    \since 6.1
+
+    Unsets any user-defined margins around the layout. The layout will
+    use the default values provided by the style.
+
+    \sa setContentsMargins()
+*/
+void QLayout::unsetContentsMargins()
+{
+    setContentsMargins(-1, -1, -1, -1);
 }
 
 /*!
@@ -751,7 +757,7 @@ bool QLayout::adoptLayout(QLayout *layout)
 static bool layoutDebug()
 {
     static int checked_env = -1;
-    if(checked_env == -1)
+    if (checked_env == -1)
         checked_env = !!qEnvironmentVariableIntValue("QT_LAYOUT_DEBUG");
 
     return checked_env;
@@ -1134,7 +1140,7 @@ QLayoutItem *QLayout::replaceWidget(QWidget *from, QWidget *to, Qt::FindChildOpt
     \fn QLayoutItem *QLayout::itemAt(int index) const
 
     Must be implemented in subclasses to return the layout item at \a
-    index. If there is no such item, the function must return 0.
+    index. If there is no such item, the function must return \nullptr.
     Items are numbered consecutively from 0. If an item is deleted, other items will be renumbered.
 
     This function can be used to iterate over a layout. The following
@@ -1177,18 +1183,17 @@ QLayoutItem *QLayout::replaceWidget(QWidget *from, QWidget *to, Qt::FindChildOpt
 
     Returns the index of \a widget, or -1 if \a widget is not found.
 
-    The default implementation iterates over all items using itemAt()
+    The default implementation iterates over all items using itemAt().
 */
-int QLayout::indexOf(QWidget *widget) const
+int QLayout::indexOf(const QWidget *widget) const
 {
-    int i = 0;
-    QLayoutItem *item = itemAt(i);
-    while (item) {
-        if (item->widget() == widget)
+    const int c = count();
+
+    for (int i = 0; i < c; ++i) {
+        if (itemAt(i)->widget() == widget)
             return i;
-        ++i;
-        item = itemAt(i);
     }
+
     return -1;
 }
 
@@ -1199,16 +1204,15 @@ int QLayout::indexOf(QWidget *widget) const
 
     Returns the index of \a layoutItem, or -1 if \a layoutItem is not found.
 */
-int QLayout::indexOf(QLayoutItem *layoutItem) const
+int QLayout::indexOf(const QLayoutItem *layoutItem) const
 {
-    int i = 0;
-    QLayoutItem *item = itemAt(i);
-    while (item) {
-        if (item == layoutItem)
+    const int c = count();
+
+    for (int i = 0; i < c; ++i) {
+        if (itemAt(i) == layoutItem)
             return i;
-        ++i;
-        item = itemAt(i);
     }
+
     return -1;
 }
 

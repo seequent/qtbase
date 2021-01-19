@@ -43,7 +43,7 @@
 #include <QtNetwork/qtnetworkglobal.h>
 #include <QtNetwork/qnetworkrequest.h>
 #include <QtCore/QString>
-#include <QtCore/QVector>
+#include <QtCore/QList>
 #include <QtCore/QObject>
 #ifndef QT_NO_SSL
 #include <QtNetwork/QSslConfiguration>
@@ -88,8 +88,7 @@ public:
     explicit QNetworkAccessManager(QObject *parent = nullptr);
     ~QNetworkAccessManager();
 
-    // ### Qt 6: turn into virtual
-    QStringList supportedSchemes() const;
+    virtual QStringList supportedSchemes() const;
 
     void clearAccessCache();
 
@@ -112,8 +111,8 @@ public:
     bool isStrictTransportSecurityEnabled() const;
     void enableStrictTransportSecurityStore(bool enabled, const QString &storeDir = QString());
     bool isStrictTransportSecurityStoreEnabled() const;
-    void addStrictTransportSecurityHosts(const QVector<QHstsPolicy> &knownHosts);
-    QVector<QHstsPolicy> strictTransportSecurityHosts() const;
+    void addStrictTransportSecurityHosts(const QList<QHstsPolicy> &knownHosts);
+    QList<QHstsPolicy> strictTransportSecurityHosts() const;
 
     QNetworkReply *head(const QNetworkRequest &request);
     QNetworkReply *get(const QNetworkRequest &request);
@@ -125,7 +124,7 @@ public:
     QNetworkReply *sendCustomRequest(const QNetworkRequest &request, const QByteArray &verb, QIODevice *data = nullptr);
     QNetworkReply *sendCustomRequest(const QNetworkRequest &request, const QByteArray &verb, const QByteArray &data);
 
-#if QT_CONFIG(http)
+#if QT_CONFIG(http) || defined(Q_OS_WASM)
     QNetworkReply *post(const QNetworkRequest &request, QHttpMultiPart *multiPart);
     QNetworkReply *put(const QNetworkRequest &request, QHttpMultiPart *multiPart);
     QNetworkReply *sendCustomRequest(const QNetworkRequest &request, const QByteArray &verb, QHttpMultiPart *multiPart);
@@ -182,7 +181,6 @@ private:
 #ifndef QT_NO_SSL
     Q_PRIVATE_SLOT(d_func(), void _q_replyPreSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator*))
 #endif
-    Q_PRIVATE_SLOT(d_func(), void _q_onlineStateChanged(bool))
 };
 
 QT_END_NAMESPACE

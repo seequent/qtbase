@@ -26,10 +26,7 @@
 **
 ****************************************************************************/
 
-
-#include <QtTest/QtTest>
-
-
+#include <QTest>
 #include <QDebug>
 #include <QFile>
 #include <QImage>
@@ -38,6 +35,7 @@
 #include <QPainter>
 #include <QSet>
 #include <QTemporaryDir>
+#include <QTemporaryFile>
 
 #ifdef Q_OS_UNIX // for geteuid()
 # include <sys/types.h>
@@ -47,7 +45,7 @@
 #include <algorithm>
 
 typedef QMap<QString, QString> QStringMap;
-typedef QVector<int> QIntList;
+typedef QList<int> QIntList;
 Q_DECLARE_METATYPE(QImageWriter::ImageWriterError)
 Q_DECLARE_METATYPE(QImage::Format)
 
@@ -413,7 +411,7 @@ void tst_QImageWriter::supportsOption()
     QFETCH(QString, fileName);
     QFETCH(QIntList, options);
 
-    static Q_CONSTEXPR QImageIOHandler::ImageOption allOptions[] = {
+    static constexpr QImageIOHandler::ImageOption allOptions[] = {
         QImageIOHandler::Size,
         QImageIOHandler::ClipRect,
         QImageIOHandler::Description,

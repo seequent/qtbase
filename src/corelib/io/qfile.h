@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -47,6 +47,13 @@
 
 #if QT_CONFIG(cxx17_filesystem)
 #include <filesystem>
+#elif defined(Q_CLANG_QDOC)
+namespace std {
+    namespace filesystem {
+        class path {
+        };
+    };
+};
 #endif
 
 #ifdef open
@@ -68,11 +75,8 @@ inline QString fromFilesystemPath(const std::filesystem::path &path)
 
 inline std::filesystem::path toFilesystemPath(const QString &path)
 {
-#ifdef Q_OS_WIN
-    return std::filesystem::path(path.toStdU16String());
-#else
-    return std::filesystem::path(path.toStdString());
-#endif
+    return std::filesystem::path(reinterpret_cast<const char16_t *>(path.cbegin()),
+                                 reinterpret_cast<const char16_t *>(path.cend()));
 }
 
 // Both std::filesystem::path and QString (without QT_NO_CAST_FROM_ASCII) can be implicitly
@@ -121,7 +125,7 @@ public:
     ~QFile();
 
     QString fileName() const override;
-#if QT_CONFIG(cxx17_filesystem)
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
     std::filesystem::path filesystemFileName() const
     { return QtPrivate::toFilesystemPath(fileName()); }
 #endif
@@ -166,22 +170,9 @@ public:
     }
 #endif
 
-#if QT_DEPRECATED_SINCE(5,0)
-    typedef QByteArray (*EncoderFn)(const QString &fileName);
-    typedef QString (*DecoderFn)(const QByteArray &localfileName);
-    QT_DEPRECATED static void setEncodingFunction(EncoderFn) {}
-    QT_DEPRECATED static void setDecodingFunction(DecoderFn) {}
-#endif
-
     bool exists() const;
     static bool exists(const QString &fileName);
 
-#if QT_DEPRECATED_SINCE(5, 13)
-    QT_DEPRECATED_X("Use QFile::symLinkTarget() instead")
-    QString readLink() const;
-    QT_DEPRECATED_X("Use QFile::symLinkTarget(QString) instead")
-    static QString readLink(const QString &fileName);
-#endif
     QString symLinkTarget() const;
     static QString symLinkTarget(const QString &fileName);
 

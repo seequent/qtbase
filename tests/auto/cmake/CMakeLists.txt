@@ -1,10 +1,13 @@
+# special case skip regeneration
 
 # This is an automatic test for the CMake configuration files.
 # To run it manually,
 # 1) mkdir build   # Create a build directory
 # 2) cd build
-# 3) cmake ..      # Run cmake on this directory.
+# 3) # Run cmake on this directory
+#    `$qt_prefix/bin/qt-cmake ..` or `cmake -DCMAKE_PREFIX_PATH=/path/to/qt ..`
 # 4) ctest         # Run ctest
+# 5) ctest -V -R test_wrap_cpp_options # Run single test
 #
 # The expected output is something like:
 #
@@ -37,64 +40,122 @@
 # needs to be set to the installation prefix or build prefix of Qt
 # before running these tests.
 
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.14)
 
-project(qmake_cmake_files)
+project(cmake_usage_tests)
 
 enable_testing()
 
-find_package(Qt5Core REQUIRED)
-
-include("${_Qt5CTestMacros}")
-
-expect_pass(test_umbrella_config)
-expect_pass(test_wrap_cpp_and_resources)
-if (NOT NO_WIDGETS)
-    expect_pass(test_dependent_modules)
-    expect_pass("test(needsquoting)dirname")
+# Most of the tests fail to build on Boot2qt / qemu with undefined references to QtDBus because
+# it's a private dependency of QtGui, and CMake for some reason doesn't generate an -rpath-link
+# flag. Notably -rpath is specified which should implicitly enable -rpath-link, but that
+# doesn't seem to be the case.
+# Until this is figured out, disable the tests when cross-compiling to Linux.
+if(UNIX AND NOT APPLE AND NOT WIN32 AND CMAKE_CROSSCOMPILING AND NOT QT_ENABLE_CMAKE_BOOT2QT_TESTS)
+    message(STATUS "Running CMake tests is disabled when cross-compiling to Linux / Boot2Qt.")
+    return()
 endif()
-expect_fail(test_add_resource_options)
-expect_fail(test_wrap_cpp_options)
-expect_pass(test_platform_defs_include)
-expect_pass(test_qtmainwin_library)
 
-if (HAVE_NINJA)
-    make_directory("${CMAKE_CURRENT_SOURCE_DIR}/test_QFINDTESTDATA/build")
+set(required_packages Core Network Xml Sql Test)
+set(optional_packages DBus Gui Widgets PrintSupport OpenGL Concurrent)
+
+# Setup the test when called as a completely standalone project.
+if(TARGET Qt6::Core)
+    # Tests are built as part of the qtbase build tree.
+    # Setup paths so that the Qt packages are found, similar to examples.
+    qt_internal_set_up_build_dir_package_paths()
+endif()
+find_package(Qt6 REQUIRED COMPONENTS ${required_packages})
+find_package(Qt6 OPTIONAL_COMPONENTS ${optional_packages})
+
+# Setup common test variables which were previously set by ctest_testcase_common.prf.
+set(CMAKE_MODULES_UNDER_TEST "${required_packages}")
+foreach(qt_package ${optional_packages})
+    set(package_name "${QT_CMAKE_EXPORT_NAMESPACE}${qt_package}")
+    list(APPEND CMAKE_MODULES_UNDER_TEST "${qt_package}")
+endforeach()
+
+foreach(qt_package ${CMAKE_MODULES_UNDER_TEST})
+    if(${package_name}_FOUND)
+        set(CMAKE_${qt_package}_MODULE_MAJOR_VERSION "${${package_name}_VERSION_MAJOR}")
+        set(CMAKE_${qt_package}_MODULE_MINOR_VERSION "${${package_name}_VERSION_MINOR}")
+        set(CMAKE_${qt_package}_MODULE_PATCH_VERSION "${${package_name}_VERSION_PATCH}")
+    endif()
+endforeach()
+
+# Qt6CTestMacros.cmake also expects some of these variables to be set.
+if(NOT TARGET Qt::Gui)
+    set(NO_GUI TRUE)
+endif()
+if(NOT TARGET Qt::DBus)
+    set(NO_DBUS TRUE)
+endif()
+if(NOT TARGET Qt::Widgets)
+    set(NO_WIDGETS TRUE)
+endif()
+
+include("${_Qt6CTestMacros}")
+
+_qt_internal_test_expect_pass(test_umbrella_config)
+_qt_internal_test_expect_pass(test_wrap_cpp_and_resources)
+if (NOT NO_WIDGETS)
+    _qt_internal_test_expect_pass(test_dependent_modules)
+    _qt_internal_test_expect_pass("test(needsquoting)dirname")
+endif()
+_qt_internal_test_expect_fail(test_add_resource_options)
+_qt_internal_test_expect_fail(test_wrap_cpp_options)
+_qt_internal_test_expect_pass(test_platform_defs_include)
+_qt_internal_test_expect_pass(test_qtmainwin_library)
+
+if (CMAKE_GENERATOR STREQUAL Ninja AND UNIX AND NOT WIN32)
+    set(qfindtestdata_build_dir "${CMAKE_CURRENT_SOURCE_DIR}/test_QFINDTESTDATA/build")
     add_test(test_QFINDTESTDATA ${CMAKE_CTEST_COMMAND}
       --build-and-test
       "${CMAKE_CURRENT_SOURCE_DIR}/test_QFINDTESTDATA"
       # Build in a subdir of the source dir.
       # This causes Ninja to use relative paths.
-      "${CMAKE_CURRENT_SOURCE_DIR}/test_QFINDTESTDATA/build"
-      --build-generator Ninja
-      --build-options "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+      "${qfindtestdata_build_dir}"
+      --build-config "${CMAKE_BUILD_TYPE}"
+      --build-generator "${CMAKE_GENERATOR}"
+      --build-makeprogram "${CMAKE_MAKE_PROGRAM}"
+      --build-options "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" ${BUILD_OPTIONS_LIST}
     )
-    add_test(NAME run_test_QFINDTESTDATA COMMAND sh -c "cd \"${CMAKE_SOURCE_DIR}/test_QFINDTESTDATA/build/tests\" && ./test_QFINDTESTDATA -v2")
+    set_tests_properties(test_QFINDTESTDATA   PROPERTIES FIXTURES_SETUP    QFINDTESTDATA)
 
-    set_property(TEST run_test_QFINDTESTDATA
-        PROPERTY DEPENDS test_QFINDTESTDATA
-    )
+    add_test(NAME run_test_QFINDTESTDATA COMMAND sh -c "cd \"${qfindtestdata_build_dir}/tests\" && ./test_QFINDTESTDATA -v2")
+    set_tests_properties(run_test_QFINDTESTDATA PROPERTIES FIXTURES_REQUIRED QFINDTESTDATA)
+
+    # source dir should be untouched by build, so remove build results
+    add_test(NAME cleanup_test_QFINDTESTDATA COMMAND sh -c "rm -rf \"${qfindtestdata_build_dir}\"")
+    set_tests_properties(cleanup_test_QFINDTESTDATA PROPERTIES FIXTURES_CLEANUP QFINDTESTDATA)
 endif()
 
 if (NOT NO_DBUS)
-    expect_pass(test_dbus_module)
+    _qt_internal_test_expect_pass(test_dbus_module)
 endif()
-expect_pass(test_multiple_find_package)
-expect_pass(test_add_resources_delayed_file)
-expect_pass(test_add_binary_resources_delayed_file BINARY test_add_binary_resources_delayed_file)
-expect_pass(test_private_includes)
-expect_pass(test_private_targets)
-expect_pass(test_testlib_definitions)
-expect_pass(test_json_plugin_includes)
+_qt_internal_test_expect_pass(test_multiple_find_package)
+_qt_internal_test_expect_pass(test_add_resources_delayed_file)
+_qt_internal_test_expect_pass(test_add_binary_resources_delayed_file BINARY test_add_binary_resources_delayed_file)
 
-expect_fail(test_testlib_no_link_gui)
+if(NOT NO_GUI)
+    _qt_internal_test_expect_pass(test_private_includes)
+    _qt_internal_test_expect_pass(test_private_targets)
+endif()
+
+_qt_internal_test_expect_pass(test_testlib_definitions)
+_qt_internal_test_expect_pass(test_json_plugin_includes)
+
+if(NOT NO_GUI)
+    _qt_internal_test_expect_fail(test_testlib_no_link_gui)
+endif()
+
 execute_process(COMMAND ${CMAKE_COMMAND} -E copy
     "${CMAKE_CURRENT_SOURCE_DIR}/test_testlib_definitions/main.cpp"
     "${CMAKE_CURRENT_BINARY_DIR}/failbuild/test_testlib_no_link_gui/test_testlib_no_link_gui/"
 )
 
 if (NOT NO_WIDGETS)
-    expect_fail(test_testlib_no_link_widgets)
+    _qt_internal_test_expect_fail(test_testlib_no_link_widgets)
     execute_process(COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_CURRENT_SOURCE_DIR}/test_testlib_definitions/main.cpp"
         "${CMAKE_CURRENT_BINARY_DIR}/failbuild/test_testlib_no_link_widgets/test_testlib_no_link_widgets/"
@@ -118,7 +179,7 @@ endif()
 if (NOT NO_WIDGETS)
   list(APPEND qt_module_includes
     Widgets QWidget
-    OpenGL QGLBuffer
+    OpenGL QOpenGLBuffer
     PrintSupport QPrinter
   )
 endif()
@@ -129,36 +190,40 @@ if (NOT NO_DBUS)
   )
 endif()
 
-test_module_includes(
+_qt_internal_test_module_includes(
   ${qt_module_includes}
 )
-expect_pass(test_concurrent_module)
-expect_pass(test_openglextensions_module)
-if (QT_WITH_ANGLE OR (NOT WIN32 AND NOT APPLE AND NOT NO_EGL))
-    expect_pass(test_egl_lib)
+_qt_internal_test_expect_pass(test_concurrent_module)
+
+if(NOT NO_GUI)
+    _qt_internal_test_expect_pass(test_opengl_lib)
 endif()
-expect_pass(test_opengl_lib)
 
 if (NOT NO_WIDGETS)
-    expect_pass(test_interface)
+    _qt_internal_test_expect_pass(test_interface)
 endif()
 
-expect_pass(test_interface_link_libraries)
-expect_pass(test_moc_macro_target)
+if(NOT NO_GUI)
+    _qt_internal_test_expect_pass(test_interface_link_libraries)
+endif()
+_qt_internal_test_expect_pass(test_moc_macro_target)
 
-if (NOT CMAKE_VERSION VERSION_LESS 3.9)
-    # The modification of TARGET_OBJECTS needs the following change in cmake
-    # https://gitlab.kitware.com/cmake/cmake/commit/93c89bc75ceee599ba7c08b8fe1ac5104942054f
-    expect_pass(test_add_big_resource)
+# The modification of TARGET_OBJECTS needs the following change in cmake
+# https://gitlab.kitware.com/cmake/cmake/commit/93c89bc75ceee599ba7c08b8fe1ac5104942054f
+# FIXME: Doesn't currently work with namespaced Qt builds QTBUG-85620
+# _qt_internal_test_expect_pass(test_add_big_resource)
+
+# With earlier CMake versions, this test would simply run moc multiple times and lead to:
+# /usr/bin/ld: error: CMakeFiles/mywidget.dir/mywidget_automoc.cpp.o: multiple definition of 'MyWidget::qt_static_metacall(QObject*, QMetaObject::Call, int, void**)'
+# /usr/bin/ld: CMakeFiles/mywidget.dir/moc_mywidget.cpp.o: previous definition here
+# Reason: SKIP_* properties were added in CMake 3.8 only
+if(NOT NO_WIDGETS)
+    _qt_internal_test_expect_pass(test_QTBUG-63422)
 endif()
 
-if (NOT CMAKE_VERSION VERSION_LESS 3.8)
-    # With earlier CMake versions, this test would simply run moc multiple times and lead to:
-    # /usr/bin/ld: error: CMakeFiles/mywidget.dir/mywidget_automoc.cpp.o: multiple definition of 'MyWidget::qt_static_metacall(QObject*, QMetaObject::Call, int, void**)'
-    # /usr/bin/ld: CMakeFiles/mywidget.dir/moc_mywidget.cpp.o: previous definition here
-    # Reason: SKIP_* properties were added in CMake 3.8 only
-    expect_pass(test_QTBUG-63422)
-endif()
+# FIXME: Needs porting of the qmake .pro files to create the modules and plugins in Qt6 CMake land.
+# _qt_internal_test_expect_pass(test_import_plugins BINARY ${CMAKE_CTEST_COMMAND})
+_qt_internal_test_expect_pass(test_versionless_targets)
 
-expect_pass(test_import_plugins BINARY ${CMAKE_CTEST_COMMAND})
-expect_pass(test_versionless_targets)
+_qt_internal_test_expect_pass(test_add_resources_binary_generated
+                              BINARY test_add_resources_binary_generated)

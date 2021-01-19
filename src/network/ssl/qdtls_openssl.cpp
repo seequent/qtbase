@@ -131,7 +131,7 @@ struct FallbackCookieSecret
 
     QByteArray key;
 
-    Q_DISABLE_COPY(FallbackCookieSecret)
+    Q_DISABLE_COPY_MOVE(FallbackCookieSecret)
 };
 
 QByteArray fallbackSecret()
@@ -169,16 +169,6 @@ void delete_bio_method(BIO_METHOD *method)
     if (method)
         q_BIO_meth_free(method);
 }
-
-// The 'deleter' for QScopedPointer<BIO>.
-struct bio_deleter
-{
-    static void cleanup(BIO *bio)
-    {
-        if (bio)
-            q_BIO_free(bio);
-    }
-};
 
 // The path MTU discovery is non-trivial: it's a mix of getsockopt/setsockopt
 // (IP_MTU/IP6_MTU/IP_MTU_DISCOVER) and fallback MTU values. It's not
@@ -594,7 +584,7 @@ extern "C" int q_dgram_create(BIO *bio)
 
 extern "C" int q_dgram_destroy(BIO *bio)
 {
-    Q_UNUSED(bio)
+    Q_UNUSED(bio);
     return 1;
 }
 
@@ -746,8 +736,7 @@ bool DtlsState::initBIO(QDtlsBasePrivate *dtlsBase)
     q_BIO_meth_set_puts(biom, dtlsbio::q_dgram_puts);
     q_BIO_meth_set_ctrl(biom, dtlsbio::q_dgram_ctrl);
 
-    QScopedPointer<BIO, dtlsutil::bio_deleter> newBio(q_BIO_new(biom));
-    BIO *bio = newBio.data();
+    BIO *bio = q_BIO_new(biom);
     if (!bio) {
         dtlsBase->setDtlsError(QDtlsError::TlsInitializationError,
                                msgFunctionFailed("BIO_new"));
@@ -755,7 +744,6 @@ bool DtlsState::initBIO(QDtlsBasePrivate *dtlsBase)
     }
 
     q_SSL_set_bio(tlsConnection.data(), bio, bio);
-    newBio.take();
 
     bioMethod.swap(customMethod);
 
@@ -862,7 +850,7 @@ void QDtlsPrivateOpenSSL::TimeoutHandler::stop()
 
 void QDtlsPrivateOpenSSL::TimeoutHandler::timerEvent(QTimerEvent *event)
 {
-    Q_UNUSED(event)
+    Q_UNUSED(event);
     Q_ASSERT(timerId != -1);
 
     killTimer(timerId);
@@ -1281,7 +1269,7 @@ QSslError _q_OpenSSL_to_QSslError(int errorCode, const QSslCertificate &cert);
 bool QDtlsPrivateOpenSSL::verifyPeer()
 {
     // DTLSTODO: Windows-specific code for CA fetcher is not here yet.
-    QVector<QSslError> errors;
+    QList<QSslError> errors;
 
     // Check the whole chain for blacklisting (including root, as we check for
     // subjectInfo and issuer)
@@ -1344,7 +1332,7 @@ bool QDtlsPrivateOpenSSL::tlsErrorsWereIgnored() const
 {
     // check whether the errors we got are all in the list of expected errors
     // (applies only if the method QDtlsConnection::ignoreTlsErrors(const
-    // QVector<QSslError> &errors) was called)
+    // QList<QSslError> &errors) was called)
     for (const QSslError &error : tlsErrors) {
         if (!tlsErrorsToIgnore.contains(error))
             return false;

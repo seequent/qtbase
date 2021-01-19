@@ -49,7 +49,7 @@ QT_BEGIN_NAMESPACE
 template <typename T>
 struct QScopedPointerDeleter
 {
-    static inline void cleanup(T *pointer)
+    static inline void cleanup(T *pointer) noexcept
     {
         // Enforce a complete type.
         // If you get a compile error here, read the section on forward declared
@@ -59,12 +59,16 @@ struct QScopedPointerDeleter
 
         delete pointer;
     }
+    void operator()(T *pointer) const noexcept
+    {
+        cleanup(pointer);
+    }
 };
 
 template <typename T>
 struct QScopedPointerArrayDeleter
 {
-    static inline void cleanup(T *pointer)
+    static inline void cleanup(T *pointer) noexcept
     {
         // Enforce a complete type.
         // If you get a compile error here, read the section on forward declared
@@ -72,13 +76,18 @@ struct QScopedPointerArrayDeleter
         typedef char IsIncompleteType[ sizeof(T) ? 1 : -1 ];
         (void) sizeof(IsIncompleteType);
 
-        delete [] pointer;
+        delete[] pointer;
+    }
+    void operator()(T *pointer) const noexcept
+    {
+        cleanup(pointer);
     }
 };
 
 struct QScopedPointerPodDeleter
 {
-    static inline void cleanup(void *pointer) { if (pointer) free(pointer); }
+    static inline void cleanup(void *pointer) noexcept { free(pointer); }
+    void operator()(void *pointer) const noexcept { cleanup(pointer); }
 };
 
 #ifndef QT_NO_QOBJECT
@@ -86,6 +95,7 @@ template <typename T>
 struct QScopedPointerObjectDeleteLater
 {
     static inline void cleanup(T *pointer) { if (pointer) pointer->deleteLater(); }
+    void operator()(T *pointer) const { cleanup(pointer); }
 };
 
 class QObject;
@@ -95,7 +105,6 @@ typedef QScopedPointerObjectDeleteLater<QObject> QScopedPointerDeleteLater;
 template <typename T, typename Cleanup = QScopedPointerDeleter<T> >
 class QScopedPointer
 {
-    typedef T *QScopedPointer:: *RestrictedBool;
 public:
     explicit QScopedPointer(T *p = nullptr) noexcept : d(p)
     {
@@ -123,17 +132,10 @@ public:
         return !d;
     }
 
-#if defined(Q_QDOC)
-    inline operator bool() const
+    explicit operator bool() const
     {
-        return isNull() ? nullptr : &QScopedPointer::d;
+        return !isNull();
     }
-#else
-    operator RestrictedBool() const noexcept
-    {
-        return isNull() ? nullptr : &QScopedPointer::d;
-    }
-#endif
 
     T *data() const noexcept
     {
@@ -154,17 +156,18 @@ public:
     {
         if (d == other)
             return;
-        T *oldD = d;
-        d = other;
+        T *oldD = qExchange(d, other);
         Cleanup::cleanup(oldD);
     }
 
+#if QT_DEPRECATED_SINCE(6, 1)
+    QT_DEPRECATED_VERSION_X_6_1("Use std::unique_ptr instead, and call release().")
     T *take() noexcept
     {
-        T *oldD = d;
-        d = nullptr;
+        T *oldD = qExchange(d, nullptr);
         return oldD;
     }
+#endif
 
     void swap(QScopedPointer<T, Cleanup> &other) noexcept
     {
@@ -173,52 +176,45 @@ public:
 
     typedef T *pointer;
 
+    friend bool operator==(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs) noexcept
+    {
+        return lhs.data() == rhs.data();
+    }
+
+    friend bool operator!=(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs) noexcept
+    {
+        return lhs.data() != rhs.data();
+    }
+
+    friend bool operator==(const QScopedPointer<T, Cleanup> &lhs, std::nullptr_t) noexcept
+    {
+        return lhs.isNull();
+    }
+
+    friend bool operator==(std::nullptr_t, const QScopedPointer<T, Cleanup> &rhs) noexcept
+    {
+        return rhs.isNull();
+    }
+
+    friend bool operator!=(const QScopedPointer<T, Cleanup> &lhs, std::nullptr_t) noexcept
+    {
+        return !lhs.isNull();
+    }
+
+    friend bool operator!=(std::nullptr_t, const QScopedPointer<T, Cleanup> &rhs) noexcept
+    {
+        return !rhs.isNull();
+    }
+
+    friend void swap(QScopedPointer<T, Cleanup> &p1, QScopedPointer<T, Cleanup> &p2) noexcept
+    { p1.swap(p2); }
+
 protected:
     T *d;
 
 private:
     Q_DISABLE_COPY(QScopedPointer)
 };
-
-template <class T, class Cleanup>
-inline bool operator==(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs) noexcept
-{
-    return lhs.data() == rhs.data();
-}
-
-template <class T, class Cleanup>
-inline bool operator!=(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs) noexcept
-{
-    return lhs.data() != rhs.data();
-}
-
-template <class T, class Cleanup>
-inline bool operator==(const QScopedPointer<T, Cleanup> &lhs, std::nullptr_t) noexcept
-{
-    return lhs.isNull();
-}
-
-template <class T, class Cleanup>
-inline bool operator==(std::nullptr_t, const QScopedPointer<T, Cleanup> &rhs) noexcept
-{
-    return rhs.isNull();
-}
-
-template <class T, class Cleanup>
-inline bool operator!=(const QScopedPointer<T, Cleanup> &lhs, std::nullptr_t) noexcept
-{
-    return !lhs.isNull();
-}
-
-template <class T, class Cleanup>
-inline bool operator!=(std::nullptr_t, const QScopedPointer<T, Cleanup> &rhs) noexcept
-{
-    return !rhs.isNull();
-}
-
-template <class T, class Cleanup>
-inline void swap(QScopedPointer<T, Cleanup> &p1, QScopedPointer<T, Cleanup> &p2) noexcept
-{ p1.swap(p2); }
 
 template <typename T, typename Cleanup = QScopedPointerArrayDeleter<T> >
 class QScopedArrayPointer : public QScopedPointer<T, Cleanup>
@@ -248,7 +244,8 @@ public:
     { QScopedPointer<T, Cleanup>::swap(other); }
 
 private:
-    explicit inline QScopedArrayPointer(void *) {
+    explicit inline QScopedArrayPointer(void *)
+    {
         // Enforce the same type.
 
         // If you get a compile error here, make sure you declare

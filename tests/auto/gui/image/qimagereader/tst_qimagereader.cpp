@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QBuffer>
 #include <QColorSpace>
@@ -172,6 +172,10 @@ private slots:
 
     void devicePixelRatio_data();
     void devicePixelRatio();
+
+    void xpmBufferOverflow();
+
+    void xbmBufferHandling();
 
 private:
     QString prefix;
@@ -1315,10 +1319,10 @@ void tst_QImageReader::devicePosition()
     QVERIFY2(imageFile.open(QFile::ReadOnly), msgFileOpenReadFailed(imageFile).constData());
     QByteArray imageData = imageFile.readAll();
     QVERIFY(!imageData.isNull());
-    int imageDataSize = imageData.size();
+    const qint64 imageDataSize = imageData.size();
 
     const char *preStr = "prebeef\n";
-    int preLen = qstrlen(preStr);
+    const qint64 preLen = qstrlen(preStr);
     imageData.prepend(preStr);
     if (format != "svg" && format != "svgz") // Doesn't handle trailing data
         imageData.append("\npostbeef");
@@ -1331,7 +1335,7 @@ void tst_QImageReader::devicePosition()
         format != "pgm" &&
         format != "pbm" &&
         format != "gif")  // Known not to work
-        QCOMPARE(buf.pos(), qint64(preLen+imageDataSize));
+        QCOMPARE(buf.pos(), preLen + imageDataSize);
 }
 
 
@@ -1458,10 +1462,10 @@ void tst_QImageReader::readFromResources_data()
                                      << QString("");
     QTest::newRow("corrupt-colors.xpm") << QString("corrupt-colors.xpm")
                                                << QByteArray("xpm") << QSize(0, 0)
-                                               << QString("QImage: XPM color specification is missing: bla9an.n#x");
+                                               << QString("XPM color specification is missing: bla9an.n#x");
     QTest::newRow("corrupt-pixels.xpm") << QString("corrupt-pixels.xpm")
                                                << QByteArray("xpm") << QSize(0, 0)
-                                               << QString("QImage: XPM pixels missing on image line 3");
+                                               << QString("XPM pixels missing on image line 3");
     QTest::newRow("corrupt-pixel-count.xpm") << QString("corrupt-pixel-count.xpm")
                                              << QByteArray("xpm") << QSize(0, 0)
                                              << QString("");
@@ -1576,10 +1580,10 @@ void tst_QImageReader::readCorruptImage_data()
     QTest::newRow("corrupt bmp") << QString("corrupt.bmp") << true << QString("") << QByteArray("bmp");
     QTest::newRow("corrupt bmp (clut)") << QString("corrupt_clut.bmp") << true << QString("") << QByteArray("bmp");
     QTest::newRow("corrupt xpm (colors)") << QString("corrupt-colors.xpm") << true
-                                          << QString("QImage: XPM color specification is missing: bla9an.n#x")
+                                          << QString("XPM color specification is missing: bla9an.n#x")
                                           << QByteArray("xpm");
     QTest::newRow("corrupt xpm (pixels)") << QString("corrupt-pixels.xpm") << true
-                                          << QString("QImage: XPM pixels missing on image line 3")
+                                          << QString("XPM pixels missing on image line 3")
                                           << QByteArray("xpm");
     QTest::newRow("corrupt xbm") << QString("corrupt.xbm") << false << QString("") << QByteArray("xbm");
     QTest::newRow("corrupt svg") << QString("corrupt.svg") << true << QString("") << QByteArray("svg");
@@ -1803,7 +1807,7 @@ static QByteArray msgIgnoreFormatAndExtensionFail(const QString &sourceFileName,
     QByteArray result = "Failure for '";
     result += sourceFileName.toLocal8Bit();
     result += "' as '";
-    result += targetFileName;
+    result += targetFileName.toLocal8Bit();
     result += "', detected as: '";
     result += detectedFormat.toLocal8Bit();
     result += '\'';
@@ -1825,7 +1829,7 @@ void tst_QImageReader::testIgnoresFormatAndExtension()
         tempPath += QLatin1Char('/');
 
     foreach (const QByteArray &f, formats) {
-        if (f == extension)
+        if (f == extension.toLocal8Bit())
             continue;
 
         QFile tmp(tempPath + name + QLatin1Char('_') + expected + QLatin1Char('.') + f);
@@ -2045,6 +2049,48 @@ void tst_QImageReader::devicePixelRatio()
     QImage img = r.read();
     QCOMPARE(img.size(), size);
     QCOMPARE(img.devicePixelRatio(), dpr);
+}
+
+void tst_QImageReader::xpmBufferOverflow()
+{
+    // Please note that the overflow only showed when Qt was configured with "-sanitize address".
+    QImageReader(":/images/oss-fuzz-23988.xpm").read();
+}
+
+void tst_QImageReader::xbmBufferHandling()
+{
+    uint8_t original_buffer[256];
+    for (int i = 0; i < 256; ++i)
+        original_buffer[i] = i;
+
+    QImage image(original_buffer, 256, 8, QImage::Format_MonoLSB);
+    image.setColorTable({0xff000000, 0xffffffff});
+
+    QByteArray buffer;
+    {
+        QBuffer buf(&buffer);
+        QImageWriter writer(&buf, "xbm");
+        writer.write(image);
+    }
+
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+
+    auto i = buffer.indexOf(',');
+    buffer.insert(i + 1, "                                                                                ");
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+    buffer.insert(i + 1, "                                                                                ");
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+    buffer.insert(i + 1, "                                                                              ");
+#if 0   // Lines longer than 300 chars not supported currently
+    QCOMPARE(QImage::fromData(buffer, "xbm"), image);
+#endif
+
+    i = buffer.lastIndexOf("\n ");
+    buffer.truncate(i + 1);
+    buffer.append(QByteArray(297, ' '));
+    buffer.append("0x");
+    // Only check we get no buffer overflow
+    QImage::fromData(buffer, "xbm");
 }
 
 QTEST_MAIN(tst_QImageReader)

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -991,6 +991,8 @@
 
 #ifdef Q_COMPILER_UNICODE_STRINGS
 #  define Q_STDLIB_UNICODE_STRINGS
+#elif defined(__cplusplus)
+#  error "Qt6 requires Unicode string support in both the compiler and the standard library"
 #endif
 
 #ifdef __cplusplus
@@ -1129,23 +1131,31 @@
 # define Q_DECL_ALIGN(n)   alignas(n)
 #endif
 
-#if __has_cpp_attribute(nodiscard) && !defined(Q_CC_CLANG)         // P0188R1
-// Can't use [[nodiscard]] with Clang, see https://bugs.llvm.org/show_bug.cgi?id=33518
+#if __has_cpp_attribute(nodiscard) && (!defined(Q_CC_CLANG) || __cplusplus > 201402L) // P0188R1
+// Can't use [[nodiscard]] with Clang and C++11/14, see https://bugs.llvm.org/show_bug.cgi?id=33518
 #  undef Q_REQUIRED_RESULT
 #  define Q_REQUIRED_RESULT [[nodiscard]]
 #endif
 
+#if __has_cpp_attribute(maybe_unused)
+#  undef Q_DECL_UNUSED
+#  define Q_DECL_UNUSED [[maybe_unused]]
+#endif
+
+#if __has_cpp_attribute(deprecated)
+#  ifdef Q_DECL_DEPRECATED
+#    undef Q_DECL_DEPRECATED
+#  endif
+#  ifdef Q_DECL_DEPRECATED_X
+#    undef Q_DECL_DEPRECATED_X
+#  endif
+#  define Q_DECL_DEPRECATED [[deprecated]]
+#  define Q_DECL_DEPRECATED_X(x) [[deprecated(x)]]
+#endif
+
 #if defined(__cpp_enumerator_attributes) && __cpp_enumerator_attributes >= 201411
-#if defined(Q_CC_MSVC)
-// Can't mark enum values as __declspec(deprecated) with MSVC, also can't move
-// everything to [[deprecated]] because MSVC gives a compilation error when marking
-// friend methods of a class as [[deprecated("text")]], breaking qstring.h
-#  define Q_DECL_ENUMERATOR_DEPRECATED [[deprecated]]
-#  define Q_DECL_ENUMERATOR_DEPRECATED_X(x) [[deprecated(x)]]
-#else
 #  define Q_DECL_ENUMERATOR_DEPRECATED Q_DECL_DEPRECATED
 #  define Q_DECL_ENUMERATOR_DEPRECATED_X(x) Q_DECL_DEPRECATED_X(x)
-#endif
 #endif
 
 /*
@@ -1233,6 +1243,12 @@
 #endif
 
 /*
+ * "Weak overloads" - makes an otherwise confliciting overload weaker
+ * (by making it a template)
+ */
+#define Q_WEAK_OVERLOAD template <typename = void>
+
+/*
  * Warning/diagnostic handling
  */
 
@@ -1248,6 +1264,7 @@
 #  define QT_WARNING_DISABLE_GCC(text)
 #  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_INTEL(1478 1786)
 #  define QT_WARNING_DISABLE_FLOAT_COMPARE      QT_WARNING_DISABLE_INTEL(1572)
+#  define QT_WARNING_DISABLE_INVALID_OFFSETOF
 #elif defined(Q_CC_INTEL)
 /* icc: Intel compiler on Linux or OS X */
 #  define QT_WARNING_PUSH                       QT_DO_PRAGMA(warning(push))
@@ -1258,6 +1275,7 @@
 #  define QT_WARNING_DISABLE_GCC(text)
 #  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_INTEL(1478 1786)
 #  define QT_WARNING_DISABLE_FLOAT_COMPARE      QT_WARNING_DISABLE_INTEL(1572)
+#  define QT_WARNING_DISABLE_INVALID_OFFSETOF
 #elif defined(Q_CC_MSVC) && !defined(Q_CC_CLANG)
 #  undef QT_DO_PRAGMA                           /* not needed */
 #  define QT_WARNING_PUSH                       __pragma(warning(push))
@@ -1268,6 +1286,7 @@
 #  define QT_WARNING_DISABLE_GCC(text)
 #  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_MSVC(4996)
 #  define QT_WARNING_DISABLE_FLOAT_COMPARE
+#  define QT_WARNING_DISABLE_INVALID_OFFSETOF
 #elif defined(Q_CC_CLANG)
 #  define QT_WARNING_PUSH                       QT_DO_PRAGMA(clang diagnostic push)
 #  define QT_WARNING_POP                        QT_DO_PRAGMA(clang diagnostic pop)
@@ -1277,6 +1296,7 @@
 #  define QT_WARNING_DISABLE_MSVC(number)
 #  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_CLANG("-Wdeprecated-declarations")
 #  define QT_WARNING_DISABLE_FLOAT_COMPARE      QT_WARNING_DISABLE_CLANG("-Wfloat-equal")
+#  define QT_WARNING_DISABLE_INVALID_OFFSETOF   QT_WARNING_DISABLE_CLANG("-Winvalid-offsetof")
 #elif defined(Q_CC_GNU) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406)
 #  define QT_WARNING_PUSH                       QT_DO_PRAGMA(GCC diagnostic push)
 #  define QT_WARNING_POP                        QT_DO_PRAGMA(GCC diagnostic pop)
@@ -1286,6 +1306,7 @@
 #  define QT_WARNING_DISABLE_MSVC(number)
 #  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_GCC("-Wdeprecated-declarations")
 #  define QT_WARNING_DISABLE_FLOAT_COMPARE      QT_WARNING_DISABLE_GCC("-Wfloat-equal")
+#  define QT_WARNING_DISABLE_INVALID_OFFSETOF   QT_WARNING_DISABLE_GCC("-Winvalid-offsetof")
 #else       // All other compilers, GCC < 4.6 and MSVC < 2008
 #  define QT_WARNING_DISABLE_GCC(text)
 #  define QT_WARNING_PUSH
@@ -1363,6 +1384,7 @@
 #  undef QT_COMPILER_SUPPORTS_SSE4_2
 #  undef QT_COMPILER_SUPPORTS_AVX
 #  undef QT_COMPILER_SUPPORTS_AVX2
+#  undef QT_COMPILER_SUPPORTS_F16C
 #endif
 #if !defined(Q_PROCESSOR_ARM)
 #  undef QT_COMPILER_SUPPORTS_NEON

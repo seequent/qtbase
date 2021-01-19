@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtCore/QScopedPointer>
 
 /*!
@@ -160,7 +160,7 @@ public:
 class SubClass : public AbstractClass
 {
 public:
-    virtual int member() const
+    virtual int member() const override
     {
         return 5;
     }
@@ -252,7 +252,7 @@ void tst_QScopedPointer::negationOperatorSignature()
     !p;
 
     /* The return value should be bool. */
-    static_cast<bool>(!p);
+    Q_UNUSED(static_cast<bool>(!p));
 }
 
 void tst_QScopedPointer::operatorBool()
@@ -302,7 +302,7 @@ void tst_QScopedPointer::isNullSignature()
     const QScopedPointer<int> p(new int(69));
 
     /* The signature should be const and return bool. */
-    static_cast<bool>(p.isNull());
+    Q_UNUSED(static_cast<bool>(p.isNull()));
 }
 
 void tst_QScopedPointer::objectSize()
@@ -412,8 +412,6 @@ void tst_QScopedPointer::comparison()
     QCOMPARE( RefCounted::instanceCount.loadRelaxed(), 0 );
 
     {
-        // QScopedSharedPointer is an internal helper class -- it is unsupported!
-
         RefCounted *a = new RefCounted;
         RefCounted *b = new RefCounted;
 

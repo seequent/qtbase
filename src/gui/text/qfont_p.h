@@ -66,18 +66,27 @@ QT_BEGIN_NAMESPACE
 class QFontCache;
 class QFontEngine;
 
+#define QFONT_WEIGHT_MIN 1
+#define QFONT_WEIGHT_MAX 1000
+
 struct QFontDef
 {
     inline QFontDef()
-        : pointSize(-1.0), pixelSize(-1),
-          styleStrategy(QFont::PreferDefault), styleHint(QFont::AnyStyle),
-          weight(50), fixedPitch(false), style(QFont::StyleNormal), stretch(QFont::AnyStretch),
-          hintingPreference(QFont::PreferDefaultHinting), ignorePitch(true),
-          fixedPitchComputed(0), reserved(0)
+        : pointSize(-1.0),
+          pixelSize(-1),
+          styleStrategy(QFont::PreferDefault),
+          stretch(QFont::AnyStretch),
+          style(QFont::StyleNormal),
+          hintingPreference(QFont::PreferDefaultHinting),
+          styleHint(QFont::AnyStyle),
+          weight(QFont::Normal),
+          fixedPitch(false),
+          ignorePitch(true),
+          fixedPitchComputed(0),
+          reserved(0)
     {
     }
 
-    QString family;
     QStringList families;
     QString styleName;
 
@@ -86,18 +95,18 @@ struct QFontDef
     qreal pointSize;
     qreal pixelSize;
 
+    // Note: Variable ordering matters to make sure no variable overlaps two 32-bit registers.
     uint styleStrategy : 16;
-    uint styleHint     : 8;
-
-    uint weight     :  7; // 0-99
-    uint fixedPitch :  1;
-    uint style      :  2;
-    uint stretch    : 12; // 0-4000
-
+    uint stretch : 12; // 0-4000
+    uint style : 2;
     uint hintingPreference : 2;
+
+    uint styleHint : 8;
+    uint weight : 10; // 1-1000
+    uint fixedPitch :  1;
     uint ignorePitch : 1;
     uint fixedPitchComputed : 1; // for Mac OS X only
-    int reserved   : 14; // for future extensions
+    uint reserved : 11; // for future extensions
 
     bool exactMatch(const QFontDef &other) const;
     bool operator==(const QFontDef &other) const
@@ -109,7 +118,6 @@ struct QFontDef
                     && styleHint == other.styleHint
                     && styleStrategy == other.styleStrategy
                     && ignorePitch == other.ignorePitch && fixedPitch == other.fixedPitch
-                    && family == other.family
                     && families == other.families
                     && styleName == other.styleName
                     && hintingPreference == other.hintingPreference
@@ -123,7 +131,6 @@ struct QFontDef
         if (stretch != other.stretch) return stretch < other.stretch;
         if (styleHint != other.styleHint) return styleHint < other.styleHint;
         if (styleStrategy != other.styleStrategy) return styleStrategy < other.styleStrategy;
-        if (family != other.family) return family < other.family;
         if (families != other.families) return families < other.families;
         if (styleName != other.styleName)
             return styleName < other.styleName;
@@ -147,7 +154,6 @@ inline size_t qHash(const QFontDef &fd, size_t seed = 0) noexcept
                       fd.styleStrategy,
                       fd.ignorePitch,
                       fd.fixedPitch,
-                      fd.family,
                       fd.families,
                       fd.styleName,
                       fd.hintingPreference);
@@ -296,6 +302,9 @@ private:
 Q_GUI_EXPORT int qt_defaultDpiX();
 Q_GUI_EXPORT int qt_defaultDpiY();
 Q_GUI_EXPORT int qt_defaultDpi();
+
+Q_GUI_EXPORT int qt_legacyToOpenTypeWeight(int weight);
+Q_GUI_EXPORT int qt_openTypeToLegacyWeight(int weight);
 
 QT_END_NAMESPACE
 

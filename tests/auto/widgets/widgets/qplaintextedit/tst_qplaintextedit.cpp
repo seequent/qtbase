@@ -27,8 +27,8 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
-
+#include <QTest>
+#include <QSignalSpy>
 
 #include <qtextedit.h>
 #include <qtextcursor.h>
@@ -150,7 +150,9 @@ private slots:
 #if QT_CONFIG(scrollbar)
     void updateAfterChangeCenterOnScroll();
 #endif
+#ifndef QT_NO_CLIPBOARD
     void updateCursorPositionAfterEdit();
+#endif
 
 private:
     void createSelection();
@@ -220,18 +222,18 @@ public:
     inline QtTestDocumentLayout(QPlainTextEdit *edit, QTextDocument *doc, int &itCount)
         : QAbstractTextDocumentLayout(doc), useBiggerSize(false), ed(edit), iterationCounter(itCount) {}
 
-    virtual void draw(QPainter *, const QAbstractTextDocumentLayout::PaintContext &)  {}
+    virtual void draw(QPainter *, const QAbstractTextDocumentLayout::PaintContext &) override {}
 
-    virtual int hitTest(const QPointF &, Qt::HitTestAccuracy ) const { return 0; }
+    virtual int hitTest(const QPointF &, Qt::HitTestAccuracy ) const override { return 0; }
 
-    virtual void documentChanged(int, int, int) {}
+    virtual void documentChanged(int, int, int) override {}
 
-    virtual int pageCount() const { return 1; }
+    virtual int pageCount() const override { return 1; }
 
-    virtual QSizeF documentSize() const { return usedSize; }
+    virtual QSizeF documentSize() const override { return usedSize; }
 
-    virtual QRectF frameBoundingRect(QTextFrame *) const { return QRectF(); }
-    virtual QRectF blockBoundingRect(const QTextBlock &) const { return QRectF(); }
+    virtual QRectF frameBoundingRect(QTextFrame *) const override { return QRectF(); }
+    virtual QRectF blockBoundingRect(const QTextBlock &) const override { return QRectF(); }
 
     bool useBiggerSize;
     QSize usedSize;
@@ -1102,15 +1104,15 @@ public:
     mutable int canInsertCallCount;
     mutable int insertCallCount;
 
-    virtual QMimeData *createMimeDataFromSelection() const {
+    virtual QMimeData *createMimeDataFromSelection() const override {
         createMimeDataCallCount++;
         return QPlainTextEdit::createMimeDataFromSelection();
     }
-    virtual bool canInsertFromMimeData(const QMimeData *source) const {
+    virtual bool canInsertFromMimeData(const QMimeData *source) const override {
         canInsertCallCount++;
         return QPlainTextEdit::canInsertFromMimeData(source);
     }
-    virtual void insertFromMimeData(const QMimeData *source) {
+    virtual void insertFromMimeData(const QMimeData *source) override {
         insertCallCount++;
         QPlainTextEdit::insertFromMimeData(source);
     }
@@ -1250,7 +1252,7 @@ public:
     bool resizeEventCalled;
 
 protected:
-    virtual void resizeEvent(QResizeEvent *e)
+    virtual void resizeEvent(QResizeEvent *e) override
     {
         QPlainTextEdit::resizeEvent(e);
         setPlainText("<img src=qtextbrowser-resizeevent.png width=" + QString::number(size().width()) + "><br>Size is " + QString::number(size().width()) + " x " + QString::number(size().height()));
@@ -1737,7 +1739,7 @@ void tst_QPlainTextEdit::inputMethodCursorRect()
     ed->moveCursor(QTextCursor::End);
     const QRectF cursorRect = ed->cursorRect();
     const QVariant cursorRectV = ed->inputMethodQuery(Qt::ImCursorRectangle);
-    QCOMPARE(cursorRectV.type(), QVariant::RectF);
+    QCOMPARE(cursorRectV.userType(), QMetaType::QRectF);
     QCOMPARE(cursorRectV.toRect(), cursorRect.toRect());
 }
 
@@ -1756,6 +1758,7 @@ void tst_QPlainTextEdit::updateAfterChangeCenterOnScroll()
 
 #endif
 
+#ifndef QT_NO_CLIPBOARD
 void tst_QPlainTextEdit::updateCursorPositionAfterEdit()
 {
     QPlainTextEdit plaintextEdit;
@@ -1800,6 +1803,7 @@ void tst_QPlainTextEdit::updateCursorPositionAfterEdit()
     // The curser should move back to the end of the copied text
     QCOMPARE(plaintextEdit.textCursor().position(), initialPosition + txt.length());
 }
+#endif
 
 QTEST_MAIN(tst_QPlainTextEdit)
 #include "tst_qplaintextedit.moc"

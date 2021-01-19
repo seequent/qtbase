@@ -6,6 +6,7 @@
 
 qt_internal_add_plugin(QIOSIntegrationPlugin
     OUTPUT_NAME qios
+    DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES ios # special case
     TYPE platforms
     SOURCES
         plugin.mm
@@ -29,6 +30,7 @@ qt_internal_add_plugin(QIOSIntegrationPlugin
     PUBLIC_LIBRARIES
         ${FWAudioToolbox}
         ${FWFoundation}
+        ${FWMetal}
         ${FWQuartzCore}
         ${FWUIKit}
         Qt::CorePrivate
@@ -44,12 +46,12 @@ qt_disable_apple_app_extension_api_only(QIOSIntegrationPlugin)
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QIOSIntegrationPlugin CONDITION QT_FEATURE_opengl
+qt_internal_extend_target(QIOSIntegrationPlugin CONDITION QT_FEATURE_opengl
     PUBLIC_LIBRARIES
         Qt::OpenGLPrivate
 )
 
-qt_extend_target(QIOSIntegrationPlugin CONDITION NOT TVOS
+qt_internal_extend_target(QIOSIntegrationPlugin CONDITION NOT TVOS
     SOURCES
         qiosclipboard.h qiosclipboard.mm
         qiosdocumentpickercontroller.h qiosdocumentpickercontroller.mm

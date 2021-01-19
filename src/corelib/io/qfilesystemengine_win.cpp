@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -47,12 +47,11 @@
 #include <private/qsystemlibrary_p.h>
 #include <qdebug.h>
 
-#include "qfile.h"
 #include "qdir.h"
-#include "qvarlengtharray.h"
 #include "qdatetime.h"
+#include "qfile.h"
+#include "qvarlengtharray.h"
 #include "qt_windows.h"
-#include "qvector.h"
 #if QT_CONFIG(regularexpression)
 #include "qregularexpression.h"
 #endif
@@ -306,7 +305,7 @@ static QString readSymLink(const QFileSystemEntry &link)
                 result = result.mid(4);
                 // cut off UNC in addition when the link points at a UNC share
                 // in which case we need to prepend another backslash to get \\server\share
-                if (result.leftRef(3) == QLatin1String("UNC")) {
+                if (QStringView{result}.left(3) == QLatin1String("UNC")) {
                     result.replace(0, 3, QLatin1Char('\\'));
                 }
             }
@@ -378,7 +377,7 @@ static QString readLink(const QFileSystemEntry &link)
 static bool uncShareExists(const QString &server)
 {
     // This code assumes the UNC path is always like \\?\UNC\server...
-    const QVector<QStringRef> parts = server.splitRef(QLatin1Char('\\'), Qt::SkipEmptyParts);
+    const auto parts = QStringView{server}.split(QLatin1Char('\\'), Qt::SkipEmptyParts);
     if (parts.count() >= 3) {
         QStringList shares;
         if (QFileSystemEngine::uncListSharesOnServer(QLatin1String("\\\\") + parts.at(2), &shares))
@@ -414,11 +413,8 @@ public:
     {}
     virtual ~FileOperationProgressSink() {}
 
-    ULONG STDMETHODCALLTYPE AddRef()
-    {
-        return ++ref;
-    }
-    ULONG STDMETHODCALLTYPE Release()
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref; }
+    ULONG STDMETHODCALLTYPE Release() override
     {
         if (--ref == 0) {
             delete this;
@@ -426,7 +422,7 @@ public:
         }
         return ref;
     }
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **ppvObject)
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **ppvObject) override
     {
         if (!ppvObject)
             return E_POINTER;
@@ -447,31 +443,30 @@ public:
         return E_NOINTERFACE;
     }
 
-    HRESULT STDMETHODCALLTYPE StartOperations()
+    HRESULT STDMETHODCALLTYPE StartOperations() override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE FinishOperations(HRESULT) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PreRenameItem(DWORD, IShellItem *, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PostRenameItem(DWORD, IShellItem *, LPCWSTR, HRESULT,
+                                             IShellItem *) override
     { return S_OK; }
-    HRESULT STDMETHODCALLTYPE FinishOperations(HRESULT)
-    { return S_OK; }
-    HRESULT STDMETHODCALLTYPE PreRenameItem(DWORD, IShellItem *, LPCWSTR)
-    { return S_OK; }
-    HRESULT STDMETHODCALLTYPE PostRenameItem(DWORD, IShellItem *, LPCWSTR, HRESULT, IShellItem *)
-    { return S_OK; }
-    HRESULT STDMETHODCALLTYPE PreMoveItem(DWORD, IShellItem *, IShellItem *, LPCWSTR)
+    HRESULT STDMETHODCALLTYPE PreMoveItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override
     { return S_OK; }
     HRESULT STDMETHODCALLTYPE PostMoveItem(DWORD, IShellItem *, IShellItem *, LPCWSTR, HRESULT,
-                                           IShellItem *)
+                                           IShellItem *) override
     { return S_OK; }
-    HRESULT STDMETHODCALLTYPE PreCopyItem(DWORD, IShellItem *, IShellItem *, LPCWSTR )
+    HRESULT STDMETHODCALLTYPE PreCopyItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override
     { return S_OK; }
     HRESULT STDMETHODCALLTYPE PostCopyItem(DWORD, IShellItem *, IShellItem *, LPCWSTR, HRESULT,
-                                           IShellItem *)
+                                           IShellItem *) override
     { return S_OK; }
-    HRESULT STDMETHODCALLTYPE PreDeleteItem(DWORD dwFlags, IShellItem *)
+    HRESULT STDMETHODCALLTYPE PreDeleteItem(DWORD dwFlags, IShellItem *) override
     {
         // stop the operation if the file will be deleted rather than trashed
         return (dwFlags & TSF_DELETE_RECYCLE_IF_POSSIBLE) ? S_OK : E_FAIL;
     }
     HRESULT STDMETHODCALLTYPE PostDeleteItem(DWORD /* dwFlags */, IShellItem * /* psiItem */,
-                                             HRESULT /* hrDelete */, IShellItem *psiNewlyCreated)
+                                             HRESULT /* hrDelete */,
+                                             IShellItem *psiNewlyCreated) override
     {
         if (psiNewlyCreated) {
             wchar_t *pszName = nullptr;
@@ -483,19 +478,14 @@ public:
         }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE PreNewItem(DWORD, IShellItem *, LPCWSTR)
-    { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PreNewItem(DWORD, IShellItem *, LPCWSTR) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE PostNewItem(DWORD, IShellItem *, LPCWSTR, LPCWSTR, DWORD, HRESULT,
-                                          IShellItem *)
+                                          IShellItem *) override
     { return S_OK; }
-    HRESULT STDMETHODCALLTYPE UpdateProgress(UINT,UINT)
-    { return S_OK; }
-    HRESULT STDMETHODCALLTYPE ResetTimer()
-    { return S_OK; }
-    HRESULT STDMETHODCALLTYPE PauseTimer()
-    { return S_OK; }
-    HRESULT STDMETHODCALLTYPE ResumeTimer()
-    { return S_OK; }
+    HRESULT STDMETHODCALLTYPE UpdateProgress(UINT, UINT) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE ResetTimer() override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE PauseTimer() override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE ResumeTimer() override { return S_OK; }
 
     QString targetPath;
 private:
@@ -577,7 +567,7 @@ QString QFileSystemEngine::nativeAbsoluteFilePath(const QString &path)
     // can be //server or //server/share
     QString absPath;
     QVarLengthArray<wchar_t, MAX_PATH> buf(qMax(MAX_PATH, path.size() + 1));
-    wchar_t *fileName = 0;
+    wchar_t *fileName = nullptr;
     DWORD retLen = GetFullPathName((wchar_t*)path.utf16(), buf.size(), buf.data(), &fileName);
     if (retLen > (DWORD)buf.size()) {
         buf.resize(retLen);
@@ -802,7 +792,7 @@ bool QFileSystemEngine::fillPermissions(const QFileSystemEntry &entry, QFileSyst
             DWORD res = GetNamedSecurityInfo(reinterpret_cast<const wchar_t*>(fname.utf16()), SE_FILE_OBJECT,
                                              OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
                                              &pOwner, &pGroup, &pDacl, 0, &pSD);
-            if(res == ERROR_SUCCESS) {
+            if (res == ERROR_SUCCESS) {
                 ACCESS_MASK access_mask;
                 TRUSTEE_W trustee;
                 if (what & QFileSystemMetaData::UserPermissions) { // user
@@ -855,11 +845,11 @@ bool QFileSystemEngine::fillPermissions(const QFileSystemEntry &entry, QFileSyst
                     BuildTrusteeWithSid(&trustee, pOwner);
                     if (GetEffectiveRightsFromAcl(pDacl, &trustee, &access_mask) != ERROR_SUCCESS)
                         access_mask = (ACCESS_MASK)-1;
-                    if(access_mask & ReadMask)
+                    if (access_mask & ReadMask)
                         data.entryFlags |= QFileSystemMetaData::OwnerReadPermission;
-                    if(access_mask & WriteMask)
+                    if (access_mask & WriteMask)
                         data.entryFlags |= QFileSystemMetaData::OwnerWritePermission;
-                    if(access_mask & ExecMask)
+                    if (access_mask & ExecMask)
                         data.entryFlags |= QFileSystemMetaData::OwnerExecutePermission;
                 }
                 if (what & QFileSystemMetaData::GroupPermissions) { // group
@@ -867,22 +857,22 @@ bool QFileSystemEngine::fillPermissions(const QFileSystemEntry &entry, QFileSyst
                     BuildTrusteeWithSid(&trustee, pGroup);
                     if (GetEffectiveRightsFromAcl(pDacl, &trustee, &access_mask) != ERROR_SUCCESS)
                         access_mask = (ACCESS_MASK)-1;
-                    if(access_mask & ReadMask)
+                    if (access_mask & ReadMask)
                         data.entryFlags |= QFileSystemMetaData::GroupReadPermission;
-                    if(access_mask & WriteMask)
+                    if (access_mask & WriteMask)
                         data.entryFlags |= QFileSystemMetaData::GroupWritePermission;
-                    if(access_mask & ExecMask)
+                    if (access_mask & ExecMask)
                         data.entryFlags |= QFileSystemMetaData::GroupExecutePermission;
                 }
                 if (what & QFileSystemMetaData::OtherPermissions) { // other (world)
                     data.knownFlagsMask |= QFileSystemMetaData::OtherPermissions;
                     if (GetEffectiveRightsFromAcl(pDacl, &worldTrusteeW, &access_mask) != ERROR_SUCCESS)
                         access_mask = (ACCESS_MASK)-1; // ###
-                    if(access_mask & ReadMask)
+                    if (access_mask & ReadMask)
                         data.entryFlags |= QFileSystemMetaData::OtherReadPermission;
-                    if(access_mask & WriteMask)
+                    if (access_mask & WriteMask)
                         data.entryFlags |= QFileSystemMetaData::OtherWritePermission;
-                    if(access_mask & ExecMask)
+                    if (access_mask & ExecMask)
                         data.entryFlags |= QFileSystemMetaData::OwnerExecutePermission;
                 }
                 LocalFree(pSD);
@@ -1063,11 +1053,13 @@ bool QFileSystemEngine::fillMetaData(const QFileSystemEntry &entry, QFileSystemM
         if (ok) {
             data.fillFromFindData(findData, false, fname.isDriveRoot());
         } else {
-            if (!tryFindFallback(fname, data))
-                if (!tryDriveUNCFallback(fname, data)) {
-                    SetErrorMode(oldmode);
-                    return false;
-                }
+            const DWORD lastError = GetLastError();
+            if (lastError == ERROR_LOGON_FAILURE || lastError == ERROR_BAD_NETPATH // disconnected drive
+                || (!tryFindFallback(fname, data) && !tryDriveUNCFallback(fname, data))) {
+                data.clearFlags();
+                SetErrorMode(oldmode);
+                return false;
+            }
         }
         SetErrorMode(oldmode);
     }
@@ -1195,7 +1187,7 @@ bool QFileSystemEngine::removeDirectory(const QFileSystemEntry &entry, bool remo
     if (removeEmptyParents) {
         dirName = QDir::toNativeSeparators(QDir::cleanPath(dirName));
         for (int oldslash = 0, slash=dirName.length(); slash > 0; oldslash = slash) {
-            const QStringRef chunkRef = dirName.leftRef(slash);
+            const auto chunkRef = QStringView{dirName}.left(slash);
             if (chunkRef.length() == 2 && chunkRef.at(0).isLetter() && chunkRef.at(1) == QLatin1Char(':'))
                 break;
             const QString chunk = chunkRef.toString();
@@ -1289,7 +1281,7 @@ bool QFileSystemEngine::setCurrentPath(const QFileSystemEntry &entry)
 {
     QFileSystemMetaData meta;
     fillMetaData(entry, meta, QFileSystemMetaData::ExistsAttribute | QFileSystemMetaData::DirectoryType);
-    if(!(meta.exists() && meta.isDirectory()))
+    if (!(meta.exists() && meta.isDirectory()))
         return false;
 
     //TODO: this should really be using nativeFilePath(), but that returns a path in long format \\?\c:\foo
@@ -1322,9 +1314,9 @@ QFileSystemEntry QFileSystemEngine::currentPath()
 bool QFileSystemEngine::createLink(const QFileSystemEntry &source, const QFileSystemEntry &target, QSystemError &error)
 {
     Q_ASSERT(false);
-    Q_UNUSED(source)
-    Q_UNUSED(target)
-    Q_UNUSED(error)
+    Q_UNUSED(source);
+    Q_UNUSED(target);
+    Q_UNUSED(error);
 
     return false; // TODO implement; - code needs to be moved from qfsfileengine_win.cpp
 }
@@ -1334,7 +1326,7 @@ bool QFileSystemEngine::copyFile(const QFileSystemEntry &source, const QFileSyst
 {
     bool ret = ::CopyFile((wchar_t*)source.nativeFilePath().utf16(),
                           (wchar_t*)target.nativeFilePath().utf16(), true) != 0;
-    if(!ret)
+    if (!ret)
         error = QSystemError(::GetLastError(), QSystemError::NativeError);
     return ret;
 }
@@ -1347,7 +1339,7 @@ bool QFileSystemEngine::renameFile(const QFileSystemEntry &source, const QFileSy
 
     bool ret = ::MoveFile((wchar_t*)source.nativeFilePath().utf16(),
                           (wchar_t*)target.nativeFilePath().utf16()) != 0;
-    if(!ret)
+    if (!ret)
         error = QSystemError(::GetLastError(), QSystemError::NativeError);
     return ret;
 }
@@ -1372,7 +1364,7 @@ bool QFileSystemEngine::removeFile(const QFileSystemEntry &entry, QSystemError &
     Q_CHECK_FILE_NAME(entry, false);
 
     bool ret = ::DeleteFile((wchar_t*)entry.nativeFilePath().utf16()) != 0;
-    if(!ret)
+    if (!ret)
         error = QSystemError(::GetLastError(), QSystemError::NativeError);
     return ret;
 }
@@ -1485,7 +1477,7 @@ bool QFileSystemEngine::setPermissions(const QFileSystemEntry &entry, QFile::Per
         return false;
 
     bool ret = ::_wchmod(reinterpret_cast<const wchar_t*>(entry.nativeFilePath().utf16()), mode) == 0;
-    if(!ret)
+    if (!ret)
         error = QSystemError(errno, QSystemError::StandardLibraryError);
     return ret;
 }

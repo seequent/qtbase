@@ -43,6 +43,8 @@
 #include <QtCore/qglobal.h>
 #include <QtCore/qfuture.h>
 
+#include <utility>
+
 QT_REQUIRE_CONFIG(future);
 
 QT_BEGIN_NAMESPACE
@@ -59,13 +61,13 @@ public:
     Q_DISABLE_COPY(QPromise)
     QPromise(QPromise<T> &&other) : d(other.d)
     {
-        // In constructor, there's no need to perform swap(). Assign new
-        // QFutureInterface to other.d instead which is slightly cheaper.
         other.d = QFutureInterface<T>();
     }
+    QPromise(QFutureInterface<T> &other) : d(other) {}
     QPromise& operator=(QPromise<T> &&other)
     {
-        swap(other);
+        QPromise<T> tmp(std::move(other));
+        tmp.swap(*this);
         return *this;
     }
     ~QPromise()
@@ -78,25 +80,23 @@ public:
         // potential waits
         if (!(state & QFutureInterfaceBase::State::Finished)) {
             d.cancel();
-            reportFinished();  // required to finalize the state
+            finish();  // required to finalize the state
         }
     }
 
     // Core QPromise APIs
     QFuture<T> future() const { return d.future(); }
-    template<typename U = T,
-             typename = QtPrivate::EnableForNonVoid<std::decay_t<U>>,
-             typename = QtPrivate::EnableIfSameOrConvertible<std::decay_t<U>, std::decay_t<T>>>
-    void addResult(U &&result, int index = -1)
+    template<typename U, typename = QtPrivate::EnableIfSameOrConvertible<U, T>>
+    bool addResult(U &&result, int index = -1)
     {
-        d.reportResult(std::forward<U>(result), index);
+        return d.reportResult(std::forward<U>(result), index);
     }
 #ifndef QT_NO_EXCEPTIONS
     void setException(const QException &e) { d.reportException(e); }
     void setException(std::exception_ptr e) { d.reportException(e); }
 #endif
-    void reportStarted() { d.reportStarted(); }
-    void reportFinished() { d.reportFinished(); }
+    void start() { d.reportStarted(); }
+    void finish() { d.reportFinished(); }
 
     void suspendIfRequested() { d.suspendIfRequested(); }
 
@@ -110,18 +110,24 @@ public:
         d.setProgressValueAndText(progressValue, progressText);
     }
 
+    void swap(QPromise<T> &other) noexcept
+    {
+        qSwap(this->d, other.d);
+    }
+
+#if defined(Q_CLANG_QDOC)  // documentation-only simplified signatures
+    bool addResult(const T &result, int index = -1) { }
+    bool addResult(T &&result, int index = -1) { }
+#endif
 private:
     mutable QFutureInterface<T> d = QFutureInterface<T>();
-
-    void swap(QPromise<T> &other)
-    {
-        // Note: copy operations are expensive! They trigger several atomic
-        //       reference counts
-        auto tmp = this->d;
-        this->d = other.d;
-        other.d = tmp;
-    }
 };
+
+template<typename T>
+inline void swap(QPromise<T> &a, QPromise<T> &b) noexcept
+{
+    a.swap(b);
+}
 
 QT_END_NAMESPACE
 

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2017 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -55,8 +55,6 @@
 # include "qcoreapplication.h"
 #endif
 
-#include <private/qmemory_p.h>
-
 #ifdef QT_NO_QOBJECT
 #define tr(X) QString::fromLatin1(X)
 #endif
@@ -87,7 +85,7 @@ QFilePrivate::openExternalFile(int flags, int fd, QFile::FileHandleFlags handleF
     Q_UNUSED(fd);
     return false;
 #else
-    auto fs = qt_make_unique<QFSFileEngine>();
+    auto fs = std::make_unique<QFSFileEngine>();
     auto fe = fs.get();
     fileEngine = std::move(fs);
     return fe->open(QIODevice::OpenMode(flags), fd, handleFlags);
@@ -102,7 +100,7 @@ QFilePrivate::openExternalFile(int flags, FILE *fh, QFile::FileHandleFlags handl
     Q_UNUSED(fh);
     return false;
 #else
-    auto fs = qt_make_unique<QFSFileEngine>();
+    auto fs = std::make_unique<QFSFileEngine>();
     auto fe = fs.get();
     fileEngine = std::move(fs);
     return fe->open(QIODevice::OpenMode(flags), fh, handleFlags);
@@ -358,56 +356,11 @@ QFile::setFileName(const QString &name)
 */
 
 /*!
-    \typedef QFile::EncoderFn
-    \obsolete
-
-    This is a typedef for a pointer to a function with the following
-    signature:
-
-    \snippet code/src_corelib_io_qfile.cpp 1
-
-    \sa setEncodingFunction(), encodeName()
-*/
-
-/*!
     \fn QString QFile::decodeName(const QByteArray &localFileName)
 
     This does the reverse of QFile::encodeName() using \a localFileName.
 
     \sa encodeName()
-*/
-
-/*!
-    \fn void QFile::setEncodingFunction(EncoderFn function)
-    \obsolete
-
-    This function does nothing. It is provided for compatibility with Qt 4 code
-    that attempted to set a different encoding function for file names. That
-    feature is flawed and no longer supported in Qt 5.
-
-    \sa encodeName(), setDecodingFunction()
-*/
-
-/*!
-    \typedef QFile::DecoderFn
-
-    This is a typedef for a pointer to a function with the following
-    signature:
-
-    \snippet code/src_corelib_io_qfile.cpp 2
-
-    \sa setDecodingFunction()
-*/
-
-/*!
-    \fn void QFile::setDecodingFunction(DecoderFn function)
-    \obsolete
-
-    This function does nothing. It is provided for compatibility with Qt 4 code
-    that attempted to set a different decoding function for file names. That
-    feature is flawed and no longer supported in Qt 5.
-
-    \sa setEncodingFunction(), decodeName()
 */
 
 /*!
@@ -462,19 +415,6 @@ QString QFile::symLinkTarget() const
     return d->engine()->fileName(QAbstractFileEngine::LinkName);
 }
 
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    \obsolete
-
-    Use symLinkTarget() instead.
-*/
-QString
-QFile::readLink() const
-{
-    return symLinkTarget();
-}
-#endif
-
 /*!
     \fn static QString QFile::symLinkTarget(const QString &fileName)
     \since 4.2
@@ -490,19 +430,6 @@ QString QFile::symLinkTarget(const QString &fileName)
 {
     return QFileInfo(fileName).symLinkTarget();
 }
-
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    \obsolete
-
-    Use symLinkTarget() instead.
-*/
-QString
-QFile::readLink(const QString &fileName)
-{
-    return symLinkTarget(fileName);
-}
-#endif
 
 /*!
     Removes the file specified by fileName(). Returns \c true if successful;
@@ -524,7 +451,7 @@ QFile::remove()
     }
     unsetError();
     close();
-    if(error() == QFile::NoError) {
+    if (error() == QFile::NoError) {
         if (d->engine()->remove()) {
             unsetError();
             return true;
@@ -701,7 +628,7 @@ QFile::rename(const QString &newName)
     }
     unsetError();
     close();
-    if(error() == QFile::NoError) {
+    if (error() == QFile::NoError) {
         if (changingCase ? d->engine()->renameOverwrite(newName) : d->engine()->rename(newName)) {
             unsetError();
             // engine was able to handle the new name so we just reset it
@@ -732,7 +659,7 @@ QFile::rename(const QString &newName)
                     d->setError(QFile::RenameError, errorString());
                     error = true;
                 }
-                if(!error) {
+                if (!error) {
                     if (!remove()) {
                         d->setError(QFile::RenameError, tr("Cannot remove source file"));
                         error = true;
@@ -856,13 +783,13 @@ QFile::copy(const QString &newName)
     }
     unsetError();
     close();
-    if(error() == QFile::NoError) {
+    if (error() == QFile::NoError) {
         if (d->engine()->copy(newName)) {
             unsetError();
             return true;
         } else {
             bool error = false;
-            if(!open(QFile::ReadOnly)) {
+            if (!open(QFile::ReadOnly)) {
                 error = true;
                 d->setError(QFile::CopyError, tr("Cannot open %1 for input").arg(d->fileName));
             } else {
@@ -909,7 +836,7 @@ QFile::copy(const QString &newName)
 
                     if (!error) {
                         // Sync to disk if possible. Ignore errors (e.g. not supported).
-                        d->fileEngine->syncToDisk();
+                        out.d_func()->fileEngine->syncToDisk();
 
                         if (!out.rename(newName)) {
                             error = true;
@@ -926,7 +853,7 @@ QFile::copy(const QString &newName)
 #endif
                 }
             }
-            if(!error) {
+            if (!error) {
                 QFile::setPermissions(newName, permissions());
                 close();
                 unsetError();
@@ -991,7 +918,7 @@ bool QFile::open(OpenMode mode)
         return true;
     }
     QFile::FileError err = d->fileEngine->error();
-    if(err == QFile::UnspecifiedError)
+    if (err == QFile::UnspecifiedError)
         err = QFile::OpenError;
     d->setError(err, d->fileEngine->errorString());
     return false;
@@ -1080,11 +1007,6 @@ bool QFile::open(FILE *fh, OpenMode mode, FileHandleFlags handleFlags)
     If AutoCloseHandle is specified, and this function succeeds,
     then calling close() closes the adopted handle.
     Otherwise, close() does not actually close the file, but only flushes it.
-
-    The QFile that is opened using this function is automatically set
-    to be in raw mode; this means that the file input/output functions
-    are slow. If you run into performance issues, you should try to
-    use one of the other open functions.
 
     \warning If \a fd is not a regular file, e.g, it is 0 (\c stdin),
     1 (\c stdout), or 2 (\c stderr), you may not be able to seek(). In

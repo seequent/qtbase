@@ -127,9 +127,6 @@ public Q_SLOTS:
 #endif
     void setFilterWildcard(const QString &pattern);
     void setFilterFixedString(const QString &pattern);
-#if QT_DEPRECATED_SINCE(5, 11)
-    QT_DEPRECATED_X("Use QSortFilterProxyModel::invalidate") void clear();
-#endif
     void invalidate();
 
 protected:
@@ -137,9 +134,6 @@ protected:
     virtual bool filterAcceptsColumn(int source_column, const QModelIndex &source_parent) const;
     virtual bool lessThan(const QModelIndex &source_left, const QModelIndex &source_right) const;
 
-#if QT_DEPRECATED_SINCE(5, 11)
-    QT_DEPRECATED_X("Use QSortFilterProxyModel::invalidateFilter") void filterChanged();
-#endif
     void invalidateFilter();
     void invalidateRowsFilter();
     void invalidateColumnsFilter();
@@ -200,7 +194,9 @@ private:
     Q_DECLARE_PRIVATE(QSortFilterProxyModel)
     Q_DISABLE_COPY(QSortFilterProxyModel)
 
-    Q_PRIVATE_SLOT(d_func(), void _q_sourceDataChanged(const QModelIndex &source_top_left, const QModelIndex &source_bottom_right, const QVector<int> &roles))
+    Q_PRIVATE_SLOT(d_func(),
+                   void _q_sourceDataChanged(const QModelIndex &source_top_left, const QModelIndex &source_bottom_right,
+                                             const QList<int> &roles))
     Q_PRIVATE_SLOT(d_func(), void _q_sourceHeaderDataChanged(Qt::Orientation orientation, int start, int end))
     Q_PRIVATE_SLOT(d_func(), void _q_sourceAboutToBeReset())
     Q_PRIVATE_SLOT(d_func(), void _q_sourceReset())

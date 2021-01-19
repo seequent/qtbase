@@ -2,6 +2,7 @@
 **
 ** Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
 ** Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -47,12 +48,34 @@
 #define QCONTAINERTOOLS_IMPL_H
 
 #include <QtCore/qglobal.h>
+#include <QtCore/qtypeinfo.h>
+
+#include <cstring>
 #include <iterator>
+#include <memory>
 
 QT_BEGIN_NAMESPACE
 
 namespace QtPrivate
 {
+
+template <typename T, typename N>
+void q_uninitialized_relocate_n(T* first, N n, T* out)
+{
+    if constexpr (QTypeInfo<T>::isRelocatable) {
+        if (n != N(0)) { // even if N == 0, out == nullptr or first == nullptr are UB for memmove()
+            std::memmove(static_cast<void*>(out),
+                         static_cast<const void*>(first),
+                         n * sizeof(T));
+        }
+    } else {
+        std::uninitialized_move_n(first, n, out);
+        if constexpr (QTypeInfo<T>::isComplex)
+            std::destroy_n(first, n);
+    }
+}
+
+
 template <typename Iterator>
 using IfIsInputIterator = typename std::enable_if<
     std::is_convertible<typename std::iterator_traits<Iterator>::iterator_category, std::input_iterator_tag>::value,
@@ -83,11 +106,7 @@ void reserveIfForwardIterator(Container *c, ForwardIterator f, ForwardIterator l
     c->reserve(static_cast<typename Container::size_type>(std::distance(f, l)));
 }
 
-// for detecting expression validity
-template <typename ... T>
-using void_t = void;
-
-template <typename Iterator, typename = void_t<>>
+template <typename Iterator, typename = std::void_t<>>
 struct AssociativeIteratorHasKeyAndValue : std::false_type
 {
 };
@@ -95,14 +114,14 @@ struct AssociativeIteratorHasKeyAndValue : std::false_type
 template <typename Iterator>
 struct AssociativeIteratorHasKeyAndValue<
         Iterator,
-        void_t<decltype(std::declval<Iterator &>().key()),
-               decltype(std::declval<Iterator &>().value())>
+        std::void_t<decltype(std::declval<Iterator &>().key()),
+                    decltype(std::declval<Iterator &>().value())>
     >
     : std::true_type
 {
 };
 
-template <typename Iterator, typename = void_t<>, typename = void_t<>>
+template <typename Iterator, typename = std::void_t<>, typename = std::void_t<>>
 struct AssociativeIteratorHasFirstAndSecond : std::false_type
 {
 };
@@ -110,8 +129,8 @@ struct AssociativeIteratorHasFirstAndSecond : std::false_type
 template <typename Iterator>
 struct AssociativeIteratorHasFirstAndSecond<
         Iterator,
-        void_t<decltype(std::declval<Iterator &>()->first),
-               decltype(std::declval<Iterator &>()->second)>
+        std::void_t<decltype(std::declval<Iterator &>()->first),
+                    decltype(std::declval<Iterator &>()->second)>
     >
     : std::true_type
 {
@@ -124,6 +143,137 @@ using IfAssociativeIteratorHasKeyAndValue =
 template <typename Iterator>
 using IfAssociativeIteratorHasFirstAndSecond =
     typename std::enable_if<AssociativeIteratorHasFirstAndSecond<Iterator>::value, bool>::type;
+
+template <typename T, typename U>
+using IfIsNotSame =
+    typename std::enable_if<!std::is_same<T, U>::value, bool>::type;
+
+template<typename T, typename U>
+using IfIsNotConvertible = typename std::enable_if<!std::is_convertible<T, U>::value, bool>::type;
+
+template <typename Container, typename T>
+auto sequential_erase(Container &c, const T &t)
+{
+    // avoid a detach in case there is nothing to remove
+    const auto cbegin = c.cbegin();
+    const auto cend = c.cend();
+    const auto t_it = std::find(cbegin, cend, t);
+    auto result = std::distance(cbegin, t_it);
+    if (result == c.size())
+        return result - result; // `0` of the right type
+
+    const auto e = c.end();
+    const auto it = std::remove(std::next(c.begin(), result), e, t);
+    result = std::distance(it, e);
+    c.erase(it, e);
+    return result;
+}
+
+template <typename Container, typename T>
+auto sequential_erase_with_copy(Container &c, const T &t)
+{
+    using CopyProxy = std::conditional_t<std::is_copy_constructible_v<T>, T, const T &>;
+    const T &tCopy = CopyProxy(t);
+    return sequential_erase(c, tCopy);
+}
+
+template <typename Container, typename T>
+auto sequential_erase_one(Container &c, const T &t)
+{
+    const auto cend = c.cend();
+    const auto it = std::find(c.cbegin(), cend, t);
+    if (it == cend)
+        return false;
+    c.erase(it);
+    return true;
+}
+
+template <typename Container, typename Predicate>
+auto sequential_erase_if(Container &c, Predicate &pred)
+{
+    // avoid a detach in case there is nothing to remove
+    const auto cbegin = c.cbegin();
+    const auto cend = c.cend();
+    const auto t_it = std::find_if(cbegin, cend, pred);
+    auto result = std::distance(cbegin, t_it);
+    if (result == c.size())
+        return result - result; // `0` of the right type
+
+    const auto e = c.end();
+    const auto it = std::remove_if(std::next(c.begin(), result), e, pred);
+    result = std::distance(it, e);
+    c.erase(it, e);
+    return result;
+}
+
+template <typename T, typename Predicate>
+qsizetype qset_erase_if(QSet<T> &set, Predicate &pred)
+{
+    qsizetype result = 0;
+    auto it = set.begin();
+    const auto e = set.end();
+    while (it != e) {
+        if (pred(*it)) {
+            ++result;
+            it = set.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return result;
+}
+
+
+// Prerequisite: F is invocable on ArgTypes
+template <typename R, typename F, typename ... ArgTypes>
+struct is_invoke_result_explicitly_convertible : std::is_constructible<R, std::invoke_result_t<F, ArgTypes...>>
+{};
+
+// is_invocable_r checks for implicit conversions, but we need to check
+// for explicit conversions in remove_if. So, roll our own trait.
+template <typename R, typename F, typename ... ArgTypes>
+constexpr bool is_invocable_explicit_r_v = std::conjunction_v<
+    std::is_invocable<F, ArgTypes...>,
+    is_invoke_result_explicitly_convertible<R, F, ArgTypes...>
+>;
+
+template <typename Container, typename Predicate>
+auto associative_erase_if(Container &c, Predicate &pred)
+{
+    // we support predicates callable with either Container::iterator
+    // or with std::pair<const Key &, Value &>
+    using Iterator = typename Container::iterator;
+    using Key = typename Container::key_type;
+    using Value = typename Container::mapped_type;
+    using KeyValuePair = std::pair<const Key &, Value &>;
+
+    typename Container::size_type result = 0;
+
+    auto it = c.begin();
+    const auto e = c.end();
+    while (it != e) {
+        if constexpr (is_invocable_explicit_r_v<bool, Predicate &, Iterator &>) {
+            if (pred(it)) {
+                it = c.erase(it);
+                ++result;
+            } else {
+                ++it;
+            }
+        } else if constexpr (is_invocable_explicit_r_v<bool, Predicate &, KeyValuePair &&>) {
+            KeyValuePair p(it.key(), it.value());
+            if (pred(std::move(p))) {
+                it = c.erase(it);
+                ++result;
+            } else {
+                ++it;
+            }
+        } else {
+            static_assert(sizeof(Container) == 0, "Predicate has an incompatible signature");
+        }
+    }
+
+    return result;
+}
 
 } // namespace QtPrivate
 

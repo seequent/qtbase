@@ -25,7 +25,9 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-#include <QtTest/QtTest>
+#include <QTest>
+
+QT_WARNING_DISABLE_DEPRECATED
 
 class tst_QFlags: public QObject
 {
@@ -47,7 +49,7 @@ void tst_QFlags::testFlag() const
     Qt::MouseButtons btn = Qt::LeftButton | Qt::RightButton;
 
     QVERIFY(btn.testFlag(Qt::LeftButton));
-    QVERIFY(!btn.testFlag(Qt::MidButton));
+    QVERIFY(!btn.testFlag(Qt::MiddleButton));
 
     btn = { };
     QVERIFY(!btn.testFlag(Qt::LeftButton));
@@ -91,7 +93,7 @@ void tst_QFlags::testFlagMultiBits() const
 
 template <unsigned int N, typename T> bool verifyConstExpr(T n) { return n == N; }
 
-Q_DECL_RELAXED_CONSTEXPR Qt::MouseButtons testRelaxedConstExpr()
+constexpr Qt::MouseButtons testRelaxedConstExpr()
 {
     Qt::MouseButtons value;
     value = Qt::LeftButton | Qt::RightButton;
@@ -103,7 +105,6 @@ Q_DECL_RELAXED_CONSTEXPR Qt::MouseButtons testRelaxedConstExpr()
 
 void tst_QFlags::constExpr()
 {
-#ifdef Q_COMPILER_CONSTEXPR
     Qt::MouseButtons btn = Qt::LeftButton | Qt::RightButton;
     switch (btn) {
         case Qt::LeftButton: QVERIFY(false); break;
@@ -123,10 +124,7 @@ void tst_QFlags::constExpr()
 
     QVERIFY(!verifyConstExpr<Qt::RightButton>(~Qt::MouseButtons(Qt::LeftButton)));
 
-#if defined(__cpp_constexpr) &&  __cpp_constexpr-0 >= 201304
     QVERIFY(verifyConstExpr<uint(testRelaxedConstExpr())>(Qt::MiddleButton));
-#endif
-#endif
 }
 
 void tst_QFlags::signedness()
@@ -135,10 +133,10 @@ void tst_QFlags::signedness()
     // underlying type is implementation-defined, we need to allow for
     // a different signedness, so we only check that the relative
     // signedness of the types matches:
-    Q_STATIC_ASSERT((std::is_unsigned<typename std::underlying_type<Qt::MouseButton>::type>::value ==
+    static_assert((std::is_unsigned<typename std::underlying_type<Qt::MouseButton>::type>::value ==
                      std::is_unsigned<Qt::MouseButtons::Int>::value));
 
-    Q_STATIC_ASSERT((std::is_signed<typename std::underlying_type<Qt::AlignmentFlag>::type>::value ==
+    static_assert((std::is_signed<typename std::underlying_type<Qt::AlignmentFlag>::type>::value ==
                      std::is_signed<Qt::Alignment::Int>::value));
 }
 
@@ -149,10 +147,9 @@ Q_DECLARE_OPERATORS_FOR_FLAGS( MyStrictFlags )
 enum class MyStrictNoOpEnum { StrictZero, StrictOne, StrictTwo, StrictFour=4 };
 Q_DECLARE_FLAGS( MyStrictNoOpFlags, MyStrictNoOpEnum )
 
-Q_STATIC_ASSERT( !QTypeInfo<MyStrictFlags>::isComplex );
-Q_STATIC_ASSERT( !QTypeInfo<MyStrictFlags>::isStatic );
-Q_STATIC_ASSERT( !QTypeInfo<MyStrictFlags>::isLarge );
-Q_STATIC_ASSERT( !QTypeInfo<MyStrictFlags>::isPointer );
+static_assert( !QTypeInfo<MyStrictFlags>::isComplex );
+static_assert( QTypeInfo<MyStrictFlags>::isRelocatable );
+static_assert( !QTypeInfo<MyStrictFlags>::isPointer );
 
 void tst_QFlags::classEnum()
 {
@@ -275,11 +272,11 @@ void tst_QFlags::testSetFlags()
 
     btn.setFlag(Qt::LeftButton);
     QVERIFY(btn.testFlag(Qt::LeftButton));
-    QVERIFY(!btn.testFlag(Qt::MidButton));
+    QVERIFY(!btn.testFlag(Qt::MiddleButton));
 
     btn.setFlag(Qt::LeftButton, false);
     QVERIFY(!btn.testFlag(Qt::LeftButton));
-    QVERIFY(!btn.testFlag(Qt::MidButton));
+    QVERIFY(!btn.testFlag(Qt::MiddleButton));
 
     MyStrictFlags flags;
     flags.setFlag(MyStrictEnum::StrictOne);
@@ -320,10 +317,9 @@ enum MyEnum { Zero, One, Two, Four=4 };
 Q_DECLARE_FLAGS( MyFlags, MyEnum )
 Q_DECLARE_OPERATORS_FOR_FLAGS( MyFlags )
 
-Q_STATIC_ASSERT( !QTypeInfo<MyFlags>::isComplex );
-Q_STATIC_ASSERT( !QTypeInfo<MyFlags>::isStatic );
-Q_STATIC_ASSERT( !QTypeInfo<MyFlags>::isLarge );
-Q_STATIC_ASSERT( !QTypeInfo<MyFlags>::isPointer );
+static_assert( !QTypeInfo<MyFlags>::isComplex );
+static_assert( QTypeInfo<MyFlags>::isRelocatable );
+static_assert( !QTypeInfo<MyFlags>::isPointer );
 
 QTEST_MAIN(tst_QFlags)
 #include "tst_qflags.moc"

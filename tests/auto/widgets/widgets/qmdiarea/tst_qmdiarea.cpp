@@ -27,8 +27,8 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
-
+#include <QTest>
+#include <QSignalSpy>
 #include <QMdiSubWindow>
 #include <QMdiArea>
 
@@ -608,10 +608,12 @@ void tst_QMdiArea::showWindows()
 
 //#define USE_SHOW
 
+#if !defined(Q_OS_DARWIN)
 static inline QString windowTitle(const QString &t, const QString &f)
 {
     return t + QLatin1String(" - [") + f + QLatin1Char(']');
 }
+#endif
 
 void tst_QMdiArea::changeWindowTitle()
 {
@@ -789,8 +791,8 @@ void tst_QMdiArea::changeModified()
 class MyChild : public QWidget
 {
 public:
-    MyChild(QWidget *parent = 0) : QWidget(parent) {}
-    QSize sizeHint() const { return QSize(234, 123); }
+    MyChild(QWidget *parent = nullptr) : QWidget(parent) {}
+    QSize sizeHint() const override { return QSize(234, 123); }
 };
 
 void tst_QMdiArea::childSize()
@@ -863,9 +865,9 @@ void tst_QMdiArea::fixedSize()
 class LargeWidget : public QWidget
 {
 public:
-    LargeWidget(QWidget *parent = 0) : QWidget(parent) {}
-    QSize sizeHint() const { return QSize(1280, 1024); }
-    QSize minimumSizeHint() const { return QSize(300, 300); }
+    LargeWidget(QWidget *parent = nullptr) : QWidget(parent) {}
+    QSize sizeHint() const override { return QSize(1280, 1024); }
+    QSize minimumSizeHint() const override { return QSize(300, 300); }
 };
 
 // New tests
@@ -899,7 +901,7 @@ void tst_QMdiArea::sizeHint()
 {
     QMdiArea workspace;
     workspace.show();
-    QSize desktopSize = QApplication::desktop()->size();
+    QSize desktopSize = QGuiApplication::primaryScreen()->size();
     QSize expectedSize(desktopSize.width() * 2/3, desktopSize.height() * 2/3);
     QCOMPARE(workspace.sizeHint(), expectedSize);
 
@@ -1409,7 +1411,7 @@ void tst_QMdiArea::subWindowList()
     QVERIFY(QTest::qWaitForWindowActive(&workspace));
 
     QList<QMdiSubWindow *> activationOrder;
-    QVector<QMdiSubWindow *> windows;
+    QList<QMdiSubWindow *> windows;
     for (int i = 0; i < windowCount; ++i) {
         windows.append(qobject_cast<QMdiSubWindow *>(workspace.addSubWindow(new QWidget)));
         windows[i]->show();
@@ -2049,7 +2051,7 @@ public:
     void clear() { _count = 0; }
 
 protected:
-    bool eventFilter(QObject *object, QEvent *event)
+    bool eventFilter(QObject *object, QEvent *event) override
     {
         if (event->type() == eventToSpy)
             ++_count;

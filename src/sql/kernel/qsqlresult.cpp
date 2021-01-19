@@ -39,15 +39,15 @@
 
 #include "qsqlresult.h"
 
-#include "qvariant.h"
 #include "qhash.h"
+#include "qlist.h"
+#include "qpointer.h"
+#include "qsqldriver.h"
 #include "qsqlerror.h"
 #include "qsqlfield.h"
 #include "qsqlrecord.h"
-#include "qvector.h"
-#include "qsqldriver.h"
-#include "qpointer.h"
 #include "qsqlresult_p.h"
+#include "qvariant.h"
 #include "private/qsqldriver_p.h"
 #include <QDebug>
 
@@ -58,23 +58,9 @@ QString QSqlResultPrivate::holderAt(int index) const
     return holders.size() > index ? holders.at(index).holderName : fieldSerial(index);
 }
 
-// return a unique id for bound names
 QString QSqlResultPrivate::fieldSerial(int i) const
 {
-    char16_t arr[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    auto end = std::end(arr);
-    auto ptr = end;
-
-    while (i > 0) {
-        *(--ptr) = 'a' + i % 16;
-        i >>= 4;
-    }
-
-    const int nb = end - ptr;
-    *(--ptr) = 'a' + nb;
-    *(--ptr) = ':';
-
-    return QString::fromUtf16(ptr, int(end - ptr));
+    return QString(QLatin1String(":%1")).arg(i);
 }
 
 static bool qIsAlnum(QChar ch)
@@ -126,6 +112,13 @@ QString QSqlResultPrivate::positionalToNamedBinding(const QString &query) const
 
 QString QSqlResultPrivate::namedToPositionalBinding(const QString &query)
 {
+    // In the Interbase case if it is an EXECUTE BLOCK then it is up to the
+    // caller to make sure that it is not using named bindings for the wrong
+    // parts of the query since Interbase uses them literally
+    if (sqldriver->dbmsType() == QSqlDriver::Interbase &&
+        query.trimmed().startsWith(QLatin1String("EXECUTE BLOCK"), Qt::CaseInsensitive))
+        return query;
+
     int n = query.size();
 
     QString result;
@@ -645,7 +638,7 @@ bool QSqlResult::exec()
         for (i = d->holders.count() - 1; i >= 0; --i) {
             holder = d->holders.at(i).holderName;
             val = d->values.value(d->indexes.value(holder).value(0,-1));
-            QSqlField f(QLatin1String(""), QVariant::Type(val.userType()));
+            QSqlField f(QLatin1String(""), val.metaType());
             f.setValue(val);
             query = query.replace(d->holders.at(i).holderPos,
                                    holder.length(), driver()->formatValue(f));
@@ -659,7 +652,7 @@ bool QSqlResult::exec()
             if (i == -1)
                 continue;
             QVariant var = d->values.value(idx);
-            QSqlField f(QLatin1String(""), QVariant::Type(var.userType()));
+            QSqlField f(QLatin1String(""), var.metaType());
             if (var.isNull())
                 f.clear();
             else
@@ -689,7 +682,7 @@ void QSqlResult::bindValue(int index, const QVariant& val, QSql::ParamType param
 {
     Q_D(QSqlResult);
     d->binds = PositionalBinding;
-    QVector<int> &indexes = d->indexes[d->fieldSerial(index)];
+    QList<int> &indexes = d->indexes[d->fieldSerial(index)];
     if (!indexes.contains(index))
         indexes.append(index);
     if (d->values.count() <= index)
@@ -716,7 +709,7 @@ void QSqlResult::bindValue(const QString& placeholder, const QVariant& val,
     d->binds = NamedBinding;
     // if the index has already been set when doing emulated named
     // bindings - don't reset it
-    const QVector<int> indexes = d->indexes.value(placeholder);
+    const QList<int> indexes = d->indexes.value(placeholder);
     for (int idx : indexes) {
         if (d->values.count() <= idx)
             d->values.resize(idx + 1);
@@ -763,7 +756,7 @@ QVariant QSqlResult::boundValue(int index) const
 QVariant QSqlResult::boundValue(const QString& placeholder) const
 {
     Q_D(const QSqlResult);
-    const QVector<int> indexes = d->indexes.value(placeholder);
+    const QList<int> indexes = d->indexes.value(placeholder);
     return d->values.value(indexes.value(0,-1));
 }
 
@@ -807,7 +800,7 @@ int QSqlResult::boundValueCount() const
 
     \sa boundValueCount()
 */
-QVector<QVariant>& QSqlResult::boundValues() const
+QList<QVariant> &QSqlResult::boundValues() const
 {
     Q_D(const QSqlResult);
     return const_cast<QSqlResultPrivate *>(d)->values;
@@ -942,7 +935,7 @@ void QSqlResult::virtual_hook(int, void *)
     contain equal amount of values (rows).
 
     NULL values are passed in as typed QVariants, for example
-    \c {QVariant(QVariant::Int)} for an integer NULL value.
+    \c {QVariant(QMetaType::Int)} for an integer NULL value.
 
     Example:
 
@@ -957,7 +950,7 @@ bool QSqlResult::execBatch(bool arrayBind)
     Q_UNUSED(arrayBind);
     Q_D(QSqlResult);
 
-    QVector<QVariant> values = d->values;
+    QList<QVariant> values = d->values;
     if (values.count() == 0)
         return false;
     for (int i = 0; i < values.at(0).toList().count(); ++i) {

@@ -16,9 +16,12 @@ qt_internal_add_plugin(QCocoaIntegrationPlugin
         qcocoaapplicationdelegate.h qcocoaapplicationdelegate.mm
         qcocoabackingstore.h qcocoabackingstore.mm
         qcocoaclipboard.h qcocoaclipboard.mm
+        qcocoacolordialoghelper.h qcocoacolordialoghelper.mm
         qcocoacursor.h qcocoacursor.mm
         qcocoadrag.h qcocoadrag.mm
         qcocoaeventdispatcher.h qcocoaeventdispatcher.mm
+        qcocoafiledialoghelper.h qcocoafiledialoghelper.mm
+        qcocoafontdialoghelper.h qcocoafontdialoghelper.mm
         qcocoahelpers.h qcocoahelpers.mm
         qcocoainputcontext.h qcocoainputcontext.mm
         qcocoaintegration.h qcocoaintegration.mm
@@ -74,7 +77,7 @@ set(qcocoaresources_resource_files
     "images/waitcursor.png"
 )
 
-qt_add_resource(QCocoaIntegrationPlugin "qcocoaresources"
+qt_internal_add_resource(QCocoaIntegrationPlugin "qcocoaresources"
     PREFIX
         "/qt-project.org/mac/cursors"
     FILES
@@ -88,25 +91,23 @@ qt_add_resource(QCocoaIntegrationPlugin "qcocoaresources"
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_opengl
+qt_internal_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_opengl
     SOURCES
         qcocoaglcontext.h qcocoaglcontext.mm
-    PUBLIC_LIBRARIES
-        Qt::OpenGLPrivate
 )
 
-qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_vulkan
+qt_internal_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_vulkan
     SOURCES
         qcocoavulkaninstance.h qcocoavulkaninstance.mm
 )
 
-qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_accessibility
+qt_internal_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_accessibility
     SOURCES
         qcocoaaccessibility.h qcocoaaccessibility.mm
         qcocoaaccessibilityelement.h qcocoaaccessibilityelement.mm
 )
 
-qt_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_sessionmanager
+qt_internal_extend_target(QCocoaIntegrationPlugin CONDITION QT_FEATURE_sessionmanager
     SOURCES
         qcocoasessionmanager.cpp qcocoasessionmanager.h
 )

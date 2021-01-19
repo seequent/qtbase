@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -157,6 +157,12 @@ QT_BEGIN_NAMESPACE
     explicitly call fromLatin1(), or use QLatin1Char,
     to construct a QChar from an 8-bit \c char, and you will need to
     call toLatin1() to get the 8-bit value back.
+
+    Starting with Qt 6.0, most QChar constructors are \c explicit. This
+    is done to avoid dangerous mistakes when accidentally mixing
+    integral types and strings. You can opt-out (and make these
+    constructors implicit) by defining the macro \c
+    QT_IMPLICIT_QCHAR_CONSTRUCTION.
 
     For more information see
     \l{http://www.unicode.org/ucd/}{"About the Unicode Character Database"}.
@@ -537,24 +543,6 @@ QT_BEGIN_NAMESPACE
 
     \sa joiningType()
 */
-
-#if QT_DEPRECATED_SINCE(5, 3)
-/*!
-    \enum QChar::Joining
-    \deprecated in 5.3, use JoiningType instead.
-
-    This enum type defines the Unicode joining attributes. See the
-    \l{http://www.unicode.org/}{Unicode Standard} for a description
-    of the values.
-
-    \value Center
-    \value Dual
-    \value OtherJoining
-    \value Right
-
-    \sa joining()
-*/
-#endif
 
 /*!
     \enum QChar::CombiningClass
@@ -1270,38 +1258,6 @@ QChar::JoiningType QChar::joiningType(char32_t ucs4) noexcept
     return QChar::JoiningType(qGetProp(ucs4)->joining);
 }
 
-#if QT_DEPRECATED_SINCE(5, 3)
-/*!
-    \fn QChar::Joining QChar::joining() const
-    \deprecated in 5.3, use joiningType() instead.
-
-    Returns information about the joining properties of the character
-    (needed for certain languages such as Arabic).
-*/
-
-/*!
-    \overload
-    \deprecated in 5.3, use joiningType() instead.
-
-    Returns information about the joining properties of the UCS-4-encoded
-    character specified by \a ucs4 (needed for certain languages such as Arabic).
-
-    \note Before Qt 6, this function took a \c uint argument.
-*/
-QChar::Joining QChar::joining(char32_t ucs4) noexcept
-{
-    if (ucs4 > LastValidCodePoint)
-        return QChar::OtherJoining;
-    switch (qGetProp(ucs4)->joining) {
-    case QChar::Joining_Causing: return QChar::Center;
-    case QChar::Joining_Dual: return QChar::Dual;
-    case QChar::Joining_Right: return QChar::Right;
-    default: break;
-    }
-    return QChar::OtherJoining;
-}
-#endif
-
 /*!
     \fn bool QChar::hasMirrored() const
 
@@ -1439,7 +1395,7 @@ enum {
 
 // buffer has to have a length of 3. It's needed for Hangul decomposition
 static const unsigned short * QT_FASTCALL decompositionHelper
-    (uint ucs4, int *length, int *tag, unsigned short *buffer)
+    (uint ucs4, qsizetype *length, int *tag, unsigned short *buffer)
 {
     if (ucs4 >= Hangul_SBase && ucs4 < Hangul_SBase + Hangul_SCount) {
         // compute Hangul syllable decomposition as per UAX #15
@@ -1484,7 +1440,7 @@ QString QChar::decomposition() const
 QString QChar::decomposition(char32_t ucs4)
 {
     unsigned short buffer[3];
-    int length;
+    qsizetype length;
     int tag;
     const unsigned short *d = decompositionHelper(ucs4, &length, &tag, buffer);
     return QString(reinterpret_cast<const QChar *>(d), length);
@@ -1603,6 +1559,7 @@ static auto fullConvertCase(char32_t uc, QUnicodeTables::Case which) noexcept
         auto data() const { return chars; }
         auto size() const { return sz; }
     } result;
+    Q_ASSERT(uc <= QChar::LastValidCodePoint);
 
     auto pp = result.chars;
 
@@ -1774,38 +1731,6 @@ char32_t QChar::toCaseFolded(char32_t ucs4) noexcept
     \sa toLatin1(), unicode()
 */
 
-/*!
-    \fn char QChar::toAscii() const
-    \deprecated
-
-    Returns the Latin-1 character value of the QChar, or 0 if the character is not
-    representable.
-
-    The main purpose of this function is to preserve ASCII characters used
-    in C strings. This is mainly useful for developers of non-internationalized
-    software.
-
-    \note It is not possible to distinguish a non-Latin 1 character from an ASCII 0
-    (NUL) character. Prefer to use unicode(), which does not have this ambiguity.
-
-    \note This function does not check whether the character value is inside
-    the valid range of US-ASCII.
-
-    \sa toLatin1(), unicode()
-*/
-
-/*!
-    \fn QChar QChar::fromAscii(char)
-    \deprecated
-
-    Converts the ASCII character \a c to it's equivalent QChar. This
-    is mainly useful for non-internationalized software.
-
-    An alternative is to use QLatin1Char.
-
-    \sa fromLatin1(), unicode()
-*/
-
 #ifndef QT_NO_DATASTREAM
 /*!
     \relates QChar
@@ -1853,54 +1778,42 @@ QDataStream &operator>>(QDataStream &in, QChar &chr)
  *****************************************************************************/
 
 /*!
-    \fn bool operator==(QChar c1, QChar c2)
-
-    \relates QChar
+    \fn bool QChar::operator==(QChar c1, QChar c2)
 
     Returns \c true if \a c1 and \a c2 are the same Unicode character;
     otherwise returns \c false.
 */
 
 /*!
-    \fn int operator!=(QChar c1, QChar c2)
-
-    \relates QChar
+    \fn int QChar::operator!=(QChar c1, QChar c2)
 
     Returns \c true if \a c1 and \a c2 are not the same Unicode
     character; otherwise returns \c false.
 */
 
 /*!
-    \fn int operator<=(QChar c1, QChar c2)
-
-    \relates QChar
+    \fn int QChar::operator<=(QChar c1, QChar c2)
 
     Returns \c true if the numeric Unicode value of \a c1 is less than
     or equal to that of \a c2; otherwise returns \c false.
 */
 
 /*!
-    \fn int operator>=(QChar c1, QChar c2)
-
-    \relates QChar
+    \fn int QChar::operator>=(QChar c1, QChar c2)
 
     Returns \c true if the numeric Unicode value of \a c1 is greater than
     or equal to that of \a c2; otherwise returns \c false.
 */
 
 /*!
-    \fn int operator<(QChar c1, QChar c2)
-
-    \relates QChar
+    \fn int QChar::operator<(QChar c1, QChar c2)
 
     Returns \c true if the numeric Unicode value of \a c1 is less than
     that of \a c2; otherwise returns \c false.
 */
 
 /*!
-    \fn int operator>(QChar c1, QChar c2)
-
-    \relates QChar
+    \fn int QChar::operator>(QChar c1, QChar c2)
 
     Returns \c true if the numeric Unicode value of \a c1 is greater than
     that of \a c2; otherwise returns \c false.
@@ -1910,9 +1823,9 @@ QDataStream &operator>>(QDataStream &in, QChar &chr)
 // ---------------------------------------------------------------------------
 
 
-static void decomposeHelper(QString *str, bool canonical, QChar::UnicodeVersion version, int from)
+static void decomposeHelper(QString *str, bool canonical, QChar::UnicodeVersion version, qsizetype from)
 {
-    int length;
+    qsizetype length;
     int tag;
     unsigned short buffer[3];
 
@@ -1937,7 +1850,7 @@ static void decomposeHelper(QString *str, bool canonical, QChar::UnicodeVersion 
         if (!d || (canonical && tag != QChar::Canonical))
             continue;
 
-        int pos = uc - utf16;
+        qsizetype pos = uc - utf16;
         s.replace(pos, QChar::requiresSurrogates(ucs4) ? 2 : 1, reinterpret_cast<const QChar *>(d), length);
         // since the replace invalidates the pointers and we do decomposition recursive
         utf16 = reinterpret_cast<unsigned short *>(s.data());
@@ -2010,7 +1923,7 @@ static uint inline ligatureHelper(uint u1, uint u2)
     return 0;
 }
 
-static void composeHelper(QString *str, QChar::UnicodeVersion version, int from)
+static void composeHelper(QString *str, QChar::UnicodeVersion version, qsizetype from)
 {
     QString &s = *str;
 
@@ -2018,13 +1931,13 @@ static void composeHelper(QString *str, QChar::UnicodeVersion version, int from)
         return;
 
     uint stcode = 0; // starter code point
-    int starter = -1; // starter position
-    int next = -1; // to prevent i == next
+    qsizetype starter = -1; // starter position
+    qsizetype next = -1; // to prevent i == next
     int lastCombining = 255; // to prevent combining > lastCombining
 
-    int pos = from;
+    qsizetype pos = from;
     while (pos < s.length()) {
-        int i = pos;
+        qsizetype i = pos;
         char32_t uc = s.at(pos).unicode();
         if (QChar(uc).isHighSurrogate() && pos < s.length()-1) {
             ushort low = s.at(pos+1).unicode();
@@ -2051,7 +1964,7 @@ static void composeHelper(QString *str, QChar::UnicodeVersion version, int from)
                 stcode = ligature;
                 QChar *d = s.data();
                 // ligatureHelper() never changes planes
-                int j = 0;
+                qsizetype j = 0;
                 for (QChar ch : QChar::fromUcs4(ligature))
                     d[starter + j++] = ch;
                 s.remove(i, j);
@@ -2070,17 +1983,17 @@ static void composeHelper(QString *str, QChar::UnicodeVersion version, int from)
 }
 
 
-static void canonicalOrderHelper(QString *str, QChar::UnicodeVersion version, int from)
+static void canonicalOrderHelper(QString *str, QChar::UnicodeVersion version, qsizetype from)
 {
     QString &s = *str;
-    const int l = s.length()-1;
+    const qsizetype l = s.length()-1;
 
     char32_t u1, u2;
     char16_t c1, c2;
 
-    int pos = from;
+    qsizetype pos = from;
     while (pos < l) {
-        int p2 = pos+1;
+        qsizetype p2 = pos+1;
         u1 = s.at(pos).unicode();
         if (QChar::isHighSurrogate(u1)) {
             const char16_t low = s.at(p2).unicode();
@@ -2122,7 +2035,7 @@ static void canonicalOrderHelper(QString *str, QChar::UnicodeVersion version, in
 
         if (c1 > c2) {
             QChar *uc = s.data();
-            int p = pos;
+            qsizetype p = pos;
             // exchange characters
             for (QChar ch : QChar::fromUcs4(u2))
                 uc[p++] = ch;
@@ -2152,25 +2065,25 @@ static void canonicalOrderHelper(QString *str, QChar::UnicodeVersion version, in
 
 // returns true if the text is in a desired Normalization Form already; false otherwise.
 // sets lastStable to the position of the last stable code point
-static bool normalizationQuickCheckHelper(QString *str, QString::NormalizationForm mode, int from, int *lastStable)
+static bool normalizationQuickCheckHelper(QString *str, QString::NormalizationForm mode, qsizetype from, qsizetype *lastStable)
 {
-    Q_STATIC_ASSERT(QString::NormalizationForm_D == 0);
-    Q_STATIC_ASSERT(QString::NormalizationForm_C == 1);
-    Q_STATIC_ASSERT(QString::NormalizationForm_KD == 2);
-    Q_STATIC_ASSERT(QString::NormalizationForm_KC == 3);
+    static_assert(QString::NormalizationForm_D == 0);
+    static_assert(QString::NormalizationForm_C == 1);
+    static_assert(QString::NormalizationForm_KD == 2);
+    static_assert(QString::NormalizationForm_KC == 3);
 
     enum { NFQC_YES = 0, NFQC_NO = 1, NFQC_MAYBE = 3 };
 
     const ushort *string = reinterpret_cast<const ushort *>(str->constData());
-    int length = str->length();
+    qsizetype length = str->length();
 
     // this avoids one out of bounds check in the loop
     while (length > from && QChar::isHighSurrogate(string[length - 1]))
         --length;
 
     uchar lastCombining = 0;
-    for (int i = from; i < length; ++i) {
-        int pos = i;
+    for (qsizetype i = from; i < length; ++i) {
+        qsizetype pos = i;
         char32_t uc = string[i];
         if (uc < 0x80) {
             // ASCII characters are stable code points
@@ -2210,5 +2123,52 @@ static bool normalizationQuickCheckHelper(QString *str, QString::NormalizationFo
 
     return true;
 }
+
+/*!
+    \macro QT_IMPLICIT_QCHAR_CONSTRUCTION
+    \since 6.0
+    \relates QChar
+
+    Defining this macro makes certain QChar constructors implicit
+    rather than explicit. This is done to enforce safe conversions:
+
+    \badcode
+
+    QString str = getString();
+    if (str == 123) {
+        // Oops, meant str == "123". By default does not compile,
+        // *unless* this macro is defined, in which case, it's interpreted
+        // as `if (str == QChar(123))`, that is, `if (str == '{')`.
+        // Likely, not what we meant.
+    }
+
+    \endcode
+
+    This macro is provided to keep existing code working; it is
+    recommended to instead use explicit conversions and/or QLatin1Char.
+    For instance:
+
+    \code
+
+    QChar c1 =  'x'; // OK, unless QT_NO_CAST_FROM_ASCII is defined
+    QChar c2 = u'x'; // always OK, recommended
+    QChar c3 = QLatin1Char('x'); // always OK, recommended
+
+    // from int to 1 UTF-16 code unit: must guarantee that the input is <= 0xFFFF
+    QChar c4 = 120;        // compile error, unless QT_IMPLICIT_QCHAR_CONSTRUCTION is defined
+    QChar c5(120);         // OK (direct initialization)
+    auto  c6 = QChar(120); // ditto
+
+    // from int/char32_t to 1/2 UTF-16 code units:
+    // 𝄞 'MUSICAL SYMBOL G CLEF' (U+1D11E)
+    auto c7 = QChar(0x1D11E);           // compiles, but undefined behavior at runtime
+    auto c8 = QChar::fromUcs4(0x1D11E);       // always OK
+    auto c9 = QChar::fromUcs4(U'\U0001D11E'); // always OK
+    // => use c8/c9 as QStringView objects
+
+    \endcode
+
+    \sa QLatin1Char, QChar::fromUcs4, QT_NO_CAST_FROM_ASCII
+*/
 
 QT_END_NAMESPACE

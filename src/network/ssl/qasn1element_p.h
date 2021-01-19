@@ -153,14 +153,14 @@ public:
 
     static QAsn1Element fromBool(bool val);
     static QAsn1Element fromInteger(unsigned int val);
-    static QAsn1Element fromVector(const QVector<QAsn1Element> &items);
+    static QAsn1Element fromVector(const QList<QAsn1Element> &items);
     static QAsn1Element fromObjectId(const QByteArray &id);
 
     bool toBool(bool *ok = nullptr) const;
     QDateTime toDateTime() const;
     QMultiMap<QByteArray, QString> toInfo() const;
     qint64 toInteger(bool *ok = nullptr) const;
-    QVector<QAsn1Element> toVector() const;
+    QList<QAsn1Element> toList() const;
     QByteArray toObjectId() const;
     QByteArray toObjectName() const;
     QString toString() const;
@@ -175,7 +175,7 @@ private:
     quint8 mType;
     QByteArray mValue;
 };
-Q_DECLARE_TYPEINFO(QAsn1Element, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QAsn1Element, Q_RELOCATABLE_TYPE);
 
 inline bool operator==(const QAsn1Element &e1, const QAsn1Element &e2)
 { return e1.mType == e2.mType && e1.mValue == e2.mValue; }

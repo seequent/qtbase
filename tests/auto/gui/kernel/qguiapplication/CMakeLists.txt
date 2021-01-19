@@ -16,8 +16,8 @@ else()
 endif()
 # special case end
 
-add_qt_test(tst_qguiapplication
-    VERSION ${target_version}
+qt_internal_add_test(tst_qguiapplication
+    VERSION ${target_version} # special case
     SOURCES
         ../../../corelib/kernel/qcoreapplication/tst_qcoreapplication.cpp ../../../corelib/kernel/qcoreapplication/tst_qcoreapplication.h # special case
         tst_qguiapplication.cpp
@@ -28,7 +28,6 @@ add_qt_test(tst_qguiapplication
     PUBLIC_LIBRARIES
         Qt::CorePrivate
         Qt::GuiPrivate
-        Threads::Threads # special case
 )
 
 # Resources:
@@ -37,13 +36,19 @@ set(tst_qguiapplication_resource_files
     "icons/usericon.png"
 )
 
-add_qt_resource(tst_qguiapplication "tst_qguiapplication"
+qt_internal_add_resource(tst_qguiapplication "tst_qguiapplication"
     PREFIX
         "/"
     FILES
         ${tst_qguiapplication_resource_files}
 )
 
+# special case begin
+if (APPLE)
+    set_property(TARGET tst_qguiapplication PROPERTY MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist")
+    set_property(TARGET tst_qguiapplication PROPERTY PROPERTY MACOSX_BUNDLE TRUE)
+endif()
+# special case end
 
 ## Scopes:
 #####################################################################

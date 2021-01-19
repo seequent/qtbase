@@ -6,13 +6,16 @@
 
 #### Libraries
 
-qt_find_package(ZLIB PROVIDED_TARGETS ZLIB::ZLIB MODULE_NAME global QMAKE_LIB zlib)
-qt_find_package(ZSTD PROVIDED_TARGETS ZSTD::ZSTD MODULE_NAME global QMAKE_LIB zstd)
-qt_find_package(WrapDBus1 PROVIDED_TARGETS dbus-1 MODULE_NAME global QMAKE_LIB dbus)
+qt_find_package(ZLIB 1.0.8 PROVIDED_TARGETS ZLIB::ZLIB MODULE_NAME global QMAKE_LIB zlib)
+qt_find_package(ZSTD 1.3 PROVIDED_TARGETS ZSTD::ZSTD MODULE_NAME global QMAKE_LIB zstd)
+qt_find_package(WrapDBus1 1.2 PROVIDED_TARGETS dbus-1 MODULE_NAME global QMAKE_LIB dbus)
 qt_find_package(Libudev PROVIDED_TARGETS PkgConfig::Libudev MODULE_NAME global QMAKE_LIB libudev)
 
 
 #### Tests
+
+# machineTuple
+qt_config_compile_test_machine_tuple("machine tuple")
 
 # cxx14
 qt_config_compile_test(cxx14
@@ -105,6 +108,36 @@ int main(int argc, char **argv)
     return 0;
 }
 "# FIXME: qmake: ['CONFIG += precompile_header', 'PRECOMPILED_DIR = .pch', 'PRECOMPILED_HEADER = header.h']
+)
+
+qt_config_compiler_supports_flag_test(use_bfd_linker
+    LABEL "bfd linker"
+    FLAG "-fuse-ld=bfd"
+)
+
+qt_config_compiler_supports_flag_test(use_gold_linker
+    LABEL "gold linker"
+    FLAG "-fuse-ld=gold"
+)
+
+qt_config_compiler_supports_flag_test(use_lld_linker
+    LABEL "lld linker"
+    FLAG "-fuse-ld=lld"
+)
+
+qt_config_compiler_supports_flag_test(optimize_debug
+    LABEL "-Og support"
+    FLAG "-Og"
+)
+
+qt_config_linker_supports_flag_test(enable_new_dtags
+    LABEL "new dtags support"
+    FLAG "--enable-new-dtags"
+)
+
+qt_config_linker_supports_flag_test(gdb_index
+    LABEL "gdb index support"
+    FLAG "--gdb-index"
 )
 
 # reduce_relocations
@@ -355,29 +388,65 @@ qt_feature("cross_compile" PUBLIC
 )
 qt_feature_config("cross_compile" QMAKE_PUBLIC_CONFIG)
 qt_feature_config("cross_compile" QMAKE_PRIVATE_CONFIG)
+qt_feature("gc_binaries" PRIVATE
+    CONDITION NOT QT_FEATURE_shared
+)
 qt_feature("use_bfd_linker"
     LABEL "bfd"
     AUTODETECT false
-    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND tests.use_bfd_linker OR FIXME
+    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_bfd_linker
     ENABLE INPUT_linker STREQUAL 'bfd'
     DISABLE INPUT_linker STREQUAL 'gold' OR INPUT_linker STREQUAL 'lld'
 )
 qt_feature_config("use_bfd_linker" QMAKE_PRIVATE_CONFIG)
 qt_feature("use_gold_linker_alias"
     AUTODETECT false
-    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND tests.use_gold_linker OR FIXME
+    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_gold_linker
 )
+qt_feature("use_gold_linker"
+    LABEL "gold"
+    AUTODETECT false
+    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND NOT rtems AND TEST_use_gold_linker
+    ENABLE INPUT_linker STREQUAL 'gold' OR QT_FEATURE_use_gold_linker_alias
+    DISABLE INPUT_linker STREQUAL 'bfd' OR INPUT_linker STREQUAL 'lld'
+)
+qt_feature_config("use_gold_linker" QMAKE_PRIVATE_CONFIG)
 qt_feature("use_lld_linker"
     LABEL "lld"
     AUTODETECT false
-    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND tests.use_lld_linker OR FIXME
+    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_lld_linker
     ENABLE INPUT_linker STREQUAL 'lld'
     DISABLE INPUT_linker STREQUAL 'bfd' OR INPUT_linker STREQUAL 'gold'
 )
 qt_feature_config("use_lld_linker" QMAKE_PRIVATE_CONFIG)
+qt_feature("optimize_debug"
+    LABEL "Optimize debug build"
+    AUTODETECT NOT QT_FEATURE_developer_build
+    CONDITION NOT MSVC AND NOT CLANG AND ( QT_FEATURE_debug OR QT_FEATURE_debug_and_release ) AND TEST_optimize_debug
+)
+qt_feature_config("optimize_debug" QMAKE_PRIVATE_CONFIG)
+qt_feature("optimize_size"
+    LABEL "Optimize release build for size"
+    AUTODETECT OFF
+    CONDITION NOT QT_FEATURE_debug OR QT_FEATURE_debug_and_release
+)
+qt_feature_config("optimize_size" QMAKE_PRIVATE_CONFIG)
+# special case begin
+qt_feature("optimize_full"
+    LABEL "Fully optimize release builds (-O3)"
+    AUTODETECT OFF
+)
+qt_feature_config("optimize_full" QMAKE_PRIVATE_CONFIG)
+qt_feature("msvc_obj_debug_info"
+    LABEL "Embed debug info in object files (MSVC)"
+    CONDITION MSVC
+    AUTODETECT OFF
+)
+qt_feature_config("msvc_obj_debug_info" QMAKE_PRIVATE_CONFIG)
+# special case end
 qt_feature("pkg-config" PUBLIC
     LABEL "Using pkg-config"
-    AUTODETECT NOT APPLE AND NOT WIN32
+    AUTODETECT NOT APPLE AND NOT WIN32 AND NOT ANDROID
     CONDITION PKG_CONFIG_FOUND
 )
 qt_feature_config("pkg-config" QMAKE_PUBLIC_QT_CONFIG
@@ -396,7 +465,7 @@ qt_feature_config("developer-build" QMAKE_PUBLIC_QT_CONFIG
 )
 qt_feature("debug"
     LABEL "Build for debugging"
-    AUTODETECT QT_FEATURE_developer_build OR ( WIN32 AND NOT GCC ) OR APPLE
+    AUTODETECT ON
     CONDITION CMAKE_BUILD_TYPE STREQUAL Debug OR Debug IN_LIST CMAKE_CONFIGURATION_TYPES
 )
 qt_feature("debug_and_release" PUBLIC
@@ -464,12 +533,37 @@ qt_feature("testcocoon"
     AUTODETECT OFF
 )
 qt_feature_config("testcocoon" QMAKE_PUBLIC_CONFIG)
+qt_feature("sanitize_address"
+    LABEL "Addresses"
+    AUTODETECT OFF
+)
+qt_feature_config("sanitize_address" QMAKE_PUBLIC_CONFIG)
+qt_feature("sanitize_thread"
+    LABEL "Threads"
+    AUTODETECT OFF
+)
+qt_feature_config("sanitize_thread" QMAKE_PUBLIC_CONFIG)
+qt_feature("sanitize_memory"
+    LABEL "Memory"
+    AUTODETECT OFF
+)
+qt_feature_config("sanitize_memory" QMAKE_PUBLIC_CONFIG)
 qt_feature("sanitize_fuzzer_no_link"
     LABEL "Fuzzer (instrumentation only)"
     PURPOSE "Adds instrumentation for fuzzing to the binaries but links to the usual main function instead of a fuzzer's."
     AUTODETECT OFF
 )
 qt_feature_config("sanitize_fuzzer_no_link" QMAKE_PUBLIC_CONFIG)
+qt_feature("sanitize_undefined"
+    LABEL "Undefined"
+    AUTODETECT OFF
+)
+qt_feature_config("sanitize_undefined" QMAKE_PUBLIC_CONFIG)
+qt_feature("sanitizer"
+    LABEL "Sanitizers"
+    CONDITION QT_FEATURE_sanitize_address OR QT_FEATURE_sanitize_thread OR QT_FEATURE_sanitize_memory OR QT_FEATURE_sanitize_fuzzer_no_link OR QT_FEATURE_sanitize_undefined
+)
+qt_feature_config("sanitizer" QMAKE_PUBLIC_CONFIG)
 qt_feature("coverage_trace_pc_guard"
     LABEL "trace-pc-guard"
     AUTODETECT OFF
@@ -535,15 +629,39 @@ qt_feature("precompile_header"
     CONDITION BUILD_WITH_PCH
 )
 qt_feature_config("precompile_header" QMAKE_PRIVATE_CONFIG)
+set(__qt_ltcg_detected FALSE)
+if(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    set(__qt_ltcg_detected TRUE)
+else()
+    foreach(config ${CMAKE_BUILD_TYPE} ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER "${config}" __qt_uc_config)
+        if(CMAKE_INTERPROCEDURAL_OPTIMIZATION_${__qt_uc_config})
+            set(__qt_ltcg_detected TRUE)
+            break()
+        endif()
+    endforeach()
+    unset(__qt_uc_config)
+endif()
 qt_feature("ltcg"
     LABEL "Using LTCG"
-    AUTODETECT 1
-    CONDITION CMAKE_INTERPROCEDURAL_OPTIMIZATION
+    AUTODETECT ON
+    CONDITION __qt_ltcg_detected
 )
 qt_feature_config("ltcg" QMAKE_PRIVATE_CONFIG)
+qt_feature("enable_new_dtags"
+    LABEL "Using new DTAGS"
+    CONDITION LINUX AND TEST_enable_new_dtags
+)
+qt_feature_config("enable_new_dtags" QMAKE_PRIVATE_CONFIG)
+qt_feature("enable_gdb_index"
+    LABEL "Generating GDB index"
+    AUTODETECT QT_FEATURE_developer_build
+    CONDITION GCC AND NOT CLANG AND ( QT_FEATURE_debug OR QT_FEATURE_force_debug_info OR QT_FEATURE_debug_and_release ) AND TEST_gdb_index
+)
+qt_feature_config("enable_gdb_index" QMAKE_PRIVATE_CONFIG)
 qt_feature("reduce_exports" PRIVATE
     LABEL "Reduce amount of exported symbols"
-    CONDITION NOT WIN32 AND CMAKE_CXX_COMPILE_OPTIONS_VISIBILITY
+    CONDITION NOT MSVC
 )
 qt_feature_definition("reduce_exports" "QT_VISIBILITY_AVAILABLE")
 qt_feature_config("reduce_exports" QMAKE_PUBLIC_QT_CONFIG)
@@ -589,7 +707,7 @@ qt_feature_definition("sse4_2" "QT_COMPILER_SUPPORTS_SSE4_2" VALUE "1")
 qt_feature_config("sse4_2" QMAKE_PRIVATE_CONFIG)
 qt_feature("avx"
     LABEL "AVX"
-    CONDITION QT_FEATURE_sse4_2 AND TEST_subarch_avx
+    CONDITION QT_FEATURE_sse4_2 AND TEST_subarch_avx AND ( NOT ANDROID OR NOT ( TEST_architecture_arch STREQUAL x86_64 ) )
 )
 qt_feature_definition("avx" "QT_COMPILER_SUPPORTS_AVX" VALUE "1")
 qt_feature_config("avx" QMAKE_PRIVATE_CONFIG)
@@ -601,7 +719,7 @@ qt_feature_definition("f16c" "QT_COMPILER_SUPPORTS_F16C" VALUE "1")
 qt_feature_config("f16c" QMAKE_PRIVATE_CONFIG)
 qt_feature("avx2" PRIVATE
     LABEL "AVX2"
-    CONDITION QT_FEATURE_avx AND TEST_subarch_avx2
+    CONDITION QT_FEATURE_avx AND TEST_subarch_avx2 AND ( NOT ANDROID OR NOT ( TEST_architecture_arch STREQUAL x86_64 ) )
 )
 qt_feature_definition("avx2" "QT_COMPILER_SUPPORTS_AVX2" VALUE "1")
 qt_feature_config("avx2" QMAKE_PRIVATE_CONFIG)
@@ -661,13 +779,13 @@ qt_feature_definition("avx512vbmi" "QT_COMPILER_SUPPORTS_AVX512VBMI" VALUE "1")
 qt_feature_config("avx512vbmi" QMAKE_PRIVATE_CONFIG)
 qt_feature("aesni"
     LABEL "AES"
-    CONDITION QT_FEATURE_sse2 AND TEST_subarch_aes
+    CONDITION QT_FEATURE_sse2 AND TEST_subarch_aesni
 )
 qt_feature_definition("aesni" "QT_COMPILER_SUPPORTS_AES" VALUE "1")
 qt_feature_config("aesni" QMAKE_PRIVATE_CONFIG)
 qt_feature("rdrnd"
     LABEL "RDRAND"
-    CONDITION TEST_subarch_rdseed
+    CONDITION TEST_subarch_rdrnd
 )
 qt_feature_definition("rdrnd" "QT_COMPILER_SUPPORTS_RDRND" VALUE "1")
 qt_feature_config("rdrnd" QMAKE_PRIVATE_CONFIG)
@@ -679,7 +797,7 @@ qt_feature_definition("rdseed" "QT_COMPILER_SUPPORTS_RDSEED" VALUE "1")
 qt_feature_config("rdseed" QMAKE_PRIVATE_CONFIG)
 qt_feature("shani"
     LABEL "SHA"
-    CONDITION QT_FEATURE_sse2 AND TEST_subarch_sha
+    CONDITION QT_FEATURE_sse2 AND TEST_subarch_shani
 )
 qt_feature_definition("shani" "QT_COMPILER_SUPPORTS_SHA" VALUE "1")
 qt_feature_config("shani" QMAKE_PRIVATE_CONFIG)
@@ -766,6 +884,12 @@ qt_feature("dbus-linked" PRIVATE
     ENABLE INPUT_dbus STREQUAL 'linked'
     DISABLE INPUT_dbus STREQUAL 'runtime'
 )
+qt_feature("qreal"
+    LABEL "Type for qreal"
+    CONDITION DEFINED QT_COORD_TYPE AND NOT QT_COORD_TYPE STREQUAL "double"
+)
+qt_feature_definition("qreal" "QT_COORD_TYPE" VALUE "${QT_COORD_TYPE}")
+qt_feature_definition("qreal" "QT_COORD_TYPE_STRING" VALUE "\"${QT_COORD_TYPE}\"")
 qt_feature("gui" PRIVATE
     LABEL "Qt Gui"
 )
@@ -796,17 +920,6 @@ qt_feature("libudev" PRIVATE
     LABEL "udev"
     CONDITION Libudev_FOUND
 )
-qt_feature("qt_libinfix_plugins"
-    LABEL "Use QT_LIBINFIX for Plugins"
-    AUTODETECT OFF
-    ENABLE ( NOT INPUT_qt_libinfix STREQUAL '' ) AND INPUT_qt_libinfix_plugins STREQUAL 'yes'
-)
-qt_feature_config("qt_libinfix_plugins" QMAKE_PRIVATE_CONFIG)
-qt_feature("compile_examples"
-    LABEL "Compile examples"
-    AUTODETECT NOT WASM
-)
-qt_feature_config("compile_examples" QMAKE_PRIVATE_CONFIG)
 qt_feature("ccache"
     LABEL "Using ccache"
     AUTODETECT 1
@@ -846,6 +959,9 @@ qt_configure_add_summary_entry(
     ARGS "optimize_size"
     CONDITION NOT QT_FEATURE_debug OR QT_FEATURE_debug_and_release
 )
+qt_configure_add_summary_entry(
+    ARGS "optimize_full"
+)
 qt_configure_add_summary_entry(ARGS "shared")
 qt_configure_add_summary_entry(
     TYPE "firstAvailableFeature"
@@ -860,6 +976,12 @@ qt_configure_add_summary_entry(
 qt_configure_add_summary_entry(
     ARGS "ccache"
     CONDITION UNIX
+)
+qt_configure_add_summary_entry(
+    TYPE "firstAvailableFeature"
+    ARGS "use_bfd_linker use_gold_linker use_lld_linker"
+    MESSAGE "Linker"
+    CONDITION QT_FEATURE_use_bfd_linker OR QT_FEATURE_use_gold_linker OR QT_FEATURE_use_lld_linker
 )
 qt_configure_add_summary_entry(
     ARGS "enable_new_dtags"
@@ -955,16 +1077,13 @@ qt_configure_add_report_entry(
     MESSAGE "Using static linking will disable the use of dynamically loaded plugins. Make sure to import all needed static plugins, or compile needed modules into the library."
     CONDITION NOT QT_FEATURE_shared
 )
-qt_configure_add_report_entry(
-    TYPE NOTE
-    MESSAGE "Qt is using double for qreal on this system. This is binary-incompatible against Qt 5.1.  Configure with '-qreal float' to create a build that is binary-compatible with 5.1."
-    CONDITION INPUT_qreal STREQUAL 'double' AND ( TEST_architecture_arch STREQUAL arm )
-)
-qt_configure_add_report_entry(
-    TYPE ERROR
-    MESSAGE "Debug build wihtout Release build is not currently supported on ios see QTBUG-71990. Use -debug-and-release."
-    CONDITION IOS AND QT_FEATURE_debug AND NOT QT_FEATURE_debug_and_release
-)
+# special case begin
+# qt_configure_add_report_entry(
+#     TYPE ERROR
+#     MESSAGE "Debug build wihtout Release build is not currently supported on ios see QTBUG-71990. Use -debug-and-release."
+#     CONDITION IOS AND QT_FEATURE_debug AND NOT QT_FEATURE_debug_and_release
+# )
+# special case end
 qt_configure_add_report_entry(
     TYPE WARNING
     MESSAGE "-debug-and-release is only supported on Darwin and Windows platforms.  Qt can be built in release mode with separate debug information, so -debug-and-release is no longer necessary."

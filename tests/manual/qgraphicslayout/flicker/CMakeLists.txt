@@ -4,7 +4,7 @@
 ## flicker Binary:
 #####################################################################
 
-add_qt_manual_test(flicker
+qt_internal_add_manual_test(flicker
     GUI
     SOURCES
         main.cpp

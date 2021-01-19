@@ -4,7 +4,7 @@
 ## scrollarea Binary:
 #####################################################################
 
-add_qt_manual_test(scrollarea
+qt_internal_add_manual_test(scrollarea
     GUI
     SOURCES
         main.cpp

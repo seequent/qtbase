@@ -119,7 +119,6 @@ public:
     virtual QDpi logicalDpi() const;
     virtual QDpi logicalBaseDpi() const;
     virtual qreal devicePixelRatio() const;
-    virtual qreal pixelDensity()  const;
 
     virtual qreal refreshRate() const;
 
@@ -150,7 +149,7 @@ public:
     virtual PowerState powerState() const;
     virtual void setPowerState(PowerState state);
 
-    virtual QVector<Mode> modes() const;
+    virtual QList<Mode> modes() const;
 
     virtual int currentMode() const;
     virtual int preferredMode() const;

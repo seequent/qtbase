@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 
 #include <qtextdocument.h>
@@ -266,6 +266,7 @@ private slots:
     void html_importImageWithoutAspectRatio();
     void html_fromFirefox();
     void html_emptyInlineInsideBlock();
+    void css_fontAndWordSpacing();
 
 private:
     inline void setHtml(const QString &html)
@@ -1175,7 +1176,7 @@ void tst_QTextDocumentFragment::copySubTable()
     QTextDocumentFragment frag;
     {
         QTextTableFormat fmt;
-        QVector<QTextLength> constraints;
+        QList<QTextLength> constraints;
         constraints << QTextLength(QTextLength::PercentageLength, 16);
         constraints << QTextLength(QTextLength::PercentageLength, 28);
         constraints << QTextLength(QTextLength::PercentageLength, 28);
@@ -1660,19 +1661,22 @@ void tst_QTextDocumentFragment::html_cssShorthandFont()
         const char html[] = "<span style=\"font: 50px sans-serif\">Foo</span>";
         setHtml(html);
         QCOMPARE(cursor.charFormat().property(QTextFormat::FontPixelSize).toInt(), 50);
-        QCOMPARE(cursor.charFormat().property(QTextFormat::FontFamily).toString(), QString("sans-serif"));
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontFamilies).toStringList(),
+                 QStringList{"sans-serif"});
     }
     {
         const char html[] = "<span style=\"font: 50pt sans-serif\">Foo</span>";
         setHtml(html);
         QCOMPARE(cursor.charFormat().property(QTextFormat::FontPointSize).toInt(), 50);
-        QCOMPARE(cursor.charFormat().property(QTextFormat::FontFamily).toString(), QString("sans-serif"));
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontFamilies).toStringList(),
+                 QStringList{"sans-serif"});
     }
     {
         const char html[] = "<span style='font:7.0pt \"Times New Roman\"'>Foo</span>";
         setHtml(html);
         QCOMPARE(cursor.charFormat().property(QTextFormat::FontPointSize).toInt(), 7);
-        QCOMPARE(cursor.charFormat().property(QTextFormat::FontFamily).toString(), QString("Times New Roman"));
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontFamilies).toStringList(),
+                 QStringList{"Times New Roman"});
     }
     {
         const char html[] = "<span style='font:bold 7.0pt'>Foo</span>";
@@ -2411,8 +2415,9 @@ void tst_QTextDocumentFragment::html_quotedFontFamily()
     QFETCH(QStringList, fontFamilies);
 
     setHtml(html);
-    QCOMPARE(doc->begin().begin().fragment().charFormat().fontFamily(), fontFamily);
-    QCOMPARE(doc->begin().begin().fragment().charFormat().font().families(), fontFamilies);
+    const auto charFormat = doc->begin().begin().fragment().charFormat();
+    QCOMPARE(charFormat.fontFamilies().toStringList().value(0, QString()), fontFamily);
+    QCOMPARE(charFormat.font().families(), fontFamilies);
 }
 
 void tst_QTextDocumentFragment::defaultFont()
@@ -2426,7 +2431,7 @@ void tst_QTextDocumentFragment::defaultFont()
     doc->setDefaultFont(f);
     doc->setPlainText("Hello World");
     const QString html = doc->toHtml();
-    QLatin1String str("<body style=\" font-family:'Courier New'; font-size:100pt; font-weight:600; font-style:italic;\">");
+    QLatin1String str("<body style=\" font-family:'Courier New'; font-size:100pt; font-weight:700; font-style:italic;\">");
     QVERIFY(html.contains(str));
 }
 
@@ -2744,7 +2749,7 @@ void tst_QTextDocumentFragment::html_columnWidths()
     QCOMPARE(table->rows(), 2);
     QTextTableFormat fmt = table->format();
 
-    const QVector<QTextLength> columnWidths = fmt.columnWidthConstraints();
+    const QList<QTextLength> columnWidths = fmt.columnWidthConstraints();
     QCOMPARE(columnWidths.count(), 2);
     QCOMPARE(columnWidths.at(0).type(), QTextLength::VariableLength);
     QCOMPARE(columnWidths.at(1).type(), QTextLength::PercentageLength);
@@ -2755,7 +2760,7 @@ void tst_QTextDocumentFragment::css_fontWeight()
 {
     setHtml("<p style=\"font-weight:bold\">blah</p>");
     QCOMPARE(doc->begin().charFormat().fontWeight(), int(QFont::Bold));
-    setHtml("<p style=\"font-weight:600\">blah</p>");
+    setHtml("<p style=\"font-weight:700\">blah</p>");
     QCOMPARE(doc->begin().charFormat().fontWeight(), int(QFont::Bold));
 
 }
@@ -3133,7 +3138,8 @@ public:
 
     QPixmap testPixmap;
 
-    virtual QVariant loadResource(int type, const QUrl &name) {
+    virtual QVariant loadResource(int type, const QUrl &name) override
+    {
         if (name.toString() == QLatin1String("testPixmap")) {
             return testPixmap;
         }
@@ -4237,6 +4243,48 @@ void tst_QTextDocumentFragment::html_emptyInlineInsideBlock()
 {
     doc->setHtml(QString::fromLatin1("<!--StartFragment--><blockquote><span/>Foobar</blockquote><!--EndFragment-->"));
     QVERIFY(doc->firstBlock().blockFormat().leftMargin() > 0);
+}
+
+void tst_QTextDocumentFragment::css_fontAndWordSpacing()
+{
+    {
+        const char html[] = "<body style=\"letter-spacing:13px; word-spacing:15px;\">Foo</span>";
+        doc->setHtml(html);
+        cursor.movePosition(QTextCursor::Start);
+        cursor.movePosition(QTextCursor::NextCharacter);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacing).toInt(), 13);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacingType).toUInt(),
+                 (uint)(QFont::AbsoluteSpacing));
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontWordSpacing).toInt(), 15);
+    }
+    {
+        const char html[] = "<body style=\"letter-spacing:1em; word-spacing:0px;\">Foo</span>";
+        doc->setHtml(html);
+        cursor.movePosition(QTextCursor::Start);
+        cursor.movePosition(QTextCursor::NextCharacter);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacing).toInt(), 200);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacingType).toUInt(),
+                 (uint)(QFont::PercentageSpacing));
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontWordSpacing).toInt(), 0);
+    }
+    {
+        const char html[] = "<body style=\"letter-spacing:0em;\">Foo</span>";
+        doc->setHtml(html);
+        cursor.movePosition(QTextCursor::Start);
+        cursor.movePosition(QTextCursor::NextCharacter);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacing).toInt(), 100);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacingType).toUInt(),
+                 (uint)(QFont::PercentageSpacing));
+    }
+    {
+        const char html[] = "<body style=\"letter-spacing:-0.5em;\">Foo</span>";
+        doc->setHtml(html);
+        cursor.movePosition(QTextCursor::Start);
+        cursor.movePosition(QTextCursor::NextCharacter);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacing).toInt(), 50);
+        QCOMPARE(cursor.charFormat().property(QTextFormat::FontLetterSpacingType).toUInt(),
+                 (uint)(QFont::PercentageSpacing));
+    }
 }
 
 QTEST_MAIN(tst_QTextDocumentFragment)

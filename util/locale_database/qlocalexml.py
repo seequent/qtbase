@@ -183,12 +183,11 @@ class QLocaleXmlReader (object):
         def ids(t):
             return tuple(x[0] for x in t)
 
-        for i, pair in enumerate(self.__likely, 1):
+        for pair in self.__likely:
             have = self.__fromNames(pair[0])
             give = self.__fromNames(pair[1])
             yield ('_'.join(tag(have)), ids(have),
-                   '_'.join(tag(give)), ids(give),
-                   i == len(self.__likely))
+                   '_'.join(tag(give)), ids(give))
 
     def defaultMap(self):
         """Map language and script to their default country by ID.
@@ -335,9 +334,9 @@ class QLocaleXmlWriter (object):
 
     # Output of various sections, in their usual order:
     def enumData(self, languages, scripts, countries):
-        self.__enumTable('languageList', languages)
-        self.__enumTable('scriptList', scripts)
-        self.__enumTable('countryList', countries)
+        self.__enumTable('language', languages)
+        self.__enumTable('script', scripts)
+        self.__enumTable('country', countries)
 
     def likelySubTags(self, entries):
         self.__openTag('likelySubtags')
@@ -381,14 +380,14 @@ class QLocaleXmlWriter (object):
         raise Error('Attempted to write data after closing :-(')
 
     def __enumTable(self, tag, table):
-        self.__openTag(tag)
+        self.__openTag(tag + 'List')
         for key, value in table.iteritems():
-            self.__openTag(tag[:-4])
+            self.__openTag(tag)
             self.inTag('name', value[0])
             self.inTag('id', key)
             self.inTag('code', value[1])
-            self.__closeTag(tag[:-4])
-        self.__closeTag(tag)
+            self.__closeTag(tag)
+        self.__closeTag(tag + 'List')
 
     def __likelySubTag(self, tag, likely):
         self.__openTag(tag)
@@ -476,6 +475,11 @@ class Locale (object):
         for k in cls.propsMonthDay('months'):
             data[k] = dict((cal, lookup('_'.join((k, cal)))) for cal in calendars)
 
+        grouping = lookup('groupSizes').split(';')
+        data.update(groupLeast = int(grouping[0]),
+                    groupHigher = int(grouping[1]),
+                    groupTop = int(grouping[2]))
+
         return cls(data)
 
     def toXml(self, write, calendars=('gregorian',)):
@@ -515,6 +519,7 @@ class Locale (object):
                 for cal in calendars):
             write(key, escape(get(key)).encode('utf-8'))
 
+        write('groupSizes', ';'.join(str(x) for x in get('groupSizes')))
         for key in ('currencyDigits', 'currencyRounding'):
             write(key, get(key))
 
@@ -586,6 +591,7 @@ class Locale (object):
                    language='C', language_code='0', languageEndonym='',
                    script='AnyScript', script_code='0',
                    country='AnyCountry', country_code='0', countryEndonym='',
+                   groupSizes=(3, 3, 1),
                    decimal='.', group=',', list=';', percent='%',
                    zero='0', minus='-', plus='+', exp='e',
                    quotationStart='"', quotationEnd='"',

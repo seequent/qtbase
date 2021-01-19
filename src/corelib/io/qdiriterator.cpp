@@ -125,7 +125,7 @@ class QDirIteratorPrivate
 {
 public:
     QDirIteratorPrivate(const QFileSystemEntry &entry, const QStringList &nameFilters,
-                        QDir::Filters filters, QDirIterator::IteratorFlags flags, bool resolveEngine = true);
+                        QDir::Filters _filters, QDirIterator::IteratorFlags flags, bool resolveEngine = true);
 
     void advance();
 
@@ -142,7 +142,7 @@ public:
     const QDirIterator::IteratorFlags iteratorFlags;
 
 #if QT_CONFIG(regularexpression)
-    QVector<QRegularExpression> nameRegExps;
+    QList<QRegularExpression> nameRegExps;
 #endif
 
     QDirIteratorPrivateIteratorStack<QAbstractFileEngineIterator> fileEngineIterators;
@@ -161,10 +161,10 @@ public:
     \internal
 */
 QDirIteratorPrivate::QDirIteratorPrivate(const QFileSystemEntry &entry, const QStringList &nameFilters,
-                                         QDir::Filters filters, QDirIterator::IteratorFlags flags, bool resolveEngine)
+                                         QDir::Filters _filters, QDirIterator::IteratorFlags flags, bool resolveEngine)
     : dirEntry(entry)
       , nameFilters(nameFilters.contains(QLatin1String("*")) ? QStringList() : nameFilters)
-      , filters(QDir::NoFilter == filters ? QDir::AllEntries : filters)
+      , filters(QDir::NoFilter == _filters ? QDir::AllEntries : _filters)
       , iteratorFlags(flags)
 {
 #if QT_CONFIG(regularexpression)
@@ -355,9 +355,9 @@ bool QDirIteratorPrivate::matchesFilters(const QString &fileName, const QFileInf
     // skip symlinks
     const bool skipSymlinks = (filters & QDir::NoSymLinks);
     const bool includeSystem = (filters & QDir::System);
-    if(skipSymlinks && fi.isSymLink()) {
+    if (skipSymlinks && fi.isSymLink()) {
         // The only reason to save this file is if it is a broken link and we are requesting system files.
-        if(!includeSystem || fi.exists())
+        if (!includeSystem || fi.exists())
             return false;
     }
 
@@ -462,10 +462,15 @@ QDirIterator::QDirIterator(const QString &path, IteratorFlags flags)
     By default, \a flags is NoIteratorFlags, which provides the same behavior
     as QDir::entryList().
 
+    For example, the following iterator could be used to iterate over audio
+    files:
+
+    \snippet code/src_corelib_io_qdiriterator.cpp 2
+
     \note To list symlinks that point to non existing files, QDir::System must be
      passed to the flags.
 
-    \sa hasNext(), next(), IteratorFlags
+    \sa hasNext(), next(), IteratorFlags, QDir::setNameFilters()
 */
 QDirIterator::QDirIterator(const QString &path, const QStringList &nameFilters,
                            QDir::Filters filters, IteratorFlags flags)

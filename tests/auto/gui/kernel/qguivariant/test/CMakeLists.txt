@@ -4,7 +4,7 @@
 ## tst_qguivariant Test:
 #####################################################################
 
-add_qt_test(tst_qguivariant
+qt_internal_add_test(tst_qguivariant
     SOURCES
         tst_qguivariant.cpp
     INCLUDE_DIRECTORIES
@@ -14,22 +14,11 @@ add_qt_test(tst_qguivariant
 )
 
 # Resources:
-set(tst_qguivariant_resource_files
-    "black.png"
-    "black2.png"
-)
-
-add_qt_resource(tst_qguivariant "tst_qguivariant"
-    PREFIX
-        "/"
-    FILES
-        ${tst_qguivariant_resource_files}
-)
 set(qguivariant_resource_files
     "data"
 )
 
-add_qt_resource(tst_qguivariant "qguivariant"
+qt_internal_add_resource(tst_qguivariant "qguivariant"
     PREFIX
         "/"
     FILES

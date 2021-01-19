@@ -27,9 +27,12 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QSignalSpy>
+
 #include <QtWidgets/private/qsidebar_p.h>
-#include <QtWidgets/private/qfilesystemmodel_p.h>
+#include <QtGui/private/qfilesystemmodel_p.h>
+#include <QtWidgets/qfileiconprovider.h>
 
 class tst_QSidebar : public QObject {
   Q_OBJECT
@@ -40,12 +43,16 @@ private slots:
     void addUrls();
 
     void goToUrl();
+
+private:
+    QFileIconProvider defaultIconProvider;
 };
 
 void tst_QSidebar::setUrls()
 {
     QList<QUrl> urls;
     QFileSystemModel fsmodel;
+    fsmodel.setIconProvider(&defaultIconProvider);
     QSidebar qsidebar;
     qsidebar.setModelAndUrls(&fsmodel, urls);
     QAbstractItemModel *model = qsidebar.model();
@@ -67,6 +74,7 @@ void tst_QSidebar::selectUrls()
     urls << QUrl::fromLocalFile(QDir::rootPath())
          << QUrl::fromLocalFile(QDir::temp().absolutePath());
     QFileSystemModel fsmodel;
+    fsmodel.setIconProvider(&defaultIconProvider);
     QSidebar qsidebar;
     qsidebar.setModelAndUrls(&fsmodel, urls);
 
@@ -79,6 +87,7 @@ void tst_QSidebar::addUrls()
 {
     QList<QUrl> emptyUrls;
     QFileSystemModel fsmodel;
+    fsmodel.setIconProvider(&defaultIconProvider);
     QSidebar qsidebar;
     qsidebar.setModelAndUrls(&fsmodel, emptyUrls);
     QAbstractItemModel *model = qsidebar.model();
@@ -179,6 +188,7 @@ void tst_QSidebar::goToUrl()
     urls << QUrl::fromLocalFile(QDir::rootPath())
          << QUrl::fromLocalFile(QDir::temp().absolutePath());
     QFileSystemModel fsmodel;
+    fsmodel.setIconProvider(&defaultIconProvider);
     QSidebar qsidebar;
     qsidebar.setModelAndUrls(&fsmodel, urls);
     qsidebar.show();

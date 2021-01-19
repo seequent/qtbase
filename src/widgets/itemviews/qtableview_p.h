@@ -127,7 +127,7 @@ private:
     bool cleanSpanSubIndex(SubIndex &subindex, int end, bool update = false);
 };
 
-Q_DECLARE_TYPEINFO ( QSpanCollection::Span, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO ( QSpanCollection::Span, Q_RELOCATABLE_TYPE);
 
 
 class QTableViewPrivate : public QAbstractItemViewPrivate
@@ -190,8 +190,8 @@ public:
     int columnSectionAnchor;
     int columnResizeTimerID;
     int rowResizeTimerID;
-    QVector<int> columnsToUpdate;
-    QVector<int> rowsToUpdate;
+    QList<int> columnsToUpdate;
+    QList<int> rowsToUpdate;
     QHeaderView *horizontalHeader;
     QHeaderView *verticalHeader;
 #if QT_CONFIG(abstractbutton)

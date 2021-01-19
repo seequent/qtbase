@@ -1,29 +1,43 @@
 # special case skip regeneration
-cmake_minimum_required(VERSION 3.15.0)
 
-# Run auto detection routines, but not when doing stnadalone tests. In that case the detection
-# results are takend from either QtBuildInternals or the qt.toolchain.cmake file.
-if(NOT QT_BUILD_STANDALONE_TESTS)
+# Need an explicit call at the top level. This is the absolute minimum version
+# needed to configure the project with any combination of enabled features.
+# The call to qt_build_repo_begin() will upgrade policies further.
+cmake_minimum_required(VERSION 3.16)
+
+# Get the repo version and CMake policy details
+include(.cmake.conf)
+
+# Bail out if parts of the build directory's components are symlinks.
+get_filename_component(build_dir_absolute "${CMAKE_BINARY_DIR}" ABSOLUTE)
+get_filename_component(build_dir_realpath "${CMAKE_BINARY_DIR}" REALPATH)
+if(NOT build_dir_absolute STREQUAL build_dir_realpath)
+    message(FATAL_ERROR "The build path \"${CMAKE_BINARY_DIR}\" contains symlinks. \
+This is not supported. Please use some other - transparent - mechanism to map directories.")
+endif()
+unset(build_dir_absolute)
+unset(build_dir_realpath)
+
+# Early check to reduce chance of warning being lost in the output
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/QtCMakeVersionHelpers.cmake")
+qt_internal_check_for_suitable_cmake_version()
+
+# Run auto detection routines, but not when doing standalone tests. In that case, the detection
+# results are taken from either QtBuildInternals or the qt.toolchain.cmake file. Also, inhibit
+# auto-detection in a top-level build, because the top-level project file already includes it.
+if(NOT QT_BUILD_STANDALONE_TESTS AND NOT QT_SUPER_BUILD)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/QtAutoDetect.cmake)
 endif()
 
-if (CMAKE_CROSSCOMPILING AND CMAKE_SYSROOT)
-    # When cross compiling with CMake any calls to pkg_check_modules() will
-    # search into the host system instead of the target sysroot.
-    # The current work around is based on the discussion found at
-    # https://gitlab.kitware.com/cmake/cmake/-/merge_requests/4478
-    set(ENV{PKG_CONFIG_DIR} "")
-    set(ENV{PKG_CONFIG_LIBDIR} "${CMAKE_SYSROOT}/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/pkgconfig")
-    set(ENV{PKG_CONFIG_SYSROOT_DIR} ${CMAKE_SYSROOT})
-endif()
-
-include(".cmake.conf")
 project(QtBase
     VERSION "${QT_REPO_MODULE_VERSION}"
     DESCRIPTION "Qt Base Libraries"
     HOMEPAGE_URL "https://qt.io/"
     LANGUAGES CXX C ASM
 )
+
+# Make sure we only use latest private CMake API, aka no compatibility wrappers.
+set(QT_NO_INTERNAL_COMPATIBILITY_FUNCTIONS TRUE)
 
 if(NOT QT_BUILD_STANDALONE_TESTS)
     ## Add some paths to check for cmake modules:
@@ -74,7 +88,18 @@ if(NOT QT_BUILD_STANDALONE_TESTS)
     qt_set_language_standards()
 
     #include CoreMacros() for qt6_generate_meta_types()
+    set(QT_DEFAULT_MAJOR_VERSION 6)
     include(src/corelib/Qt6CoreMacros.cmake)
+
+    # Needed when building qtbase for android.
+    include(src/corelib/Qt6AndroidMacros.cmake)
+
+    # Set up optimization flags like in qmake.
+    # This function must be called after the global QT_FEATURE_xxx variables have been set up,
+    # aka after QtBaseGlobalTargets is processed.
+    # It also has to be called /before/ adding add_subdirectory(src), so that per-directory
+    # modifications can still be applied if necessary (like in done in Core and Gui).
+    qt_internal_set_up_config_optimizations_like_in_qmake()
 
     ## Setup documentation
     add_subdirectory(doc)
@@ -83,9 +108,9 @@ if(NOT QT_BUILD_STANDALONE_TESTS)
     add_subdirectory(src)
 endif()
 
-if(BUILD_TESTING)
+if(QT_BUILD_TESTS)
     add_subdirectory(tests)
-    if(QT_NO_MAKE_TESTS)
+    if(NOT QT_BUILD_TESTS_BY_DEFAULT)
         set_property(DIRECTORY tests PROPERTY EXCLUDE_FROM_ALL TRUE)
     endif()
 endif()
@@ -105,7 +130,8 @@ if(NOT QT_BUILD_STANDALONE_TESTS)
     foreach(entry IN LISTS mkspecs_subdirs)
         if (IS_DIRECTORY ${entry})
             qt_copy_or_install(DIRECTORY "${entry}"
-                               DESTINATION ${mkspecs_install_dir})
+                               DESTINATION ${mkspecs_install_dir}
+                               USE_SOURCE_PERMISSIONS)
         else()
             qt_copy_or_install(FILES "${entry}"
                                DESTINATION ${mkspecs_install_dir})
@@ -115,9 +141,9 @@ endif()
 
 qt_build_repo_end()
 
-if(NOT QT_BUILD_STANDALONE_TESTS AND BUILD_EXAMPLES)
+if(NOT QT_BUILD_STANDALONE_TESTS AND QT_BUILD_EXAMPLES)
     add_subdirectory(examples)
-    if(QT_NO_MAKE_EXAMPLES)
+    if(NOT QT_BUILD_EXAMPLES_BY_DEFAULT)
         set_property(DIRECTORY examples PROPERTY EXCLUDE_FROM_ALL TRUE)
     endif()
 endif()

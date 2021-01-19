@@ -347,63 +347,17 @@ void QOpenGLContextPrivate::_q_screenDestroyed(QObject *object)
 }
 
 /*!
-    Set the native handles for this context. When create() is called and a
-    native handle is set, configuration settings, like format(), are ignored
-    since this QOpenGLContext will wrap an already created native context
-    instead of creating a new one from scratch.
+    \fn template <typename QNativeInterface> QNativeInterface *QOpenGLContext::nativeInterface() const
 
-    On some platforms the native context handle is not sufficient and other
-    related handles (for example, for a window or display) have to be provided
-    in addition. Therefore \a handle is variant containing a platform-specific
-    value type. These classes can be found in the QtPlatformHeaders module.
+    Returns a native interface of the given type for the context.
 
-    When create() is called with native handles set, QOpenGLContext does not
-    take ownership of the handles, so destroying the QOpenGLContext does not
-    destroy the native context.
+    This function provides access to platform specific functionality
+    of QOpenGLContext, as defined in the QNativeInterface namespace:
 
-    \note Some frameworks track the current context and surfaces internally.
-    Making the adopted QOpenGLContext current via Qt will have no effect on such
-    other frameworks' internal state. Therefore a subsequent makeCurrent done
-    via the other framework may have no effect. It is therefore advisable to
-    make explicit calls to make no context and surface current to reset the
-    other frameworks' internal state after performing OpenGL operations via Qt.
+    \annotatedlist native-interfaces-qopenglcontext
 
-    \note Using foreign contexts with Qt windows and Qt contexts with windows
-    and surfaces created by other frameworks may give unexpected results,
-    depending on the platform, due to potential mismatches in context and window
-    pixel formats. To make sure this does not happen, avoid making contexts and
-    surfaces from different frameworks current together. Instead, prefer
-    approaches based on context sharing where OpenGL resources like textures are
-    accessible both from Qt's and the foreign framework's contexts.
-
-    \since 5.4
-    \sa nativeHandle()
-*/
-void QOpenGLContext::setNativeHandle(const QVariant &handle)
-{
-    Q_D(QOpenGLContext);
-    d->nativeHandle = handle;
-}
-
-/*!
-    Returns the native handle for the context.
-
-    This function provides access to the QOpenGLContext's underlying native
-    context. The returned variant contains a platform-specific value type. These
-    classes can be found in the module QtPlatformHeaders.
-
-    On platforms where retrieving the native handle is not supported, or if
-    neither create() nor setNativeHandle() was called, a null variant is
-    returned.
-
-    \since 5.4
-    \sa setNativeHandle()
+    If the requested interface is not available a \nullptr is returned.
  */
-QVariant QOpenGLContext::nativeHandle() const
-{
-    Q_D(const QOpenGLContext);
-    return d->nativeHandle;
-}
 
 /*!
     Attempts to create the OpenGL context with the current configuration.
@@ -433,16 +387,27 @@ bool QOpenGLContext::create()
     if (d->platformGLContext)
         destroy();
 
-    d->platformGLContext = QGuiApplicationPrivate::platformIntegration()->createPlatformOpenGLContext(this);
-    if (!d->platformGLContext)
+    auto *platformContext = QGuiApplicationPrivate::platformIntegration()->createPlatformOpenGLContext(this);
+    if (!platformContext)
         return false;
-    d->platformGLContext->setContext(this);
-    d->platformGLContext->initialize();
-    if (!d->platformGLContext->isSharing())
-        d->shareContext = nullptr;
-    d->shareGroup = d->shareContext ? d->shareContext->shareGroup() : new QOpenGLContextGroup;
-    d->shareGroup->d_func()->addContext(this);
+
+    d->adopt(platformContext);
+
     return isValid();
+}
+
+void QOpenGLContextPrivate::adopt(QPlatformOpenGLContext *context)
+{
+    Q_Q(QOpenGLContext);
+
+    platformGLContext = context;
+    platformGLContext->setContext(q);
+    platformGLContext->initialize();
+
+    if (!platformGLContext->isSharing())
+        shareContext = nullptr;
+    shareGroup = shareContext ? shareContext->shareGroup() : new QOpenGLContextGroup;
+    shareGroup->d_func()->addContext(q);
 }
 
 /*!
@@ -484,7 +449,12 @@ void QOpenGLContext::destroy()
     }
     d->textureFunctions = nullptr;
 
-    d->nativeHandle = QVariant();
+    if (d->vaoHelperDestroyCallback) {
+        Q_ASSERT(d->vaoHelper);
+        d->vaoHelperDestroyCallback(d->vaoHelper);
+        d->vaoHelperDestroyCallback = nullptr;
+    }
+    d->vaoHelper = nullptr;
 }
 
 /*!
@@ -809,12 +779,6 @@ void QOpenGLContext::swapBuffers(QSurface *surface)
         return;
     }
 
-    if (surface->surfaceClass() == QSurface::Window
-        && !qt_window_private(static_cast<QWindow *>(surface))->receivedExpose)
-    {
-        qWarning("QOpenGLContext::swapBuffers() called with non-exposed window, behavior is undefined");
-    }
-
     QPlatformSurface *surfaceHandle = surface->surfaceHandle();
     if (!surfaceHandle)
         return;
@@ -905,33 +869,6 @@ QScreen *QOpenGLContext::screen() const
 {
     Q_D(const QOpenGLContext);
     return d->screen;
-}
-
-/*!
-  Returns the platform-specific handle for the OpenGL implementation that
-  is currently in use. (for example, a HMODULE on Windows)
-
-  On platforms that do not use dynamic GL switching, the return value
-  is \nullptr.
-
-  The library might be GL-only, meaning that windowing system interface
-  functions (for example EGL) may live in another, separate library.
-
-  \note This function requires that the QGuiApplication instance is already created.
-
-  \sa openGLModuleType()
-
-  \since 5.3
- */
-void *QOpenGLContext::openGLModuleHandle()
-{
-#ifdef QT_OPENGL_DYNAMIC
-    QPlatformNativeInterface *ni = QGuiApplication::platformNativeInterface();
-    Q_ASSERT(ni);
-    return ni->nativeResourceForIntegration(QByteArrayLiteral("glhandle"));
-#else
-    return nullptr;
-#endif
 }
 
 /*!
@@ -1306,14 +1243,14 @@ void QOpenGLMultiGroupSharedResource::insert(QOpenGLContext *context, QOpenGLSha
 QOpenGLSharedResource *QOpenGLMultiGroupSharedResource::value(QOpenGLContext *context)
 {
     QOpenGLContextGroup *group = context->shareGroup();
-    return group->d_func()->m_resources.value(this, 0);
+    return group->d_func()->m_resources.value(this, nullptr);
 }
 
 QList<QOpenGLSharedResource *> QOpenGLMultiGroupSharedResource::resources() const
 {
     QList<QOpenGLSharedResource *> result;
     for (QList<QOpenGLContextGroup *>::const_iterator it = m_groups.constBegin(); it != m_groups.constEnd(); ++it) {
-        QOpenGLSharedResource *resource = (*it)->d_func()->m_resources.value(const_cast<QOpenGLMultiGroupSharedResource *>(this), 0);
+        QOpenGLSharedResource *resource = (*it)->d_func()->m_resources.value(const_cast<QOpenGLMultiGroupSharedResource *>(this), nullptr);
         if (resource)
             result << resource;
     }
@@ -1343,8 +1280,7 @@ QDebug operator<<(QDebug debug, const QOpenGLContext *ctx)
     if (ctx)  {
         debug << static_cast<const void *>(ctx);
         if (ctx->isValid()) {
-            debug << ", nativeHandle=" << ctx->nativeHandle()
-                << ", format=" << ctx->format();
+            debug << ", format=" << ctx->format();
             if (const QSurface *sf = ctx->surface())
                 debug << ", surface=" << sf;
             if (const QScreen *s = ctx->screen())

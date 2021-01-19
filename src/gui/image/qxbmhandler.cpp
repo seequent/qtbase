@@ -44,12 +44,15 @@
 
 #include <qimage.h>
 #include <qiodevice.h>
+#include <qloggingcategory.h>
 #include <qvariant.h>
 
 #include <stdio.h>
 #include <ctype.h>
 
 QT_BEGIN_NAMESPACE
+
+Q_DECLARE_LOGGING_CATEGORY(lcImageIo)
 
 /*****************************************************************************
   X bitmap image read/write functions
@@ -147,11 +150,8 @@ static bool read_xbm_body(QIODevice *device, int w, int h, QImage *outImage)
         p = strstr(buf, "0x");
     } while (!p);
 
-    if (outImage->size() != QSize(w, h) || outImage->format() != QImage::Format_MonoLSB) {
-        *outImage = QImage(w, h, QImage::Format_MonoLSB);
-        if (outImage->isNull())
-            return false;
-    }
+    if (!QImageIOHandler::allocateImage(QSize(w, h), QImage::Format_MonoLSB, outImage))
+        return false;
 
     outImage->fill(Qt::color0);       // in case the image data does not cover the full image
 
@@ -164,7 +164,9 @@ static bool read_xbm_body(QIODevice *device, int w, int h, QImage *outImage)
     w = (w+7)/8;                                // byte width
 
     while (y < h) {                                // for all encoded bytes...
-        if (p) {                                // p = "0x.."
+        if (p && p < (buf + readBytes - 3)) {      // p = "0x.."
+            if (!isxdigit(p[2]) || !isxdigit(p[3]))
+                return false;
             *b++ = hex2byte(p+2);
             p += 2;
             if (++x == w && ++y < h) {
@@ -294,7 +296,10 @@ bool QXbmHandler::canRead() const
 
 bool QXbmHandler::canRead(QIODevice *device)
 {
-    QImage image;
+    if (!device) {
+        qCWarning(lcImageIo, "QXbmHandler::canRead() called with no device");
+        return false;
+    }
 
     // it's impossible to tell whether we can load an XBM or not when
     // it's from a sequential device, as the only way to do it is to
@@ -302,6 +307,7 @@ bool QXbmHandler::canRead(QIODevice *device)
     if (device->isSequential())
         return false;
 
+    QImage image;
     qint64 oldPos = device->pos();
     bool success = read_xbm_image(device, &image);
     device->seek(oldPos);

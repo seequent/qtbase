@@ -4,28 +4,23 @@
 ## tst_qtcpsocket Test:
 #####################################################################
 
-add_qt_test(tst_qtcpsocket
+qt_internal_add_test(tst_qtcpsocket
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../" # special case
     SOURCES
         ../tst_qtcpsocket.cpp
     PUBLIC_LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
+    QT_TEST_SERVER_LIST "danted" "squid" "apache2" "ftp-proxy" "vsftpd" "iptables" "cyrus" # special case
 )
 
 ## Scopes:
 #####################################################################
 
-extend_target(tst_qtcpsocket CONDITION WIN32
+qt_internal_extend_target(tst_qtcpsocket CONDITION WIN32
     PUBLIC_LIBRARIES
         ws2_32
 )
-
-# special case begin
-set(THREADS_PREFER_PTHREAD_FLAG 1)
-find_package(Threads)
-target_link_libraries(tst_qtcpsocket PRIVATE Threads::Threads)
-# special case end
 
 #### Keys ignored in scope 4:.:.:test.pro:(CMAKE_BUILD_TYPE STREQUAL Debug):
 # DESTDIR = "../debug"

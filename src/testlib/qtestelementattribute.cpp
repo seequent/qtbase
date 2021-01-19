@@ -80,6 +80,10 @@ QT_BEGIN_NAMESPACE
   \value AI_Value
 
   \value AI_Iterations
+
+  \value AI_Time
+
+  \value AI_Timestamp
 */
 
 /*! \enum QTest::LogElementType
@@ -135,7 +139,9 @@ const char *QTestElementAttribute::name() const
         "metric",
         "tag",
         "value",
-        "iterations"
+        "iterations",
+        "time",
+        "timestamp"
     };
 
     if (attributeIndex != QTest::AI_Undefined)

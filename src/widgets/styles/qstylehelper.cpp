@@ -348,7 +348,7 @@ void drawDial(const QStyleOptionSlider *option, QPainter *painter)
 
     QPointF dp = calcRadialPos(option, qreal(0.70));
     buttonColor = buttonColor.lighter(104);
-    buttonColor.setAlphaF(qreal(0.8));
+    buttonColor.setAlphaF(0.8f);
     const qreal ds = r/qreal(7.0);
     QRectF dialRect(dp.x() - ds, dp.y() - ds, 2*ds, 2*ds);
     QRadialGradient dialGradient(dialRect.center().x() + dialRect.width()/2,
@@ -385,7 +385,7 @@ void drawBorderPixmap(const QPixmap &pixmap, QPainter *painter, const QRect &rec
                             QRect(left, 0, size.width() -right - left, top));
 
         //top-left
-        if(left > 0)
+        if (left > 0)
             painter->drawPixmap(QRect(rect.left(), rect.top(), left, top), pixmap,
                                 QRect(0, 0, left, top));
 

@@ -4,7 +4,7 @@
 ## qlocale Binary:
 #####################################################################
 
-add_qt_manual_test(qlocale
+qt_internal_add_manual_test(qlocale
     GUI
     SOURCES
         calendar.cpp calendar.h

@@ -204,12 +204,23 @@ qint64 QLocalSocket::readData(char *data, qint64 maxSize)
     }
 }
 
+qint64 QLocalSocket::skipData(qint64 maxSize)
+{
+    return QIODevice::skipData(maxSize);
+}
+
 qint64 QLocalSocket::writeData(const char *data, qint64 len)
 {
     Q_D(QLocalSocket);
+    if (!isValid()) {
+        d->error = OperationError;
+        d->errorString = tr("Socket is not connected");
+        return -1;
+    }
+
     if (len == 0)
         return 0;
-    d->writeBuffer.append(data, len);
+    d->write(data, len);
     if (!d->pipeWriter) {
         d->pipeWriter = new QWindowsPipeWriter(d->handle, this);
         connect(d->pipeWriter, &QWindowsPipeWriter::bytesWritten,

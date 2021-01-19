@@ -50,7 +50,6 @@
 #include "qdebug.h"
 
 #include <private/qwidget_p.h>
-#include <private/qdesktopwidget_p.h>
 #include <QtWidgets/qabstractscrollarea.h>
 
 QT_BEGIN_NAMESPACE
@@ -228,7 +227,7 @@ QSizeGrip::~QSizeGrip()
 QSize QSizeGrip::sizeHint() const
 {
     QStyleOption opt(0);
-    opt.init(this);
+    opt.initFrom(this);
     return style()->sizeFromContents(QStyle::CT_SizeGrip, &opt, QSize(13, 13), this);
 }
 
@@ -245,7 +244,7 @@ void QSizeGrip::paintEvent(QPaintEvent *event)
     Q_D(QSizeGrip);
     QPainter painter(this);
     QStyleOptionSizeGrip opt;
-    opt.init(this);
+    opt.initFrom(this);
     opt.corner = d->m_corner;
     style()->drawControl(QStyle::CE_SizeGrip, &opt, &painter, this);
 }

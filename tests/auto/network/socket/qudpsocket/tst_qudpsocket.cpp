@@ -28,7 +28,12 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QSignalSpy>
+#include <QtEndian>
+#include <QProcess>
+#include <QScopeGuard>
+#include <QVersionNumber>
 
 #include <qcoreapplication.h>
 #include <qfileinfo.h>
@@ -137,7 +142,7 @@ private:
     bool m_workaroundLinuxKernelBug;
     QList<QHostAddress> allAddresses;
     QHostAddress multicastGroup4, multicastGroup6;
-    QVector<QHostAddress> linklocalMulticastGroups;
+    QList<QHostAddress> linklocalMulticastGroups;
     QUdpSocket *m_asyncSender;
     QUdpSocket *m_asyncReceiver;
 };

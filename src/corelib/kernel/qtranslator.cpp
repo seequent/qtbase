@@ -490,7 +490,7 @@ bool QTranslator::load(const QString & filename, const QString & directory,
     }
 
     const QString suffixOrDotQM = suffix.isNull() ? dotQmLiteral() : suffix;
-    QStringRef fname(&filename);
+    QStringView fname(filename);
     QString realname;
     const QString delims = search_delimiters.isNull() ? QStringLiteral("_.") : search_delimiters;
 
@@ -648,7 +648,6 @@ static QString find_translation(const QLocale & locale,
     QString realname;
     realname += path + filename + prefix; // using += in the hope for some reserve capacity
     const int realNameBaseSize = realname.size();
-    QStringList fuzzyLocales;
 
     // see http://www.unicode.org/reports/tr35/#LanguageMatching for inspiration
 
@@ -658,36 +657,16 @@ static QString find_translation(const QLocale & locale,
         QString lang = languages.at(i);
         QString lowerLang = lang.toLower();
         if (lang != lowerLang)
-            languages.insert(i+1, lowerLang);
+            languages.insert(i + 1, lowerLang);
     }
 #endif
 
-    // try explicit locales names first
     for (QString localeName : qAsConst(languages)) {
         localeName.replace(QLatin1Char('-'), QLatin1Char('_'));
 
-        realname += localeName + suffixOrDotQM;
-        if (is_readable_file(realname))
-            return realname;
-
-        realname.truncate(realNameBaseSize + localeName.size());
-        if (is_readable_file(realname))
-            return realname;
-
-        realname.truncate(realNameBaseSize);
-        fuzzyLocales.append(localeName);
-    }
-
-    // start guessing
-    for (const QString &fuzzyLocale : qAsConst(fuzzyLocales)) {
-        QStringRef localeName(&fuzzyLocale);
+        // try the complete locale name first and progressively truncate from
+        // the end until a matching language tag is found (with or without suffix)
         for (;;) {
-            int rightmost = localeName.lastIndexOf(QLatin1Char('_'));
-            // no truncations? fail
-            if (rightmost <= 0)
-                break;
-            localeName.truncate(rightmost);
-
             realname += localeName + suffixOrDotQM;
             if (is_readable_file(realname))
                 return realname;
@@ -697,6 +676,11 @@ static QString find_translation(const QLocale & locale,
                 return realname;
 
             realname.truncate(realNameBaseSize);
+
+            int rightmost = localeName.lastIndexOf(QLatin1Char('_'));
+            if (rightmost <= 0)
+                break; // no truncations anymore, break
+            localeName.truncate(rightmost);
         }
     }
 
@@ -755,10 +739,10 @@ static QString find_translation(const QLocale & locale,
     \li \c /opt/foolib/foo.es
     \li \c /opt/foolib/foo.fr_CA.qm
     \li \c /opt/foolib/foo.fr_CA
-    \li \c /opt/foolib/foo.de.qm
-    \li \c /opt/foolib/foo.de
     \li \c /opt/foolib/foo.fr.qm
     \li \c /opt/foolib/foo.fr
+    \li \c /opt/foolib/foo.de.qm
+    \li \c /opt/foolib/foo.de
     \li \c /opt/foolib/foo.qm
     \li \c /opt/foolib/foo.
     \li \c /opt/foolib/foo
@@ -837,7 +821,7 @@ bool QTranslatorPrivate::do_load(const uchar *data, qsizetype len, const QString
         }
 
         if (tag == QTranslatorPrivate::Language) {
-            language = QString::fromUtf8((const char*)data, blockLen);
+            language = QString::fromUtf8((const char *)data, blockLen);
         } else if (tag == QTranslatorPrivate::Contexts) {
             contextArray = data;
             contextLength = blockLen;
@@ -906,7 +890,7 @@ static QString getMessage(const uchar *m, const uchar *end, const char *context,
         uchar tag = 0;
         if (m < end)
             tag = read8(m++);
-        switch((Tag)tag) {
+        switch ((Tag)tag) {
         case Tag_End:
             goto end;
         case Tag_Translation: {
@@ -1015,7 +999,7 @@ QString QTranslatorPrivate::do_translate(const char *context, const char *source
         elfHash_finish(h);
 
         const uchar *start = offsetArray;
-        const uchar *end = start + ((numItems-1) << 3);
+        const uchar *end = start + ((numItems - 1) << 3);
         while (start <= end) {
             const uchar *middle = start + (((end - start) >> 4) << 3);
             uint hash = read32(middle);
@@ -1031,7 +1015,7 @@ QString QTranslatorPrivate::do_translate(const char *context, const char *source
 
         if (start <= end) {
             // go back on equal key
-            while (start != offsetArray && read32(start) == read32(start-8))
+            while (start != offsetArray && read32(start) == read32(start - 8))
                 start -= 8;
 
             while (start < offsetArray + offsetLength) {

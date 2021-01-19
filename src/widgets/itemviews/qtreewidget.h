@@ -40,11 +40,11 @@
 #ifndef QTREEWIDGET_H
 #define QTREEWIDGET_H
 
-#include <QtWidgets/qtwidgetsglobal.h>
 #include <QtWidgets/qtreeview.h>
 #include <QtWidgets/qtreewidgetitemiterator.h>
+#include <QtWidgets/qtwidgetsglobal.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qvariant.h>
-#include <QtCore/qvector.h>
 
 QT_REQUIRE_CONFIG(treewidget);
 
@@ -201,7 +201,7 @@ private:
 
     int rtti;
     // One item has a vector of column entries. Each column has a vector of (role, value) pairs.
-    QVector< QVector<QWidgetItemData> > values;
+    QList<QList<QWidgetItemData>> values;
     QTreeWidget *view;
     QTreeWidgetItemPrivate *d;
     QTreeWidgetItem *par;
@@ -303,7 +303,6 @@ public:
 
     QTreeWidgetItem *itemAbove(const QTreeWidgetItem *item) const;
     QTreeWidgetItem *itemBelow(const QTreeWidgetItem *item) const;
-    QList<QTreeWidgetItem*> items(const QMimeData *data) const;
 
     QModelIndex indexFromItem(const QTreeWidgetItem *item, int column = 0) const;
     QTreeWidgetItem *itemFromIndex(const QModelIndex &index) const;
@@ -323,7 +322,6 @@ Q_SIGNALS:
     void itemDoubleClicked(QTreeWidgetItem *item, int column);
     void itemActivated(QTreeWidgetItem *item, int column);
     void itemEntered(QTreeWidgetItem *item, int column);
-    // ### Qt 6: add changed roles
     void itemChanged(QTreeWidgetItem *item, int column);
     void itemExpanded(QTreeWidgetItem *item);
     void itemCollapsed(QTreeWidgetItem *item);

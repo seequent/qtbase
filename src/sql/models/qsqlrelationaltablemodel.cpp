@@ -275,7 +275,7 @@ public:
     QString fullyQualifiedFieldName(const QString &tableName, const QString &fieldName) const;
 
     int nameToIndex(const QString &name) const override;
-    mutable QVector<QRelation> relations;
+    mutable QList<QRelation> relations;
     QSqlRecord baseRec; // the record without relations
     void clearChanges();
     void clearCache() override;
@@ -590,8 +590,9 @@ QString QSqlRelationalTableModel::selectStatement() const
                 QString displayColumn = relation.displayColumn();
                 if (d->db.driver()->isIdentifierEscaped(displayColumn, QSqlDriver::FieldName))
                     displayColumn = d->db.driver()->stripDelimiters(displayColumn, QSqlDriver::FieldName);
-                const QString alias = QString::fromLatin1("%1_%2_%3")
+                QString alias = QString::fromLatin1("%1_%2_%3")
                                       .arg(relTableName, displayColumn, QString::number(fieldNames.value(fieldList[i])));
+                alias.truncate(d->db.driver()->maximumIdentifierLength(QSqlDriver::FieldName));
                 displayTableField = Sql::as(displayTableField, alias);
                 --fieldNames[fieldList[i]];
             }

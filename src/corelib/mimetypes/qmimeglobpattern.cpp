@@ -83,7 +83,10 @@ void QMimeGlobMatchResult::addMatch(const QString &mimeType, int weight, const Q
     }
     if (!m_matchingMimeTypes.contains(mimeType)) {
         m_matchingMimeTypes.append(mimeType);
-        m_allMatchingMimeTypes.append(mimeType);
+        if (replace)
+            m_allMatchingMimeTypes.prepend(mimeType); // highest-weight first
+        else
+            m_allMatchingMimeTypes.append(mimeType);
         m_knownSuffixLength = knownSuffixLength;
     }
 }
@@ -128,7 +131,7 @@ bool QMimeGlobPattern::matchFileName(const QString &inputFilename) const
     if (starCount == 1 && m_pattern.at(pattern_len - 1) == QLatin1Char('*')) {
         if (len + 1 < pattern_len) return false;
         if (m_pattern.at(0) == QLatin1Char('*'))
-            return filename.indexOf(m_pattern.midRef(1, pattern_len - 2)) != -1;
+            return filename.indexOf(QStringView{m_pattern}.mid(1, pattern_len - 2)) != -1;
 
         const QChar *c1 = m_pattern.unicode();
         const QChar *c2 = filename.unicode();

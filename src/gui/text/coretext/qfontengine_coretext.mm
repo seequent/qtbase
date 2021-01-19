@@ -86,8 +86,6 @@
 
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(lcQpaFonts, "qt.qpa.fonts")
-
 static float SYNTHETIC_ITALIC_SKEW = std::tan(14.f * std::acos(0.f) / 90.f);
 
 bool QCoreTextFontEngine::ct_getSfntTable(void *user_data, uint tag, uchar *buffer, uint *length)
@@ -226,7 +224,7 @@ void QCoreTextFontEngine::init()
     face_id.filename = QString::fromCFString(name).toUtf8();
 
     QCFString family = CTFontCopyFamilyName(ctfont);
-    fontDef.family = family;
+    fontDef.families = QStringList(family);
 
     QCFString styleName = (CFStringRef) CTFontCopyAttribute(ctfont, kCTFontStyleNameAttribute);
     fontDef.styleName = styleName;
@@ -260,10 +258,9 @@ void QCoreTextFontEngine::init()
     if (slant > 500 && !(traits & kCTFontItalicTrait))
         fontDef.style = QFont::StyleOblique;
 
-    if (fontDef.weight >= QFont::Bold && !(traits & kCTFontBoldTrait))
+    if (fontDef.weight >= QFont::Bold && !(traits & kCTFontBoldTrait) && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_BOLD"))
         synthesisFlags |= SynthesizedBold;
-    // XXX: we probably don't need to synthesis italic for oblique font
-    if (fontDef.style != QFont::StyleNormal && !(traits & kCTFontItalicTrait))
+    if (fontDef.style != QFont::StyleNormal && !(traits & kCTFontItalicTrait) && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_ITALIC"))
         synthesisFlags |= SynthesizedItalic;
 
     avgCharWidth = 0;

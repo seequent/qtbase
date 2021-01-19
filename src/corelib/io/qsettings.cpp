@@ -108,7 +108,7 @@ struct QConfFileCustomFormat
     QSettings::WriteFunc writeFunc;
     Qt::CaseSensitivity caseSensitivity;
 };
-Q_DECLARE_TYPEINFO(QConfFileCustomFormat, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QConfFileCustomFormat, Q_RELOCATABLE_TYPE);
 
 typedef QHash<QString, QConfFile *> ConfFileHash;
 typedef QCache<QString, QConfFile> ConfFileCache;
@@ -124,7 +124,7 @@ namespace {
     };
 }
 typedef QHash<int, Path> PathHash;
-typedef QVector<QConfFileCustomFormat> CustomFormatVector;
+typedef QList<QConfFileCustomFormat> CustomFormatVector;
 
 Q_GLOBAL_STATIC(ConfFileHash, usedHashFunc)
 Q_GLOBAL_STATIC(ConfFileCache, unusedCacheFunc)
@@ -381,7 +381,7 @@ QString QSettingsPrivate::variantToString(const QVariant &v)
 {
     QString result;
 
-    switch (v.userType()) {
+    switch (v.metaType().id()) {
         case QMetaType::UnknownType:
             result = QLatin1String("@Invalid()");
             break;
@@ -403,6 +403,7 @@ QString QSettingsPrivate::variantToString(const QVariant &v)
         case QMetaType::Int:
         case QMetaType::UInt:
         case QMetaType::Bool:
+        case QMetaType::Float:
         case QMetaType::Double: {
             result = v.toString();
             if (result.contains(QChar::Null))
@@ -667,7 +668,7 @@ void QSettingsPrivate::iniEscapedString(const QString &str, QByteArray &result)
                 escapeNextIfDigit = true;
             } else if (useCodec) {
                 // slow
-                result += toUtf8(&unicode[i], 1);
+                result += toUtf8(unicode[i]);
             } else {
                 result += (char)ch;
             }
@@ -815,7 +816,7 @@ StNormal:
                 ++j;
             }
 
-            stringResult += fromUtf8(str.constData() + i, j - i);
+            stringResult += fromUtf8(QByteArrayView(str).first(j).sliced(i));
             i = j;
         }
         }
@@ -964,7 +965,7 @@ static inline int pathHashKey(QSettings::Format format, QSettings::Scope scope)
 #ifndef Q_OS_WIN
 static QString make_user_path()
 {
-    static Q_CONSTEXPR QChar sep = QLatin1Char('/');
+    static constexpr QChar sep = QLatin1Char('/');
 #ifndef QSETTINGS_USE_QSTANDARDPATHS
     // Non XDG platforms (OS X, iOS, Android...) have used this code path erroneously
     // for some time now. Moving away from that would require migrating existing settings.
@@ -992,11 +993,11 @@ static std::unique_lock<QBasicMutex> initDefaultPaths(std::unique_lock<QBasicMut
     locker.unlock();
 
     /*
-       QLibraryInfo::location() uses QSettings, so in order to
+       QLibraryInfo::path() uses QSettings, so in order to
        avoid a dead-lock, we can't hold the global mutex while
        calling it.
     */
-    QString systemPath = QLibraryInfo::location(QLibraryInfo::SettingsPath) + QLatin1Char('/');
+    QString systemPath = QLibraryInfo::path(QLibraryInfo::SettingsPath) + QLatin1Char('/');
 
     locker.lock();
     if (pathHash->isEmpty()) {
@@ -1715,7 +1716,7 @@ public:
 
     int position;
 };
-Q_DECLARE_TYPEINFO(QSettingsIniKey, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QSettingsIniKey, Q_RELOCATABLE_TYPE);
 
 static bool operator<(const QSettingsIniKey &k1, const QSettingsIniKey &k2)
 {
@@ -1734,7 +1735,7 @@ struct QSettingsIniSection
     inline QSettingsIniSection() : position(-1) {}
 };
 
-Q_DECLARE_TYPEINFO(QSettingsIniSection, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QSettingsIniSection, Q_RELOCATABLE_TYPE);
 
 typedef QMap<QString, QSettingsIniSection> IniMap;
 
@@ -1772,7 +1773,7 @@ bool QConfFileSettingsPrivate::writeIniFile(QIODevice &device, const ParsedSetti
     }
 
     const int sectionCount = iniMap.size();
-    QVector<QSettingsIniKey> sections;
+    QList<QSettingsIniKey> sections;
     sections.reserve(sectionCount);
     for (i = iniMap.constBegin(); i != iniMap.constEnd(); ++i)
         sections.append(QSettingsIniKey(i.key(), i.value().position));
@@ -1815,8 +1816,8 @@ bool QConfFileSettingsPrivate::writeIniFile(QIODevice &device, const ParsedSetti
                 QVariant(QString("foo")).toList() returns an empty
                 list, not a list containing "foo".
             */
-            if (value.userType() == QMetaType::QStringList
-                    || (value.userType() == QMetaType::QVariantList && value.toList().size() != 1)) {
+            if (value.metaType().id() == QMetaType::QStringList
+                    || (value.metaType().id() == QMetaType::QVariantList && value.toList().size() != 1)) {
                 iniEscapedStringList(variantListToStringList(value.toList()), block);
             } else {
                 iniEscapedString(variantToString(value), block);
@@ -1979,8 +1980,9 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
 
     \snippet code/src_corelib_io_qsettings.cpp 1
 
-    Custom types registered using qRegisterMetaType() and
-    qRegisterMetaTypeStreamOperators() can be stored using QSettings.
+    Custom types registered using qRegisterMetaType() that have
+    operators for streaming to and from a QDataStream can be stored
+    using QSettings.
 
     \section1 Section and Key Syntax
 
@@ -2170,7 +2172,7 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
     \endlist
     \note If XDG_CONFIG_DIRS is unset, the default value of \c{/etc/xdg} is used.
 
-    On \macos versions 10.2 and 10.3, these files are used by
+    On \macos and iOS, if the file format is NativeFormat, these files are used by
     default:
 
     \list 1
@@ -2337,7 +2339,7 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
 
     \endlist
 
-    \sa QVariant, QSessionManager, {Settings Editor Example}, {Application Example}
+    \sa QVariant, QSessionManager, {Settings Editor Example}, {Qt Widgets - Application Example}
 */
 
 /*! \enum QSettings::Status
@@ -3322,41 +3324,6 @@ QSettings::Format QSettings::defaultFormat()
     return globalDefaultFormat;
 }
 
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    \obsolete
-
-    Use setPath() instead.
-
-    \oldcode
-        setSystemIniPath(path);
-    \newcode
-        setPath(QSettings::NativeFormat, QSettings::SystemScope, path);
-        setPath(QSettings::IniFormat, QSettings::SystemScope, path);
-    \endcode
-*/
-void QSettings::setSystemIniPath(const QString &dir)
-{
-    setPath(IniFormat, SystemScope, dir);
-#if !defined(Q_OS_WIN) && !defined(Q_OS_MAC)
-    setPath(NativeFormat, SystemScope, dir);
-#endif
-}
-
-/*!
-    \obsolete
-
-    Use setPath() instead.
-*/
-
-void QSettings::setUserIniPath(const QString &dir)
-{
-    setPath(IniFormat, UserScope, dir);
-#if !defined(Q_OS_WIN) && !defined(Q_OS_MAC)
-    setPath(NativeFormat, UserScope, dir);
-#endif
-}
-#endif
 /*!
     \since 4.1
 

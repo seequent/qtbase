@@ -39,39 +39,13 @@
 
 // This file is included from qnsview.mm, and only used to organize the code
 
-@implementation QNSView (KeysAPI)
-
-+ (Qt::KeyboardModifiers)convertKeyModifiers:(ulong)modifierFlags
-{
-    const bool dontSwapCtrlAndMeta = qApp->testAttribute(Qt::AA_MacDontSwapCtrlAndMeta);
-    Qt::KeyboardModifiers qtMods =Qt::NoModifier;
-    if (modifierFlags & NSEventModifierFlagShift)
-        qtMods |= Qt::ShiftModifier;
-    if (modifierFlags & NSEventModifierFlagControl)
-        qtMods |= dontSwapCtrlAndMeta ? Qt::ControlModifier : Qt::MetaModifier;
-    if (modifierFlags & NSEventModifierFlagOption)
-        qtMods |= Qt::AltModifier;
-    if (modifierFlags & NSEventModifierFlagCommand)
-        qtMods |= dontSwapCtrlAndMeta ? Qt::MetaModifier : Qt::ControlModifier;
-    if (modifierFlags & NSEventModifierFlagNumericPad)
-        qtMods |= Qt::KeypadModifier;
-    return qtMods;
-}
-
-@end
-
 @implementation QNSView (Keys)
-
-- (int)convertKeyCode:(QChar)keyChar
-{
-    return qt_mac_cocoaKey2QtKey(keyChar);
-}
 
 - (bool)handleKeyEvent:(NSEvent *)nsevent eventType:(int)eventType
 {
     ulong timestamp = [nsevent timestamp] * 1000;
     ulong nativeModifiers = [nsevent modifierFlags];
-    Qt::KeyboardModifiers modifiers = [QNSView convertKeyModifiers: nativeModifiers];
+    Qt::KeyboardModifiers modifiers = QCocoaKeyMapper::fromCocoaModifiers(nativeModifiers);
     NSString *charactersIgnoringModifiers = [nsevent charactersIgnoringModifiers];
     NSString *characters = [nsevent characters];
     if (m_inputSource != characters) {
@@ -79,11 +53,12 @@
         m_inputSource = [characters retain];
     }
 
-    // There is no way to get the scan code from carbon/cocoa. But we cannot
-    // use the value 0, since it indicates that the event originates from somewhere
-    // else than the keyboard.
-    quint32 nativeScanCode = 1;
-    quint32 nativeVirtualKey = [nsevent keyCode];
+    // Scan codes are hardware dependent codes for each key. There is no way to get these
+    // from Carbon or Cocoa, so leave it 0, as documented in QKeyEvent::nativeScanCode().
+    const quint32 nativeScanCode = 0;
+
+    // Virtual keys on the other hand are mapped to be the same keys on any system
+    const quint32 nativeVirtualKey = nsevent.keyCode;
 
     QChar ch = QChar::ReplacementCharacter;
     int keyCode = Qt::Key_unknown;
@@ -94,12 +69,12 @@
     // ALT+E to be used as a shortcut with an English keyboard even though
     // pressing ALT+E will give a dead key while doing normal text input.
     if ([characters length] != 0 || [charactersIgnoringModifiers length] != 0) {
-        auto ctrlOrMetaModifier = qApp->testAttribute(Qt::AA_MacDontSwapCtrlAndMeta) ? Qt::ControlModifier : Qt::MetaModifier;
-        if (((modifiers & ctrlOrMetaModifier) || (modifiers & Qt::AltModifier)) && ([charactersIgnoringModifiers length] != 0))
+        if (nativeModifiers & (NSEventModifierFlagControl | NSEventModifierFlagOption)
+            && [charactersIgnoringModifiers length] != 0)
             ch = QChar([charactersIgnoringModifiers characterAtIndex:0]);
         else if ([characters length] != 0)
             ch = QChar([characters characterAtIndex:0]);
-        keyCode = [self convertKeyCode:ch];
+        keyCode = QCocoaKeyMapper::fromCocoaKey(ch);
     }
 
     // we will send a key event unless the input method sets m_sendKeyEvent to false
@@ -218,14 +193,21 @@
 - (void)flagsChanged:(NSEvent *)nsevent
 {
     ulong timestamp = [nsevent timestamp] * 1000;
-    ulong modifiers = [nsevent modifierFlags];
-    Qt::KeyboardModifiers qmodifiers = [QNSView convertKeyModifiers:modifiers];
+    ulong nativeModifiers = [nsevent modifierFlags];
+    Qt::KeyboardModifiers modifiers = QCocoaKeyMapper::fromCocoaModifiers(nativeModifiers);
+
+    // Scan codes are hardware dependent codes for each key. There is no way to get these
+    // from Carbon or Cocoa, so leave it 0, as documented in QKeyEvent::nativeScanCode().
+    const quint32 nativeScanCode = 0;
+
+    // Virtual keys on the other hand are mapped to be the same keys on any system
+    const quint32 nativeVirtualKey = nsevent.keyCode;
 
     // calculate the delta and remember the current modifiers for next time
     static ulong m_lastKnownModifiers;
     ulong lastKnownModifiers = m_lastKnownModifiers;
-    ulong delta = lastKnownModifiers ^ modifiers;
-    m_lastKnownModifiers = modifiers;
+    ulong delta = lastKnownModifiers ^ nativeModifiers;
+    m_lastKnownModifiers = nativeModifiers;
 
     struct qt_mac_enum_mapper
     {
@@ -251,11 +233,14 @@
             else if (qtCode == Qt::Key_Control)
                 qtCode = Qt::Key_Meta;
         }
-        QWindowSystemInterface::handleKeyEvent(m_platformWindow->window(),
-                                               timestamp,
-                                               (lastKnownModifiers & mac_mask) ? QEvent::KeyRelease : QEvent::KeyPress,
-                                               qtCode,
-                                               qmodifiers ^ [QNSView convertKeyModifiers:mac_mask]);
+        QWindowSystemInterface::handleExtendedKeyEvent(m_platformWindow->window(),
+                                                       timestamp,
+                                                       (lastKnownModifiers & mac_mask) ? QEvent::KeyRelease
+                                                                                       : QEvent::KeyPress,
+                                                       qtCode,
+                                                       modifiers ^ QCocoaKeyMapper::fromCocoaModifiers(mac_mask),
+                                                       nativeScanCode, nativeVirtualKey,
+                                                       nativeModifiers ^ mac_mask);
     }
 }
 

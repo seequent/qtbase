@@ -26,23 +26,24 @@
 **
 ****************************************************************************/
 
+#include <QSet>
+#include <QTemporaryFile>
+#include <QBuffer>
+#include <QTest>
+#include <QPixmap>
+#include <QBitmap>
+#include <QImage>
+#include <QImageReader>
+#include <QPaintEngine>
 
-#include <QtTest/QtTest>
-#include <qpixmap.h>
-#include <qbitmap.h>
-#include <qimage.h>
-#include <qimagereader.h>
 #ifndef QT_NO_WIDGETS
-#include <qsplashscreen.h>
+#include <QSplashScreen>
 #endif
-#include <qpaintengine.h>
 
 #include <qpa/qplatformpixmap.h>
 #include <qpa/qplatformintegration.h>
 #include <private/qguiapplication_p.h>
 #include <private/qdrawhelper_p.h>
-
-#include <QSet>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -118,6 +119,7 @@ private slots:
     void refUnref();
 
     void copy();
+    void move();
     void deepCopyPreservesDpr();
     void dprPassthrough();
     void depthOfNullObjects();
@@ -1063,7 +1065,7 @@ void tst_QPixmap::onlyNullPixmapsOutsideGuiThread()
     class Thread : public QThread
     {
     public:
-        void run()
+        void run() override
         {
             QTest::ignoreMessage(QtWarningMsg,
                                  "QPixmap: It is not safe to use pixmaps outside the GUI thread");
@@ -1140,6 +1142,20 @@ void tst_QPixmap::copy()
 
     QPixmap transCopy = trans.copy();
     QCOMPARE(trans, transCopy);
+}
+
+void tst_QPixmap::move()
+{
+    QPixmap moveFrom(32, 32);
+
+    QPixmap moveAssigned;
+    moveAssigned = std::move(moveFrom);
+    QVERIFY(!moveAssigned.isNull());
+    QVERIFY(moveFrom.isNull());
+
+    QPixmap moveConstructed(std::move(moveAssigned));
+    QVERIFY(moveAssigned.isNull());
+    QVERIFY(!moveConstructed.isNull());
 }
 
 // QTBUG-58653: Force a deep copy of a pixmap by

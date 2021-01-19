@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QtCore/qmetaobject.h>
 #include <QtGui/private/qshadergenerator_p.h>
@@ -53,7 +53,8 @@ namespace
         return port;
     }
 
-    QShaderNode createNode(const QVector<QShaderNodePort> &ports, const QStringList &layers = QStringList())
+    QShaderNode createNode(const QList<QShaderNodePort> &ports,
+                           const QStringList &layers = QStringList())
     {
         auto node = QShaderNode();
         node.setUuid(QUuid::createUuid());

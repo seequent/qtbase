@@ -36,6 +36,7 @@
 #include <qlist.h>
 #include <qhash.h>
 #include <qfileinfo.h>
+#include <functional>
 
 QT_BEGIN_NAMESPACE
 
@@ -257,14 +258,17 @@ public:
 protected:
     QString fileFixify(const QString &file, FileFixifyTypes fix = FileFixifyDefault, bool canon = true) const;
     QStringList fileFixify(const QStringList &files, FileFixifyTypes fix = FileFixifyDefault, bool canon = true) const;
-
-    QString installMetaFile(const ProKey &replace_rule, const QString &src, const QString &dst);
+    QString createSedArgs(const ProKey &replace_rule, const QString &file_type = QString()) const;
+    QString installMetaFile(const ProKey &replace_rule, const QString &src,
+                            const QString &dst) const;
 
     virtual bool processPrlFileBase(QString &origFile, QStringView origName,
                                     QStringView fixedBase, int slashOff);
     bool processPrlFileCore(QString &origFile, QStringView origName,
                             const QString &fixedFile);
-    void createResponseFile(const QString &fileName, const ProStringList &objList);
+    QString createResponseFile(const QString &baseName,
+                               const ProStringList &objList,
+                               const QString &prefix = QString());
 
 public:
     QMakeProject *projectFile() const;
@@ -284,10 +288,10 @@ public:
     virtual bool mergeBuildProject(MakefileGenerator * /*other*/) { return false; }
     virtual bool openOutput(QFile &, const QString &build) const;
     bool isWindowsShell() const { return Option::dir_sep == QLatin1String("\\"); }
-    QString shellQuote(const QString &str);
+    QString shellQuote(const QString &str) const;
     virtual ProKey fullTargetVariable() const;
 };
-Q_DECLARE_TYPEINFO(MakefileGenerator::Compiler, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(MakefileGenerator::Compiler, Q_RELOCATABLE_TYPE);
 Q_DECLARE_OPERATORS_FOR_FLAGS(MakefileGenerator::FileFixifyTypes)
 
 inline void MakefileGenerator::setNoIO(bool o)
@@ -307,7 +311,7 @@ inline bool MakefileGenerator::findLibraries(bool, bool)
 
 struct ReplaceExtraCompilerCacheKey
 {
-    mutable uint hash;
+    mutable size_t hash;
     QString var, in, out, pwd;
     MakefileGenerator::ReplaceFor forShell;
     ReplaceExtraCompilerCacheKey(const QString &v, const QStringList &i, const QStringList &o, MakefileGenerator::ReplaceFor s);

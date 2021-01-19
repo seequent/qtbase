@@ -217,7 +217,7 @@
 
 - (BOOL)acceptsFirstMouse:(NSEvent *)theEvent
 {
-    Q_UNUSED(theEvent)
+    Q_UNUSED(theEvent);
     if (!m_platformWindow)
         return NO;
     if ([self isTransparentForUserInput])
@@ -225,8 +225,6 @@
     QPointF windowPoint;
     QPointF screenPoint;
     [self convertFromScreen:[NSEvent mouseLocation] toWindowPoint: &windowPoint andScreenPoint: &screenPoint];
-    if (!qt_window_private(m_platformWindow->window())->allowClickThrough(screenPoint.toPoint()))
-        return NO;
     return YES;
 }
 
@@ -281,7 +279,7 @@
     QCocoaDrag* nativeDrag = QCocoaIntegration::instance()->drag();
     nativeDrag->setLastMouseEvent(theEvent, self);
 
-    const auto modifiers = [QNSView convertKeyModifiers:theEvent.modifierFlags];
+    const auto modifiers = QCocoaKeyMapper::fromCocoaModifiers(theEvent.modifierFlags);
     auto button = cocoaButton2QtButton(theEvent);
     if (button == Qt::LeftButton && m_sendUpAsRightButton)
         button = Qt::RightButton;
@@ -398,8 +396,9 @@
             Qt::WindowType type = QCocoaIntegration::instance()->activePopupWindow()->window()->type();
             while (QCocoaWindow *popup = QCocoaIntegration::instance()->popPopupWindow()) {
                 selfClosed = self == popup->view();
-                QWindowSystemInterface::handleCloseEvent(popup->window());
-                QWindowSystemInterface::flushWindowSystemEvents();
+                QWindowSystemInterface::handleCloseEvent<QWindowSystemInterface::SynchronousDelivery>(popup->window());
+                if (!m_platformWindow)
+                    return; // Bail out if window was destroyed
             }
             // Consume the mouse event when closing the popup, except for tool tips
             // were it's expected that the event is processed normally.
@@ -430,8 +429,7 @@
     if ([self hasMarkedText]) {
         [[NSTextInputContext currentInputContext] handleEvent:theEvent];
     } else {
-        auto ctrlOrMetaModifier = qApp->testAttribute(Qt::AA_MacDontSwapCtrlAndMeta) ? Qt::ControlModifier : Qt::MetaModifier;
-        if (!m_dontOverrideCtrlLMB && [QNSView convertKeyModifiers:[theEvent modifierFlags]] & ctrlOrMetaModifier) {
+        if (!m_dontOverrideCtrlLMB && (theEvent.modifierFlags & NSEventModifierFlagControl)) {
             m_buttons |= Qt::RightButton;
             m_sendUpAsRightButton = true;
         } else {
@@ -549,7 +547,7 @@
 
 - (void)mouseEnteredImpl:(NSEvent *)theEvent
 {
-    Q_UNUSED(theEvent)
+    Q_UNUSED(theEvent);
     if (!m_platformWindow)
         return;
 
@@ -680,7 +678,7 @@
     // after scrolling in Qt Creator: not taking the phase into account causes
     // the end of the event stream to be interpreted as font size changes.
     if (theEvent.momentumPhase == NSEventPhaseNone)
-        m_currentWheelModifiers = [QNSView convertKeyModifiers:[theEvent modifierFlags]];
+        m_currentWheelModifiers = QCocoaKeyMapper::fromCocoaModifiers(theEvent.modifierFlags);
 
     // "isInverted": natural OS X scrolling, inverted from the Qt/other platform/Jens perspective.
     bool isInverted  = [theEvent isDirectionInvertedFromDevice];

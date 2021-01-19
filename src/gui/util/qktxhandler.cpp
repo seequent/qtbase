@@ -41,6 +41,7 @@
 #include "qtexturefiledata_p.h"
 #include <QtEndian>
 #include <QSize>
+#include <QtCore/qiodevice.h>
 
 //#define KTX_DEBUG
 #ifdef KTX_DEBUG
@@ -105,7 +106,7 @@ struct KTXMipmapLevel {
 
 bool QKtxHandler::canRead(const QByteArray &suffix, const QByteArray &block)
 {
-    Q_UNUSED(suffix)
+    Q_UNUSED(suffix);
 
     return (qstrncmp(block.constData(), ktxIdentifier, KTX_IDENTIFIER_LENGTH) == 0);
 }

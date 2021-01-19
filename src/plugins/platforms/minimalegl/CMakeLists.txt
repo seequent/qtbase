@@ -1,4 +1,5 @@
 # Generated from minimalegl.pro.
+qt_find_package(EGL) # special case
 
 #####################################################################
 ## QMinimalEglIntegrationPlugin Plugin:
@@ -18,11 +19,9 @@ qt_internal_add_plugin(QMinimalEglIntegrationPlugin
     PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
-        Qt::EglSupportPrivate
-        Qt::EventDispatcherSupportPrivate
-        Qt::FontDatabaseSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
+        EGL::EGL # special case
 )
 
 #### Keys ignored in scope 1:.:.:minimalegl.pro:<TRUE>:
@@ -31,7 +30,7 @@ qt_internal_add_plugin(QMinimalEglIntegrationPlugin
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QMinimalEglIntegrationPlugin CONDITION QT_FEATURE_opengl
+qt_internal_extend_target(QMinimalEglIntegrationPlugin CONDITION QT_FEATURE_opengl
     SOURCES
         qminimaleglbackingstore.cpp qminimaleglbackingstore.h
     PUBLIC_LIBRARIES

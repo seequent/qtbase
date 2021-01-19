@@ -43,12 +43,12 @@
 #ifndef QT_NO_OPENGL
 # include "qminimaleglbackingstore.h"
 #endif
-#include <QtFontDatabaseSupport/private/qgenericunixfontdatabase_p.h>
+#include <QtGui/private/qgenericunixfontdatabase_p.h>
 
 #if defined(Q_OS_UNIX)
-#  include <QtEventDispatcherSupport/private/qgenericunixeventdispatcher_p.h>
+#  include <QtGui/private/qgenericunixeventdispatcher_p.h>
 #elif defined(Q_OS_WIN)
-#  include <QtEventDispatcherSupport/private/qwindowsguieventdispatcher_p.h>
+#  include <QtGui/private/qwindowsguieventdispatcher_p.h>
 #endif
 
 #include <qpa/qplatformwindow.h>

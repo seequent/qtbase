@@ -45,9 +45,6 @@
 #include <QtGui/QSurfaceFormat>
 
 #include <QtCore/QPair>
-#if QT_DEPRECATED_SINCE(5, 6)
-#include <QtCore/qhash.h>
-#endif
 #include <QtCore/qhashfunctions.h>
 
 QT_BEGIN_NAMESPACE
@@ -77,25 +74,26 @@ public:
 
 private:
     QOpenGLVersionProfilePrivate* d;
+
+    friend bool operator==(const QOpenGLVersionProfile &lhs, const QOpenGLVersionProfile &rhs) noexcept
+    {
+        if (lhs.profile() != rhs.profile())
+            return false;
+        return lhs.version() == rhs.version();
+    }
+
+    friend bool operator!=(const QOpenGLVersionProfile &lhs, const QOpenGLVersionProfile &rhs) noexcept
+    {
+        return !operator==(lhs, rhs);
+    }
 };
 
-inline size_t qHash(const QOpenGLVersionProfile &v, size_t seed = 0)
+inline size_t qHash(const QOpenGLVersionProfile &v, size_t seed = 0) noexcept
 {
     return qHash(static_cast<int>(v.profile() * 1000)
                + v.version().first * 100 + v.version().second * 10, seed);
 }
 
-inline bool operator==(const QOpenGLVersionProfile &lhs, const QOpenGLVersionProfile &rhs)
-{
-    if (lhs.profile() != rhs.profile())
-        return false;
-    return lhs.version() == rhs.version();
-}
-
-inline bool operator!=(const QOpenGLVersionProfile &lhs, const QOpenGLVersionProfile &rhs)
-{
-    return !operator==(lhs, rhs);
-}
 
 #ifndef QT_NO_DEBUG_STREAM
 Q_OPENGL_EXPORT QDebug operator<<(QDebug debug, const QOpenGLVersionProfile &vp);

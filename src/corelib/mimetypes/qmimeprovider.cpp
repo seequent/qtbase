@@ -167,6 +167,11 @@ bool QMimeBinaryProvider::isValid()
     return m_cacheFile != nullptr;
 }
 
+bool QMimeBinaryProvider::isInternalDatabase() const
+{
+    return false;
+}
+
 // Position of the "list offsets" values, at the beginning of the mime.cache file
 enum {
     PosAliasListOffset = 4,
@@ -239,15 +244,18 @@ void QMimeBinaryProvider::addFileNameMatches(const QString &fileName, QMimeGlobM
     const QString lowerFileName = fileName.toLower();
     // Check literals (e.g. "Makefile")
     matchGlobList(result, m_cacheFile, m_cacheFile->getUint32(PosLiteralListOffset), fileName);
-    // Check complex globs (e.g. "callgrind.out[0-9]*")
-    matchGlobList(result, m_cacheFile, m_cacheFile->getUint32(PosGlobListOffset), fileName);
     // Check the very common *.txt cases with the suffix tree
-    const int reverseSuffixTreeOffset = m_cacheFile->getUint32(PosReverseSuffixTreeOffset);
-    const int numRoots = m_cacheFile->getUint32(reverseSuffixTreeOffset);
-    const int firstRootOffset = m_cacheFile->getUint32(reverseSuffixTreeOffset + 4);
-    matchSuffixTree(result, m_cacheFile, numRoots, firstRootOffset, lowerFileName, lowerFileName.length() - 1, false);
+    if (result.m_matchingMimeTypes.isEmpty()) {
+        const int reverseSuffixTreeOffset = m_cacheFile->getUint32(PosReverseSuffixTreeOffset);
+        const int numRoots = m_cacheFile->getUint32(reverseSuffixTreeOffset);
+        const int firstRootOffset = m_cacheFile->getUint32(reverseSuffixTreeOffset + 4);
+        matchSuffixTree(result, m_cacheFile, numRoots, firstRootOffset, lowerFileName, lowerFileName.length() - 1, false);
+        if (result.m_matchingMimeTypes.isEmpty())
+            matchSuffixTree(result, m_cacheFile, numRoots, firstRootOffset, fileName, fileName.length() - 1, true);
+    }
+    // Check complex globs (e.g. "callgrind.out[0-9]*" or "README*")
     if (result.m_matchingMimeTypes.isEmpty())
-        matchSuffixTree(result, m_cacheFile, numRoots, firstRootOffset, fileName, fileName.length() - 1, true);
+        matchGlobList(result, m_cacheFile, m_cacheFile->getUint32(PosGlobListOffset), fileName);
 }
 
 void QMimeBinaryProvider::matchGlobList(QMimeGlobMatchResult &result, CacheFile *cacheFile, int off, const QString &fileName)
@@ -306,7 +314,7 @@ bool QMimeBinaryProvider::matchSuffixTree(QMimeGlobMatchResult &result, QMimeBin
                     const bool caseSensitive = flagsAndWeight & 0x100;
                     if (caseSensitiveCheck || !caseSensitive) {
                         result.addMatch(QLatin1String(mimeType), weight,
-                                        QLatin1Char('*') + fileName.midRef(charPos + 1), fileName.size() - charPos - 2);
+                                        QLatin1Char('*') + QStringView{fileName}.mid(charPos + 1), fileName.size() - charPos - 2);
                         success = true;
                     }
                 }
@@ -517,14 +525,14 @@ void QMimeBinaryProvider::loadMimeTypePrivate(QMimeTypePrivate &data)
             if (xml.name() != QLatin1String("mime-type")) {
                 continue;
             }
-            const QStringRef name = xml.attributes().value(QLatin1String("type"));
+            const auto name = xml.attributes().value(QLatin1String("type"));
             if (name.isEmpty())
                 continue;
             if (name.compare(data.name, Qt::CaseInsensitive))
                 qWarning() << "Got name" << name << "in file" << file << "expected" << data.name;
 
             while (xml.readNextStartElement()) {
-                const QStringRef tag = xml.name();
+                const auto tag = xml.name();
                 if (tag == QLatin1String("comment")) {
                     QString lang = xml.attributes().value(QLatin1String("xml:lang")).toString();
                     const QString text = xml.readElementText();
@@ -537,6 +545,7 @@ void QMimeBinaryProvider::loadMimeTypePrivate(QMimeTypePrivate &data)
                     data.iconName = xml.attributes().value(QLatin1String("name")).toString();
                 } else if (tag == QLatin1String("glob-deleteall")) { // as written out by shared-mime-info >= 0.70
                     data.globPatterns.clear();
+                    mainPattern.clear();
                 } else if (tag == QLatin1String("glob")) { // as written out by shared-mime-info >= 0.70
                     const QString pattern = xml.attributes().value(QLatin1String("pattern")).toString();
                     if (mainPattern.isEmpty() && pattern.startsWith(QLatin1Char('*'))) {
@@ -630,10 +639,10 @@ static QString internalMimeFileName()
 QMimeXMLProvider::QMimeXMLProvider(QMimeDatabasePrivate *db, InternalDatabaseEnum)
     : QMimeProviderBase(db, internalMimeFileName())
 {
-    Q_STATIC_ASSERT_X(sizeof(mimetype_database), "Bundled MIME database is empty");
-    Q_STATIC_ASSERT_X(sizeof(mimetype_database) <= MimeTypeDatabaseOriginalSize,
+    static_assert(sizeof(mimetype_database), "Bundled MIME database is empty");
+    static_assert(sizeof(mimetype_database) <= MimeTypeDatabaseOriginalSize,
                       "Compressed MIME database is larger than the original size");
-    Q_STATIC_ASSERT_X(MimeTypeDatabaseOriginalSize <= 16*1024*1024,
+    static_assert(MimeTypeDatabaseOriginalSize <= 16*1024*1024,
                       "Bundled MIME database is too big");
     const char *data = reinterpret_cast<const char *>(mimetype_database);
     qsizetype size = MimeTypeDatabaseOriginalSize;
@@ -647,7 +656,7 @@ QMimeXMLProvider::QMimeXMLProvider(QMimeDatabasePrivate *db, InternalDatabaseEnu
 #elif defined(MIME_DATABASE_IS_GZIP)
     std::unique_ptr<char []> uncompressed(new char[size]);
     z_stream zs = {};
-    zs.next_in = mimetype_database;
+    zs.next_in = const_cast<Bytef *>(mimetype_database);
     zs.avail_in = sizeof(mimetype_database);
     zs.next_out = reinterpret_cast<Bytef *>(uncompressed.get());
     zs.avail_out = size;
@@ -690,6 +699,15 @@ bool QMimeXMLProvider::isValid()
     // If you change this method, adjust the logic in QMimeDatabasePrivate::loadProviders,
     // which assumes isValid==false is only possible in QMimeBinaryProvider.
     return true;
+}
+
+bool QMimeXMLProvider::isInternalDatabase() const
+{
+#if QT_CONFIG(mimetype_database)
+    return m_directory == internalMimeFileName();
+#else
+    return false;
+#endif
 }
 
 QMimeType QMimeXMLProvider::mimeTypeForName(const QString &name)

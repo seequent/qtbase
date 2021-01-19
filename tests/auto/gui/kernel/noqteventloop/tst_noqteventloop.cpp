@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QEvent>
 #include <QtCore/qthread.h>
@@ -37,6 +37,7 @@
 #include <QtNetwork/qtcpsocket.h>
 #include <QtCore/qelapsedtimer.h>
 #include <QtCore/qtimer.h>
+#include <QtCore/qwineventnotifier.h>
 
 #include <QtCore/qt_windows.h>
 
@@ -50,6 +51,8 @@ class tst_NoQtEventLoop : public QObject
 private slots:
     void consumeMouseEvents();
     void consumeSocketEvents();
+    void consumeWinEvents_data();
+    void consumeWinEvents();
     void deliverEventsInLivelock();
     void postingWithNoYieldFlag();
 };
@@ -69,7 +72,7 @@ public:
     bool event(QEvent *event) override
     {
         m_received[event->type()]++;
-        return QWindow::event(event);
+        return QRasterWindow::event(event);
     }
 
     int received(QEvent::Type type)
@@ -220,7 +223,8 @@ void tst_NoQtEventLoop::consumeMouseEvents()
     int argc = 1;
     char *argv[] = {const_cast<char*>("test")};
     // ensure scaling is off since the child window is positioned using QWindow API.
-    QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
+    // FIXME: Position by taking the screen DPR into account instead
+    qputenv("QT_ENABLE_HIGHDPI_SCALING", "0");
     QGuiApplication app(argc, argv);
     QString clsName(QStringLiteral("tst_NoQtEventLoop_WINDOW"));
     const HINSTANCE appInstance = (HINSTANCE)GetModuleHandle(0);
@@ -312,6 +316,86 @@ void tst_NoQtEventLoop::consumeSocketEvents()
     }
 
     QVERIFY(server.hasPendingConnections());
+}
+
+void tst_NoQtEventLoop::consumeWinEvents_data()
+{
+    QTest::addColumn<bool>("peeking");
+    QTest::addColumn<bool>("nestedLoops");
+    QTest::addColumn<bool>("nativeMainLoop");
+
+    QTest::newRow("PeekMessage, single loop") << true << false << true;
+    QTest::newRow("GetMessage, single loop") << false << false << true;
+
+    QTest::newRow("PeekMessage, nested loops") << true << true << true;
+    QTest::newRow("GetMessage, nested loops") << false << true << true;
+    QTest::newRow("PeekMessage, nested loops, Qt main loop") << true << true << false;
+    QTest::newRow("GetMessage, nested loops, Qt main loop") << false << true << false;
+}
+
+void tst_NoQtEventLoop::consumeWinEvents()
+{
+    QFETCH(bool, peeking);
+    QFETCH(bool, nestedLoops);
+    QFETCH(bool, nativeMainLoop);
+    int argc = 1;
+    char *argv[] = { const_cast<char *>("test"), 0 };
+    QGuiApplication app(argc, argv);
+
+    HANDLE winEvent = ::CreateEvent(0, FALSE, FALSE, 0);
+    QVERIFY(winEvent != NULL);
+    bool notifierActivated = false;
+    QWinEventNotifier notifier(winEvent);
+    connect(&notifier, &QWinEventNotifier::activated, [&notifierActivated]() {
+        notifierActivated = true;
+    });
+
+    bool timeExpired = false;
+    QTimer expiredTimer;
+    connect(&expiredTimer, &QTimer::timeout, [&timeExpired]() {
+        timeExpired = true;
+    });
+    expiredTimer.start(3000);
+
+    auto runNativeEventLoop = [&timeExpired, &notifierActivated, peeking]() -> void {
+        MSG msg;
+        while (!(timeExpired || notifierActivated)) {
+            if (peeking) {
+                if (!::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                    QThread::msleep(100);
+                    continue;
+                }
+            } else {
+                if (::GetMessage(&msg, NULL, 0, 0) <= 0)
+                    break;
+            }
+
+            ::TranslateMessage(&msg);
+            ::DispatchMessage(&msg);
+        }
+    };
+
+    QTimer::singleShot(0, [winEvent, nestedLoops, runNativeEventLoop]() {
+        ::SetEvent(winEvent);
+        if (nestedLoops)
+            runNativeEventLoop();
+    });
+
+    // Exec main message loop
+    if (nativeMainLoop) {
+        runNativeEventLoop();
+    } else {
+        QEventLoop loop;
+        connect(&notifier, &QWinEventNotifier::activated,
+                &loop, &QEventLoop::quit);
+        connect(&expiredTimer, &QTimer::timeout,
+                &loop, &QEventLoop::quit);
+
+        loop.exec();
+    }
+
+    QVERIFY(notifierActivated);
+    QVERIFY(!timeExpired);
 }
 
 void tst_NoQtEventLoop::deliverEventsInLivelock()

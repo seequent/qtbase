@@ -9,18 +9,26 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/network/secureudpclient")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/network/secureudpclient")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS Gui)
 find_package(Qt6 COMPONENTS Widgets)
 find_package(Qt6 COMPONENTS Network)
 
-add_qt_gui_executable(secureudpclient
+qt_add_executable(secureudpclient
     addressdialog.cpp addressdialog.h addressdialog.ui
     association.cpp association.h
     main.cpp
     mainwindow.cpp mainwindow.h mainwindow.ui
+)
+set_target_properties(secureudpclient PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
 )
 target_link_libraries(secureudpclient PUBLIC
     Qt::Core

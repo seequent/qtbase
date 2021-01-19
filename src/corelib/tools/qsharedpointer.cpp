@@ -1,7 +1,8 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
+** Copyright (C) 2020 The Qt Company Ltd.
+** Copyright (C) 2020 Intel Corporation.
+** Copyright (C) 2019 Klarälvdalens Datakonsult AB.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -1423,7 +1424,7 @@ QtSharedPointer::ExternalRefCountData *QtSharedPointer::ExternalRefCountData::ge
 */
 QSharedPointer<QObject> QtSharedPointer::sharedPointerFromVariant_internal(const QVariant &variant)
 {
-    Q_ASSERT(QMetaType::typeFlags(variant.userType()) & QMetaType::SharedPointerToQObject);
+    Q_ASSERT(variant.metaType().flags() & QMetaType::SharedPointerToQObject);
     return *reinterpret_cast<const QSharedPointer<QObject>*>(variant.constData());
 }
 
@@ -1434,7 +1435,8 @@ QSharedPointer<QObject> QtSharedPointer::sharedPointerFromVariant_internal(const
 */
 QWeakPointer<QObject> QtSharedPointer::weakPointerFromVariant_internal(const QVariant &variant)
 {
-    Q_ASSERT(QMetaType::typeFlags(variant.userType()) & QMetaType::WeakPointerToQObject || QMetaType::typeFlags(variant.userType()) & QMetaType::TrackingPointerToQObject);
+    Q_ASSERT(variant.metaType().flags() & QMetaType::WeakPointerToQObject ||
+             variant.metaType().flags() & QMetaType::TrackingPointerToQObject);
     return *reinterpret_cast<const QWeakPointer<QObject>*>(variant.constData());
 }
 
@@ -1562,12 +1564,18 @@ void QtSharedPointer::internalSafetyCheckAdd(const void *d_ptr, const volatile v
     if (!kp)
         return;                 // end-game: the application is being destroyed already
 
+    if (!ptr) {
+        // nullptr is allowed to be tracked by more than one QSharedPointer, so we
+        // need something else to put in our tracking structures
+        ptr = d_ptr;
+    }
+
     QMutexLocker lock(&kp->mutex);
     Q_ASSERT(!kp->dPointers.contains(d_ptr));
 
     //qDebug("Adding d=%p value=%p", d_ptr, ptr);
 
-    const void *other_d_ptr = kp->dataPointers.value(ptr, 0);
+    const void *other_d_ptr = kp->dataPointers.value(ptr, nullptr);
     if (Q_UNLIKELY(other_d_ptr)) {
 #  ifdef BACKTRACE_SUPPORTED
         printBacktrace(knownPointers()->dPointers.value(other_d_ptr).backtrace);

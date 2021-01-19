@@ -61,16 +61,18 @@ static constexpr QPalette::ResolveMask bitPosition(QPalette::ColorGroup colorGro
     return colorRole + colorRoleOffset(colorGroup);
 }
 
-Q_STATIC_ASSERT_X(bitPosition(QPalette::ColorGroup(QPalette::NColorGroups - 1),
+static_assert(bitPosition(QPalette::ColorGroup(QPalette::NColorGroups - 1),
                               QPalette::ColorRole(QPalette::NColorRoles - 1))
                   < sizeof(QPalette::ResolveMask) * CHAR_BIT,
                   "The resolve mask type is not wide enough to fit the entire bit mask.");
 
-class QPalettePrivate {
+class QPalettePrivate
+{
 public:
     QPalettePrivate() : ref(1), ser_no(qt_palette_count++), detach_no(0) { }
     QAtomicInt ref;
     QBrush br[QPalette::NColorGroups][QPalette::NColorRoles];
+    QPalette::ResolveMask resolveMask = {0};
     int ser_no;
     int detach_no;
 };
@@ -153,13 +155,6 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
     brush for all groups in the palette.
 
     \sa brush(), setColor(), ColorRole
-*/
-
-/*!
-    \fn const QBrush & QPalette::foreground() const
-    \obsolete
-
-    Use windowText() instead.
 */
 
 /*!
@@ -275,13 +270,6 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
     tips are not active windows.
 
     \sa ColorRole, brush()
-*/
-
-/*!
-    \fn const QBrush & QPalette::background() const
-    \obsolete
-
-    Use window() instead.
 */
 
 /*!
@@ -449,11 +437,7 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
 
     \value Window  A general background color.
 
-    \value Background  This value is obsolete. Use Window instead.
-
     \value WindowText  A general foreground color.
-
-    \value Foreground  This value is obsolete. Use WindowText instead.
 
     \value Base  Used mostly as the background color for text entry widgets,
                  but can also be used for other painting - such as the
@@ -546,7 +530,10 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
 */
 
 /*!
-    Constructs a palette object that uses the application's default palette.
+    Constructs an empty palette object with no color roles set.
+
+    When used as the palette of a QWidget the colors are resolved
+    as described by QWidget::setPalette().
 
     \sa QApplication::setPalette(), QApplication::palette()
 */
@@ -559,10 +546,11 @@ QPalette::QPalette()
     if (QGuiApplicationPrivate::app_pal) {
         d = QGuiApplicationPrivate::app_pal->d;
         d->ref.ref();
+        setResolveMask(0);
     } else {
         init();
         qt_palette_from_color(*this, Qt::black);
-        data.resolveMask = 0;
+        d->resolveMask = 0;
     }
 }
 
@@ -666,7 +654,7 @@ QPalette::QPalette(const QColor &button, const QColor &window)
     This constructor is fast thanks to \l{implicit sharing}.
 */
 QPalette::QPalette(const QPalette &p)
-    : d(p.d), data(p.data)
+    : d(p.d), currentGroup(p.currentGroup)
 {
     d->ref.ref();
 }
@@ -692,7 +680,8 @@ QPalette::~QPalette()
 }
 
 /*!\internal*/
-void QPalette::init() {
+void QPalette::init()
+{
     d = new QPalettePrivate;
 }
 
@@ -705,7 +694,7 @@ void QPalette::init() {
 QPalette &QPalette::operator=(const QPalette &p)
 {
     p.d->ref.ref();
-    data = p.data;
+    currentGroup = p.currentGroup;
     if (d && !d->ref.deref())
         delete d;
     d = p.d;
@@ -725,7 +714,7 @@ QPalette &QPalette::operator=(const QPalette &p)
 */
 QPalette::operator QVariant() const
 {
-    return QVariant(QMetaType::QPalette, this);
+    return QVariant::fromValue(*this);
 }
 
 /*!
@@ -748,9 +737,9 @@ QPalette::operator QVariant() const
 const QBrush &QPalette::brush(ColorGroup gr, ColorRole cr) const
 {
     Q_ASSERT(cr < NColorRoles);
-    if(gr >= (int)NColorGroups) {
-        if(gr == Current) {
-            gr = data.currentGroup;
+    if (gr >= (int)NColorGroups) {
+        if (gr == Current) {
+            gr = currentGroup;
         } else {
             qWarning("QPalette::brush: Unknown ColorGroup: %d", (int)gr);
             gr = Active;
@@ -788,7 +777,7 @@ void QPalette::setBrush(ColorGroup cg, ColorRole cr, const QBrush &b)
     }
 
     if (cg == Current) {
-        cg = data.currentGroup;
+        cg = currentGroup;
     } else if (cg >= NColorGroups) {
         qWarning("QPalette::setBrush: Unknown ColorGroup: %d", cg);
         cg = Active;
@@ -799,7 +788,7 @@ void QPalette::setBrush(ColorGroup cg, ColorRole cr, const QBrush &b)
         d->br[cg][cr] = b;
     }
 
-    data.resolveMask |= ResolveMask(1) << bitPosition(cg, cr);
+    d->resolveMask |= ResolveMask(1) << bitPosition(cg, cr);
 }
 
 /*!
@@ -819,7 +808,7 @@ void QPalette::setBrush(ColorGroup cg, ColorRole cr, const QBrush &b)
 bool QPalette::isBrushSet(ColorGroup cg, ColorRole cr) const
 {
     if (cg == Current)
-        cg = data.currentGroup;
+        cg = currentGroup;
 
     if (cg >= NColorGroups) {
         qWarning() << "Wrong color group:" << cg;
@@ -831,7 +820,7 @@ bool QPalette::isBrushSet(ColorGroup cg, ColorRole cr) const
         return false;
     }
 
-    return data.resolveMask & (ResolveMask(1) << bitPosition(cg, cr));
+    return d->resolveMask & (ResolveMask(1) << bitPosition(cg, cr));
 }
 
 /*!
@@ -845,7 +834,8 @@ void QPalette::detach()
             for(int role = 0; role < (int)NColorRoles; role++)
                 x->br[grp][role] = d->br[grp][role];
         }
-        if(!d->ref.deref())
+        x->resolveMask = d->resolveMask;
+        if (!d->ref.deref())
             delete d;
         d = x;
     }
@@ -879,7 +869,7 @@ bool QPalette::operator==(const QPalette &p) const
         return true;
     for(int grp = 0; grp < (int)NColorGroups; grp++) {
         for(int role = 0; role < (int)NColorRoles; role++) {
-            if(d->br[grp][role] != p.d->br[grp][role])
+            if (d->br[grp][role] != p.d->br[grp][role])
                 return false;
         }
     }
@@ -894,26 +884,26 @@ bool QPalette::operator==(const QPalette &p) const
 */
 bool QPalette::isEqual(QPalette::ColorGroup group1, QPalette::ColorGroup group2) const
 {
-    if(group1 >= (int)NColorGroups) {
-        if(group1 == Current) {
-            group1 = data.currentGroup;
+    if (group1 >= (int)NColorGroups) {
+        if (group1 == Current) {
+            group1 = currentGroup;
         } else {
             qWarning("QPalette::brush: Unknown ColorGroup(1): %d", (int)group1);
             group1 = Active;
         }
     }
-    if(group2 >= (int)NColorGroups) {
-        if(group2 == Current) {
-            group2 = data.currentGroup;
+    if (group2 >= (int)NColorGroups) {
+        if (group2 == Current) {
+            group2 = currentGroup;
         } else {
             qWarning("QPalette::brush: Unknown ColorGroup(2): %d", (int)group2);
             group2 = Active;
         }
     }
-    if(group1 == group2)
+    if (group1 == group2)
         return true;
     for(int role = 0; role < (int)NColorRoles; role++) {
-        if(d->br[group1][role] != d->br[group2][role])
+        if (d->br[group1][role] != d->br[group2][role])
                 return false;
     }
     return true;
@@ -937,10 +927,10 @@ qint64 QPalette::cacheKey() const
 */
 QPalette QPalette::resolve(const QPalette &other) const
 {
-    if ((*this == other && data.resolveMask == other.data.resolveMask)
-        || data.resolveMask == 0) {
+    if ((*this == other && d->resolveMask == other.d->resolveMask)
+        || d->resolveMask == 0) {
         QPalette o = other;
-        o.data.resolveMask = data.resolveMask;
+        o.d->resolveMask = d->resolveMask;
         return o;
     }
 
@@ -949,32 +939,44 @@ QPalette QPalette::resolve(const QPalette &other) const
 
     for (int role = 0; role < int(NColorRoles); ++role) {
         for (int grp = 0; grp < int(NColorGroups); ++grp) {
-            if (!(data.resolveMask & (ResolveMask(1) << bitPosition(ColorGroup(grp), ColorRole(role))))) {
+            if (!(d->resolveMask & (ResolveMask(1) << bitPosition(ColorGroup(grp), ColorRole(role))))) {
                 palette.d->br[grp][role] = other.d->br[grp][role];
             }
         }
     }
 
-    palette.data.resolveMask |= other.data.resolveMask;
+    palette.d->resolveMask |= other.d->resolveMask;
 
     return palette;
 }
 
 /*!
-    \fn uint QPalette::resolve() const
     \internal
 */
+QPalette::ResolveMask QPalette::resolveMask() const
+{
+    return d->resolveMask;
+}
 
 /*!
-    \typedef ResolveMaskType
-    \internal
- */
-
-/*!
-    \fn void QPalette::resolve(ResolveMaskType mask)
     \internal
 */
+void QPalette::setResolveMask(QPalette::ResolveMask mask)
+{
+    if (mask == d->resolveMask)
+        return;
 
+    detach();
+    d->resolveMask = mask;
+}
+
+/*!
+    \typedef ResolveMask
+    \internal
+
+    A bit mask that stores which colors the palette instance explicitly defines,
+    and which ones are inherited from a parent.
+*/
 
 /*****************************************************************************
   QPalette stream functions
@@ -1037,7 +1039,7 @@ static void readV1ColorGroup(QDataStream &s, QPalette &pal, QPalette::ColorGroup
 
 QDataStream &operator>>(QDataStream &s, QPalette &p)
 {
-    if(s.version() == 1) {
+    if (s.version() == 1) {
         p = QPalette();
         readV1ColorGroup(s, p, QPalette::Active);
         readV1ColorGroup(s, p, QPalette::Disabled);
@@ -1108,10 +1110,10 @@ void QPalette::setColorGroup(ColorGroup cg, const QBrush &windowText, const QBru
     for (int cr = Highlight; cr <= LinkVisited; ++cr) {
         if (cg == All) {
             for (int group = Active; group < NColorGroups; ++group) {
-                data.resolveMask &= ~(ResolveMask(1) << bitPosition(ColorGroup(group), ColorRole(cr)));
+                d->resolveMask &= ~(ResolveMask(1) << bitPosition(ColorGroup(group), ColorRole(cr)));
             }
         } else {
-            data.resolveMask &= ~(ResolveMask(1) << bitPosition(ColorGroup(cg), ColorRole(cr)));
+            d->resolveMask &= ~(ResolveMask(1) << bitPosition(ColorGroup(cg), ColorRole(cr)));
         }
     }
 }
@@ -1250,7 +1252,7 @@ QDebug operator<<(QDebug dbg, const QPalette &p)
     QDebugStateSaver saver(dbg);
     dbg.nospace();
 
-    dbg << "QPalette(resolve=" << Qt::hex << Qt::showbase << p.resolve();
+    dbg << "QPalette(resolve=" << Qt::hex << Qt::showbase << p.resolveMask();
 
     auto roleString = rolesToString(p);
     if (!roleString.isEmpty())

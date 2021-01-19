@@ -85,7 +85,7 @@ public:
 #endif
           cookieJarCreated(false),
           defaultAccessControl(true),
-          redirectPolicy(QNetworkRequest::ManualRedirectPolicy),
+          redirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy),
           authenticationManager(QSharedPointer<QNetworkAccessAuthenticationManager>::create())
     {
     }
@@ -126,11 +126,11 @@ public:
     QNetworkAccessBackend *findBackend(QNetworkAccessManager::Operation op, const QNetworkRequest &request);
     QStringList backendSupportedSchemes() const;
 
-    void _q_onlineStateChanged(bool isOnline);
-
-#if QT_CONFIG(http)
+#if QT_CONFIG(http) || defined(Q_OS_WASM)
     QNetworkRequest prepareMultipart(const QNetworkRequest &request, QHttpMultiPart *multiPart);
 #endif
+
+    void ensureBackendPluginsLoaded();
 
     // this is the cache for storing downloaded files
     QAbstractNetworkCache *networkCache;
@@ -145,11 +145,9 @@ public:
     QNetworkProxyFactory *proxyFactory;
 #endif
 
-    bool networkAccessible = true;
-
     bool cookieJarCreated;
     bool defaultAccessControl;
-    QNetworkRequest::RedirectPolicy redirectPolicy;
+    QNetworkRequest::RedirectPolicy redirectPolicy = QNetworkRequest::NoLessSafeRedirectPolicy;
 
     // The cache with authorization data:
     QSharedPointer<QNetworkAccessAuthenticationManager> authenticationManager;
@@ -157,8 +155,6 @@ public:
     // this cache can be used by individual backends to cache e.g. their TCP connections to a server
     // and use the connections for multiple requests.
     QNetworkAccessCache objectCache;
-    static inline QNetworkAccessCache *getObjectCache(QNetworkAccessBackend *backend)
-    { return &backend->manager->objectCache; }
 
     Q_AUTOTEST_EXPORT static void clearAuthenticationCache(QNetworkAccessManager *manager);
     Q_AUTOTEST_EXPORT static void clearConnectionCache(QNetworkAccessManager *manager);
@@ -168,7 +164,6 @@ public:
     QScopedPointer<QHstsStore> stsStore;
 #endif // QT_CONFIG(settings)
     bool stsEnabled = false;
-    mutable QNetworkStatusMonitor statusMonitor;
 
     bool autoDeleteReplies = false;
 

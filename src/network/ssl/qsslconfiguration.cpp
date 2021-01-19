@@ -518,7 +518,7 @@ QList<QSslCertificate> QSslConfiguration::peerCertificateChain() const
     eventually select the session cipher. This ordered list must be in
     place before the handshake phase begins.
 
-    \sa ciphers(), setCiphers(), QSslSocket::supportedCiphers()
+    \sa ciphers(), setCiphers(), supportedCiphers()
 */
 QSslCipher QSslConfiguration::sessionCipher() const
 {
@@ -578,15 +578,15 @@ void QSslConfiguration::setPrivateKey(const QSslKey &key)
     By default, the handshake phase can choose any of the ciphers
     supported by this system's SSL libraries, which may vary from
     system to system. The list of ciphers supported by this system's
-    SSL libraries is returned by QSslSocket::supportedCiphers(). You can restrict
+    SSL libraries is returned by supportedCiphers(). You can restrict
     the list of ciphers used for choosing the session cipher for this
     socket by calling setCiphers() with a subset of the supported
     ciphers. You can revert to using the entire set by calling
-    setCiphers() with the list returned by QSslSocket::supportedCiphers().
+    setCiphers() with the list returned by supportedCiphers().
 
     \note This is not currently supported in the Schannel backend.
 
-    \sa setCiphers(), QSslSocket::supportedCiphers()
+    \sa setCiphers(), supportedCiphers()
 */
 QList<QSslCipher> QSslConfiguration::ciphers() const
 {
@@ -603,11 +603,41 @@ QList<QSslCipher> QSslConfiguration::ciphers() const
 
     \note This is not currently supported in the Schannel backend.
 
-    \sa ciphers(), QSslSocket::supportedCiphers()
+    \sa ciphers(), supportedCiphers()
 */
 void QSslConfiguration::setCiphers(const QList<QSslCipher> &ciphers)
 {
     d->ciphers = ciphers;
+}
+
+/*!
+    \since 6.0
+
+    Sets the cryptographic cipher suite for this configuration to \a ciphers,
+    which is a colon-separated list of cipher suite names. The ciphers are listed
+    in order of preference, starting with the most preferred cipher. For example:
+
+    \snippet code/src_network_ssl_qsslconfiguration.cpp 1
+
+    Each cipher name in \a ciphers must be the name of a cipher in the
+    list returned by supportedCiphers().  Restricting the cipher suite
+    must be done before the handshake phase, where the session cipher
+    is chosen.
+
+    \note This is not currently supported in the Schannel backend.
+
+    \sa ciphers()
+*/
+void QSslConfiguration::setCiphers(const QString &ciphers)
+{
+    auto *p = d.data();
+    p->ciphers.clear();
+    const auto cipherNames = ciphers.split(QLatin1Char(':'), Qt::SkipEmptyParts);
+    for (const QString &cipherName : cipherNames) {
+        QSslCipher cipher(cipherName);
+        if (!cipher.isNull())
+            p->ciphers << cipher;
+    }
 }
 
 /*!
@@ -858,7 +888,7 @@ QSslKey QSslConfiguration::ephemeralServerKey() const
 
     \sa setEllipticCurves
  */
-QVector<QSslEllipticCurve> QSslConfiguration::ellipticCurves() const
+QList<QSslEllipticCurve> QSslConfiguration::ellipticCurves() const
 {
     return d->ellipticCurves;
 }
@@ -875,7 +905,7 @@ QVector<QSslEllipticCurve> QSslConfiguration::ellipticCurves() const
 
     \sa ellipticCurves
  */
-void QSslConfiguration::setEllipticCurves(const QVector<QSslEllipticCurve> &curves)
+void QSslConfiguration::setEllipticCurves(const QList<QSslEllipticCurve> &curves)
 {
     d->ellipticCurves = curves;
 }
@@ -889,7 +919,7 @@ void QSslConfiguration::setEllipticCurves(const QVector<QSslEllipticCurve> &curv
 
     \sa ellipticCurves(), setEllipticCurves()
 */
-QVector<QSslEllipticCurve> QSslConfiguration::supportedEllipticCurves()
+QList<QSslEllipticCurve> QSslConfiguration::supportedEllipticCurves()
 {
     return QSslSocketPrivate::supportedEllipticCurves();
 }
@@ -1034,11 +1064,7 @@ QByteArray QSslConfiguration::nextNegotiatedProtocol() const
 
   \sa nextNegotiatedProtocol(), nextProtocolNegotiationStatus(), allowedNextProtocols(), QSslConfiguration::NextProtocolHttp1_1
  */
-#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
 void QSslConfiguration::setAllowedNextProtocols(const QList<QByteArray> &protocols)
-#else
-void QSslConfiguration::setAllowedNextProtocols(QList<QByteArray> protocols)
-#endif
 {
     d->nextAllowedProtocols = protocols;
 }
@@ -1087,7 +1113,7 @@ QSslConfiguration::NextProtocolNegotiationStatus QSslConfiguration::nextProtocol
          supported SSL ciphers that are 128 bits or more
     \endlist
 
-    \sa QSslSocket::supportedCiphers(), setDefaultConfiguration()
+    \sa supportedCiphers(), setDefaultConfiguration()
 */
 QSslConfiguration QSslConfiguration::defaultConfiguration()
 {
@@ -1099,7 +1125,7 @@ QSslConfiguration QSslConfiguration::defaultConfiguration()
     connections to be \a configuration. Existing connections are not
     affected by this call.
 
-    \sa QSslSocket::supportedCiphers(), defaultConfiguration()
+    \sa supportedCiphers(), defaultConfiguration()
 */
 void QSslConfiguration::setDefaultConfiguration(const QSslConfiguration &configuration)
 {

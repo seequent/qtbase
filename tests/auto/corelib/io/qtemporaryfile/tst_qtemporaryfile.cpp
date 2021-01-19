@@ -27,7 +27,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qcoreapplication.h>
 #include <qstring.h>
 #include <qtemporarydir.h>
@@ -48,6 +48,11 @@
 # include <errno.h>
 # include <fcntl.h>             // open(2)
 # include <unistd.h>            // close(2)
+#endif
+
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
+#include <QDirIterator>
+#include <QStandardPaths>
 #endif
 
 class tst_QTemporaryFile : public QObject
@@ -572,7 +577,7 @@ void tst_QTemporaryFile::rename()
 void tst_QTemporaryFile::renameFdLeak()
 {
 #if defined(Q_OS_UNIX) && !defined(Q_OS_ANDROID)
-    const QByteArray sourceFile = QFile::encodeName(QFINDTESTDATA(__FILE__));
+    const QByteArray sourceFile = QFile::encodeName(QFINDTESTDATA("CMakeLists.txt"));
     QVERIFY(!sourceFile.isEmpty());
     // Test this on Unix only
 

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
@@ -47,9 +47,9 @@
     \table
     \header \li Driver name \li DBMS
     \row \li \l{#QDB2}{QDB2} \li IBM DB2 (version 7.1 and above)
-    \row \li \l{#QIBASE}{QIBASE} \li Borland InterBase
-    \row \li \l{#QMYSQL}{QMYSQL / MARIADB} \li MySQL or MariaDB (version 5.0 and above)
-    \row \li \l{#QOCI}{QOCI} \li Oracle Call Interface Driver
+    \row \li \l{#QIBASE}{QIBASE} \li Borland InterBase (version 7.0 and above) or Firebird (version 3.0 and above)
+    \row \li \l{#QMYSQL}{QMYSQL / MARIADB} \li MySQL or MariaDB (version 5.6 and above)
+    \row \li \l{#QOCI}{QOCI} \li Oracle Call Interface Driver (version 12.1 and above)
     \row \li \l{#QODBC}{QODBC}
          \li Open Database Connectivity (ODBC) - Microsoft SQL Server and other
             ODBC-compliant databases
@@ -77,6 +77,8 @@
 
     \target building
     \section1 Building the Drivers
+    \target DriverWithQt
+    \section2 Compile Qt with a specific driver
 
     The Qt \c configure script tries to
     automatically detect the available client libraries on your
@@ -95,15 +97,21 @@
     (or \c{MYSQL_PREFIX="C:/Program Files/MySQL/MySQL Connector C 6.1"} for Windows).
     The particulars for each driver are explained below.
 
-    If something goes wrong and you want qmake to recheck your
+    \note If something goes wrong and you want qmake to recheck your
     available drivers, you must remove \e{config.cache} in
     \e{<QTDIR>/qtbase/src/plugins/sqldrivers} - otherwise qmake will not
     search for the available drivers again. If you encounter an error during
     the qmake stage, open \e{config.log} to see what went wrong.
 
+    \target DriverStandalone
+    \section2 Compile only a specific sql driver
+
     A typical qmake run (in this case to configure for MySQL) looks like this:
 
     \snippet code/doc_src_sql-driver.qdoc 41
+    \note As mentioned in \l{#DriverWithQt}{Compile Qt with a specific driver},
+    take a look at \e{config.log} if the driver could not be found and
+    start over by removing \e{config.cache}.
 
     Due to the practicalities of dealing with external dependencies,
     only the SQLite3 plugin is shipped with binary builds of Qt.
@@ -121,7 +129,7 @@
     \section1 Driver Specifics
 
     \target QMYSQL
-    \section2 QMYSQL for MySQL or MariaDB 5 and higher
+    \section2 QMYSQL for MySQL or MariaDB 5.6 and higher
 
     MariaDB is a fork of MySQL intended to remain free and open-source software
     under the GNU General Public License. MariaDB intended to maintain high
@@ -216,9 +224,10 @@
     \target QOCI
     \section2 QOCI for the Oracle Call Interface (OCI)
 
-    The Qt OCI plugin supports Oracle 9i, 10g and higher. After
-    connecting to the Oracle server, the plugin will auto-detect the
-    database version and enable features accordingly.
+    The Qt OCI plugin supports connecting to Oracle database as determined by
+    the version of the instant client used. This is dependent on what Oracle
+    indicates it supports. The plugin will auto-detect the database version
+    and enable features accordingly.
 
     It's possible to connect to a Oracle database without a tnsnames.ora file.
     This requires that the database SID is passed to the driver as the database
@@ -246,25 +255,20 @@
 
     \section3 How to Build the OCI Plugin on Unix and \macos
 
-    For Oracle 10g, all you need is the "Instant Client Package - Basic" and
-    "Instant Client Package - SDK". For Oracle prior to 10g, you require
-    the standard Oracle client and the SDK packages.
+    All you need is the "Instant Client Package - Basic" and "Instant Client
+    Package - SDK".
 
     Oracle library files required to build the driver:
 
     \list
     \li \c libclntsh.so (all versions)
-    \li \c libwtc9.so (only Oracle 9)
     \endlist
 
     Tell \c qmake where to find the Oracle header files and shared
     libraries and run make:
 
-    For Oracle version 9:
-    \snippet code/doc_src_sql-driver.qdoc 6
-
-    For Oracle version 10, we assume that you installed the RPM packages of the
-    Instant Client Package SDK (you need to adjust the version number accordingly):
+    We assume that you installed the RPM packages of the Instant Client Package SDK
+    (you need to adjust the version number accordingly):
     \snippet code/doc_src_sql-driver.qdoc 7
 
     \b{Note:} If you are using the Oracle Instant Client package,

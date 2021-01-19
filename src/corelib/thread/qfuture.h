@@ -80,9 +80,8 @@ public:
     {
     }
 
-#if !defined(Q_CC_XLC)
     template<typename U, typename V = T, typename = QtPrivate::EnableForVoid<V>>
-    QFuture(const QFuture<U> &other) : d(other.d)
+    explicit QFuture(const QFuture<U> &other) : d(other.d)
     {
     }
 
@@ -92,19 +91,12 @@ public:
         d = other.d;
         return *this;
     }
-#endif
 
 #if defined(Q_CLANG_QDOC)
     ~QFuture() { }
     QFuture(const QFuture<T> &) { }
     QFuture<T> & operator=(const QFuture<T> &) { }
-
-    // This is required to allow QDoc to find the declaration of operator T().
-    operator T() const;
 #endif
-
-    bool operator==(const QFuture &other) const { return (d == other.d); }
-    bool operator!=(const QFuture &other) const { return (d != other.d); }
 
     void cancel() { d.cancel(); }
     bool isCanceled() const { return d.isCanceled(); }
@@ -155,18 +147,17 @@ QT_WARNING_POP
     template<typename U = T, typename = QtPrivate::EnableForNonVoid<U>>
     bool isResultReadyAt(int resultIndex) const { return d.isResultReadyAt(resultIndex); }
 
-    // operator T()
-    template<typename U = T>
-    operator typename std::enable_if_t<!std::is_same_v<U, void>, U>() const { return result(); }
-
     template<typename U = T, typename = QtPrivate::EnableForNonVoid<U>>
     QList<T> results() const { return d.results(); }
 
     template<typename U = T, typename = QtPrivate::EnableForNonVoid<U>>
     T takeResult() { return d.takeResult(); }
 
+#if 0
+    // TODO: Enable and make it return a QList, when QList is fixed to support move-only types
     template<typename U = T, typename = QtPrivate::EnableForNonVoid<U>>
     std::vector<T> takeResults() { return d.takeResults(); }
+#endif
 
     bool isValid() const { return d.isValid(); }
 
@@ -182,14 +173,24 @@ QT_WARNING_POP
     template<class Function>
     QFuture<ResultType<Function>> then(QThreadPool *pool, Function &&function);
 
+    template<class Function>
+    QFuture<ResultType<Function>> then(QObject *context, Function &&function);
+
 #ifndef QT_NO_EXCEPTIONS
     template<class Function,
              typename = std::enable_if_t<!QtPrivate::ArgResolver<Function>::HasExtraArgs>>
     QFuture<T> onFailed(Function &&handler);
+
+    template<class Function,
+             typename = std::enable_if_t<!QtPrivate::ArgResolver<Function>::HasExtraArgs>>
+    QFuture<T> onFailed(QObject *context, Function &&handler);
 #endif
 
     template<class Function, typename = std::enable_if_t<std::is_invocable_r_v<T, Function>>>
     QFuture<T> onCanceled(Function &&handler);
+
+    template<class Function, typename = std::enable_if_t<std::is_invocable_r_v<T, Function>>>
+    QFuture<T> onCanceled(QObject *context, Function &&handler);
 
     class const_iterator
     {
@@ -356,7 +357,7 @@ QFuture<typename QFuture<T>::template ResultType<Function>>
 QFuture<T>::then(QtFuture::Launch policy, Function &&function)
 {
     QFutureInterface<ResultType<Function>> promise(QFutureInterfaceBase::State::Pending);
-    QtPrivate::Continuation<Function, ResultType<Function>, T>::create(
+    QtPrivate::Continuation<std::decay_t<Function>, ResultType<Function>, T>::create(
             std::forward<Function>(function), this, promise, policy);
     return promise.future();
 }
@@ -367,19 +368,40 @@ QFuture<typename QFuture<T>::template ResultType<Function>> QFuture<T>::then(QTh
                                                                              Function &&function)
 {
     QFutureInterface<ResultType<Function>> promise(QFutureInterfaceBase::State::Pending);
-    QtPrivate::Continuation<Function, ResultType<Function>, T>::create(
+    QtPrivate::Continuation<std::decay_t<Function>, ResultType<Function>, T>::create(
             std::forward<Function>(function), this, promise, pool);
     return promise.future();
 }
 
-#ifndef QT_NO_EXCEPTIONS
+template<class T>
+template<class Function>
+QFuture<typename QFuture<T>::template ResultType<Function>> QFuture<T>::then(QObject *context,
+                                                                             Function &&function)
+{
+    QFutureInterface<ResultType<Function>> promise(QFutureInterfaceBase::State::Pending);
+    QtPrivate::Continuation<std::decay_t<Function>, ResultType<Function>, T>::create(
+            std::forward<Function>(function), this, promise, context);
+    return promise.future();
+}
 
+#ifndef QT_NO_EXCEPTIONS
 template<class T>
 template<class Function, typename>
 QFuture<T> QFuture<T>::onFailed(Function &&handler)
 {
     QFutureInterface<T> promise(QFutureInterfaceBase::State::Pending);
-    QtPrivate::FailureHandler<Function, T>::create(std::forward<Function>(handler), this, promise);
+    QtPrivate::FailureHandler<std::decay_t<Function>, T>::create(std::forward<Function>(handler),
+                                                                 this, promise);
+    return promise.future();
+}
+
+template<class T>
+template<class Function, typename>
+QFuture<T> QFuture<T>::onFailed(QObject *context, Function &&handler)
+{
+    QFutureInterface<T> promise(QFutureInterfaceBase::State::Pending);
+    QtPrivate::FailureHandler<std::decay_t<Function>, T>::create(std::forward<Function>(handler),
+                                                                 this, promise, context);
     return promise.future();
 }
 
@@ -390,7 +412,18 @@ template<class Function, typename>
 QFuture<T> QFuture<T>::onCanceled(Function &&handler)
 {
     QFutureInterface<T> promise(QFutureInterfaceBase::State::Pending);
-    QtPrivate::CanceledHandler<Function, T>::create(std::forward<Function>(handler), this, promise);
+    QtPrivate::CanceledHandler<std::decay_t<Function>, T>::create(std::forward<Function>(handler),
+                                                                  this, promise);
+    return promise.future();
+}
+
+template<class T>
+template<class Function, typename>
+QFuture<T> QFuture<T>::onCanceled(QObject *context, Function &&handler)
+{
+    QFutureInterface<T> promise(QFutureInterfaceBase::State::Pending);
+    QtPrivate::CanceledHandler<std::decay_t<Function>, T>::create(std::forward<Function>(handler),
+                                                                  this, promise, context);
     return promise.future();
 }
 

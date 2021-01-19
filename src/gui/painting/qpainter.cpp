@@ -197,9 +197,9 @@ void QPainterPrivate::checkEmulation()
 
     if (state->brush.style() == Qt::TexturePattern) {
         if (qHasPixmapTexture(state->brush))
-            doEmulation |= !qFuzzyCompare(state->brush.texture().devicePixelRatioF(), 1.0);
+            doEmulation |= !qFuzzyCompare(state->brush.texture().devicePixelRatio(), qreal(1.0));
         else
-            doEmulation |= !qFuzzyCompare(state->brush.textureImage().devicePixelRatioF(), 1.0);
+            doEmulation |= !qFuzzyCompare(state->brush.textureImage().devicePixelRatio(), qreal(1.0));
     }
 
     if (doEmulation && extended->flags() & QPaintEngineEx::DoNotEmulate)
@@ -242,7 +242,7 @@ qreal QPainterPrivate::effectiveDevicePixelRatio() const
     if (device->devType() == QInternal::Printer)
         return qreal(1);
 
-    return qMax(qreal(1), device->devicePixelRatioF());
+    return qMax(qreal(1), device->devicePixelRatio());
 }
 
 QTransform QPainterPrivate::hidpiScaleTransform() const
@@ -1428,11 +1428,6 @@ void QPainterPrivate::updateState(QPainterState *newState)
     \value SmoothPixmapTransform Indicates that the engine should use
     a smooth pixmap transformation algorithm (such as bilinear) rather
     than nearest neighbor.
-
-    \value Qt4CompatiblePainting Compatibility hint telling the engine to use the
-    same X11 based fill rules as in Qt 4, where aliased rendering is offset
-    by slightly less than half a pixel. Also will treat default constructed pens
-    as cosmetic. Potentially useful when porting a Qt 4 application to Qt 5.
 
     \value LosslessImageRendering Use a lossless image rendering, whenever possible.
     Currently, this hint is only used when QPainter is employed to output a PDF
@@ -3412,14 +3407,14 @@ void QPainter::drawRects(const QRect *rects, int rectCount)
 }
 
 /*!
-    \fn void QPainter::drawRects(const QVector<QRectF> &rectangles)
+    \fn void QPainter::drawRects(const QList<QRectF> &rectangles)
     \overload
 
     Draws the given \a rectangles using the current pen and brush.
 */
 
 /*!
-    \fn void QPainter::drawRects(const QVector<QRect> &rectangles)
+    \fn void QPainter::drawRects(const QList<QRect> &rectangles)
 
     \overload
 
@@ -3578,7 +3573,7 @@ void QPainter::drawPoints(const QPoint *points, int pointCount)
 
     \overload
 
-    Draws the points in the vector  \a points.
+    Draws the points in the vector \a points.
 */
 
 /*!
@@ -3586,7 +3581,7 @@ void QPainter::drawPoints(const QPoint *points, int pointCount)
 
     \overload
 
-    Draws the points in the vector  \a points.
+    Draws the points in the vector \a points.
 */
 
 /*!
@@ -3881,7 +3876,7 @@ void QPainter::setFont(const QFont &font)
 
 #ifdef QT_DEBUG_DRAW
     if (qt_show_painter_debug_output)
-        printf("QPainter::setFont(), family=%s, pointSize=%d\n", font.family().toLatin1().constData(), font.pointSize());
+        printf("QPainter::setFont(), family=%s, pointSize=%d\n", font.families().first().toLatin1().constData(), font.pointSize());
 #endif
 
     if (!d->engine) {
@@ -4421,7 +4416,7 @@ void QPainter::drawLines(const QPoint *pointPairs, int lineCount)
 
 
 /*!
-    \fn void QPainter::drawLines(const QVector<QPointF> &pointPairs)
+    \fn void QPainter::drawLines(const QList<QPointF> &pointPairs)
     \overload
 
     Draws a line for each pair of points in the vector \a pointPairs
@@ -4430,7 +4425,7 @@ void QPainter::drawLines(const QPoint *pointPairs, int lineCount)
 */
 
 /*!
-    \fn void QPainter::drawLines(const QVector<QPoint> &pointPairs)
+    \fn void QPainter::drawLines(const QList<QPoint> &pointPairs)
     \overload
 
     Draws a line for each pair of points in the vector \a pointPairs
@@ -4438,7 +4433,7 @@ void QPainter::drawLines(const QPoint *pointPairs, int lineCount)
 */
 
 /*!
-    \fn void QPainter::drawLines(const QVector<QLineF> &lines)
+    \fn void QPainter::drawLines(const QList<QLineF> &lines)
     \overload
 
     Draws the set of lines defined by the list \a lines using the
@@ -4446,7 +4441,7 @@ void QPainter::drawLines(const QPoint *pointPairs, int lineCount)
 */
 
 /*!
-    \fn void QPainter::drawLines(const QVector<QLine> &lines)
+    \fn void QPainter::drawLines(const QList<QLine> &lines)
     \overload
 
     Draws the set of lines defined by the list \a lines using the
@@ -6004,12 +5999,6 @@ static void drawTextItemDecoration(QPainter *painter, const QPointF &pos, const 
 
     QLineF line(qFloor(pos.x()), pos.y(), qFloor(pos.x() + width), pos.y());
 
-    bool wasCompatiblePainting = painter->renderHints()
-            & QPainter::Qt4CompatiblePainting;
-
-    if (wasCompatiblePainting)
-        painter->setRenderHint(QPainter::Qt4CompatiblePainting, false);
-
     const qreal underlineOffset = fe->underlinePosition().toReal();
 
     if (underlineStyle == QTextCharFormat::SpellCheckUnderline) {
@@ -6081,9 +6070,6 @@ static void drawTextItemDecoration(QPainter *painter, const QPointF &pos, const 
 
     painter->setPen(oldPen);
     painter->setBrush(oldBrush);
-
-    if (wasCompatiblePainting)
-        painter->setRenderHint(QPainter::Qt4CompatiblePainting);
 }
 
 static void qt_draw_decoration_for_glyphs(QPainter *painter,
@@ -6531,7 +6517,9 @@ void QPainter::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap, const QPo
     painted on a widget or pixmap can also be stored in a picture.
 
     This function does exactly the same as QPicture::play() when
-    called with \a point = QPoint(0, 0).
+    called with \a point = QPointF(0, 0).
+
+    \note The state of the painter is preserved by this function.
 
     \table 100%
     \row
@@ -7198,7 +7186,7 @@ start_lengthVariant:
         }
     }
 
-    QVector<QTextLayout::FormatRange> underlineFormats;
+    QList<QTextLayout::FormatRange> underlineFormats;
     int length = offset - old_offset;
     if ((hidemnmemonic || showmnemonic) && maxUnderlines > 0) {
         QChar *cout = text.data() + old_offset;
@@ -7283,7 +7271,7 @@ start_lengthVariant:
         qreal lineWidth = 0x01000000;
         if (wordwrap || (tf & Qt::TextJustificationForced))
             lineWidth = qMax<qreal>(0, r.width());
-        if(!wordwrap)
+        if (!wordwrap)
             tf |= Qt::TextIncludeTrailingSpaces;
         textLayout.beginLayout();
 

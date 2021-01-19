@@ -1,12 +1,13 @@
 # Generated from network.pro.
 
+if(NOT TARGET Qt::Network)
+    return()
+endif()
 add_subdirectory(download)
 add_subdirectory(downloadmanager)
-
 if(NOT INTEGRITY)
     add_subdirectory(dnslookup)
 endif()
-
 if(TARGET Qt::Widgets)
     add_subdirectory(blockingfortuneclient)
     add_subdirectory(broadcastreceiver)
@@ -15,30 +16,23 @@ if(TARGET Qt::Widgets)
     add_subdirectory(loopback)
     add_subdirectory(threadedfortuneserver)
     add_subdirectory(googlesuggest)
-    # add_subdirectory(torrent) FIXME: This does not find its ui file:-/
+    # add_subdirectory(torrent) FIXME: This does not find its ui file:-/ # special case
     add_subdirectory(multicastreceiver)
     add_subdirectory(multicastsender)
-
-    if(QT_FEATURE_bearermanagement)
-        add_subdirectory(fortuneclient)
-        add_subdirectory(fortuneserver)
-
-        if(QT_FEATURE_processenvironment)
-            add_subdirectory(network-chat)
-        endif()
-    endif()
-
-    if(QT_FEATURE_openssl)
-        add_subdirectory(securesocketclient)
-    endif()
-
-    if(QT_FEATURE_dtls)
-        add_subdirectory(secureudpserver)
-        add_subdirectory(secureudpclient)
-    endif()
-
-    if(QT_FEATURE_sctp)
-        add_subdirectory(multistreamserver)
-        add_subdirectory(multistreamclient)
-    endif()
+    add_subdirectory(fortuneclient)
+    add_subdirectory(fortuneserver)
+endif()
+if(QT_FEATURE_processenvironment AND TARGET Qt::Widgets)
+    add_subdirectory(network-chat)
+endif()
+if(QT_FEATURE_ssl AND TARGET Qt::Widgets)
+    add_subdirectory(securesocketclient)
+endif()
+if(QT_FEATURE_dtls AND TARGET Qt::Widgets)
+    add_subdirectory(secureudpserver)
+    add_subdirectory(secureudpclient)
+endif()
+if(QT_FEATURE_sctp AND TARGET Qt::Widgets)
+    add_subdirectory(multistreamserver)
+    add_subdirectory(multistreamclient)
 endif()

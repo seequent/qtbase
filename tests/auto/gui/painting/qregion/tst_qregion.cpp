@@ -27,13 +27,17 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qregion.h>
 
 #include <qbitmap.h>
 #include <qpainter.h>
 #include <qpainterpath.h>
 #include <qpolygon.h>
+
+#ifdef Q_OS_WIN
+#  include <qt_windows.h>
+#endif
 
 class tst_QRegion : public QObject
 {
@@ -85,6 +89,10 @@ private slots:
 #ifdef QT_BUILD_INTERNAL
     void regionToPath_data();
     void regionToPath();
+#endif
+
+#ifdef Q_OS_WIN
+    void winConversion();
 #endif
 };
 
@@ -298,25 +306,24 @@ void tst_QRegion::emptyPolygonRegion_data()
     QTest::addColumn<QPolygon>("pa");
     QTest::addColumn<bool>("isEmpty");
     QTest::addColumn<int>("numRects");
-    QTest::addColumn<QVector<QRect> >("rects");
+    QTest::addColumn<QList<QRect>>("rects");
 
     QPolygon pa;
 
-
-    QTest::newRow("no points") << pa << true << 0 << QVector<QRect>();
+    QTest::newRow("no points") << pa << true << 0 << QList<QRect>();
     pa = QPolygon() << QPoint(10,10);
-    QTest::newRow("one point") << pa << true << 0 << QVector<QRect>();
+    QTest::newRow("one point") << pa << true << 0 << QList<QRect>();
     pa = QPolygon() << QPoint(10,10) << QPoint(10,20);
-    QTest::newRow("two points, horizontal") << pa << true << 0 << QVector<QRect>();
+    QTest::newRow("two points, horizontal") << pa << true << 0 << QList<QRect>();
 
     pa = QPolygon() << QPoint(10,10) << QPoint(20,10);
-    QTest::newRow("two points, vertical") << pa << true << 0 << QVector<QRect>();
+    QTest::newRow("two points, vertical") << pa << true << 0 << QList<QRect>();
 
     pa = QPolygon() << QPoint(10,10) << QPoint(20,20);
-    QTest::newRow("two points, diagonal") << pa << true << 0 << QVector<QRect>();
+    QTest::newRow("two points, diagonal") << pa << true << 0 << QList<QRect>();
 
     pa = QPolygon() << QPoint(10,10) << QPoint(15,15) << QPoint(10,15) << QPoint(10, 10) ;
-    QVector<QRect> v;
+    QList<QRect> v;
     v << QRect(10,11,1, 1) << QRect(10,12,2,1) << QRect(10,13,3,1) << QRect(10,14,4,1);
     QTest::newRow("triangle") << pa << false << 4 << v;
 
@@ -334,9 +341,9 @@ void tst_QRegion::emptyPolygonRegion()
     QRegion r(pa);
     QTEST(r.isEmpty(), "isEmpty");
     QTEST(int(std::distance(r.begin(), r.end())), "numRects");
-    QVector<QRect> rects;
+    QList<QRect> rects;
     std::copy(r.begin(), r.end(), std::back_inserter(rects));
-    QTEST(rects.size(), "numRects");
+    QTEST(int(rects.size()), "numRects");
     QTEST(rects, "rects");
 }
 
@@ -375,7 +382,7 @@ void tst_QRegion::bitmapRegion()
         QVERIFY(region.isEmpty());
     }
     {
-        circle = QPixmap(circle_xpm);
+        circle = QBitmap::fromPixmap(QPixmap(circle_xpm));
         QRegion region(circle);
 
         //// These should not be inside the circe
@@ -504,7 +511,7 @@ void tst_QRegion::operator_plus_data()
                              << QRegion(QRect(10, 10, 10, 10));
 
     QRegion expected;
-    QVector<QRect> rects;
+    QList<QRect> rects;
     rects << QRect(10, 10, 10, 10) << QRect(22, 10, 10, 10);
     expected.setRects(rects.constData(), rects.size());
     QTest::newRow("non overlapping") << QRegion(10, 10, 10, 10)
@@ -650,7 +657,7 @@ void tst_QRegion::operator_minus_data()
                              << QRegion(QRect(10, 10, 10, 10));
 
     QRegion dest;
-    QVector<QRect> rects;
+    QList<QRect> rects;
     rects << QRect(10, 10, 10, 10) << QRect(22, 10, 10, 10);
     dest.setRects(rects.constData(), rects.size());
     QTest::newRow("simple 1") << dest
@@ -705,7 +712,7 @@ void tst_QRegion::operator_intersect_data()
                              << QRegion();
 
     QRegion dest;
-    QVector<QRect> rects;
+    QList<QRect> rects;
     rects << QRect(10, 10, 10, 10) << QRect(22, 10, 10, 10);
     dest.setRects(rects.constData(), rects.size());
     QTest::newRow("simple 1") << dest
@@ -787,7 +794,7 @@ void tst_QRegion::operator_xor_data()
                              << QRegion(QRect(10, 10, 10, 10));
 
     QRegion dest;
-    QVector<QRect> rects;
+    QList<QRect> rects;
     rects << QRect(10, 10, 10, 10) << QRect(22, 10, 10, 10);
     dest.setRects(rects.constData(), rects.size());
     QTest::newRow("simple 1") << dest
@@ -838,7 +845,7 @@ void tst_QRegion::rectCount_data()
     QTest::newRow("rect") << QRegion(10, 10, 10, 10) << 1;
 
     QRegion dest;
-    QVector<QRect> rects;
+    QList<QRect> rects;
     rects << QRect(10, 10, 10, 10) << QRect(22, 10, 10, 10);
     dest.setRects(rects.constData(), rects.size());
 
@@ -859,7 +866,7 @@ void tst_QRegion::isEmpty_data()
 
     QTest::newRow("QRegion") << QRegion();
 
-    QVector<QRect> rects;
+    QList<QRect> rects;
     rects << QRect(0, 0, 10, 10) << QRect(15, 0, 10, 10);
     QRegion r1;
     r1.setRects(rects.constData(), rects.size());
@@ -918,40 +925,38 @@ void tst_QRegion::regionFromPath()
 void tst_QRegion::scaleRegions_data()
 {
     QTest::addColumn<qreal>("scale");
-    QTest::addColumn<QVector<QRect>>("inputRects");
-    QTest::addColumn<QVector<QRect>>("expectedRects");
+    QTest::addColumn<QList<QRect>>("inputRects");
+    QTest::addColumn<QList<QRect>>("expectedRects");
 
-    QTest::newRow("1.0 single")  << 1.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20) };
-    QTest::newRow("1.0 multi")   << 1.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) };
-    QTest::newRow("2.0 single")  << 2.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(20, 20, 40, 40) };
-    QTest::newRow("2.0 multi")   << 2.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(20, 20, 40, 40), QRect(80, 20, 40, 40) };
-    QTest::newRow("-1.0 single") << -1.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(-30, -30, 20, 20) };
-    QTest::newRow("-1.0 multi")  << -1.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(-60, -30, 20, 20), QRect(-30, -30, 20, 20) };
-    QTest::newRow("-2.0 single") << -2.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(-60, -60, 40, 40) };
-    QTest::newRow("-2.0 multi")  << -2.0
-                                 << QVector<QRect>{ QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
-                                 << QVector<QRect>{ QRect(-120, -60, 40, 40), QRect(-60, -60, 40, 40) };
+    QTest::newRow("1.0 single") << 1.0 << QList<QRect> { QRect(10, 10, 20, 20) }
+                                << QList<QRect> { QRect(10, 10, 20, 20) };
+    QTest::newRow("1.0 multi") << 1.0
+                               << QList<QRect> { QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
+                               << QList<QRect> { QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) };
+    QTest::newRow("2.0 single") << 2.0 << QList<QRect> { QRect(10, 10, 20, 20) }
+                                << QList<QRect> { QRect(20, 20, 40, 40) };
+    QTest::newRow("2.0 multi") << 2.0
+                               << QList<QRect> { QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
+                               << QList<QRect> { QRect(20, 20, 40, 40), QRect(80, 20, 40, 40) };
+    QTest::newRow("-1.0 single") << -1.0 << QList<QRect> { QRect(10, 10, 20, 20) }
+                                 << QList<QRect> { QRect(-30, -30, 20, 20) };
+    QTest::newRow("-1.0 multi") << -1.0
+                                << QList<QRect> { QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
+                                << QList<QRect> { QRect(-60, -30, 20, 20),
+                                                  QRect(-30, -30, 20, 20) };
+    QTest::newRow("-2.0 single") << -2.0 << QList<QRect> { QRect(10, 10, 20, 20) }
+                                 << QList<QRect> { QRect(-60, -60, 40, 40) };
+    QTest::newRow("-2.0 multi") << -2.0
+                                << QList<QRect> { QRect(10, 10, 20, 20), QRect(40, 10, 20, 20) }
+                                << QList<QRect> { QRect(-120, -60, 40, 40),
+                                                  QRect(-60, -60, 40, 40) };
 }
 
 void tst_QRegion::scaleRegions()
 {
     QFETCH(qreal, scale);
-    QFETCH(QVector<QRect>, inputRects);
-    QFETCH(QVector<QRect>, expectedRects);
+    QFETCH(QList<QRect>, inputRects);
+    QFETCH(QList<QRect>, expectedRects);
 
     QRegion region;
     region.setRects(inputRects.constData(), inputRects.size());
@@ -1064,7 +1069,21 @@ void tst_QRegion::regionToPath()
         QCOMPARE(a.boundingRect(), b.boundingRect());
     }
 }
-#endif
+#endif // QT_BUILD_INTERNAL
+
+#ifdef Q_OS_WIN
+void tst_QRegion::winConversion()
+{
+    const QList<QRect> rects{QRect(10, 10, 10, 10), QRect(10, 20, 10, 10),
+                             QRect(30, 20, 10, 10), QRect(10, 30, 10, 10)};
+    QRegion region;
+    region.setRects(rects.constData(), rects.size());
+    auto hrgn = region.toHRGN();
+    QVERIFY(hrgn);
+    QRegion convertedBack = QRegion::fromHRGN(hrgn);
+    QCOMPARE(region, convertedBack);
+}
+#endif // Q_OS_WIN
 
 QTEST_MAIN(tst_QRegion)
 #include "tst_qregion.moc"

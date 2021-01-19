@@ -191,7 +191,7 @@ static void convertLineOffset(QAccessibleTextInterface *text, int *line, int *of
 
 + (id) lineNumberForIndex: (int)index forText:(const QString &)text
 {
-    QStringRef textBefore = QStringRef(&text, 0, index);
+    auto textBefore = QStringView(text).left(index);
     int newlines = textBefore.count(QLatin1Char('\n'));
     return @(newlines);
 }
@@ -638,6 +638,16 @@ static void convertLineOffset(QAccessibleTextInterface *text, int *line, int *of
     }
 
     return NSAccessibilityUnignoredAncestor(self);
+}
+
+- (NSString *) accessibilityHelp {
+    QAccessibleInterface *iface = QAccessible::accessibleInterface(axid);
+    if (iface && iface->isValid()) {
+        const QString helpText = iface->text(QAccessible::Help);
+        if (!helpText.isEmpty())
+            return helpText.toNSString();
+    }
+    return nil;
 }
 
 @end

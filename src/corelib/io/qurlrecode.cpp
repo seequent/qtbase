@@ -294,7 +294,7 @@ struct QUrlUtf8Traits : public QUtf8BaseTraitsNoAscii
 static bool encodedUtf8ToUtf16(QString &result, ushort *&output, const ushort *begin, const ushort *&input,
                                const ushort *end, ushort decoded)
 {
-    uint ucs4, *dst = &ucs4;
+    uint ucs4 = 0, *dst = &ucs4;
     const ushort *src = input + 3;// skip the %XX that yielded \a decoded
     int charsNeeded = QUtf8Functions::fromUtf8<QUrlUtf8Traits>(decoded, dst, src, end);
     if (charsNeeded < 0)
@@ -676,7 +676,7 @@ qt_urlRecode(QString &appendTo, QStringView in,
              QUrl::ComponentFormattingOptions encoding, const ushort *tableModifications)
 {
     uchar actionTable[sizeof defaultActionTable];
-    if (encoding == QUrl::FullyDecoded) {
+    if ((encoding & QUrl::FullyDecoded) == QUrl::FullyDecoded) {
         return int(decode(appendTo, in));
     }
 
@@ -693,54 +693,6 @@ qt_urlRecode(QString &appendTo, QStringView in,
 
     return recode(appendTo, reinterpret_cast<const ushort *>(in.begin()), reinterpret_cast<const ushort *>(in.end()),
                   encoding, actionTable, false);
-}
-
-// qstring.cpp
-bool qt_is_ascii(const char *&ptr, const char *end) noexcept;
-
-/*!
-    \internal
-    \since 5.0
-
-    \a ba contains an 8-bit form of the component and it might be
-    percent-encoded already. We can't use QString::fromUtf8 because it might
-    contain non-UTF8 sequences. We can't use QByteArray::toPercentEncoding
-    because it might already contain percent-encoded sequences. We can't use
-    qt_urlRecode because it needs UTF-16 input.
-*/
-Q_AUTOTEST_EXPORT
-QString qt_urlRecodeByteArray(const QByteArray &ba)
-{
-    if (ba.isNull())
-        return QString();
-
-    // scan ba for anything above or equal to 0x80
-    // control points below 0x20 are fine in QString
-    const char *in = ba.constData();
-    const char *const end = ba.constEnd();
-    if (qt_is_ascii(in, end)) {
-        // no non-ASCII found, we're safe to convert to QString
-        return QString::fromLatin1(ba, ba.size());
-    }
-
-    // we found something that we need to encode
-    QByteArray intermediate = ba;
-    intermediate.resize(ba.size() * 3 - (in - ba.constData()));
-    uchar *out = reinterpret_cast<uchar *>(intermediate.data() + (in - ba.constData()));
-    for ( ; in < end; ++in) {
-        if (*in & 0x80) {
-            // encode
-            *out++ = '%';
-            *out++ = encodeNibble(uchar(*in) >> 4);
-            *out++ = encodeNibble(uchar(*in) & 0xf);
-        } else {
-            // keep
-            *out++ = uchar(*in);
-        }
-    }
-
-    // now it's safe to call fromLatin1
-    return QString::fromLatin1(intermediate, out - reinterpret_cast<uchar *>(intermediate.data()));
 }
 
 QT_END_NAMESPACE

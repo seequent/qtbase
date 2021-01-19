@@ -212,7 +212,7 @@ static quint16 indexData[] =
 };
 
 struct {
-    QVector<QRhiResource *> releasePool;
+    QList<QRhiResource *> releasePool;
     QRhiBuffer *vbuf = nullptr;
     QRhiBuffer *ibuf = nullptr;
     QRhiBuffer *ubuf = nullptr;
@@ -289,7 +289,7 @@ void Window::customInit()
     qint32 flip = 1;
     d.initialUpdates->updateDynamicBuffer(d.ubuf, 64, 4, &flip);
 
-    QRhiTextureUploadDescription desc({ 0, 0, { floatData.constData(), floatData.size() } });
+    QRhiTextureUploadDescription desc({ 0, 0, { floatData.constData(), int(floatData.size()) } });
     d.initialUpdates->uploadTexture(d.tex, desc);
 }
 

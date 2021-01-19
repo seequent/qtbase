@@ -499,9 +499,14 @@ static QList<QVariantMap> provisioningTeams()
     QList<QVariantMap> flatTeams;
     for (QVariantMap::const_iterator it = teamMap.begin(), end = teamMap.end(); it != end; ++it) {
         const QString emailAddress = it.key();
-        QVariantMap team = it.value().toMap();
-        team[QLatin1String("emailAddress")] = emailAddress;
-        flatTeams.append(team);
+        const QVariantList emailTeams = it.value().toList();
+
+        for (QVariantList::const_iterator teamIt = emailTeams.begin(),
+             teamEnd = emailTeams.end(); teamIt != teamEnd; ++teamIt) {
+            QVariantMap team = teamIt->toMap();
+            team[QLatin1String("emailAddress")] = emailAddress;
+            flatTeams.append(team);
+        }
     }
 
     // Sort teams so that Free Provisioning teams come last
@@ -1615,6 +1620,12 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                             plist_in_text.replace(QLatin1String("@TYPEINFO@"),
                                 (project->isEmpty("QMAKE_PKGINFO_TYPEINFO")
                                     ? QString::fromLatin1("????") : project->first("QMAKE_PKGINFO_TYPEINFO").left(4).toQString()));
+                            QString launchScreen = var("QMAKE_IOS_LAUNCH_SCREEN");
+                            if (launchScreen.isEmpty())
+                                launchScreen = QLatin1String("LaunchScreen");
+                            else
+                                launchScreen = QFileInfo(launchScreen).baseName();
+                            plist_in_text.replace(QLatin1String("${IOS_LAUNCH_SCREEN}"), launchScreen);
                             QFile plist_out_file(Option::output_dir + "/Info.plist");
                             if (plist_out_file.open(QIODevice::WriteOnly | QIODevice::Text)) {
                                 QTextStream plist_out(&plist_out_file);

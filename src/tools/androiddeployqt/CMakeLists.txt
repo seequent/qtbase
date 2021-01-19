@@ -1,10 +1,10 @@
 # Generated from androiddeployqt.pro.
 
 #####################################################################
-## androiddeployqt Binary:
+## androiddeployqt App:
 #####################################################################
 
-qt_add_executable(androiddeployqt
+qt_internal_add_app(androiddeployqt
     SOURCES
         main.cpp
     DEFINES
@@ -14,6 +14,9 @@ qt_add_executable(androiddeployqt
     PUBLIC_LIBRARIES
         Qt::Core # special case
 )
+set_target_properties(androiddeployqt PROPERTIES
+    WIN32_EXECUTABLE FALSE
+)
 
 #### Keys ignored in scope 1:.:.:androiddeployqt.pro:<TRUE>:
 # _OPTION = "host_build"
@@ -21,7 +24,7 @@ qt_add_executable(androiddeployqt
 ## Scopes:
 #####################################################################
 
-qt_extend_target(androiddeployqt CONDITION windows
+qt_internal_extend_target(androiddeployqt CONDITION windows
     COMPILE_OPTIONS
         -U__STRICT_ANSI__
 )

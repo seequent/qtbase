@@ -77,11 +77,13 @@ public:
           sortIndicatorOrder(Qt::DescendingOrder),
           sortIndicatorSection(0),
           sortIndicatorShown(false),
+          sortIndicatorClearable(false),
           lastPos(-1),
           firstPos(-1),
           originalSize(-1),
           section(-1),
           target(-1),
+          firstPressed(-1),
           pressed(-1),
           hover(-1),
           length(0),
@@ -248,6 +250,7 @@ public:
 
     void clear();
     void flipSortIndicator(int section);
+    Qt::SortOrder defaultSortOrderForSection(int section) const;
     void cascadingResize(int visual, int newSize);
 
     enum State { NoState, ResizeSection, MoveSection, SelectSections, NoClear } state;
@@ -257,9 +260,10 @@ public:
     Qt::SortOrder sortIndicatorOrder;
     int sortIndicatorSection;
     bool sortIndicatorShown;
+    bool sortIndicatorClearable;
 
-    mutable QVector<int> visualIndices; // visualIndex = visualIndices.at(logicalIndex)
-    mutable QVector<int> logicalIndices; // logicalIndex = row or column in the model
+    mutable QList<int> visualIndices; // visualIndex = visualIndices.at(logicalIndex)
+    mutable QList<int> logicalIndices; // logicalIndex = row or column in the model
     mutable QBitArray sectionSelected; // from logical index to bit
     mutable QHash<int, int> hiddenSectionSize; // from logical index to section size
     mutable QHash<int, int> cascadingSectionSize; // from visual index to section size
@@ -274,6 +278,7 @@ public:
     int originalSize;
     int section; // used for resizing and moving sections
     int target;
+    int firstPressed;
     int pressed;
     int hover;
 
@@ -329,12 +334,12 @@ public:
 #endif
     };
 
-    QVector<SectionItem> sectionItems;
+    QList<SectionItem> sectionItems;
     struct LayoutChangeItem {
         QPersistentModelIndex index;
         SectionItem section;
     };
-    QVector<LayoutChangeItem> layoutChangePersistentSections;
+    QList<LayoutChangeItem> layoutChangePersistentSections;
 
     void createSectionItems(int start, int end, int size, QHeaderView::ResizeMode mode);
     void removeSectionsFromSectionItems(int start, int end);
@@ -388,7 +393,7 @@ public:
 
 };
 Q_DECLARE_TYPEINFO(QHeaderViewPrivate::SectionItem, Q_PRIMITIVE_TYPE);
-Q_DECLARE_TYPEINFO(QHeaderViewPrivate::LayoutChangeItem, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QHeaderViewPrivate::LayoutChangeItem, Q_RELOCATABLE_TYPE);
 
 QT_END_NAMESPACE
 

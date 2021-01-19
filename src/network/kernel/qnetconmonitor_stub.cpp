@@ -61,8 +61,8 @@ QNetworkConnectionMonitor::QNetworkConnectionMonitor()
 QNetworkConnectionMonitor::QNetworkConnectionMonitor(const QHostAddress &local, const QHostAddress &remote)
     : QObject(*new QNetworkConnectionMonitorPrivate)
 {
-    Q_UNUSED(local)
-    Q_UNUSED(remote)
+    Q_UNUSED(local);
+    Q_UNUSED(remote);
 }
 
 QNetworkConnectionMonitor::~QNetworkConnectionMonitor()
@@ -71,8 +71,8 @@ QNetworkConnectionMonitor::~QNetworkConnectionMonitor()
 
 bool QNetworkConnectionMonitor::setTargets(const QHostAddress &local, const QHostAddress &remote)
 {
-    Q_UNUSED(local)
-    Q_UNUSED(remote)
+    Q_UNUSED(local);
+    Q_UNUSED(remote);
 
     return false;
 }
@@ -100,8 +100,8 @@ class QNetworkStatusMonitorPrivate : public QObjectPrivate
 {
 };
 
-QNetworkStatusMonitor::QNetworkStatusMonitor()
-    : QObject(*new QNetworkStatusMonitorPrivate)
+QNetworkStatusMonitor::QNetworkStatusMonitor(QObject *parent)
+    : QObject(*new QNetworkStatusMonitorPrivate, parent)
 {
 }
 
@@ -128,6 +128,11 @@ bool QNetworkStatusMonitor::isNetworkAccessible()
     return false;
 }
 
+bool QNetworkStatusMonitor::event(QEvent *event)
+{
+    return QObject::event(event);
+}
+
 bool QNetworkStatusMonitor::isEnabled()
 {
     return false;
@@ -135,7 +140,7 @@ bool QNetworkStatusMonitor::isEnabled()
 
 void QNetworkStatusMonitor::reachabilityChanged(bool online)
 {
-    Q_UNUSED(online)
+    Q_UNUSED(online);
 }
 
 QT_END_NAMESPACE

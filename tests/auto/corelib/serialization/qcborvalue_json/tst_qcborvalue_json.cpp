@@ -38,7 +38,10 @@
 ****************************************************************************/
 
 #include <QtCore/qcborvalue.h>
-#include <QtTest>
+#include <QTest>
+#include <QJsonValue>
+#include <QJsonObject>
+#include <QJsonArray>
 
 Q_DECLARE_METATYPE(QCborValue)
 
@@ -80,7 +83,7 @@ void tst_QCborValue_Json::toVariant_data()
             if (v.type() == QCborValue::Double)
                 return QTest::addRow("Double:%g", exp.toDouble());
             if (v.type() == QCborValue::ByteArray || v.type() == QCborValue::String)
-                return QTest::addRow("%s:%d", typeString, exp.toString().size());
+                return QTest::addRow("%s:%zd", typeString, size_t(exp.toString().size()));
             if (v.type() >= 0x10000)
                 return QTest::newRow(exp.typeName());
             return QTest::newRow(typeString);
@@ -89,7 +92,7 @@ void tst_QCborValue_Json::toVariant_data()
     };
 
     // good JSON matching:
-    add(QCborValue(), QVariant(), QJsonValue::Undefined);
+    add(QCborValue(), QVariant(), QJsonValue::Null);
     add(nullptr, QVariant::fromValue(nullptr), QJsonValue::Null);
     add(false, false, false);
     add(true, true, true);
@@ -148,8 +151,8 @@ void tst_QCborValue_Json::toVariant()
     QCOMPARE(v.toVariant(), variant);
     if (variant.isValid()) {
         QVariant variant2 = QVariant::fromValue(v);
-        QVERIFY(variant2.canConvert(variant.userType()));
-        QVERIFY(variant2.convert(variant.userType()));
+        QVERIFY(variant2.canConvert(variant.metaType()));
+        QVERIFY(variant2.convert(variant.metaType()));
         QCOMPARE(variant2, variant);
     }
 
@@ -224,7 +227,7 @@ void tst_QCborValue_Json::fromVariant()
     QCOMPARE(QCborArray::fromVariantList({variant}), QCborArray{v});
     QCOMPARE(QCborArray::fromVariantList({variant, variant}), QCborArray({v, v}));
 
-    if (variant.type() == QVariant::String) {
+    if (variant.metaType() == QMetaType(QMetaType::QString)) {
         QString s = variant.toString();
         QCOMPARE(QCborArray::fromStringList({s}), QCborArray{v});
         QCOMPARE(QCborArray::fromStringList({s, s}), QCborArray({v, v}));

@@ -127,13 +127,13 @@ QT_BEGIN_NAMESPACE
     QWidget::move(). When the area contents or the viewport size
     changes, we do the following:
 
-    \snippet myscrollarea.cpp 1
+    \snippet myscrollarea/myscrollarea.cpp 1
 
     When the scroll bars change value, we need to update the widget
     position, i.e., find the part of the widget that is to be drawn in
     the viewport:
 
-    \snippet myscrollarea.cpp 0
+    \snippet myscrollarea/myscrollarea.cpp 0
 
     In order to track scroll bar movements, reimplement the virtual
     function scrollContentsBy(). In order to fine-tune scrolling
@@ -340,7 +340,7 @@ void QAbstractScrollAreaPrivate::layoutChildren_helper(bool *needHorizontalScrol
                             && vbar->minimum() < vbar->maximum() && !vbar->sizeHint().isEmpty())));
 
     QStyleOption opt(0);
-    opt.init(q);
+    opt.initFrom(q);
 
     const int hscrollOverlap = hbar->style()->pixelMetric(QStyle::PM_ScrollView_ScrollBarOverlap, &opt, hbar);
     const int vscrollOverlap = vbar->style()->pixelMetric(QStyle::PM_ScrollView_ScrollBarOverlap, &opt, vbar);
@@ -1230,57 +1230,49 @@ void QAbstractScrollArea::contextMenuEvent(QContextMenuEvent *e)
 void QAbstractScrollArea::keyPressEvent(QKeyEvent * e)
 {
     Q_D(QAbstractScrollArea);
-    if (false){
-#ifndef QT_NO_SHORTCUT
-    } else if (e == QKeySequence::MoveToPreviousPage) {
-        d->vbar->triggerAction(QScrollBar::SliderPageStepSub);
-    } else if (e == QKeySequence::MoveToNextPage) {
-        d->vbar->triggerAction(QScrollBar::SliderPageStepAdd);
-#endif
-    } else {
+
 #ifdef QT_KEYPAD_NAVIGATION
-        if (QApplicationPrivate::keypadNavigationEnabled() && !hasEditFocus()) {
-            e->ignore();
-            return;
-        }
+    if (QApplicationPrivate::keypadNavigationEnabled() && !hasEditFocus()) {
+        e->ignore();
+        return;
+    }
 #endif
-        switch (e->key()) {
-        case Qt::Key_Up:
-            d->vbar->triggerAction(QScrollBar::SliderSingleStepSub);
-            break;
-        case Qt::Key_Down:
-            d->vbar->triggerAction(QScrollBar::SliderSingleStepAdd);
-            break;
-        case Qt::Key_Left:
+    switch (e->key()) {
+    case Qt::Key_Up:
+        d->vbar->triggerAction(QScrollBar::SliderSingleStepSub);
+        break;
+    case Qt::Key_Down:
+        d->vbar->triggerAction(QScrollBar::SliderSingleStepAdd);
+        break;
+    case Qt::Key_Left:
 #ifdef QT_KEYPAD_NAVIGATION
-        if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
-            && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->minimum())) {
-            //if we aren't using the hbar or we are already at the leftmost point ignore
-            e->ignore();
-            return;
-        }
+    if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
+        && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->minimum())) {
+        //if we aren't using the hbar or we are already at the leftmost point ignore
+        e->ignore();
+        return;
+    }
 #endif
-            d->hbar->triggerAction(
-                layoutDirection() == Qt::LeftToRight
-                ? QScrollBar::SliderSingleStepSub : QScrollBar::SliderSingleStepAdd);
-            break;
-        case Qt::Key_Right:
+        d->hbar->triggerAction(
+            layoutDirection() == Qt::LeftToRight
+            ? QScrollBar::SliderSingleStepSub : QScrollBar::SliderSingleStepAdd);
+        break;
+    case Qt::Key_Right:
 #ifdef QT_KEYPAD_NAVIGATION
-        if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
-            && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->maximum())) {
-            //if we aren't using the hbar or we are already at the rightmost point ignore
-            e->ignore();
-            return;
-        }
+    if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
+        && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->maximum())) {
+        //if we aren't using the hbar or we are already at the rightmost point ignore
+        e->ignore();
+        return;
+    }
 #endif
-            d->hbar->triggerAction(
-                layoutDirection() == Qt::LeftToRight
-                ? QScrollBar::SliderSingleStepAdd : QScrollBar::SliderSingleStepSub);
-            break;
-        default:
-            e->ignore();
-            return;
-        }
+        d->hbar->triggerAction(
+            layoutDirection() == Qt::LeftToRight
+            ? QScrollBar::SliderSingleStepAdd : QScrollBar::SliderSingleStepSub);
+        break;
+    default:
+        e->ignore();
+        return;
     }
     e->accept();
 }
@@ -1490,7 +1482,7 @@ QSize QAbstractScrollArea::viewportSizeHint() const
 /*!
     \since 5.2
     \property QAbstractScrollArea::sizeAdjustPolicy
-    This property holds the policy describing how the size of the scroll area changes when the
+    \brief the policy describing how the size of the scroll area changes when the
     size of the viewport changes.
 
     The default policy is QAbstractScrollArea::AdjustIgnored.

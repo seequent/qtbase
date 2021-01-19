@@ -209,7 +209,11 @@ public:
     QStroker();
     ~QStroker();
 
-    void setStrokeWidth(qfixed width) { m_strokeWidth = width; m_curveThreshold = qt_real_to_fixed(qBound(0.025, 1.0/width, 0.25)); }
+    void setStrokeWidth(qfixed width)
+    {
+        m_strokeWidth = width;
+        m_curveThreshold = qt_real_to_fixed(qBound(0.00025, 1.0 / qt_fixed_to_real(width), 0.25));
+    }
     qfixed strokeWidth() const { return m_strokeWidth; }
 
     void setCapStyle(Qt::PenCapStyle capStyle) { m_capStyle = joinModeForCap(capStyle); }
@@ -263,10 +267,10 @@ public:
 
     QStroker *stroker() const { return m_stroker; }
 
-    static QVector<qfixed> patternForStyle(Qt::PenStyle style);
+    static QList<qfixed> patternForStyle(Qt::PenStyle style);
 
-    void setDashPattern(const QVector<qfixed> &dashPattern) { m_dashPattern = dashPattern; }
-    QVector<qfixed> dashPattern() const { return m_dashPattern; }
+    void setDashPattern(const QList<qfixed> &dashPattern) { m_dashPattern = dashPattern; }
+    QList<qfixed> dashPattern() const { return m_dashPattern; }
 
     void setDashOffset(qreal offset) { m_dashOffset = offset; }
     qreal dashOffset() const { return m_dashOffset; }
@@ -281,7 +285,7 @@ protected:
     void processCurrentSubpath() override;
 
     QStroker *m_stroker;
-    QVector<qfixed> m_dashPattern;
+    QList<qfixed> m_dashPattern;
     qreal m_dashOffset;
 
     qreal m_stroke_width;

@@ -92,7 +92,7 @@
     \note For the current keyboard input locale take a look at
     QInputMethod::locale().
 
-    QLocale's data is based on Common Locale Data Repository v36.
+    QLocale's data is based on Common Locale Data Repository v38.
 
     \sa QString::arg(), QString::toInt(), QString::toDouble(),
     QInputMethod::locale()
@@ -111,7 +111,6 @@
     \value Afar
     \value Afrikaans
     \value Aghem
-    \value Ahom Since Qt 5.7
     \value Akan
     \value Akkadian Since Qt 5.1
     \value Akoose Since Qt 5.3
@@ -120,11 +119,9 @@
     \value Amharic
     \value AncientEgyptian Since Qt 5.1
     \value AncientGreek Since Qt 5.1
-    \value AncientNorthArabian Since Qt 5.5
     \value Arabic
     \value Aragonese Since Qt 5.1
     \value Aramaic Since Qt 5.1
-    \value ArdhamagadhiPrakrit Since Qt 5.7
     \value Armenian
     \value Assamese
     \value Asturian
@@ -138,35 +135,33 @@
     \value Balinese Since Qt 5.1
     \value Bambara
     \value Bamun Since Qt 5.1
+    \value Bangla Since Qt 6.0
     \value Basaa
     \value Bashkir
     \value Basque
-    \value Bassa Since Qt 5.5
     \value BatakToba Since Qt 5.1
     \value Belarusian
     \value Bemba
     \value Bena
-    \value Bengali
+    \value Bengali Obsolete, please use Bangla
     \value Bhojpuri Since Qt 5.7
     \value Bhutani Obsolete, please use Dzongkha
-    \value Bihari
     \value Bislama
     \value Blin
     \value Bodo
     \value Bosnian
     \value Breton
     \value Buginese Since Qt 5.1
-    \value Buhid Since Qt 5.1
     \value Bulgarian
     \value Burmese
     \value Byelorussian Obsolete, please use Belarusian
     \value Cambodian Obsolete, please use Khmer
     \value Cantonese Since Qt 5.7
-    \value Carian Since Qt 5.1
     \value Catalan
     \value Cebuano Since Qt 5.14
+    \value CentralAtlasTamazight Since Qt 6.0
     \value CentralKurdish Since Qt 5.5
-    \value CentralMoroccoTamazight
+    \value CentralMoroccoTamazight Obsolete, please use CentralAtlasTamazight
     \value Chakma Since Qt 5.1
     \value Chamorro
     \value Chechen
@@ -177,9 +172,7 @@
     \value Chinese (Mandarin)
     \value Church
     \value Chuvash
-    \value ClassicalMandaic Since Qt 5.1
     \value Colognian
-    \value CongoSwahili
     \value Coptic Since Qt 5.1
     \value Cornish
     \value Corsican
@@ -192,14 +185,11 @@
     \value Duala
     \value Dutch
     \value Dzongkha
-    \value EasternCham Since Qt 5.1
-    \value EasternKayah Since Qt 5.1
     \value Embu
     \value English
     \value Erzya Since Qt 5.14
     \value Esperanto
     \value Estonian
-    \value Etruscan Since Qt 5.1
     \value Ewe
     \value Ewondo
     \value Faroese
@@ -219,21 +209,17 @@
     \value German
     \value Gothic Since Qt 5.1
     \value Greek
-    \value Greenlandic
+    \value Greenlandic Obsolete, please use Kalaallisut
     \value Guarani
     \value Gujarati
     \value Gusii
     \value Haitian
-    \value Hanunoo Since Qt 5.1
     \value Hausa
     \value Hawaiian
     \value Hebrew
     \value Herero
-    \value HieroglyphicLuwian Since Qt 5.7
     \value Hindi
     \value HiriMotu
-    \value HmongNjua Since Qt 5.5
-    \value Ho Since Qt 5.5
     \value Hungarian
     \value Icelandic
     \value Ido Since Qt 5.12
@@ -244,7 +230,8 @@
     \value Interlingua
     \value Interlingue
     \value Inuktitut
-    \value Inupiak
+    \value Inupiak Obsolete, please use Inupiaq
+    \value Inupiaq Since 6.0
     \value Irish
     \value Italian
     \value Japanese
@@ -254,6 +241,7 @@
     \value Kabuverdianu
     \value Kabyle
     \value Kako
+    \value Kalaallisut Since Qt 6.0
     \value Kalenjin
     \value Kamba
     \value Kannada
@@ -265,7 +253,7 @@
     \value Kiche Since Qt 5.5
     \value Kikuyu
     \value Kinyarwanda
-    \value Kirghiz
+    \value Kirghiz Obsolete, please use Kyrgyz
     \value Komi
     \value Kongo
     \value Konkani
@@ -274,23 +262,20 @@
     \value KoyraboroSenni
     \value KoyraChiini
     \value Kpelle
+    \value Kuanyama Since 6.0
     \value Kurdish
     \value Kurundi Obsolete, please use Rundi
-    \value Kwanyama
+    \value Kwanyama Obsolete, please use Kuanyama
     \value Kwasio
+    \value Kyrgyz Since 6.0
     \value Lakota Since Qt 5.3
     \value Langi
     \value Lao
-    \value LargeFloweryMiao Since Qt 5.1
     \value Latin
     \value Latvian
-    \value Lepcha Since Qt 5.1
     \value Lezghian Since Qt 5.5
     \value Limburgish
-    \value Limbu Since Qt 5.1
-    \value LinearA Since Qt 5.5
     \value Lingala
-    \value Lisu Since Qt 5.1
     \value LiteraryChinese Since Qt 5.7
     \value Lithuanian
     \value Lojban Since Qt 5.12
@@ -299,11 +284,8 @@
     \value LubaKatanga
     \value LuleSami Since Qt 5.5
     \value Luo
-    \value Lu Since Qt 5.1
     \value Luxembourgish
     \value Luyia
-    \value Lycian Since Qt 5.1
-    \value Lydian Since Qt 5.1
     \value Macedonian
     \value Machame
     \value Maithili Since Qt 5.5
@@ -314,7 +296,6 @@
     \value Malayalam
     \value Maltese
     \value Mandingo Since Qt 5.1
-    \value ManichaeanMiddlePersian Since Qt 5.5
     \value Manipuri Since Qt 5.1
     \value Manx
     \value Maori
@@ -324,44 +305,40 @@
     \value Masai
     \value Mazanderani Since Qt 5.7
     \value Mende Since Qt 5.5
-    \value Meroitic Since Qt 5.1
     \value Meru
     \value Meta
     \value Mohawk Since Qt 5.5
-    \value Moldavian Obsolete, please use Romanian
     \value Mongolian
-    \value Mono Since Qt 5.5
     \value Morisyen
-    \value Mru Since Qt 5.7
     \value Mundang
     \value Muscogee Since Qt 5.14
     \value Nama
     \value NauruLanguage
-    \value Navaho
+    \value Navaho Obsolete, please use Navajo
+    \value Navajo Since 6.0
     \value Ndonga
     \value Nepali
     \value Newari Since Qt 5.7
     \value Ngiemboon
+    \value NigerianPidgin Since Qt 6.0
     \value Ngomba
     \value Nko Since Qt 5.5
     \value NorthernLuri Since Qt 5.7
     \value NorthernSami
     \value NorthernSotho
-    \value NorthernThai Since Qt 5.1
     \value NorthNdebele
-    \value NorwegianBokmal same as Norwegian
+    \value NorwegianBokmal
     \value NorwegianNynorsk
-    \value Norwegian same as NorwegianBokmal
     \value Nuer
     \value Nyanja
     \value Nyankole
     \value Occitan
+    \value Odia Since 6.0
     \value Ojibwa
     \value OldIrish Since Qt 5.1
     \value OldNorse Since Qt 5.1
     \value OldPersian Since Qt 5.1
-    \value OldTurkish Since Qt 5.1
-    \value Oriya
+    \value Oriya Obsolete, please use Odia
     \value Oromo
     \value Osage Since Qt 5.7
     \value Ossetic
@@ -369,17 +346,14 @@
     \value Palauan Since Qt 5.7
     \value Pali
     \value Papiamento Since Qt 5.7
-    \value Parthian Since Qt 5.1
     \value Pashto
     \value Persian
     \value Phoenician Since Qt 5.1
     \value Polish
     \value Portuguese
-    \value PrakritLanguage Since Qt 5.1
     \value Prussian Since Qt 5.5
     \value Punjabi
     \value Quechua
-    \value Rejang Since Qt 5.1
     \value RhaetoRomance Obsolete, please use Romansh
     \value Romanian
     \value Romansh
@@ -387,22 +361,18 @@
     \value Rundi
     \value Russian
     \value Rwa
-    \value Sabaean Since Qt 5.1
     \value Saho
     \value Sakha
-    \value Samaritan Since Qt 5.1
     \value Samburu
     \value Samoan
     \value Sango
     \value Sangu
     \value Sanskrit
     \value Santali Since Qt 5.1
-    \value Saraiki Since Qt 5.7
     \value Sardinian
     \value Saurashtra Since Qt 5.1
     \value Sena
     \value Serbian
-    \value SerboCroatian Obsolete, please use Serbian
     \value Shambala
     \value Shona
     \value SichuanYi
@@ -416,7 +386,6 @@
     \value Slovenian
     \value Soga
     \value Somali
-    \value Sora Since Qt 5.1
     \value SouthernKurdish Since Qt 5.12
     \value SouthernSami Since Qt 5.5
     \value SouthernSotho
@@ -428,22 +397,16 @@
     \value Swati
     \value Swedish
     \value SwissGerman
-    \value Sylheti Since Qt 5.1
     \value Syriac
     \value Tachelhit
-    \value Tagalog Obsolete, please use Filipino
-    \value Tagbanwa Since Qt 5.1
     \value Tahitian
     \value TaiDam Since Qt 5.1
-    \value TaiNua Since Qt 5.1
     \value Taita
     \value Tajik
     \value Tamil
-    \value Tangut Since Qt 5.7
     \value Taroko
     \value Tasawaq
     \value Tatar
-    \value TedimChin Since Qt 5.5
     \value Telugu
     \value Teso
     \value Thai
@@ -458,28 +421,28 @@
     \value Turkish
     \value Turkmen
     \value TuvaluLanguage Since Qt 5.7
-    \value Twi Obsolete, please use Akan
     \value Tyap
     \value Ugaritic Since Qt 5.1
-    \value Uighur
-    \value Uigur Obsolete, please use Uighur
+    \value Uighur Obsolete, please use Uyghur
+    \value Uigur Obsolete, please use Uyghur
     \value Ukrainian
-    \value UncodedLanguages Since Qt 5.7
     \value UpperSorbian Since Qt 5.5
     \value Urdu
+    \value Uyghur Since 6.0
     \value Uzbek
     \value Vai
     \value Venda
     \value Vietnamese
     \value Volapuk
     \value Vunjo
-    \value Walamo
+    \value Walamo Obsolete, please use Wolaytta
     \value Walloon
     \value Walser
     \value Warlpiri Since Qt 5.5
     \value Welsh
     \value WesternBalochi Since Qt 5.12
     \value WesternFrisian same as Frisian
+    \value Wolaytta Since 6.0
     \value Wolof
     \value Xhosa
     \value Yangben
@@ -530,7 +493,8 @@
     \value Bhutan
     \value Bolivia
     \value Bonaire
-    \value BosniaAndHerzegowina
+    \value BosniaAndHerzegowina Obsolete, use \c BosniaAndHerzegovina instead
+    \value BosniaAndHerzegovina Since 6.0
     \value Botswana
     \value BouvetIsland
     \value Brazil
@@ -544,6 +508,7 @@
     \value Cameroon
     \value Canada
     \value CanaryIslands
+    \value CaribbeanNetherlands
     \value CapeVerde
     \value CaymanIslands
     \value CentralAfricanRepublic
@@ -562,11 +527,13 @@
     \value CostaRica
     \value Croatia
     \value Cuba
-    \value CuraSao
+    \value Curacao Since Qt 6.0
+    \value CuraSao Obsolete, use \c Curacao instead
     \value Cyprus
-    \value CzechRepublic
-    \value DemocraticRepublicOfCongo Obsolete, please use CongoKinshasa
-    \value DemocraticRepublicOfKorea Obsolete, please use NorthKorea
+    \value Czechia Since 6.0
+    \value CzechRepublic Obsolete, use \c Czechia instead
+    \value DemocraticRepublicOfCongo Obsolete, use \c CongoKinshasa instead
+    \value DemocraticRepublicOfKorea Obsolete, use \c NorthKorea instead
     \value Denmark
     \value DiegoGarcia
     \value Djibouti
@@ -579,6 +546,7 @@
     \value EquatorialGuinea
     \value Eritrea
     \value Estonia
+    \value Eswatini
     \value Ethiopia
     \value EuropeanUnion Since Qt 5.7
     \value Europe Since Qt 5.12
@@ -633,7 +601,7 @@
     \value Kyrgyzstan
     \value Laos
     \value LatinAmerica
-    \value LatinAmericaAndTheCaribbean Obsolete, please use LatinAmerica
+    \value LatinAmericaAndTheCaribbean Obsolete, use \c LatinAmerica instead
     \value Latvia
     \value Lebanon
     \value Lesotho
@@ -642,6 +610,7 @@
     \value Liechtenstein
     \value Lithuania
     \value Luxembourg
+    \value Macao
     \value Macau
     \value Macedonia
     \value Madagascar
@@ -687,7 +656,7 @@
     \value Panama
     \value PapuaNewGuinea
     \value Paraguay
-    \value PeoplesRepublicOfCongo Obsolete, please use CongoBrazzaville
+    \value PeoplesRepublicOfCongo Obsolete, use \c CongoBrazzaville instead
     \value Peru
     \value Philippines
     \value Pitcairn
@@ -695,11 +664,11 @@
     \value Portugal
     \value PuertoRico
     \value Qatar
-    \value RepublicOfKorea Obsolete, please use SouthKorea
+    \value RepublicOfKorea Obsolete, use \c SouthKorea instead
     \value Reunion
     \value Romania
-    \value RussianFederation same as Russia
-    \value Russia same as RussianFederation
+    \value RussianFederation
+    \value Russia
     \value Rwanda
     \value SaintBarthelemy
     \value SaintHelena
@@ -707,6 +676,7 @@
     \value SaintLucia
     \value SaintMartin
     \value SaintPierreAndMiquelon
+    \value SaintVincentAndGrenadines
     \value SaintVincentAndTheGrenadines
     \value Samoa
     \value SanMarino
@@ -723,6 +693,7 @@
     \value SolomonIslands
     \value Somalia
     \value SouthAfrica
+    \value SouthGeorgiaAndSouthSandwichIslands
     \value SouthGeorgiaAndTheSouthSandwichIslands
     \value SouthKorea
     \value SouthSudan
@@ -730,19 +701,20 @@
     \value SriLanka
     \value Sudan
     \value Suriname
+    \value SvalbardAndJanMayen
     \value SvalbardAndJanMayenIslands
     \value Swaziland
     \value Sweden
     \value Switzerland
     \value Syria
-    \value SyrianArabRepublic Obsolete, please use Syria
+    \value SyrianArabRepublic Obsolete, use \c Syria instead
     \value Taiwan
     \value Tajikistan
     \value Tanzania
     \value Thailand
+    \value TimorLeste
     \value Togo
     \value TokelauCountry
-    \value Tokelau Obsolete, please use TokelauCountry
     \value Tonga
     \value TrinidadAndTobago
     \value TristanDaCunha
@@ -751,20 +723,22 @@
     \value Turkmenistan
     \value TurksAndCaicosIslands
     \value TuvaluCountry
-    \value Tuvalu Obsolete, please use TuvaluCountry
     \value Uganda
     \value Ukraine
     \value UnitedArabEmirates
     \value UnitedKingdom
     \value UnitedStates
+    \value UnitedStatesOutlyingIslands
     \value UnitedStatesMinorOutlyingIslands
     \value UnitedStatesVirginIslands
     \value Uruguay
     \value Uzbekistan
     \value Vanuatu
+    \value VaticanCity
     \value VaticanCityState
     \value Venezuela
     \value Vietnam
+    \value WallisAndFutuna
     \value WallisAndFutunaIslands
     \value WesternSahara
     \value World Since Qt 5.12
@@ -792,9 +766,10 @@
     \value AvestanScript Since Qt 5.1
     \value BalineseScript Since Qt 5.1
     \value BamumScript Since Qt 5.1
+    \value BanglaScript Since 6.0
     \value BassaVahScript Since Qt 5.5
     \value BatakScript Since Qt 5.1
-    \value BengaliScript
+    \value BengaliScript Obsolete, please use BanglaScript
     \value BhaiksukiScript Since Qt 5.7
     \value BopomofoScript Since Qt 5.1
     \value BrahmiScript Since Qt 5.1
@@ -862,7 +837,8 @@
     \value ManichaeanScript Since Qt 5.5
     \value MarchenScript Since Qt 5.7
     \value MeiteiMayekScript Since Qt 5.1
-    \value MendeKikakuiScript Since Qt 5.5
+    \value MendeScript Since Qt 6.0
+    \value MendeKikakuiScript Obsolete, please use MendeScript
     \value MeroiticCursiveScript Since Qt 5.1
     \value MeroiticScript Since Qt 5.1
     \value ModiScript Since Qt 5.5
@@ -882,7 +858,8 @@
     \value OldPermicScript Since Qt 5.5
     \value OldPersianScript Since Qt 5.1
     \value OldSouthArabianScript Since Qt 5.1
-    \value OriyaScript
+    \value OdiaScript Since 6.0
+    \value OriyaScript Obsolete, please use OdiaScript
     \value OrkhonScript Since Qt 5.1
     \value OsageScript Since Qt 5.7
     \value OsmanyaScript Since Qt 5.1
@@ -936,24 +913,25 @@
 /*!
     \enum QLocale::FormatType
 
-    This enum describes the types of format that can be used when
-    converting QDate and QTime objects to strings.
+    This enum describes the different formats that can be used when
+    converting QDate, QTime, and QDateTime objects, as well
+    as months and days, to strings specific to the locale.
 
-    \value LongFormat The long version of day and month names; for
-    example, returning "January" as a month name.
+    \value LongFormat Longer format.
 
-    \value ShortFormat The short version of day and month names; for
-    example, returning "Jan" as a month name.
+    \value ShortFormat Shorter format.
 
-    \value NarrowFormat A special version of day and month names for
-    use when space is limited; for example, returning "J" as a month
-    name. Note that the narrow format might contain the same text for
-    different months and days or it can even be an empty string if the
+    \value NarrowFormat A special version for use when space is very limited.
+
+    \note \c NarrowFormat might contain the same text for
+    different months and days. It can even be an empty string if the
     locale doesn't support narrow names, so you should avoid using it
     for date formatting. Also, for the system locale this format is
-    the same as ShortFormat.
+    the same as \c ShortFormat.
 
-    \sa QDateTime::toString(), QDate::toString(), QTime::toString()
+    \sa dateFormat(), timeFormat(), dateTimeFormat()
+    \sa monthName(), standaloneMonthName(), dayName(), standaloneDayName()
+    \sa toDate(), toTime(), toDateTime()
 */
 
 /*!
@@ -1027,17 +1005,29 @@
 
 
 /*!
-    \fn bool QLocale::operator==(const QLocale &other) const
+    \fn bool QLocale::operator==(const QLocale &lhs, const QLocale &rhs)
 
-    Returns \c true if the QLocale object is the same as the \a other
-    locale specified; otherwise returns \c false.
+    Returns \c true if the two QLocale objects, \a lhs and \a rhs, are the same;
+    otherwise returns \c false.
+
+    \note The system locale is not equal to the QLocale object constructed from
+    its language(), script() and country(), even if the two agree in all data
+    fields. Nor are two locales with different number options equal.
+
+    \sa operator!=(), setNumberOptions()
 */
 
 /*!
-    \fn bool QLocale::operator!=(const QLocale &other) const
+    \fn bool QLocale::operator!=(const QLocale &lhs, const QLocale &rhs)
 
-    Returns \c true if the QLocale object is not the same as the \a other
-    locale specified; otherwise returns \c false.
+    Returns \c true if the two QLocale objects, \a lhs and \a rhs, differ;
+    otherwise returns \c false.
+
+    \note The system locale is not equal to the QLocale object constructed from
+    its language(), script() and country(), even if the two agree in all data
+    fields. Nor are two locales with different number options equal.
+
+    \sa operator==(), setNumberOptions()
 */
 
 /*!
@@ -1158,7 +1148,7 @@
     \variable QSystemLocale::CurrencyToStringArgument::value
 
     An input value that should be converted to its string representation.
-    Contains one of QVariant::LongLong, QVariant::ULongLong or QVariant::Double
+    Contains one of QMetaType::LongLong, QMetaType::ULongLong or QMetaType::Double
     types.
 */
 /*!
@@ -1263,11 +1253,6 @@
 
 /*!
     \fn QString QLocale::toCurrencyString(uint value, const QString &symbol) const
-    \since 4.8
-    \overload
-*/
-/*!
-    \fn QString QLocale::toCurrencyString(float value, const QString &symbol) const
     \since 4.8
     \overload
 */

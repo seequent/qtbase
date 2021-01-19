@@ -47,7 +47,6 @@
 #include "qapplication.h"
 #include "qboxlayout.h"
 #include "qlayoutitem.h"
-#include <private/qdesktopwidget_p.h>
 #include "qevent.h"
 #include "qframe.h"
 #include "qlabel.h"
@@ -65,7 +64,7 @@
 #include "qstyle.h"
 #include "qstyleoption.h"
 #include "qvarlengtharray.h"
-#if defined(Q_OS_MACX)
+#if defined(Q_OS_MACOS)
 #include <QtCore/QMetaMethod>
 #include <QtGui/QGuiApplication>
 #include <qpa/qplatformnativeinterface.h>
@@ -163,7 +162,7 @@ static const char *changed_signal(int which)
     case 5: return SIGNAL(currentRowChanged(int));
     case 6: return SIGNAL(valueChanged(int));
     };
-    Q_STATIC_ASSERT(7 == NFallbackDefaultProperties);
+    static_assert(7 == NFallbackDefaultProperties);
     Q_UNREACHABLE();
     return nullptr;
 }
@@ -180,7 +179,7 @@ public:
                                    const char *changedSignal)
         : className(className), property(property), changedSignal(changedSignal) {}
 };
-Q_DECLARE_TYPEINFO(QWizardDefaultProperty, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QWizardDefaultProperty, Q_RELOCATABLE_TYPE);
 
 class QWizardField
 {
@@ -189,7 +188,7 @@ public:
     QWizardField(QWizardPage *page, const QString &spec, QObject *object, const char *property,
                   const char *changedSignal);
 
-    void resolve(const QVector<QWizardDefaultProperty> &defaultPropertyTable);
+    void resolve(const QList<QWizardDefaultProperty> &defaultPropertyTable);
     void findProperty(const QWizardDefaultProperty *properties, int propertyCount);
 
     QWizardPage *page;
@@ -200,7 +199,7 @@ public:
     QByteArray changedSignal;
     QVariant initialValue;
 };
-Q_DECLARE_TYPEINFO(QWizardField, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QWizardField, Q_RELOCATABLE_TYPE);
 
 QWizardField::QWizardField(QWizardPage *page, const QString &spec, QObject *object,
                            const char *property, const char *changedSignal)
@@ -213,7 +212,7 @@ QWizardField::QWizardField(QWizardPage *page, const QString &spec, QObject *obje
     }
 }
 
-void QWizardField::resolve(const QVector<QWizardDefaultProperty> &defaultPropertyTable)
+void QWizardField::resolve(const QList<QWizardDefaultProperty> &defaultPropertyTable)
 {
     if (property.isEmpty())
         findProperty(defaultPropertyTable.constData(), defaultPropertyTable.count());
@@ -491,7 +490,7 @@ public:
     QString title;
     QString subTitle;
     QPixmap pixmaps[QWizard::NPixmaps];
-    QVector<QWizardField> pendingFields;
+    QList<QWizardField> pendingFields;
     mutable TriState completeState = Tri_Unknown;
     bool explicitlyFinal = false;
     bool commit = false;
@@ -530,7 +529,7 @@ public:
         : QWidget(wizard)
         , wizardPrivate(wizardPrivate) {}
 protected:
-    void paintEvent(QPaintEvent *);
+    void paintEvent(QPaintEvent *) override;
 #else
     QWizardAntiFlickerWidget(QWizard *wizard, QWizardPrivate *)
         : QWidget(wizard)
@@ -559,6 +558,7 @@ public:
     QWizardLayoutInfo layoutInfoForCurrentPage();
     void recreateLayout(const QWizardLayoutInfo &info);
     void updateLayout();
+    void updatePalette();
     void updateMinMaxSizes(const QWizardLayoutInfo &info);
     void updateCurrentPage();
     bool ensureButton(QWizard::WizardButton which) const;
@@ -580,14 +580,14 @@ public:
     void _q_updateButtonStates();
     void _q_handleFieldObjectDestroyed(QObject *);
     void setStyle(QStyle *style);
-#ifdef Q_OS_MACX
+#ifdef Q_OS_MACOS
     static QPixmap findDefaultBackgroundPixmap();
 #endif
 
     PageMap pageMap;
-    QVector<QWizardField> fields;
+    QList<QWizardField> fields;
     QMap<QString, int> fieldIndexMap;
-    QVector<QWizardDefaultProperty> defaultPropertyTable;
+    QList<QWizardDefaultProperty> defaultPropertyTable;
     QList<int> history;
     int start = -1;
     bool startSetByUser = false;
@@ -861,6 +861,7 @@ void QWizardPrivate::switchToPage(int newId, Direction direction)
 
     enableUpdates();
     updateLayout();
+    updatePalette();
 
     emit q->currentIdChanged(current);
 }
@@ -1144,16 +1145,8 @@ void QWizardPrivate::recreateLayout(const QWizardLayoutInfo &info)
         pageFrame->palette().brush(QPalette::Window).color().alpha() < 255
         || pageFrame->palette().brush(QPalette::Base).color().alpha() < 255;
     if (mac) {
-        if (!wasSemiTransparent) {
-            QPalette pal = pageFrame->palette();
-            pal.setBrush(QPalette::Window, QColor(255, 255, 255, 153));
-            // ### The next line is required to ensure visual semitransparency when
-            // ### switching from ModernStyle to MacStyle. See TAG1 below.
-            pal.setBrush(QPalette::Base, QColor(255, 255, 255, 153));
-            pageFrame->setPalette(pal);
-            pageFrame->setAutoFillBackground(true);
-            antiFlickerWidget->setAutoFillBackground(false);
-        }
+        pageFrame->setAutoFillBackground(true);
+        antiFlickerWidget->setAutoFillBackground(false);
     } else {
         if (wasSemiTransparent)
             pageFrame->setPalette(QPalette());
@@ -1294,6 +1287,30 @@ void QWizardPrivate::updateLayout()
     updateMinMaxSizes(info);
 }
 
+void QWizardPrivate::updatePalette() {
+    if (wizStyle == QWizard::MacStyle) {
+        // This is required to ensure visual semitransparency when
+        // switching from ModernStyle to MacStyle.
+        // See TAG1 in recreateLayout
+        // This additionally ensures that the colors are correct
+        // when the theme is changed.
+
+        // we should base the new palette on the default one
+        // so theme colors will be correct
+        QPalette newPalette = QApplication::palette(pageFrame);
+
+        QColor windowColor = newPalette.brush(QPalette::Window).color();
+        windowColor.setAlpha(153);
+        newPalette.setBrush(QPalette::Window, windowColor);
+
+        QColor baseColor = newPalette.brush(QPalette::Base).color();
+        baseColor.setAlpha(153);
+        newPalette.setBrush(QPalette::Base, baseColor);
+
+        pageFrame->setPalette(newPalette);
+    }
+}
+
 void QWizardPrivate::updateMinMaxSizes(const QWizardLayoutInfo &info)
 {
     Q_Q(QWizard);
@@ -1383,7 +1400,7 @@ bool QWizardPrivate::ensureButton(QWizard::WizardButton which) const
         if (style != QApplication::style()) // Propagate style
             pushButton->setStyle(style);
         pushButton->setObjectName(object_name_for_button(which));
-#ifdef Q_OS_MACX
+#ifdef Q_OS_MACOS
         pushButton->setAutoDefault(false);
 #endif
         pushButton->hide();
@@ -1707,7 +1724,7 @@ void QWizardPrivate::_q_updateButtonStates()
 void QWizardPrivate::_q_handleFieldObjectDestroyed(QObject *object)
 {
     int destroyed_index = -1;
-    QVector<QWizardField>::iterator it = fields.begin();
+    QList<QWizardField>::iterator it = fields.begin();
     while (it != fields.end()) {
         const QWizardField &field = *it;
         if (field.object == object) {
@@ -1741,7 +1758,7 @@ void QWizardPrivate::setStyle(QStyle *style)
         it.value()->setStyle(style);
 }
 
-#ifdef Q_OS_MACX
+#ifdef Q_OS_MACOS
 
 QPixmap QWizardPrivate::findDefaultBackgroundPixmap()
 {
@@ -2208,7 +2225,7 @@ int QWizard::addPage(QWizardPage *page)
     Q_D(QWizard);
     int theid = 0;
     if (!d->pageMap.isEmpty())
-        theid = (d->pageMap.constEnd() - 1).key() + 1;
+        theid = d->pageMap.lastKey() + 1;
     setPage(theid, page);
     return theid;
 }
@@ -2244,7 +2261,7 @@ void QWizard::setPage(int theid, QWizardPage *page)
 
     page->setParent(d->pageFrame);
 
-    QVector<QWizardField> &pendingFields = page->d_func()->pendingFields;
+    QList<QWizardField> &pendingFields = page->d_func()->pendingFields;
     for (int i = 0; i < pendingFields.count(); ++i)
         d->addField(pendingFields.at(i));
     pendingFields.clear();
@@ -2367,7 +2384,7 @@ QWizardPage *QWizard::page(int theid) const
 
     Pressing \uicontrol Back marks the current page as "unvisited" again.
 
-    \sa visitedPages()
+    \sa visitedIds()
 */
 bool QWizard::hasVisitedPage(int theid) const
 {
@@ -2695,7 +2712,7 @@ QString QWizard::buttonText(WizardButton which) const
         return d->buttonCustomTexts.value(which);
 
     const QString defText = buttonDefaultText(d->wizStyle, which, d);
-    if(!defText.isNull())
+    if (!defText.isNull())
         return defText;
 
     return d->btns[which]->text();
@@ -2872,7 +2889,7 @@ QPixmap QWizard::pixmap(WizardPixmap which) const
 {
     Q_D(const QWizard);
     Q_ASSERT(uint(which) < NPixmaps);
-#ifdef Q_OS_MACX
+#ifdef Q_OS_MACOS
     if (which == BackgroundPixmap && d->defaultPixmaps[BackgroundPixmap].isNull())
         d->defaultPixmaps[BackgroundPixmap] = d->findDefaultBackgroundPixmap();
 #endif
@@ -3148,6 +3165,8 @@ bool QWizard::event(QEvent *event)
     if (event->type() == QEvent::StyleChange) { // Propagate style
         d->setStyle(style());
         d->updateLayout();
+    } else if (event->type() == QEvent::PaletteChange) { // Emitted on theme change
+        d->updatePalette();
     }
 #if QT_CONFIG(style_windowsvista)
     else if (event->type() == QEvent::Show && d->vistaInitPending) {
@@ -3597,7 +3616,7 @@ void QWizardPage::cleanupPage()
 {
     Q_D(QWizardPage);
     if (d->wizard) {
-        const QVector<QWizardField> &fields = d->wizard->d_func()->fields;
+        const QList<QWizardField> &fields = d->wizard->d_func()->fields;
         for (const auto &field : fields) {
             if (field.page == this)
                 field.object->setProperty(field.property, field.initialValue);
@@ -3648,7 +3667,7 @@ bool QWizardPage::isComplete() const
     if (!d->wizard)
         return true;
 
-    const QVector<QWizardField> &wizardFields = d->wizard->d_func()->fields;
+    const QList<QWizardField> &wizardFields = d->wizard->d_func()->fields;
     for (int i = wizardFields.count() - 1; i >= 0; --i) {
         const QWizardField &field = wizardFields.at(i);
         if (field.page == this && field.mandatory) {

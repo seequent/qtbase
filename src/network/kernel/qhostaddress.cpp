@@ -136,7 +136,7 @@ void QHostAddressPrivate::setAddress(const Q_IPV6ADDR &a_)
 
 static bool parseIp6(const QString &address, QIPAddressUtils::IPv6Address &addr, QString *scopeId)
 {
-    QStringRef tmp(&address);
+    QStringView tmp(address);
     int scopeIdPos = tmp.lastIndexOf(QLatin1Char('%'));
     if (scopeIdPos != -1) {
         *scopeId = tmp.mid(scopeIdPos + 1).toString();
@@ -144,7 +144,7 @@ static bool parseIp6(const QString &address, QIPAddressUtils::IPv6Address &addr,
     } else {
         scopeId->clear();
     }
-    return QIPAddressUtils::parseIp6(addr, tmp.constBegin(), tmp.constEnd()) == nullptr;
+    return QIPAddressUtils::parseIp6(addr, tmp.begin(), tmp.end()) == nullptr;
 }
 
 bool QHostAddressPrivate::parse(const QString &ipString)
@@ -423,18 +423,6 @@ QHostAddress::QHostAddress(quint32 ip4Addr)
 }
 
 /*!
-    Constructs a host address object with the IPv6 address \a ip6Addr.
-
-    \a ip6Addr must be a 16-byte array in network byte order (big
-    endian).
-*/
-QHostAddress::QHostAddress(quint8 *ip6Addr)
-    : d(new QHostAddressPrivate)
-{
-    setAddress(ip6Addr);
-}
-
-/*!
     \since 5.5
     Constructs a host address object with the IPv6 address \a ip6Addr.
 
@@ -519,20 +507,6 @@ QHostAddress &QHostAddress::operator=(const QHostAddress &address)
     return *this;
 }
 
-#if QT_DEPRECATED_SINCE(5, 8)
-/*!
-    Assigns the host address \a address to this object, and returns a
-    reference to this object.
-
-    \sa setAddress()
-*/
-QHostAddress &QHostAddress::operator=(const QString &address)
-{
-    setAddress(address);
-    return *this;
-}
-#endif
-
 /*!
     \since 5.8
     Assigns the special address \a address to this object, and returns a
@@ -588,20 +562,6 @@ void QHostAddress::setAddress(quint32 ip4Addr)
 {
     d.detach();
     d->setAddress(ip4Addr);
-}
-
-/*!
-    \overload
-
-    Set the IPv6 address specified by \a ip6Addr.
-
-    \a ip6Addr must be an array of 16 bytes in network byte order
-    (high-order byte first).
-*/
-void QHostAddress::setAddress(quint8 *ip6Addr)
-{
-    d.detach();
-    d->setAddress(ip6Addr);
 }
 
 /*!
@@ -715,26 +675,7 @@ void QHostAddress::setAddress(SpecialAddress address)
     \l{QAbstractSocket::}{IPv4Protocol},
     or if the protocol is
     \l{QAbstractSocket::}{IPv6Protocol},
-    and the IPv6 address is an IPv4 mapped address. (RFC4291)
-
-    \sa toString()
-*/
-quint32 QHostAddress::toIPv4Address() const
-{
-    return toIPv4Address(nullptr);
-}
-
-/*!
-    Returns the IPv4 address as a number.
-
-    For example, if the address is 127.0.0.1, the returned value is
-    2130706433 (i.e. 0x7f000001).
-
-    This value is valid if the protocol() is
-    \l{QAbstractSocket::}{IPv4Protocol},
-    or if the protocol is
-    \l{QAbstractSocket::}{IPv6Protocol},
-    and the IPv6 address is an IPv4 mapped address. (RFC4291). In those
+    and the IPv6 address is an IPv4 mapped address (RFC4291). In those
     cases, \a ok will be set to true. Otherwise, it will be set to false.
 
     \sa toString()
@@ -1103,7 +1044,7 @@ QPair<QHostAddress, int> QHostAddress::parseSubnet(const QString &subnet)
         return invalid;
 
     int slash = subnet.indexOf(QLatin1Char('/'));
-    QStringRef netStr(&subnet);
+    QStringView netStr(subnet);
     if (slash != -1)
         netStr.truncate(slash);
 
@@ -1123,7 +1064,7 @@ QPair<QHostAddress, int> QHostAddress::parseSubnet(const QString &subnet)
             netmask = parser.prefixLength();
         } else {
             bool ok;
-            netmask = subnet.midRef(slash + 1).toUInt(&ok);
+            netmask = QStringView{subnet}.mid(slash + 1).toUInt(&ok);
             if (!ok)
                 return invalid;     // failed to parse the subnet
         }
@@ -1331,8 +1272,7 @@ size_t qHash(const QHostAddress &key, size_t seed) noexcept
 }
 
 /*!
-    \fn bool operator==(QHostAddress::SpecialAddress lhs, const QHostAddress &rhs)
-    \relates QHostAddress
+    \fn bool QHostAddress::operator==(QHostAddress::SpecialAddress lhs, const QHostAddress &rhs)
 
     Returns \c true if special address \a lhs is the same as host address \a rhs;
     otherwise returns \c false.
@@ -1341,8 +1281,7 @@ size_t qHash(const QHostAddress &key, size_t seed) noexcept
 */
 
 /*!
-    \fn bool operator!=(QHostAddress::SpecialAddress lhs, const QHostAddress &rhs)
-    \relates QHostAddress
+    \fn bool QHostAddress::operator!=(QHostAddress::SpecialAddress lhs, const QHostAddress &rhs)
     \since 5.9
 
     Returns \c false if special address \a lhs is the same as host address \a rhs;

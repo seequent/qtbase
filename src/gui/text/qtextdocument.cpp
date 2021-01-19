@@ -46,6 +46,7 @@
 #include "qtextdocumentfragment_p.h"
 #include "qtexttable.h"
 #include "qtextlist.h"
+#include "qurlresourceprovider.h"
 #include <qdebug.h>
 #if QT_CONFIG(regularexpression)
 #include <qregularexpression.h>
@@ -102,7 +103,7 @@ bool Qt::mightBeRichText(const QString& text)
         ++start;
 
     // skip a leading <?xml ... ?> as for example with xhtml
-    if (text.midRef(start, 5).compare(QLatin1String("<?xml")) == 0) {
+    if (QStringView{text}.mid(start, 5).compare(QLatin1String("<?xml")) == 0) {
         while (start < text.length()) {
             if (text.at(start) == QLatin1Char('?')
                 && start + 2 < text.length()
@@ -117,12 +118,12 @@ bool Qt::mightBeRichText(const QString& text)
             ++start;
     }
 
-    if (text.midRef(start, 5).compare(QLatin1String("<!doc"), Qt::CaseInsensitive) == 0)
+    if (QStringView{text}.mid(start, 5).compare(QLatin1String("<!doc"), Qt::CaseInsensitive) == 0)
         return true;
     int open = start;
     while (open < text.length() && text.at(open) != QLatin1Char('<')
             && text.at(open) != QLatin1Char('\n')) {
-        if (text.at(open) == QLatin1Char('&') &&  text.midRef(open + 1, 3) == QLatin1String("lt;"))
+        if (text.at(open) == QLatin1Char('&') &&  QStringView{text}.mid(open + 1, 3) == QLatin1String("lt;"))
             return true; // support desperate attempt of user to see <...>
         ++open;
     }
@@ -354,6 +355,7 @@ QTextDocument *QTextDocument::clone(QObject *parent) const
     priv->setDefaultFont(d->defaultFont());
     priv->resources = d->resources;
     priv->cachedResources.clear();
+    priv->resourceProvider = d->resourceProvider;
 #ifndef QT_NO_CSSPARSER
     priv->defaultStyleSheet = d->defaultStyleSheet;
     priv->parsedDefaultStyleSheet = d->parsedDefaultStyleSheet;
@@ -833,7 +835,7 @@ void QTextDocument::adjustSize()
     \property QTextDocument::size
     \since 4.2
 
-    Returns the actual size of the document.
+    \brief the actual size of the document.
     This is equivalent to documentLayout()->documentSize();
 
     The size of the document can be changed either by setting
@@ -855,7 +857,7 @@ QSizeF QTextDocument::size() const
     \property QTextDocument::blockCount
     \since 4.2
 
-    Returns the number of text blocks in the document.
+    \brief the number of text blocks in the document.
 
     The value of this property is undefined in documents with tables or frames.
 
@@ -1642,7 +1644,7 @@ QTextBlock QTextDocument::begin() const
     This function returns a block to test for the end of the document
     while iterating over it.
 
-    \snippet textdocumentendsnippet.cpp 0
+    \snippet textdocument-end/textdocumentendsnippet.cpp 0
 
     The block returned is invalid and represents the block after the
     last block in the document. You can use lastBlock() to retrieve the
@@ -1730,6 +1732,94 @@ QFont QTextDocument::defaultFont() const
 {
     Q_D(const QTextDocument);
     return d->defaultFont();
+}
+
+/*!
+    \fn void QTextDocument::setSuperScriptBaseline(qreal baseline)
+    \since 6.0
+
+    Sets the default superscript's base line as a % of font height to use in the document
+    layout to \a baseline. The default value is 50% (1/2 of height).
+
+    \sa superScriptBaseline(), setSubScriptBaseline(), subScriptBaseline(), setBaselineOffset(), baselineOffset()
+*/
+void QTextDocument::setSuperScriptBaseline(qreal baseline)
+{
+    Q_D(QTextDocument);
+    d->formats.setSuperScriptBaseline(baseline);
+}
+
+/*!
+    \fn qreal QTextDocument::superScriptBaseline() const
+    \since 6.0
+
+    Returns the superscript's base line as a % of font height used in the document layout.
+
+    \sa setSuperScriptBaseline(), setSubScriptBaseline(), subScriptBaseline(), setBaselineOffset(), baselineOffset()
+*/
+qreal QTextDocument::superScriptBaseline() const
+{
+    Q_D(const QTextDocument);
+    return d->formats.defaultTextFormat().superScriptBaseline();
+}
+
+/*!
+    \fn void QTextDocument::setSubScriptBaseline(qreal baseline)
+    \since 6.0
+
+    Sets the default subscript's base line as a % of font height to use in the document layout
+    to \a baseline. The default value is 16.67% (1/6 of height).
+
+    \sa subScriptBaseline(), setSuperScriptBaseline(), superScriptBaseline(), setBaselineOffset(), baselineOffset()
+*/
+void QTextDocument::setSubScriptBaseline(qreal baseline)
+{
+    Q_D(QTextDocument);
+    d->formats.setSubScriptBaseline(baseline);
+}
+
+/*!
+    \fn qreal QTextDocument::subScriptBaseline() const
+    \since 6.0
+
+    Returns the superscript's base line as a % of font height used in the document layout.
+
+    \sa setSubScriptBaseline(), setSuperScriptBaseline(), superScriptBaseline(), setBaselineOffset(), baselineOffset()
+*/
+qreal QTextDocument::subScriptBaseline() const
+{
+    Q_D(const QTextDocument);
+    return d->formats.defaultTextFormat().subScriptBaseline();
+}
+
+/*!
+    \fn void QTextDocument::setBaselineOffset(qreal baseline)
+    \since 6.0
+
+    Sets the base line as a% of font height to use in the document layout to \a baseline.
+    The default value is 0.
+    A positive value moves up the text, by the corresponding %; a negative value moves it down.
+
+    \sa baselineOffset(), setSubScriptBaseline(), subScriptBaseline(), setSuperScriptBaseline(), superScriptBaseline()
+*/
+void QTextDocument::setBaselineOffset(qreal baseline)
+{
+    Q_D(QTextDocument);
+    d->formats.setBaselineOffset(baseline);
+}
+
+/*!
+    \fn qreal QTextDocument::baselineOffset() const
+    \since 6.0
+
+    Returns the the baseline offset in % used in the document layout.
+
+    \sa setBaselineOffset(), setSubScriptBaseline(), subScriptBaseline(), setSuperScriptBaseline(), superScriptBaseline()
+*/
+qreal QTextDocument::baselineOffset() const
+{
+    Q_D(const QTextDocument);
+    return d->formats.defaultTextFormat().baselineOffset();
 }
 
 /*!
@@ -1828,13 +1918,14 @@ void QTextDocument::print(QPagedPaintDevice *printer) const
     bool documentPaginated = d->pageSize.isValid() && !d->pageSize.isNull()
                              && d->pageSize.height() != INT_MAX;
 
-    QPagedPaintDevicePrivate *pd = QPagedPaintDevicePrivate::get(printer);
-
     // ### set page size to paginated size?
-    QPagedPaintDevice::Margins m = printer->margins();
-    if (!documentPaginated && m.left == 0. && m.right == 0. && m.top == 0. && m.bottom == 0.) {
-        m.left = m.right = m.top = m.bottom = 2.;
-        printer->setMargins(m);
+    QMarginsF m = printer->pageLayout().margins(QPageLayout::Millimeter);
+    if (!documentPaginated && m.left() == 0. && m.right() == 0. && m.top() == 0. && m.bottom() == 0.) {
+        m.setLeft(2);
+        m.setRight(2);
+        m.setTop(2);
+        m.setBottom(2);
+        printer->setPageMargins(m, QPageLayout::Millimeter);
     }
     // ### use the margins correctly
 
@@ -1912,9 +2003,9 @@ void QTextDocument::print(QPagedPaintDevice *printer) const
         clonedDoc->setPageSize(body.size());
     }
 
-    QRangeCollection *rangeCollection = pd->rangeCollection;
-    int fromPage = rangeCollection->firstPage();
-    int toPage = rangeCollection->lastPage();
+    const QPageRanges pageRanges = printer->pageRanges();
+    int fromPage = pageRanges.firstPage();
+    int toPage = pageRanges.lastPage();
 
     if (fromPage == 0 && toPage == 0) {
         fromPage = 1;
@@ -1940,7 +2031,7 @@ void QTextDocument::print(QPagedPaintDevice *printer) const
 
     int page = fromPage;
     while (true) {
-        if (rangeCollection->isEmpty() || rangeCollection->contains(page))
+        if (pageRanges.isEmpty() || pageRanges.contains(page))
             printPage(page, &p, doc, body, pageNumberPos);
 
         if (page == toPage)
@@ -1961,10 +2052,10 @@ void QTextDocument::print(QPagedPaintDevice *printer) const
     \value UnknownResource No resource is loaded, or the resource type is not known.
     \value HtmlResource  The resource contains HTML.
     \value ImageResource The resource contains image data.
-                         Currently supported data types are QVariant::Pixmap and
-                         QVariant::Image. If the corresponding variant is of type
-                         QVariant::ByteArray then Qt attempts to load the image using
-                         QImage::loadFromData. QVariant::Icon is currently not supported.
+                         Currently supported data types are QMetaType::QPixmap and
+                         QMetaType::QImage. If the corresponding variant is of type
+                         QMetaType::QByteArray then Qt attempts to load the image using
+                         QImage::loadFromData. QMetaType::QIcon is currently not supported.
                          The icon needs to be converted to one of the supported types first,
                          for example using QIcon::pixmap.
     \value StyleSheetResource The resource contains CSS.
@@ -1998,8 +2089,15 @@ QVariant QTextDocument::resource(int type, const QUrl &name) const
     QVariant r = d->resources.value(url);
     if (!r.isValid()) {
         r = d->cachedResources.value(url);
-        if (!r.isValid())
+        if (!r.isValid()) {
             r = const_cast<QTextDocument *>(this)->loadResource(type, url);
+            if (!r.isValid()) {
+                if (d->resourceProvider)
+                    r = d->resourceProvider->resource(url);
+                else if (auto defaultProvider = QUrlResourceProvider::defaultProvider())
+                    r = defaultProvider->resource(url);
+            }
+        }
     }
     return r;
 }
@@ -2027,6 +2125,30 @@ void QTextDocument::addResource(int type, const QUrl &name, const QVariant &reso
     Q_UNUSED(type);
     Q_D(QTextDocument);
     d->resources.insert(name, resource);
+}
+
+/*!
+    \since 6.1
+
+    Returns the resource provider for this text document.
+*/
+QUrlResourceProvider *QTextDocument::resourceProvider() const
+{
+    Q_D(const QTextDocument);
+    return d->resourceProvider;
+}
+
+/*!
+    \since 6.1
+
+    Sets the \a provider of resources for the text document.
+
+    \note The text document \e{does not} take ownership of the \a provider.
+*/
+void QTextDocument::setResourceProvider(QUrlResourceProvider *provider)
+{
+    Q_D(QTextDocument);
+    d->resourceProvider = provider;
 }
 
 /*!
@@ -2174,11 +2296,7 @@ QTextHtmlExporter::QTextHtmlExporter(const QTextDocument *_doc)
 
 static QStringList resolvedFontFamilies(const QTextCharFormat &format)
 {
-    QStringList fontFamilies = format.fontFamilies().toStringList();
-    const QString mainFontFamily = format.fontFamily();
-    if (!mainFontFamily.isEmpty() && !fontFamilies.contains(mainFontFamily))
-        fontFamilies.append(mainFontFamily);
-    return fontFamilies;
+    return format.fontFamilies().toStringList();
 }
 
 /*!
@@ -2221,12 +2339,30 @@ QString QTextHtmlExporter::toHtml(ExportMode mode)
         }
 
         html += QLatin1String(" font-weight:");
-        html += QString::number(defaultCharFormat.fontWeight() * 8);
+        html += QString::number(defaultCharFormat.fontWeight());
         html += QLatin1Char(';');
 
         html += QLatin1String(" font-style:");
         html += (defaultCharFormat.fontItalic() ? QLatin1String("italic") : QLatin1String("normal"));
         html += QLatin1Char(';');
+
+        const bool percentSpacing = (defaultCharFormat.fontLetterSpacingType() == QFont::PercentageSpacing);
+        if (defaultCharFormat.hasProperty(QTextFormat::FontLetterSpacing) &&
+            (!percentSpacing || defaultCharFormat.fontLetterSpacing() != 0.0)) {
+            html += QLatin1String(" letter-spacing:");
+            qreal value = defaultCharFormat.fontLetterSpacing();
+            if (percentSpacing) // Map to em (100% == 0em)
+                value = (value / 100) - 1;
+            html += QString::number(value);
+            html += percentSpacing ? QLatin1String("em;") : QLatin1String("px;");
+        }
+
+        if (defaultCharFormat.hasProperty(QTextFormat::FontWordSpacing) &&
+            defaultCharFormat.fontWordSpacing() != 0.0) {
+            html += QLatin1String(" word-spacing:");
+            html += QString::number(defaultCharFormat.fontWordSpacing());
+            html += QLatin1String("px;");
+        }
 
         // do not set text-decoration on the default font since those values are /always/ propagated
         // and cannot be turned off with CSS
@@ -2316,7 +2452,7 @@ bool QTextHtmlExporter::emitCharFormatStyle(const QTextCharFormat &format)
     if (format.hasProperty(QTextFormat::FontWeight)
         && format.fontWeight() != defaultCharFormat.fontWeight()) {
         html += QLatin1String(" font-weight:");
-        html += QString::number(format.fontWeight() * 8);
+        html += QString::number(format.fontWeight());
         html += QLatin1Char(';');
         attributesEmitted = true;
     }
@@ -2997,7 +3133,7 @@ void QTextHtmlExporter::emitTable(const QTextTable *table)
     const int rows = table->rows();
     const int columns = table->columns();
 
-    QVector<QTextLength> columnWidths = format.columnWidthConstraints();
+    QList<QTextLength> columnWidths = format.columnWidthConstraints();
     if (columnWidths.isEmpty()) {
         columnWidths.resize(columns);
         columnWidths.fill(QTextLength());
@@ -3293,9 +3429,9 @@ void QTextDocument::setMarkdown(const QString &markdown, QTextDocument::Markdown
 #endif
 
 /*!
-    Returns a vector of text formats for all the formats used in the document.
+    Returns a list of text formats for all the formats used in the document.
 */
-QVector<QTextFormat> QTextDocument::allFormats() const
+QList<QTextFormat> QTextDocument::allFormats() const
 {
     Q_D(const QTextDocument);
     return d->formatCollection()->formats;

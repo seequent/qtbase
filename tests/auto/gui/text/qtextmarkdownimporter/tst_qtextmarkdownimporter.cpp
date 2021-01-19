@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QBuffer>
 #include <QDebug>
 #include <QFontInfo>
@@ -36,6 +36,7 @@
 #include <QTextDocumentFragment>
 #include <QTextList>
 #include <QTextTable>
+#include <QLoggingCategory>
 
 #include <private/qtextmarkdownimporter_p.h>
 
@@ -69,9 +70,10 @@ public:
         Normal = 0x0,
         Italic = 0x1,
         Bold = 0x02,
-        Strikeout = 0x04,
-        Mono = 0x08,
-        Link = 0x10
+        Underlined = 0x04,
+        Strikeout = 0x08,
+        Mono = 0x10,
+        Link = 0x20
     };
     Q_DECLARE_FLAGS(CharFormats, CharFormat)
 };
@@ -252,6 +254,12 @@ void tst_QTextMarkdownImporter::nestedSpans_data()
     QTest::newRow("bold italic")
             << "before ***bold italic*** after"
             << 1 << (Bold | Italic);
+    QTest::newRow("bold underlined")
+            << "before **_bold underlined_** after"
+            << 1 << (Bold | Underlined);
+    QTest::newRow("italic underlined")
+            << "before *_italic underlined_* after"
+            << 1 << (Italic | Underlined);
     QTest::newRow("bold strikeout")
             << "before **~~bold strikeout~~** after"
             << 1 << (Bold | Strikeout);
@@ -322,12 +330,14 @@ void tst_QTextMarkdownImporter::nestedSpans()
         QTextCharFormat fmt = cur.charFormat();
         qCDebug(lcTests) << "word" << wordToCheck << cur.selectedText() << "font" << fmt.font()
                          << "weight" << fmt.fontWeight() << "italic" << fmt.fontItalic()
+                         << "underlined" << fmt.fontUnderline()
                          << "strikeout" << fmt.fontStrikeOut() << "anchor" << fmt.isAnchor()
                          << "monospace" << QFontInfo(fmt.font()).fixedPitch() // depends on installed fonts (QTBUG-75649)
                                         << fmt.fontFixedPitch() // returns false even when font family is "monospace"
                                         << fmt.hasProperty(QTextFormat::FontFixedPitch); // works
-        QCOMPARE(fmt.fontWeight() > 50, expectedFormat.testFlag(Bold));
+        QCOMPARE(fmt.fontWeight() > QFont::Normal, expectedFormat.testFlag(Bold));
         QCOMPARE(fmt.fontItalic(), expectedFormat.testFlag(Italic));
+        QCOMPARE(fmt.fontUnderline(), expectedFormat.testFlag(Underlined));
         QCOMPARE(fmt.fontStrikeOut(), expectedFormat.testFlag(Strikeout));
         QCOMPARE(fmt.isAnchor(), expectedFormat.testFlag(Link));
         QCOMPARE(fmt.hasProperty(QTextFormat::FontFixedPitch), expectedFormat.testFlag(Mono));
@@ -382,7 +392,7 @@ void tst_QTextMarkdownImporter::pathological() // avoid crashing on crazy input
     QFile f(QFINDTESTDATA(filename));
     QVERIFY(f.open(QFile::ReadOnly));
 #ifdef QT_NO_DEBUG
-    Q_UNUSED(warning)
+    Q_UNUSED(warning);
 #else
     if (!warning.isEmpty())
         QTest::ignoreMessage(QtWarningMsg, warning.toLatin1());

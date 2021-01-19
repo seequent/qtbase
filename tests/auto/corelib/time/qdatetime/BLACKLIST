@@ -1,0 +1,8 @@
+# QTBUG-87663
+[fromStringStringFormat]
+android
+[timeZones]
+android
+[systemTimeZoneChange]
+android
+b2qt 32bit

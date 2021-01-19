@@ -51,7 +51,6 @@
 #if QT_CONFIG(regularexpression)
 #  include <qregularexpression.h>
 #endif
-#include "qvector.h"
 #include "qvarlengtharray.h"
 #include "qfilesystementry_p.h"
 #include "qfilesystemmetadata_p.h"
@@ -64,6 +63,7 @@
 #endif
 
 #include <algorithm>
+#include <memory>
 #include <stdlib.h>
 
 QT_BEGIN_NAMESPACE
@@ -177,7 +177,7 @@ inline QStringList QDirPrivate::splitFilters(const QString &nameFilter, QChar se
 {
     if (sep.isNull())
         sep = getFilterSepChar(nameFilter);
-    const QVector<QStringRef> split = nameFilter.splitRef(sep);
+    const auto split = QStringView{nameFilter}.split(sep);
     QStringList ret;
     ret.reserve(split.size());
     for (const auto &e : split)
@@ -409,6 +409,9 @@ inline void QDirPrivate::initFileEngine()
     a QDir is using a relative or an absolute file path. Call
     makeAbsolute() to convert a relative QDir to an absolute one.
 
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
+
     \section1 Navigation and Directory Operations
 
     A directory's path can be obtained with the path() function, and
@@ -584,7 +587,7 @@ QDir::QDir(const QString &path) : d_ptr(new QDirPrivate(path))
     directory). If \a nameFilter is an empty string, QDir uses the
     name filter "*" (all files).
 
-    Note that \a path need not exist.
+    \note \a path need not exist.
 
     \sa exists(), setPath(), setNameFilters(), setFilter(), setSorting()
 */
@@ -777,7 +780,7 @@ QString QDir::filePath(const QString &fileName) const
     if (fileName.startsWith(QLatin1Char('/')) || fileName.startsWith(QLatin1Char('\\'))) {
         // Handle the "absolute except for drive" case (i.e. \blah not c:\blah):
         const int drive = drivePrefixLength(ret);
-        return drive > 0 ? ret.leftRef(drive) % fileName : fileName;
+        return drive > 0 ? QStringView{ret}.left(drive) % fileName : fileName;
     }
 #endif // Q_OS_WIN
 
@@ -810,7 +813,7 @@ QString QDir::absoluteFilePath(const QString &fileName) const
         // Combine absoluteDirPath's drive with fileName
         const int drive = drivePrefixLength(absoluteDirPath);
         if (Q_LIKELY(drive))
-            return absoluteDirPath.leftRef(drive) % fileName;
+            return QStringView{absoluteDirPath}.left(drive) % fileName;
 
         qWarning("Base directory's drive is not a letter: %s",
                  qUtf8Printable(QDir::toNativeSeparators(absoluteDirPath)));
@@ -860,7 +863,6 @@ QString QDir::relativeFilePath(const QString &fileName) const
     QString result;
     const auto dirElts = dir.tokenize(QLatin1Char('/'), Qt::SkipEmptyParts);
     const auto fileElts = file.tokenize(QLatin1Char('/'), Qt::SkipEmptyParts);
-
 
     const auto dend = dirElts.end();
     const auto fend = fileElts.end();
@@ -1024,12 +1026,12 @@ bool QDir::cd(const QString &dirName)
         }
     }
 
-    QScopedPointer<QDirPrivate> dir(new QDirPrivate(*d_ptr.constData()));
+    std::unique_ptr<QDirPrivate> dir(new QDirPrivate(*d_ptr.constData()));
     dir->setPath(newPath);
     if (!dir->exists())
         return false;
 
-    d_ptr = dir.take();
+    d_ptr = dir.release();
     return true;
 }
 
@@ -1081,31 +1083,6 @@ void QDir::setNameFilters(const QStringList &nameFilters)
 
     d->nameFilters = nameFilters;
 }
-
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    \obsolete
-
-    Use QDir::addSearchPath() with a prefix instead.
-
-    Adds \a path to the search paths searched in to find resources
-    that are not specified with an absolute path. The default search
-    path is to search only in the root (\c{:/}).
-
-    \sa {The Qt Resource System}
-*/
-void QDir::addResourceSearchPath(const QString &path)
-{
-#ifdef QT_BUILD_CORE_LIB
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    QResource::addSearchPath(path);
-QT_WARNING_POP
-#else
-    Q_UNUSED(path)
-#endif
-}
-#endif
 
 #ifdef QT_BUILD_CORE_LIB
 /*!
@@ -1605,7 +1582,7 @@ bool QDir::rmpath(const QString &dirPath) const
     If the directory was already removed, the method returns \c true
     (expected result already reached).
 
-    Note: this function is meant for removing a small application-internal
+    \note This function is meant for removing a small application-internal
     directory (such as a temporary directory), but not user-visible
     directories. For user-visible operations, it is rather recommended
     to report errors more precisely to the user, to offer solutions
@@ -1695,7 +1672,7 @@ bool QDir::exists() const
     Returns \c true if the directory is the root directory; otherwise
     returns \c false.
 
-    Note: If the directory is a symbolic link to the root directory
+    \note If the directory is a symbolic link to the root directory
     this function returns \c false. If you want to test for this use
     canonicalPath(), e.g.
 
@@ -1716,6 +1693,9 @@ bool QDir::isRoot() const
     Returns \c true if the directory's path is absolute; otherwise
     returns \c false. See isAbsolutePath().
 
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
+
     \sa isRelative(), makeAbsolute(), cleanPath()
 */
 
@@ -1725,13 +1705,19 @@ bool QDir::isRoot() const
     Returns \c true if \a path is absolute; returns \c false if it is
     relative.
 
-    \sa isAbsolute(), isRelativePath(), makeAbsolute(), cleanPath()
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
+
+    \sa isAbsolute(), isRelativePath(), makeAbsolute(), cleanPath(), QResource
 */
 
 /*!
     Returns \c true if the directory path is relative; otherwise returns
     false. (Under Unix a path is relative if it does not start with a
     "/").
+
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
 
     \sa makeAbsolute(), isAbsolute(), isAbsolutePath(), cleanPath()
 */
@@ -1753,7 +1739,7 @@ bool QDir::isRelative() const
 bool QDir::makeAbsolute()
 {
     const QDirPrivate *d = d_ptr.constData();
-    QScopedPointer<QDirPrivate> dir;
+    std::unique_ptr<QDirPrivate> dir;
     if (!!d->fileEngine) {
         QString absolutePath = d->fileEngine->fileName(QAbstractFileEngine::AbsoluteName);
         if (QDir::isRelativePath(absolutePath))
@@ -1766,7 +1752,7 @@ bool QDir::makeAbsolute()
         dir.reset(new QDirPrivate(*d_ptr.constData()));
         dir->setPath(d->absoluteDirEntry.filePath());
     }
-    d_ptr = dir.take(); // actually detach
+    d_ptr = dir.release(); // actually detach
     return true;
 }
 
@@ -1832,22 +1818,6 @@ QDir &QDir::operator=(const QDir &dir)
     d_ptr = dir.d_ptr;
     return *this;
 }
-
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    \overload
-    \obsolete
-
-    Sets the directory path to the given \a path.
-
-    Use setPath() instead.
-*/
-QDir &QDir::operator=(const QString &path)
-{
-    d_ptr->setPath(path);
-    return *this;
-}
-#endif
 
 /*!
     \fn void QDir::swap(QDir &other)
@@ -1971,6 +1941,8 @@ QFileInfoList QDir::drives()
 }
 
 /*!
+    \fn QChar QDir::separator()
+
     Returns the native directory separator: "/" under Unix
     and "\\" under Windows.
 
@@ -1982,14 +1954,6 @@ QFileInfoList QDir::drives()
 
     \sa listSeparator()
 */
-QChar QDir::separator()
-{
-#if defined(Q_OS_WIN)
-    return QLatin1Char('\\');
-#else
-    return QLatin1Char('/');
-#endif
-}
 
 /*!
     \fn QDir::listSeparator()
@@ -2393,6 +2357,9 @@ QString QDir::cleanPath(const QString &path)
     Returns \c true if \a path is relative; returns \c false if it is
     absolute.
 
+    \note Paths starting with a colon (\e{:}) are always considered
+    absolute, as they denote a QResource.
+
     \sa isRelative(), isAbsolutePath(), makeAbsolute()
 */
 bool QDir::isRelativePath(const QString &path)
@@ -2451,7 +2418,7 @@ QStringList QDir::nameFiltersFromString(const QString &nameFilter)
     If the file name contains characters that cannot be part of a valid C++ function name
     (such as '-'), they have to be replaced by the underscore character ('_').
 
-    Note: This macro cannot be used in a namespace. It should be called from
+    \note This macro cannot be used in a namespace. It should be called from
     main(). If that is not possible, the following workaround can be used
     to init the resource \c myapp from the function \c{MyNamespace::myFunction}:
 
@@ -2473,7 +2440,7 @@ QStringList QDir::nameFiltersFromString(const QString &nameFilter)
     plugin that is being unloaded, call Q_CLEANUP_RESOURCE() to force
     removal of your resources.
 
-    Note: This macro cannot be used in a namespace. Please see the
+    \note This macro cannot be used in a namespace. Please see the
     Q_INIT_RESOURCE documentation for a workaround.
 
     Example:
@@ -2580,7 +2547,7 @@ QDebug operator<<(QDebug debug, const QDir &dir)
     directory). If \a nameFilter is an empty string, QDir uses the
     name filter "*" (all files).
 
-    Note that \a path need not exist.
+    \note \a path need not exist.
 
     \sa exists(), setPath(), setNameFilters(), setFilter(), setSorting()
 */

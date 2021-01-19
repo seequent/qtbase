@@ -92,10 +92,8 @@ struct QPainterPathPrivateDeleter
 {
     static inline void cleanup(QPainterPathPrivate *d)
     {
-        // note - we must downcast to QPainterPathData since QPainterPathPrivate
-        // has a non-virtual destructor!
         if (d && !d->ref.deref())
-            delete static_cast<QPainterPathData *>(d);
+            delete d;
     }
 };
 
@@ -569,7 +567,7 @@ QPainterPath::QPainterPath(const QPainterPath &other)
 */
 
 QPainterPath::QPainterPath(const QPointF &startPoint)
-    : d_ptr(new QPainterPathData)
+    : d_ptr(new QPainterPathPrivate)
 {
     Element e = { startPoint.x(), startPoint.y(), MoveToElement };
     d_func()->elements << e;
@@ -587,7 +585,7 @@ void QPainterPath::detach()
 */
 void QPainterPath::detach_helper()
 {
-    QPainterPathPrivate *data = new QPainterPathData(*d_func());
+    QPainterPathPrivate *data = new QPainterPathPrivate(*d_func());
     d_ptr.reset(data);
 }
 
@@ -596,7 +594,7 @@ void QPainterPath::detach_helper()
 */
 void QPainterPath::ensureData_helper()
 {
-    QPainterPathPrivate *data = new QPainterPathData;
+    QPainterPathPrivate *data = new QPainterPathPrivate;
     data->elements.reserve(16);
     QPainterPath::Element e = { 0, 0, QPainterPath::MoveToElement };
     data->elements << e;
@@ -668,7 +666,7 @@ void QPainterPath::clear()
 
     Attempts to allocate memory for at least \a size elements.
 
-    \sa clear(), capacity(), QVector::reserve()
+    \sa clear(), capacity(), QList::reserve()
     \since 5.13
 */
 void QPainterPath::reserve(int size)
@@ -753,7 +751,7 @@ void QPainterPath::moveTo(const QPointF &p)
     ensureData();
     detach();
 
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
     Q_ASSERT(!d->elements.isEmpty());
 
     d->require_moveTo = false;
@@ -803,7 +801,7 @@ void QPainterPath::lineTo(const QPointF &p)
     ensureData();
     detach();
 
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
     Q_ASSERT(!d->elements.isEmpty());
     d->maybeMoveTo();
     if (p == QPointF(d->elements.constLast()))
@@ -862,7 +860,7 @@ void QPainterPath::cubicTo(const QPointF &c1, const QPointF &c2, const QPointF &
     ensureData();
     detach();
 
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
     Q_ASSERT(!d->elements.isEmpty());
 
 
@@ -1221,6 +1219,11 @@ void QPainterPath::addText(const QPointF &point, const QFont &f, const QString &
 
     QTextLayout layout(text, f);
     layout.setCacheEnabled(true);
+
+    QTextOption opt = layout.textOption();
+    opt.setUseDesignMetrics(true);
+    layout.setTextOption(opt);
+
     QTextEngine *eng = layout.engine();
     layout.beginLayout();
     QTextLine line = layout.createLine();
@@ -1288,7 +1291,7 @@ void QPainterPath::addPath(const QPainterPath &other)
     ensureData();
     detach();
 
-    QPainterPathData *d = reinterpret_cast<QPainterPathData *>(d_func());
+    QPainterPathPrivate *d = d_func();
     // Remove last moveto so we don't get multiple moveto's
     if (d->elements.constLast().type == MoveToElement)
         d->elements.remove(d->elements.size()-1);
@@ -1319,7 +1322,7 @@ void QPainterPath::connectPath(const QPainterPath &other)
     ensureData();
     detach();
 
-    QPainterPathData *d = reinterpret_cast<QPainterPathData *>(d_func());
+    QPainterPathPrivate *d = d_func();
     // Remove last moveto so we don't get multiple moveto's
     if (d->elements.constLast().type == MoveToElement)
         d->elements.remove(d->elements.size()-1);
@@ -1509,7 +1512,7 @@ QRectF QPainterPath::boundingRect() const
 {
     if (!d_ptr)
         return QRectF();
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
 
     if (d->dirtyBounds)
         computeBoundingRect();
@@ -1530,7 +1533,7 @@ QRectF QPainterPath::controlPointRect() const
 {
     if (!d_ptr)
         return QRectF();
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
 
     if (d->dirtyControlBounds)
         computeControlPointRect();
@@ -1692,7 +1695,7 @@ QList<QPolygonF> QPainterPath::toFillPolygons(const QTransform &matrix) const
     if (count == 0)
         return polys;
 
-    QVector<QRectF> bounds;
+    QList<QRectF> bounds;
     bounds.reserve(count);
     for (int i=0; i<count; ++i)
         bounds += subpaths.at(i).boundingRect();
@@ -1703,7 +1706,7 @@ QList<QPolygonF> QPainterPath::toFillPolygons(const QTransform &matrix) const
         qDebug() << " bounds" << i << bounds.at(i);
 #endif
 
-    QVector< QVector<int> > isects;
+    QList< QList<int> > isects;
     isects.resize(count);
 
     // find all intersections
@@ -1731,12 +1734,12 @@ QList<QPolygonF> QPainterPath::toFillPolygons(const QTransform &matrix) const
 
     // flatten the sets of intersections
     for (int i=0; i<count; ++i) {
-        const QVector<int> &current_isects = isects.at(i);
+        const QList<int> &current_isects = isects.at(i);
         for (int j=0; j<current_isects.size(); ++j) {
             int isect_j = current_isects.at(j);
             if (isect_j == i)
                 continue;
-            const QVector<int> &isects_j = isects.at(isect_j);
+            const QList<int> &isects_j = isects.at(isect_j);
             for (int k = 0, size = isects_j.size(); k < size; ++k) {
                 int isect_k = isects_j.at(k);
                 if (isect_k != i && !isects.at(i).contains(isect_k)) {
@@ -1760,7 +1763,7 @@ QList<QPolygonF> QPainterPath::toFillPolygons(const QTransform &matrix) const
 
     // Join the intersected subpaths as rewinded polygons
     for (int i=0; i<count; ++i) {
-        const QVector<int> &subpath_list = isects.at(i);
+        const QList<int> &subpath_list = isects.at(i);
         if (!subpath_list.isEmpty()) {
             QPolygonF buildUp;
             for (int j=0; j<subpath_list.size(); ++j) {
@@ -1857,7 +1860,7 @@ bool QPainterPath::contains(const QPointF &pt) const
     if (isEmpty() || !controlPointRect().contains(pt))
         return false;
 
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
 
     int winding_number = 0;
 
@@ -2316,8 +2319,8 @@ static inline bool epsilonCompare(const QPointF &a, const QPointF &b, const QSiz
 
 bool QPainterPath::operator==(const QPainterPath &path) const
 {
-    QPainterPathData *d = reinterpret_cast<QPainterPathData *>(d_func());
-    QPainterPathData *other_d = path.d_func();
+    QPainterPathPrivate *d = d_func();
+    QPainterPathPrivate *other_d = path.d_func();
     if (other_d == d) {
         return true;
     } else if (!d || !other_d) {
@@ -2592,7 +2595,7 @@ void qt_path_stroke_cubic_to(qfixed c1x, qfixed c1y,
     \endlist
 
     The setDashPattern() function accepts both a Qt::PenStyle object
-    and a vector representation of the pattern as argument.
+    and a list representation of the pattern as argument.
 
     In addition you can specify a curve's threshold, controlling the
     granularity with which a curve is drawn, using the
@@ -2811,16 +2814,16 @@ void QPainterPathStroker::setDashPattern(Qt::PenStyle style)
     dashPattern.  This function makes it possible to specify custom
     dash patterns.
 
-    Each element in the vector contains the lengths of the dashes and spaces
+    Each element in the list contains the lengths of the dashes and spaces
     in the stroke, beginning with the first dash in the first element, the
     first space in the second element, and alternating between dashes and
     spaces for each following pair of elements.
 
-    The vector can contain an odd number of elements, in which case the last
+    The list can contain an odd number of elements, in which case the last
     element will be extended by the length of the first element when the
     pattern repeats.
 */
-void QPainterPathStroker::setDashPattern(const QVector<qreal> &dashPattern)
+void QPainterPathStroker::setDashPattern(const QList<qreal> &dashPattern)
 {
     d_func()->dashPattern.clear();
     for (int i=0; i<dashPattern.size(); ++i)
@@ -2830,7 +2833,7 @@ void QPainterPathStroker::setDashPattern(const QVector<qreal> &dashPattern)
 /*!
     Returns the dash pattern for the generated outlines.
 */
-QVector<qreal> QPainterPathStroker::dashPattern() const
+QList<qreal> QPainterPathStroker::dashPattern() const
 {
     return d_func()->dashPattern;
 }
@@ -3297,7 +3300,7 @@ QPainterPath QPainterPath::subtracted(const QPainterPath &p) const
 */
 QPainterPath QPainterPath::simplified() const
 {
-    if(isEmpty())
+    if (isEmpty())
         return *this;
     QPathClipper clipper(*this, QPainterPath());
     return clipper.clip(QPathClipper::Simplify);
@@ -3356,7 +3359,7 @@ void QPainterPath::setDirty(bool dirty)
 
 void QPainterPath::computeBoundingRect() const
 {
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
     d->dirtyBounds = false;
     if (!d_ptr) {
         d->bounds = QRect();
@@ -3403,7 +3406,7 @@ void QPainterPath::computeBoundingRect() const
 
 void QPainterPath::computeControlPointRect() const
 {
-    QPainterPathData *d = d_func();
+    QPainterPathPrivate *d = d_func();
     d->dirtyControlBounds = false;
     if (!d_ptr) {
         d->controlBounds = QRect();

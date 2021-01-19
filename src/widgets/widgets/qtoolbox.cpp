@@ -52,8 +52,6 @@
 #endif
 #include <qabstractbutton.h>
 
-#include <private/qmemory_p.h>
-
 #include "qframe_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -349,7 +347,7 @@ int QToolBox::insertItem(int index, QWidget *widget, const QIcon &icon, const QS
     Q_D(QToolBox);
     connect(widget, SIGNAL(destroyed(QObject*)), this, SLOT(_q_widgetDestroyed(QObject*)));
 
-    auto newPage = qt_make_unique<QToolBoxPrivate::Page>();
+    auto newPage = std::make_unique<QToolBoxPrivate::Page>();
     auto &c = *newPage;
     c.widget = widget;
     c.button = new QToolBoxButton(this);
@@ -560,7 +558,7 @@ QWidget *QToolBox::widget(int index) const
     exist.
 */
 
-int QToolBox::indexOf(QWidget *widget) const
+int QToolBox::indexOf(const QWidget *widget) const
 {
     Q_D(const QToolBox);
     const QToolBoxPrivate::Page *c = (widget ? d->page(widget) : nullptr);
@@ -713,7 +711,7 @@ void QToolBox::showEvent(QShowEvent *e)
 void QToolBox::changeEvent(QEvent *ev)
 {
     Q_D(QToolBox);
-    if(ev->type() == QEvent::StyleChange)
+    if (ev->type() == QEvent::StyleChange)
         d->updateTabs();
     QFrame::changeEvent(ev);
 }
@@ -726,7 +724,7 @@ void QToolBox::changeEvent(QEvent *ev)
  */
 void QToolBox::itemInserted(int index)
 {
-    Q_UNUSED(index)
+    Q_UNUSED(index);
 }
 
 /*!
@@ -737,7 +735,7 @@ void QToolBox::itemInserted(int index)
  */
 void QToolBox::itemRemoved(int index)
 {
-    Q_UNUSED(index)
+    Q_UNUSED(index);
 }
 
 /*! \reimp */

@@ -39,21 +39,21 @@
 
 #include "qxdgdesktopportalfiledialog_p.h"
 
-#include <QtCore/qeventloop.h>
-
-#include <QtDBus/QtDBus>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#include <QDBusMetaType>
 
+#include <QEventLoop>
 #include <QFile>
 #include <QMetaType>
 #include <QMimeType>
 #include <QMimeDatabase>
 #include <QRandomGenerator>
 #include <QWindow>
+#include <QRegularExpression>
 
 QT_BEGIN_NAMESPACE
 
@@ -116,6 +116,10 @@ public:
     QString title;
     QStringList nameFilters;
     QStringList mimeTypesFilters;
+    // maps user-visible name for portal to full name filter
+    QMap<QString, QString> userVisibleToNameFilter;
+    QString selectedMimeTypeFilter;
+    QString selectedNameFilter;
     QStringList selectedFiles;
     QPlatformFileDialogHelper *nativeFileDialog = nullptr;
 };
@@ -164,12 +168,18 @@ void QXdgDesktopPortalFileDialog::initializeDialog()
     if (!options()->mimeTypeFilters().isEmpty())
         d->mimeTypesFilters = options()->mimeTypeFilters();
 
+    if (!options()->initiallySelectedMimeTypeFilter().isEmpty())
+        d->selectedMimeTypeFilter = options()->initiallySelectedMimeTypeFilter();
+
+    if (!options()->initiallySelectedNameFilter().isEmpty())
+        d->selectedNameFilter = options()->initiallySelectedNameFilter();
+
     setDirectory(options()->initialDirectory());
 }
 
 void QXdgDesktopPortalFileDialog::openPortal()
 {
-    Q_D(const QXdgDesktopPortalFileDialog);
+    Q_D(QXdgDesktopPortalFileDialog);
 
     QDBusMessage message = QDBusMessage::createMethodCall(QLatin1String("org.freedesktop.portal.Desktop"),
                                                           QLatin1String("/org/freedesktop/portal/desktop"),
@@ -200,6 +210,9 @@ void QXdgDesktopPortalFileDialog::openPortal()
     qDBusRegisterMetaType<FilterList>();
 
     FilterList filterList;
+    auto selectedFilterIndex = filterList.size() - 1;
+
+    d->userVisibleToNameFilter.clear();
 
     if (!d->mimeTypesFilters.isEmpty()) {
         for (const QString &mimeTypefilter : d->mimeTypesFilters) {
@@ -221,16 +234,24 @@ void QXdgDesktopPortalFileDialog::openPortal()
             filter.filterConditions = filterConditions;
 
             filterList << filter;
+
+            if (!d->selectedMimeTypeFilter.isEmpty() && d->selectedMimeTypeFilter == mimeTypefilter)
+                selectedFilterIndex = filterList.size() - 1;
         }
     } else if (!d->nameFilters.isEmpty()) {
-        for (const QString &filter : d->nameFilters) {
+        for (const QString &nameFilter : d->nameFilters) {
             // Do parsing:
             // Supported format is ("Images (*.png *.jpg)")
             QRegularExpression regexp(QPlatformFileDialogHelper::filterRegExp);
-            QRegularExpressionMatch match = regexp.match(filter);
+            QRegularExpressionMatch match = regexp.match(nameFilter);
             if (match.hasMatch()) {
                 QString userVisibleName = match.captured(1);
                 QStringList filterStrings = match.captured(2).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+
+                if (filterStrings.isEmpty()) {
+                    qWarning() << "Filter " << userVisibleName << " is empty and will be ignored.";
+                    continue;
+                }
 
                 FilterConditionList filterConditions;
                 for (const QString &filterString : filterStrings) {
@@ -245,12 +266,20 @@ void QXdgDesktopPortalFileDialog::openPortal()
                 filter.filterConditions = filterConditions;
 
                 filterList << filter;
+
+                d->userVisibleToNameFilter.insert(userVisibleName, nameFilter);
+
+                if (!d->selectedNameFilter.isEmpty() && d->selectedNameFilter == nameFilter)
+                    selectedFilterIndex = filterList.size() - 1;
             }
         }
     }
 
     if (!filterList.isEmpty())
         options.insert(QLatin1String("filters"), QVariant::fromValue(filterList));
+
+    if (selectedFilterIndex != -1)
+        options.insert(QLatin1String("current_filter"), QVariant::fromValue(filterList[selectedFilterIndex]));
 
     options.insert(QLatin1String("handle_token"), QStringLiteral("qt%1").arg(QRandomGenerator::global()->generate()));
 
@@ -339,6 +368,21 @@ void QXdgDesktopPortalFileDialog::setFilter()
     }
 }
 
+void QXdgDesktopPortalFileDialog::selectMimeTypeFilter(const QString &filter)
+{
+    Q_D(QXdgDesktopPortalFileDialog);
+    if (d->nativeFileDialog) {
+        d->nativeFileDialog->setOptions(options());
+        d->nativeFileDialog->selectMimeTypeFilter(filter);
+    }
+}
+
+QString QXdgDesktopPortalFileDialog::selectedMimeTypeFilter() const
+{
+    Q_D(const QXdgDesktopPortalFileDialog);
+    return d->selectedMimeTypeFilter;
+}
+
 void QXdgDesktopPortalFileDialog::selectNameFilter(const QString &filter)
 {
     Q_D(QXdgDesktopPortalFileDialog);
@@ -351,8 +395,8 @@ void QXdgDesktopPortalFileDialog::selectNameFilter(const QString &filter)
 
 QString QXdgDesktopPortalFileDialog::selectedNameFilter() const
 {
-    // TODO
-    return QString();
+    Q_D(const QXdgDesktopPortalFileDialog);
+    return d->selectedNameFilter;
 }
 
 void QXdgDesktopPortalFileDialog::exec()
@@ -404,6 +448,17 @@ void QXdgDesktopPortalFileDialog::gotResponse(uint response, const QVariantMap &
         if (results.contains(QLatin1String("uris")))
             d->selectedFiles = results.value(QLatin1String("uris")).toStringList();
 
+        if (results.contains(QLatin1String("current_filter"))) {
+            const Filter selectedFilter = qdbus_cast<Filter>(results.value(QStringLiteral("current_filter")));
+            if (!selectedFilter.filterConditions.empty() && selectedFilter.filterConditions[0].type == MimeType) {
+                // s.a. QXdgDesktopPortalFileDialog::openPortal which basically does the inverse
+                d->selectedMimeTypeFilter = selectedFilter.filterConditions[0].pattern;
+                d->selectedNameFilter.clear();
+            } else {
+                d->selectedNameFilter = d->userVisibleToNameFilter.value(selectedFilter.name);
+                d->selectedMimeTypeFilter.clear();
+            }
+        }
         Q_EMIT accept();
     } else {
         Q_EMIT reject();

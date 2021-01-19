@@ -697,9 +697,9 @@ void QWidgetTextControlPrivate::_q_contentsChanged(int from, int charsRemoved, i
         delete ev;
     }
 #else
-    Q_UNUSED(from)
-    Q_UNUSED(charsRemoved)
-    Q_UNUSED(charsAdded)
+    Q_UNUSED(from);
+    Q_UNUSED(charsRemoved);
+    Q_UNUSED(charsAdded);
 #endif
 }
 
@@ -1794,7 +1794,7 @@ void QWidgetTextControlPrivate::mouseReleaseEvent(QEvent *e, Qt::MouseButton but
 #ifndef QT_NO_CLIPBOARD
         setClipboardSelection();
         selectionChanged(true);
-    } else if (button == Qt::MidButton
+    } else if (button == Qt::MiddleButton
                && (interactionFlags & Qt::TextEditable)
                && QGuiApplication::clipboard()->supportsSelection()) {
         setCursorPosition(pos);
@@ -1943,8 +1943,12 @@ void QWidgetTextControlPrivate::contextMenuEvent(const QPoint &screenPos, const 
     if (!menu)
         return;
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    if (auto *window = static_cast<QWidget *>(parent)->window()->windowHandle())
-        QMenuPrivate::get(menu)->topData()->initialScreen = window->screen();
+
+    if (auto *widget = qobject_cast<QWidget *>(parent)) {
+        if (auto *window = widget->window()->windowHandle())
+            QMenuPrivate::get(menu)->topData()->initialScreen = window->screen();
+    }
+
     menu->popup(screenPos);
 #endif
 }
@@ -2067,7 +2071,7 @@ void QWidgetTextControlPrivate::inputMethodEvent(QInputMethodEvent *e)
     QTextLayout *layout = block.layout();
     if (isGettingInput)
         layout->setPreeditArea(cursor.position() - block.position(), e->preeditString());
-    QVector<QTextLayout::FormatRange> overrides;
+    QList<QTextLayout::FormatRange> overrides;
     overrides.reserve(e->attributes().size());
     const int oldPreeditCursor = preeditCursor;
     preeditCursor = e->preeditString().length();
@@ -2087,9 +2091,9 @@ void QWidgetTextControlPrivate::inputMethodEvent(QInputMethodEvent *e)
                 o.format = f;
 
                 // Make sure list is sorted by start index
-                QVector<QTextLayout::FormatRange>::iterator it = overrides.end();
+                QList<QTextLayout::FormatRange>::iterator it = overrides.end();
                 while (it != overrides.begin()) {
-                    QVector<QTextLayout::FormatRange>::iterator previous = it - 1;
+                    QList<QTextLayout::FormatRange>::iterator previous = it - 1;
                     if (o.start >= previous->start) {
                         overrides.insert(it, o);
                         break;
@@ -2107,7 +2111,7 @@ void QWidgetTextControlPrivate::inputMethodEvent(QInputMethodEvent *e)
         int start = cursor.position() - block.position();
         int end = start + e->preeditString().length();
 
-        QVector<QTextLayout::FormatRange>::iterator it = overrides.begin();
+        QList<QTextLayout::FormatRange>::iterator it = overrides.begin();
         while (it != overrides.end()) {
             QTextLayout::FormatRange range = *it;
             int rangeStart = range.start;
@@ -2208,7 +2212,7 @@ QVariant QWidgetTextControl::inputMethodQuery(Qt::InputMethodQuery property, QVa
             tmpCursor.movePosition(QTextCursor::NextBlock);
             --numBlocks;
         }
-        result += block.text().midRef(0, localPos);
+        result += QStringView{block.text()}.mid(0, localPos);
         return QVariant(result);
     }
     default:
@@ -2673,6 +2677,7 @@ void QWidgetTextControl::print(QPagedPaintDevice *printer) const
         if (!d->cursor.hasSelection())
             return;
         tempDoc = new QTextDocument(const_cast<QTextDocument *>(doc));
+        tempDoc->setResourceProvider(doc->resourceProvider());
         tempDoc->setMetaInformation(QTextDocument::DocumentTitle, doc->metaInformation(QTextDocument::DocumentTitle));
         tempDoc->setPageSize(doc->pageSize());
         tempDoc->setDefaultFont(doc->defaultFont());
@@ -3417,7 +3422,7 @@ QStringList QTextEditMimeData::formats() const
         return QMimeData::formats();
 }
 
-QVariant QTextEditMimeData::retrieveData(const QString &mimeType, QVariant::Type type) const
+QVariant QTextEditMimeData::retrieveData(const QString &mimeType, QMetaType type) const
 {
     if (!fragment.isEmpty())
         setup();

@@ -53,7 +53,7 @@
 #include <QtCore/qsystemdetection.h>
 #include <QtCore/qdatastream.h>
 #include <QtCore/qsysinfo.h>
-#include <QtCore/qvector.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qmutex.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/quuid.h>
@@ -314,7 +314,7 @@ OSStatus QSslSocketBackendPrivate::WriteCallback(QSslSocketBackendPrivate *socke
 
 void QSslSocketPrivate::ensureInitialized()
 {
-    const QMutexLocker locker(qt_securetransport_mutex);
+    const QMutexLocker locker(qt_securetransport_mutex());
     if (s_loadedCiphersAndCerts)
         return;
 
@@ -332,7 +332,7 @@ void QSslSocketPrivate::ensureInitialized()
         size_t numCiphers = 0;
         // Fails only if any of parameters is null.
         SSLGetNumberSupportedCiphers(context, &numCiphers);
-        QVector<SSLCipherSuite> cfCiphers(numCiphers);
+        QList<SSLCipherSuite> cfCiphers(numCiphers);
         // Fails only if any of parameter is null or number of ciphers is wrong.
         SSLGetSupportedCiphers(context, cfCiphers.data(), &numCiphers);
 
@@ -425,7 +425,7 @@ void QSslSocketBackendPrivate::continueHandshake()
             const OSStatus result = SSLCopyALPNProtocols(context, &cfArray);
             if (result == errSecSuccess && cfArray && CFArrayGetCount(cfArray)) {
                 const int size = CFArrayGetCount(cfArray);
-                QVector<QString> peerProtocols(size);
+                QList<QString> peerProtocols(size);
                 for (int i = 0; i < size; ++i)
                     peerProtocols[i] = QString::fromCFString((CFStringRef)CFArrayGetValueAtIndex(cfArray, i));
 
@@ -625,8 +625,8 @@ void QSslSocketBackendPrivate::transmit()
 QList<QSslError> (QSslSocketBackendPrivate::verify)(QList<QSslCertificate> certificateChain, const QString &hostName)
 {
     Q_UNIMPLEMENTED();
-    Q_UNUSED(certificateChain)
-    Q_UNUSED(hostName)
+    Q_UNUSED(certificateChain);
+    Q_UNUSED(hostName);
 
     QList<QSslError> errors;
     errors << QSslError(QSslError::UnspecifiedError);
@@ -640,11 +640,11 @@ bool QSslSocketBackendPrivate::importPkcs12(QIODevice *device,
                          const QByteArray &passPhrase)
 {
     Q_UNIMPLEMENTED();
-    Q_UNUSED(device)
-    Q_UNUSED(key)
-    Q_UNUSED(cert)
-    Q_UNUSED(caCertificates)
-    Q_UNUSED(passPhrase)
+    Q_UNUSED(device);
+    Q_UNUSED(key);
+    Q_UNUSED(cert);
+    Q_UNUSED(caCertificates);
+    Q_UNUSED(passPhrase);
     return false;
 }
 
@@ -804,7 +804,7 @@ QSslCipher QSslSocketBackendPrivate::QSslCipher_from_SSLCipherSuite(SSLCipherSui
     ciph.d->protocol = QSsl::TlsV1_2;
     ciph.d->protocolString = QLatin1String("TLSv1.2");
 
-    const auto bits = ciph.d->name.splitRef(QLatin1Char('-'));
+    const auto bits = QStringView{ciph.d->name}.split(QLatin1Char('-'));
     if (bits.size() >= 2) {
         if (bits.size() == 2 || bits.size() == 3) {
             ciph.d->keyExchangeMethod = QLatin1String("RSA");
@@ -853,6 +853,84 @@ QSslCipher QSslSocketBackendPrivate::QSslCipher_from_SSLCipherSuite(SSLCipherSui
         }
     }
     return ciph;
+}
+SSLCipherSuite QSslSocketBackendPrivate::SSLCipherSuite_from_QSslCipher(const QSslCipher &ciph)
+{
+    if (ciph.d->name == QLatin1String("AES128-SHA"))
+        return TLS_RSA_WITH_AES_128_CBC_SHA;
+    if (ciph.d->name == QLatin1String("DHE-RSA-AES128-SHA"))
+        return TLS_DHE_RSA_WITH_AES_128_CBC_SHA;
+    if (ciph.d->name == QLatin1String("AES256-SHA"))
+        return TLS_RSA_WITH_AES_256_CBC_SHA;
+    if (ciph.d->name == QLatin1String("DHE-RSA-AES256-SHA"))
+        return TLS_DHE_RSA_WITH_AES_256_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-NULL-SHA"))
+        return TLS_ECDH_ECDSA_WITH_NULL_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-RC4-SHA"))
+        return TLS_ECDH_ECDSA_WITH_RC4_128_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-DES-CBC3-SHA"))
+        return TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-AES128-SHA"))
+        return TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-AES256-SHA"))
+        return TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-RC4-SHA"))
+        return TLS_ECDHE_ECDSA_WITH_RC4_128_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-DES-CBC3-SHA"))
+        return TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-AES128-SHA"))
+        return TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-AES256-SHA"))
+        return TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-NULL-SHA"))
+        return TLS_ECDH_RSA_WITH_NULL_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-RC4-SHA"))
+        return TLS_ECDH_RSA_WITH_RC4_128_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-DES-CBC3-SHA"))
+        return TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-AES128-SHA"))
+        return TLS_ECDH_RSA_WITH_AES_128_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-AES256-SHA"))
+        return TLS_ECDH_RSA_WITH_AES_256_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-RC4-SHA"))
+        return TLS_ECDHE_RSA_WITH_RC4_128_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-DES-CBC3-SHA"))
+        return TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-AES128-SHA"))
+        return TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA;
+    if (ciph.d->name == QLatin1String("ECDH-RSA-AES256-SHA"))
+        return TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA;
+    if (ciph.d->name == QLatin1String("DES-CBC3-SHA"))
+        return TLS_RSA_WITH_3DES_EDE_CBC_SHA;
+    if (ciph.d->name == QLatin1String("AES128-SHA256"))
+        return TLS_RSA_WITH_AES_128_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("AES256-SHA256"))
+        return TLS_RSA_WITH_AES_256_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("DHE-RSA-DES-CBC3-SHA"))
+        return TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA;
+    if (ciph.d->name == QLatin1String("DHE-RSA-AES128-SHA256"))
+        return TLS_DHE_RSA_WITH_AES_128_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("DHE-RSA-AES256-SHA256"))
+        return TLS_DHE_RSA_WITH_AES_256_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("AES256-GCM-SHA384"))
+        return TLS_RSA_WITH_AES_256_GCM_SHA384;
+    if (ciph.d->name == QLatin1String("ECDHE-ECDSA-AES128-SHA256"))
+        return TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("ECDHE-ECDSA-AES256-SHA384"))
+        return TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-AES128-SHA256"))
+        return TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("ECDH-ECDSA-AES256-SHA384"))
+        return TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384;
+    if (ciph.d->name == QLatin1String("ECDHE-RSA-AES128-SHA256"))
+        return TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("ECDHE-RSA-AES256-SHA384"))
+        return TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384;
+    if (ciph.d->name == QLatin1String("ECDHE-RSA-AES256-SHA384"))
+        return TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256;
+    if (ciph.d->name == QLatin1String("ECDHE-RSA-AES256-GCM-SHA384"))
+        return TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384;
+    return 0;
 }
 
 bool QSslSocketBackendPrivate::initSslContext()
@@ -968,6 +1046,22 @@ bool QSslSocketBackendPrivate::initSslContext()
         // No SSLSetDiffieHellmanParams on iOS; calling it is optional according to docs.
         SSLSetDiffieHellmanParams(context, dhparam, sizeof(dhparam));
 #endif
+    }
+    if (configuration.ciphers.size() > 0) {
+        QVector<SSLCipherSuite> cfCiphers;
+        for (const QSslCipher &cipher : configuration.ciphers) {
+            if (auto sslCipher = QSslSocketBackendPrivate::SSLCipherSuite_from_QSslCipher(cipher))
+                cfCiphers << sslCipher;
+        }
+        if (cfCiphers.size() == 0) {
+            qCWarning(lcSsl) << "failed to add any of the requested ciphers from the configuration";
+            return false;
+        }
+        OSStatus err = SSLSetEnabledCiphers(context, cfCiphers.data(), cfCiphers.size());
+        if (err != errSecSuccess) {
+            qCWarning(lcSsl) << "failed to set the ciphers from the configuration";
+            return false;
+        }
     }
     return true;
 }

@@ -53,6 +53,7 @@
 #include <dlfcn.h>
 #include <cxxabi.h>
 #include <objc/runtime.h>
+#include <mach-o/dyld.h>
 
 #include <qdebug.h>
 
@@ -458,148 +459,6 @@ QMacRootLevelAutoReleasePool::~QMacRootLevelAutoReleasePool()
 
 // -------------------------------------------------------------------------
 
-#ifdef Q_OS_MACOS
-
-// Use this method to keep all the information in the TextSegment. As long as it is ordered
-// we are in OK shape, and we can influence that ourselves.
-struct KeyPair
-{
-    QChar cocoaKey;
-    Qt::Key qtKey;
-};
-
-bool operator==(const KeyPair &entry, QChar qchar)
-{
-    return entry.cocoaKey == qchar;
-}
-
-bool operator<(const KeyPair &entry, QChar qchar)
-{
-    return entry.cocoaKey < qchar;
-}
-
-bool operator<(QChar qchar, const KeyPair &entry)
-{
-    return qchar < entry.cocoaKey;
-}
-
-bool operator<(const Qt::Key &key, const KeyPair &entry)
-{
-    return key < entry.qtKey;
-}
-
-bool operator<(const KeyPair &entry, const Qt::Key &key)
-{
-    return entry.qtKey < key;
-}
-
-struct qtKey2CocoaKeySortLessThan
-{
-    typedef bool result_type;
-    Q_DECL_CONSTEXPR result_type operator()(const KeyPair &entry1, const KeyPair &entry2) const noexcept
-    {
-        return entry1.qtKey < entry2.qtKey;
-    }
-};
-
-static const int NSEscapeCharacter = 27; // not defined by Cocoa headers
-static const int NumEntries = 59;
-static const KeyPair entries[NumEntries] = {
-    { NSEnterCharacter, Qt::Key_Enter },
-    { NSBackspaceCharacter, Qt::Key_Backspace },
-    { NSTabCharacter, Qt::Key_Tab },
-    { NSNewlineCharacter, Qt::Key_Return },
-    { NSCarriageReturnCharacter, Qt::Key_Return },
-    { NSBackTabCharacter, Qt::Key_Backtab },
-    { NSEscapeCharacter, Qt::Key_Escape },
-    // Cocoa sends us delete when pressing backspace!
-    // (NB when we reverse this list in qtKey2CocoaKey, there
-    // will be two indices of Qt::Key_Backspace. But is seems to work
-    // ok for menu shortcuts (which uses that function):
-    { NSDeleteCharacter, Qt::Key_Backspace },
-    { NSUpArrowFunctionKey, Qt::Key_Up },
-    { NSDownArrowFunctionKey, Qt::Key_Down },
-    { NSLeftArrowFunctionKey, Qt::Key_Left },
-    { NSRightArrowFunctionKey, Qt::Key_Right },
-    { NSF1FunctionKey, Qt::Key_F1 },
-    { NSF2FunctionKey, Qt::Key_F2 },
-    { NSF3FunctionKey, Qt::Key_F3 },
-    { NSF4FunctionKey, Qt::Key_F4 },
-    { NSF5FunctionKey, Qt::Key_F5 },
-    { NSF6FunctionKey, Qt::Key_F6 },
-    { NSF7FunctionKey, Qt::Key_F7 },
-    { NSF8FunctionKey, Qt::Key_F8 },
-    { NSF9FunctionKey, Qt::Key_F9 },
-    { NSF10FunctionKey, Qt::Key_F10 },
-    { NSF11FunctionKey, Qt::Key_F11 },
-    { NSF12FunctionKey, Qt::Key_F12 },
-    { NSF13FunctionKey, Qt::Key_F13 },
-    { NSF14FunctionKey, Qt::Key_F14 },
-    { NSF15FunctionKey, Qt::Key_F15 },
-    { NSF16FunctionKey, Qt::Key_F16 },
-    { NSF17FunctionKey, Qt::Key_F17 },
-    { NSF18FunctionKey, Qt::Key_F18 },
-    { NSF19FunctionKey, Qt::Key_F19 },
-    { NSF20FunctionKey, Qt::Key_F20 },
-    { NSF21FunctionKey, Qt::Key_F21 },
-    { NSF22FunctionKey, Qt::Key_F22 },
-    { NSF23FunctionKey, Qt::Key_F23 },
-    { NSF24FunctionKey, Qt::Key_F24 },
-    { NSF25FunctionKey, Qt::Key_F25 },
-    { NSF26FunctionKey, Qt::Key_F26 },
-    { NSF27FunctionKey, Qt::Key_F27 },
-    { NSF28FunctionKey, Qt::Key_F28 },
-    { NSF29FunctionKey, Qt::Key_F29 },
-    { NSF30FunctionKey, Qt::Key_F30 },
-    { NSF31FunctionKey, Qt::Key_F31 },
-    { NSF32FunctionKey, Qt::Key_F32 },
-    { NSF33FunctionKey, Qt::Key_F33 },
-    { NSF34FunctionKey, Qt::Key_F34 },
-    { NSF35FunctionKey, Qt::Key_F35 },
-    { NSInsertFunctionKey, Qt::Key_Insert },
-    { NSDeleteFunctionKey, Qt::Key_Delete },
-    { NSHomeFunctionKey, Qt::Key_Home },
-    { NSEndFunctionKey, Qt::Key_End },
-    { NSPageUpFunctionKey, Qt::Key_PageUp },
-    { NSPageDownFunctionKey, Qt::Key_PageDown },
-    { NSPrintScreenFunctionKey, Qt::Key_Print },
-    { NSScrollLockFunctionKey, Qt::Key_ScrollLock },
-    { NSPauseFunctionKey, Qt::Key_Pause },
-    { NSSysReqFunctionKey, Qt::Key_SysReq },
-    { NSMenuFunctionKey, Qt::Key_Menu },
-    { NSHelpFunctionKey, Qt::Key_Help },
-};
-static const KeyPair * const end = entries + NumEntries;
-
-QChar qt_mac_qtKey2CocoaKey(Qt::Key key)
-{
-    // The first time this function is called, create a reverse
-    // lookup table sorted on Qt Key rather than Cocoa key:
-    static QVector<KeyPair> rev_entries(NumEntries);
-    static bool mustInit = true;
-    if (mustInit){
-        mustInit = false;
-        for (int i=0; i<NumEntries; ++i)
-            rev_entries[i] = entries[i];
-        std::sort(rev_entries.begin(), rev_entries.end(), qtKey2CocoaKeySortLessThan());
-    }
-    const QVector<KeyPair>::iterator i
-            = std::lower_bound(rev_entries.begin(), rev_entries.end(), key);
-    if ((i == rev_entries.end()) || (key < *i))
-        return QChar();
-    return i->cocoaKey;
-}
-
-Qt::Key qt_mac_cocoaKey2QtKey(QChar keyCode)
-{
-    const KeyPair *i = std::lower_bound(entries, end, keyCode);
-    if ((i == end) || (keyCode < *i))
-        return Qt::Key(keyCode.toUpper().unicode());
-    return i->qtKey;
-}
-
-#endif // Q_OS_MACOS
-
 void qt_apple_check_os_version()
 {
 #if defined(__WATCH_OS_VERSION_MIN_REQUIRED)
@@ -667,7 +526,7 @@ void QMacKeyValueObserver::removeObserver() {
 KeyValueObserver *QMacKeyValueObserver::observer = [[KeyValueObserver alloc] init];
 
 QT_END_NAMESPACE
-@implementation KeyValueObserver
+@implementation QT_MANGLE_NAMESPACE(KeyValueObserver)
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
         change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void *)context
 {
@@ -682,6 +541,129 @@ QT_BEGIN_NAMESPACE
 
 // -------------------------------------------------------------------------
 
+QOperatingSystemVersion QMacVersion::buildSDK(VersionTarget target)
+{
+    switch (target) {
+    case ApplicationBinary: return applicationVersion().second;
+    case QtLibraries: return libraryVersion().second;
+    }
+    Q_UNREACHABLE();
+}
+
+QOperatingSystemVersion QMacVersion::deploymentTarget(VersionTarget target)
+{
+    switch (target) {
+    case ApplicationBinary: return applicationVersion().first;
+    case QtLibraries: return libraryVersion().first;
+    }
+    Q_UNREACHABLE();
+}
+
+QOperatingSystemVersion QMacVersion::currentRuntime()
+{
+    return QOperatingSystemVersion::current();
+}
+
+// Mach-O platforms
+enum Platform {
+   macOS = 1,
+   iOS = 2,
+   tvOS = 3,
+   watchOS = 4,
+   bridgeOS = 5,
+   macCatalyst = 6,
+   iOSSimulator = 7,
+   tvOSSimulator = 8,
+   watchOSSimulator = 9
+};
+
+QMacVersion::VersionTuple QMacVersion::versionsForImage(const mach_header *machHeader)
+{
+    static auto osForLoadCommand = [](uint32_t cmd) {
+        switch (cmd) {
+        case LC_VERSION_MIN_MACOSX: return QOperatingSystemVersion::MacOS;
+        case LC_VERSION_MIN_IPHONEOS: return QOperatingSystemVersion::IOS;
+        case LC_VERSION_MIN_TVOS: return QOperatingSystemVersion::TvOS;
+        case LC_VERSION_MIN_WATCHOS: return QOperatingSystemVersion::WatchOS;
+        default: return QOperatingSystemVersion::Unknown;
+        }
+    };
+
+    static auto osForPlatform = [](uint32_t platform) {
+        switch (platform) {
+        case Platform::macOS:
+            return QOperatingSystemVersion::MacOS;
+        case Platform::iOS:
+        case Platform::iOSSimulator:
+            return QOperatingSystemVersion::IOS;
+        case Platform::tvOS:
+        case Platform::tvOSSimulator:
+            return QOperatingSystemVersion::TvOS;
+        case Platform::watchOS:
+        case Platform::watchOSSimulator:
+            return QOperatingSystemVersion::WatchOS;
+        default:
+            return QOperatingSystemVersion::Unknown;
+        }
+    };
+
+    static auto makeVersionTuple = [](uint32_t dt, uint32_t sdk, QOperatingSystemVersion::OSType osType) {
+        return qMakePair(
+            QOperatingSystemVersion(osType, dt >> 16 & 0xffff, dt >> 8 & 0xff, dt & 0xff),
+            QOperatingSystemVersion(osType, sdk >> 16 & 0xffff, sdk >> 8 & 0xff, sdk & 0xff)
+        );
+    };
+
+    const bool is64Bit = machHeader->magic == MH_MAGIC_64 || machHeader->magic == MH_CIGAM_64;
+    auto commandCursor = uintptr_t(machHeader) + (is64Bit ? sizeof(mach_header_64) : sizeof(mach_header));
+
+    for (uint32_t i = 0; i < machHeader->ncmds; ++i) {
+        load_command *loadCommand = reinterpret_cast<load_command *>(commandCursor);
+        if (loadCommand->cmd == LC_VERSION_MIN_MACOSX || loadCommand->cmd == LC_VERSION_MIN_IPHONEOS
+            || loadCommand->cmd == LC_VERSION_MIN_TVOS || loadCommand->cmd == LC_VERSION_MIN_WATCHOS) {
+            auto versionCommand = reinterpret_cast<version_min_command *>(loadCommand);
+            return makeVersionTuple(versionCommand->version, versionCommand->sdk, osForLoadCommand(loadCommand->cmd));
+#if QT_DARWIN_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_13, __IPHONE_11_0, __TVOS_11_0, __WATCHOS_4_0)
+        } else if (loadCommand->cmd == LC_BUILD_VERSION) {
+            auto versionCommand = reinterpret_cast<build_version_command *>(loadCommand);
+            return makeVersionTuple(versionCommand->minos, versionCommand->sdk, osForPlatform(versionCommand->platform));
+#endif
+        }
+        commandCursor += loadCommand->cmdsize;
+    }
+    Q_ASSERT_X(false, "QMacVersion", "Could not find any version load command");
+    Q_UNREACHABLE();
+}
+
+QMacVersion::VersionTuple QMacVersion::applicationVersion()
+{
+    static VersionTuple version = []() {
+        const mach_header *executableHeader = nullptr;
+        for (uint32_t i = 0; i < _dyld_image_count(); ++i) {
+            auto header = _dyld_get_image_header(i);
+            if (header->filetype == MH_EXECUTE) {
+                executableHeader = header;
+                break;
+            }
+        }
+        Q_ASSERT_X(executableHeader, "QMacVersion", "Failed to resolve Mach-O header of executable");
+        return versionsForImage(executableHeader);
+    }();
+    return version;
+}
+
+QMacVersion::VersionTuple QMacVersion::libraryVersion()
+{
+    static VersionTuple version = []() {
+        Dl_info qtCoreImage;
+        dladdr((const void *)&QMacVersion::libraryVersion, &qtCoreImage);
+        Q_ASSERT_X(qtCoreImage.dli_fbase, "QMacVersion", "Failed to resolve Mach-O header of QtCore");
+        return versionsForImage(static_cast<mach_header*>(qtCoreImage.dli_fbase));
+    }();
+    return version;
+}
+
+// -------------------------------------------------------------------------
 
 QT_END_NAMESPACE
 

@@ -27,7 +27,8 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QBuffer>
 
 #include <qcoreapplication.h>
 #include <qdebug.h>
@@ -155,7 +156,7 @@ void tst_QTextFormat::testUnderlinePropertyPrecedence()
     QCOMPARE(format.fontUnderline(), false);
     QCOMPARE(format.font().underline(), false);
 
-    // do it again, but reverse the ordering (we use a QVector internally, so test a LOT ;)
+    // do it again, but reverse the ordering (we use a QList internally, so test a LOT ;)
     // create conflict. Should use the new property
     format.setProperty(QTextCharFormat::FontUnderline, false);
     format.setProperty(QTextCharFormat::TextUnderlineStyle, QTextCharFormat::SingleUnderline);
@@ -210,7 +211,7 @@ void tst_QTextFormat::resolveFont()
     fmt.setProperty(QTextFormat::FontItalic, true);
     QTextCursor(&doc).insertText("Test", fmt);
 
-    QVector<QTextFormat> formats = doc.allFormats();
+    QList<QTextFormat> formats = doc.allFormats();
     QCOMPARE(formats.count(), 3);
 
     QCOMPARE(formats.at(2).type(), int(QTextFormat::CharFormat));
@@ -535,19 +536,19 @@ void tst_QTextFormat::setFont()
     QCOMPARE((int)f.font().capitalization(), (int)f.fontCapitalization());
     QCOMPARE(f.font().kerning(), f.fontKerning());
 
-    if (overrideAll || (font2.resolve() & QFont::StyleHintResolved))
+    if (overrideAll || (font2.resolveMask() & QFont::StyleHintResolved))
         QCOMPARE((int)f.font().styleHint(), (int)font2.styleHint());
     else
         QCOMPARE((int)f.font().styleHint(), (int)font1.styleHint());
-    if (overrideAll || (font2.resolve() & QFont::StyleStrategyResolved))
+    if (overrideAll || (font2.resolveMask() & QFont::StyleStrategyResolved))
         QCOMPARE((int)f.font().styleStrategy(), (int)font2.styleStrategy());
     else
         QCOMPARE((int)f.font().styleStrategy(), (int)font1.styleStrategy());
-    if (overrideAll || (font2.resolve() & QFont::CapitalizationResolved))
+    if (overrideAll || (font2.resolveMask() & QFont::CapitalizationResolved))
         QCOMPARE((int)f.font().capitalization(), (int)font2.capitalization());
     else
         QCOMPARE((int)f.font().capitalization(), (int)font1.capitalization());
-    if (overrideAll || (font2.resolve() & QFont::KerningResolved))
+    if (overrideAll || (font2.resolveMask() & QFont::KerningResolved))
         QCOMPARE(f.font().kerning(), font2.kerning());
     else
         QCOMPARE(f.font().kerning(), font1.kerning());
@@ -639,19 +640,19 @@ void tst_QTextFormat::setFont_collection()
         int formatIndex = collection.indexForFormat(tmp);
         QTextCharFormat f = collection.charFormat(formatIndex);
 
-        if (overrideAll || (font2.resolve() & QFont::StyleHintResolved))
+        if (overrideAll || (font2.resolveMask() & QFont::StyleHintResolved))
             QCOMPARE((int)f.font().styleHint(), (int)font2.styleHint());
         else
             QCOMPARE((int)f.font().styleHint(), (int)font1.styleHint());
-        if (overrideAll || (font2.resolve() & QFont::StyleStrategyResolved))
+        if (overrideAll || (font2.resolveMask() & QFont::StyleStrategyResolved))
             QCOMPARE((int)f.font().styleStrategy(), (int)font2.styleStrategy());
         else
             QCOMPARE((int)f.font().styleStrategy(), (int)font1.styleStrategy());
-        if (overrideAll || (font2.resolve() & QFont::CapitalizationResolved))
+        if (overrideAll || (font2.resolveMask() & QFont::CapitalizationResolved))
             QCOMPARE((int)f.font().capitalization(), (int)font2.capitalization());
         else
             QCOMPARE((int)f.font().capitalization(), (int)font1.capitalization());
-        if (overrideAll || (font2.resolve() & QFont::KerningResolved))
+        if (overrideAll || (font2.resolveMask() & QFont::KerningResolved))
             QCOMPARE(f.font().kerning(), font2.kerning());
         else
             QCOMPARE(f.font().kerning(), font1.kerning());
@@ -693,14 +694,17 @@ void tst_QTextFormat::dataStreamCompatibility()
     QTextCharFormat format;
     format.setFontStretch(42);
     format.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+    format.setFontFamilies({QLatin1String("Arial")});
 
     // Sanity check
     {
         QMap<int, QVariant> properties = format.properties();
         QVERIFY(properties.contains(QTextFormat::FontLetterSpacingType));
         QVERIFY(properties.contains(QTextFormat::FontStretch));
+        QVERIFY(properties.contains(QTextFormat::FontFamilies));
         QVERIFY(!properties.contains(QTextFormat::OldFontLetterSpacingType));
         QVERIFY(!properties.contains(QTextFormat::OldFontStretch));
+        QVERIFY(!properties.contains(QTextFormat::FontFamily));
     }
 
     QByteArray memory;
@@ -728,8 +732,10 @@ void tst_QTextFormat::dataStreamCompatibility()
                 QMap<int, QVariant> properties = other.properties();
                 QVERIFY(properties.contains(QTextFormat::FontLetterSpacingType));
                 QVERIFY(properties.contains(QTextFormat::FontStretch));
+                QVERIFY(properties.contains(QTextFormat::FontFamilies));
                 QVERIFY(!properties.contains(QTextFormat::OldFontLetterSpacingType));
                 QVERIFY(!properties.contains(QTextFormat::OldFontStretch));
+                QVERIFY(!properties.contains(QTextFormat::FontFamily));
             }
         }
 
@@ -746,8 +752,10 @@ void tst_QTextFormat::dataStreamCompatibility()
             stream >> properties;
             QVERIFY(properties.contains(QTextFormat::FontLetterSpacingType));
             QVERIFY(properties.contains(QTextFormat::FontStretch));
+            QVERIFY(properties.contains(QTextFormat::FontFamilies));
             QVERIFY(!properties.contains(QTextFormat::OldFontLetterSpacingType));
             QVERIFY(!properties.contains(QTextFormat::OldFontStretch));
+            QVERIFY(!properties.contains(QTextFormat::FontFamily));
         }
     }
 
@@ -777,8 +785,10 @@ void tst_QTextFormat::dataStreamCompatibility()
                 QMap<int, QVariant> properties = other.properties();
                 QVERIFY(properties.contains(QTextFormat::FontLetterSpacingType));
                 QVERIFY(properties.contains(QTextFormat::FontStretch));
+                QVERIFY(properties.contains(QTextFormat::FontFamilies));
                 QVERIFY(!properties.contains(QTextFormat::OldFontLetterSpacingType));
                 QVERIFY(!properties.contains(QTextFormat::OldFontStretch));
+                QVERIFY(!properties.contains(QTextFormat::FontFamily));
             }
         }
 
@@ -797,8 +807,10 @@ void tst_QTextFormat::dataStreamCompatibility()
             stream >> properties;
             QVERIFY(!properties.contains(QTextFormat::FontLetterSpacingType));
             QVERIFY(!properties.contains(QTextFormat::FontStretch));
+            QVERIFY(!properties.contains(QTextFormat::FontFamilies));
             QVERIFY(properties.contains(QTextFormat::OldFontLetterSpacingType));
             QVERIFY(properties.contains(QTextFormat::OldFontStretch));
+            QVERIFY(properties.contains(QTextFormat::FontFamily));
         }
     }
 

@@ -42,8 +42,8 @@
 #ifndef QT_NO_IMAGEFORMAT_BMP
 
 #include <qimage.h>
+#include <qlist.h>
 #include <qvariant.h>
-#include <qvector.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -147,6 +147,26 @@ static QDataStream &operator<<(QDataStream &s, const BMP_INFOHDR &bi)
     s << bi.biSizeImage;
     s << bi.biXPelsPerMeter << bi.biYPelsPerMeter;
     s << bi.biClrUsed << bi.biClrImportant;
+
+    if (bi.biSize >= BMP_WIN4) {
+        s << bi.biRedMask << bi.biGreenMask << bi.biBlueMask << bi.biAlphaMask;
+        s << bi.biCSType;
+
+        for (int i = 0; i < 9; i++)
+            s << bi.biEndpoints[i];
+
+        s << bi.biGammaRed;
+        s << bi.biGammaGreen;
+        s << bi.biGammaBlue;
+    }
+
+    if (bi.biSize >= BMP_WIN5) {
+        s << bi.biIntent;
+        s << bi.biProfileData;
+        s << bi.biProfileSize;
+        s << bi.biReserved;
+    }
+
     return s;
 }
 
@@ -188,6 +208,8 @@ static bool read_dib_infoheader(QDataStream &s, BMP_INFOHDR &bi)
     if (!(comp == BMP_RGB || (nbits == 4 && comp == BMP_RLE4) ||
         (nbits == 8 && comp == BMP_RLE8) || ((nbits == 16 || nbits == 32) && comp == BMP_BITFIELDS)))
          return false;                                // weird compression type
+    if (bi.biHeight == INT_MIN)
+        return false; // out of range for positive int
     if (bi.biWidth <= 0 || !bi.biHeight || quint64(bi.biWidth) * qAbs(bi.biHeight) > 16384 * 16384)
         return false;
 
@@ -246,7 +268,9 @@ static bool read_dib_body(QDataStream &s, const BMP_INFOHDR &bi, qint64 offset, 
             return false;
     }
 
-    bool transp = (comp == BMP_BITFIELDS) && alpha_mask;
+    bool transp = comp == BMP_BITFIELDS || (comp == BMP_RGB && nbits == 32 && alpha_mask == 0xff000000);
+    transp = transp && alpha_mask;
+
     int ncols = 0;
     int depth = 0;
     QImage::Format format;
@@ -280,17 +304,8 @@ static bool read_dib_body(QDataStream &s, const BMP_INFOHDR &bi, qint64 offset, 
     if (bi.biHeight < 0)
         h = -h;                  // support images with negative height
 
-    if (image.size() != QSize(w, h) || image.format() != format) {
-        image = QImage(w, h, format);
-        if (image.isNull())                        // could not create image
-            return false;
-        if (ncols)
-            image.setColorCount(ncols);            // Ensure valid QImage
-    }
-
-    image.setDotsPerMeterX(bi.biXPelsPerMeter);
-    image.setDotsPerMeterY(bi.biYPelsPerMeter);
-
+    if (!QImageIOHandler::allocateImage(QSize(w, h), format, &image))
+        return false;
     if (ncols > 0) {                                // read color table
         image.setColorCount(ncols);
         uchar rgb[4];
@@ -327,6 +342,12 @@ static bool read_dib_body(QDataStream &s, const BMP_INFOHDR &bi, qint64 offset, 
         green_shift = 8;
         red_shift = 16;
         blue_scale = green_scale = red_scale = 1;
+        if (transp) {
+            alpha_shift = calc_shift(alpha_mask);
+            if (((alpha_mask >> alpha_shift) + 1) == 0)
+                return false;
+            alpha_scale = 256 / ((alpha_mask >> alpha_shift) + 1);
+        }
     } else if (comp == BMP_RGB && nbits == 16) {
         blue_mask = 0x001f;
         green_mask = 0x03e0;
@@ -338,6 +359,9 @@ static bool read_dib_body(QDataStream &s, const BMP_INFOHDR &bi, qint64 offset, 
         green_scale = 1;
         blue_scale = 8;
     }
+
+    image.setDotsPerMeterX(bi.biXPelsPerMeter);
+    image.setDotsPerMeterY(bi.biYPelsPerMeter);
 
 #if 0
     qDebug("Rmask: %08x Rshift: %08x Rscale:%08x", red_mask, red_shift, red_scale);
@@ -594,8 +618,8 @@ bool qt_write_dib(QDataStream &s, const QImage &image, int bpl, int bpl_bmp, int
     if (image.depth() != 32) {                // write color table
         uchar *color_table = new uchar[4*image.colorCount()];
         uchar *rgb = color_table;
-        QVector<QRgb> c = image.colorTable();
-        for (int i=0; i<image.colorCount(); i++) {
+        QList<QRgb> c = image.colorTable();
+        for (int i = 0; i < image.colorCount(); i++) {
             *rgb++ = qBlue (c[i]);
             *rgb++ = qGreen(c[i]);
             *rgb++ = qRed  (c[i]);

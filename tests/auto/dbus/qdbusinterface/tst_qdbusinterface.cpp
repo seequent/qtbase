@@ -25,17 +25,22 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-/* -*- C++ -*-
- */
 
-#include <qcoreapplication.h>
-#include <qmetatype.h>
-#include <QtTest/QtTest>
-#include <QtCore/qregularexpression.h>
-#include <QtCore/qvariant.h>
-#include <QtDBus/QtDBus>
-#include <QtDBus/private/qdbus_symbols_p.h>
-#include <qdebug.h>
+#include <QTest>
+#include <QDebug>
+#include <QTestEventLoop>
+#include <QCoreApplication>
+#include <QMetaType>
+#include <QRegularExpression>
+#include <QVariant>
+#include <QProcess>
+#include <QTimer>
+#include <QDBusInterface>
+#include <QDBusConnectionInterface>
+#include <QDBusVirtualObject>
+
+#include <private/qdbus_symbols_p.h>
+
 #include "../qdbusmarshall/common.h"
 #include "myobject.h"
 
@@ -405,7 +410,8 @@ class VirtualObject: public QDBusVirtualObject
 public:
     VirtualObject() :success(true) {}
 
-    QString introspect(const QString &path) const {
+    QString introspect(const QString &path) const override
+    {
         Q_ASSERT(QThread::currentThread() == thread());
         if (path == "/some/path/superNode")
             return "zitroneneis";
@@ -416,7 +422,8 @@ public:
         return QString();
     }
 
-    bool handleMessage(const QDBusMessage &message, const QDBusConnection &connection) {
+    bool handleMessage(const QDBusMessage &message, const QDBusConnection &connection) override
+    {
         Q_ASSERT(QThread::currentThread() == thread());
         ++callCount;
         lastMessage = message;
@@ -481,14 +488,14 @@ void tst_QDBusInterface::callMethod()
     QCOMPARE(MyObject::callArgs.count(), 1);
     QVariant v = MyObject::callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("foo"));
 
     // verify reply
     QCOMPARE(reply.arguments().count(), 1);
     v = reply.arguments().at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("foo"));
 
     // call an INVOKABLE method
@@ -500,14 +507,14 @@ void tst_QDBusInterface::callMethod()
     QCOMPARE(MyObject::callArgs.count(), 1);
     v = MyObject::callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("bar"));
 
     // verify reply
     QCOMPARE(reply.arguments().count(), 1);
     v = reply.arguments().at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("bar"));
 }
 
@@ -528,7 +535,7 @@ void tst_QDBusInterface::invokeMethod()
     QCOMPARE(MyObject::callArgs.count(), 1);
     QVariant v = MyObject::callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("foo"));
 
     // make the INVOKABLE call without a return type
@@ -540,7 +547,7 @@ void tst_QDBusInterface::invokeMethod()
     QCOMPARE(MyObject::callArgs.count(), 1);
     v = MyObject::callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("bar"));
 }
 
@@ -562,7 +569,7 @@ void tst_QDBusInterface::invokeMethodWithReturn()
     QCOMPARE(MyObject::callArgs.count(), 1);
     QVariant v = MyObject::callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg.variant().toString());
 
     // verify that we got the reply as expected
@@ -577,7 +584,7 @@ void tst_QDBusInterface::invokeMethodWithReturn()
     QCOMPARE(MyObject::callArgs.count(), 1);
     v = MyObject::callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg2.variant().toString());
 
     // verify that we got the reply as expected
@@ -606,12 +613,12 @@ void tst_QDBusInterface::invokeMethodWithMultiReturn()
     QCOMPARE(MyObject::callArgs.count(), 2);
     QVariant v = MyObject::callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg.variant().toString());
 
     v = MyObject::callArgs.at(1);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg2.variant().toString());
 
     // verify that we got the replies as expected
@@ -631,12 +638,12 @@ void tst_QDBusInterface::invokeMethodWithMultiReturn()
     QCOMPARE(MyObject::callArgs.count(), 2);
     v = MyObject::callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg3.variant().toString());
 
     v = MyObject::callArgs.at(1);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg4.variant().toString());
 
     // verify that we got the replies as expected
@@ -716,14 +723,14 @@ void tst_QDBusInterface::callMethodPeer()
     QCOMPARE(callArgs.count(), 1);
     QVariant v = callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("foo"));
 
     // verify reply
     QCOMPARE(reply.arguments().count(), 1);
     v = reply.arguments().at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("foo"));
 
     // call an INVOKABLE method
@@ -736,14 +743,14 @@ void tst_QDBusInterface::callMethodPeer()
     QCOMPARE(callArgs.count(), 1);
     v = callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("bar"));
 
     // verify reply
     QCOMPARE(reply.arguments().count(), 1);
     v = reply.arguments().at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("bar"));
 }
 
@@ -765,7 +772,7 @@ void tst_QDBusInterface::invokeMethodPeer()
     QCOMPARE(callArgs.count(), 1);
     QVariant v = callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("foo"));
 
     // make the INVOKABLE call without a return type
@@ -778,7 +785,7 @@ void tst_QDBusInterface::invokeMethodPeer()
     QCOMPARE(callArgs.count(), 1);
     v = callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), QString("bar"));
 }
 
@@ -801,7 +808,7 @@ void tst_QDBusInterface::invokeMethodWithReturnPeer()
     QCOMPARE(callArgs.count(), 1);
     QVariant v = callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg.variant().toString());
 
     // verify that we got the reply as expected
@@ -817,7 +824,7 @@ void tst_QDBusInterface::invokeMethodWithReturnPeer()
     QCOMPARE(callArgs.count(), 1);
     v = callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg2.variant().toString());
 
     // verify that we got the reply as expected
@@ -847,12 +854,12 @@ void tst_QDBusInterface::invokeMethodWithMultiReturnPeer()
     QCOMPARE(callArgs.count(), 2);
     QVariant v = callArgs.at(0);
     QDBusVariant dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg.variant().toString());
 
     v = callArgs.at(1);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg2.variant().toString());
 
     // verify that we got the replies as expected
@@ -873,12 +880,12 @@ void tst_QDBusInterface::invokeMethodWithMultiReturnPeer()
     QCOMPARE(callArgs.count(), 2);
     v = callArgs.at(0);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg3.variant().toString());
 
     v = callArgs.at(1);
     dv = qdbus_cast<QDBusVariant>(v);
-    QCOMPARE(dv.variant().type(), QVariant::String);
+    QCOMPARE(dv.variant().userType(), QMetaType::QString);
     QCOMPARE(dv.variant().toString(), arg4.variant().toString());
 
     // verify that we got the replies as expected

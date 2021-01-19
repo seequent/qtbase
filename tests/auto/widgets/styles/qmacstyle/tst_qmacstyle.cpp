@@ -27,11 +27,9 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtWidgets>
 #include <private/qstylehelper_p.h>
-
-const int N = 1;
 
 Q_DECLARE_METATYPE(QStyleHelper::WidgetSizePolicy);
 
@@ -40,22 +38,13 @@ Q_DECLARE_METATYPE(QStyleHelper::WidgetSizePolicy);
 
 typedef QSizePolicy::ControlType ControlType;
 
-CT(DefaultType)
 CT(ButtonBox)
 CT(CheckBox)
 CT(ComboBox)
-CT(Frame)
-CT(GroupBox)
 CT(Label)
-CT(Line)
 CT(LineEdit)
 CT(PushButton)
 CT(RadioButton)
-CT(Slider)
-CT(SpinBox)
-CT(TabWidget)
-CT(ToolButton)
-
 
 class tst_QMacStyle : public QObject
 {
@@ -86,7 +75,7 @@ private:
     static int vgap(QWidget *widget1, QWidget *widget2) { return gap(widget1, widget2).height(); }
     static void setSize(QWidget *widget, QStyleHelper::WidgetSizePolicy size);
     static int spacing(ControlType control1, ControlType control2, Qt::Orientation orientation,
-                       QStyleOption *option = 0, QWidget *widget = 0);
+                       QStyleOption *option = nullptr, QWidget *widget = nullptr);
     static int hspacing(ControlType control1, ControlType control2, QStyleHelper::WidgetSizePolicy size = QStyleHelper::SizeLarge);
     static int vspacing(ControlType control1, ControlType control2, QStyleHelper::WidgetSizePolicy size = QStyleHelper::SizeLarge);
 };
@@ -200,7 +189,6 @@ void tst_QMacStyle::sizeHints()
     QDateTimeEdit dateTime1(&w);
     QCOMPARE(sh(&dateTime1).height(), h1);
 
-    ok1.setAttribute(Qt::WA_MacMetalStyle, true);
     QSize s2 = sh(&ok1);
     if (size == Normal) {
         QVERIFY(s2.height() >= 21 && s2.height() <= 32);
@@ -306,6 +294,8 @@ QSize tst_QMacStyle::gap(QWidget *widget1, QWidget *widget2)
 void tst_QMacStyle::setSize(QWidget *widget, QStyleHelper::WidgetSizePolicy size)
 {
     switch (size) {
+    case QStyleHelper::SizeDefault:
+        break;
     case QStyleHelper::SizeLarge:
         widget->setAttribute(Qt::WA_MacNormalSize, true);
         break;

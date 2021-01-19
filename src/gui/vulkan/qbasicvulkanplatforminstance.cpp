@@ -40,7 +40,7 @@
 #include "qbasicvulkanplatforminstance_p.h"
 #include <QLibrary>
 #include <QCoreApplication>
-#include <QVector>
+#include <QList>
 #include <QLoggingCategory>
 
 QT_BEGIN_NAMESPACE
@@ -66,7 +66,7 @@ QBasicPlatformVulkanInstance::QBasicPlatformVulkanInstance()
       m_vkGetInstanceProcAddr(nullptr),
       m_ownsVkInst(false),
       m_errorCode(VK_SUCCESS),
-      m_debugCallback(0)
+      m_debugCallback(VK_NULL_HANDLE)
 {
 }
 
@@ -135,10 +135,29 @@ void QBasicPlatformVulkanInstance::init(QLibrary *lib)
         return;
     }
 
+    // Do not rely on non-1.0 header typedefs here.
+    typedef VkResult (VKAPI_PTR *T_enumerateInstanceVersion)(uint32_t* pApiVersion);
+    // Determine instance-level version as described in the Vulkan 1.2 spec.
+    T_enumerateInstanceVersion enumerateInstanceVersion = reinterpret_cast<T_enumerateInstanceVersion>(
+        m_vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceVersion"));
+    if (enumerateInstanceVersion) {
+        uint32_t ver = 0;
+        if (enumerateInstanceVersion(&ver) == VK_SUCCESS) {
+            m_supportedApiVersion = QVersionNumber(VK_VERSION_MAJOR(ver),
+                                                   VK_VERSION_MINOR(ver),
+                                                   VK_VERSION_PATCH(ver));
+        } else {
+            m_supportedApiVersion = QVersionNumber(1, 0, 0);
+        }
+    } else {
+        // Vulkan 1.0
+        m_supportedApiVersion = QVersionNumber(1, 0, 0);
+    }
+
     uint32_t layerCount = 0;
     m_vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     if (layerCount) {
-        QVector<VkLayerProperties> layerProps(layerCount);
+        QList<VkLayerProperties> layerProps(layerCount);
         m_vkEnumerateInstanceLayerProperties(&layerCount, layerProps.data());
         m_supportedLayers.reserve(layerCount);
         for (const VkLayerProperties &p : qAsConst(layerProps)) {
@@ -157,7 +176,7 @@ void QBasicPlatformVulkanInstance::init(QLibrary *lib)
     uint32_t extCount = 0;
     m_vkEnumerateInstanceExtensionProperties(nullptr, &extCount, nullptr);
     if (extCount) {
-        QVector<VkExtensionProperties> extProps(extCount);
+        QList<VkExtensionProperties> extProps(extCount);
         m_vkEnumerateInstanceExtensionProperties(nullptr, &extCount, extProps.data());
         m_supportedExtensions.reserve(extCount);
         for (const VkExtensionProperties &p : qAsConst(extProps)) {
@@ -178,6 +197,11 @@ QVulkanInfoVector<QVulkanLayer> QBasicPlatformVulkanInstance::supportedLayers() 
 QVulkanInfoVector<QVulkanExtension> QBasicPlatformVulkanInstance::supportedExtensions() const
 {
     return m_supportedExtensions;
+}
+
+QVersionNumber QBasicPlatformVulkanInstance::supportedApiVersion() const
+{
+    return m_supportedApiVersion;
 }
 
 void QBasicPlatformVulkanInstance::initInstance(QVulkanInstance *instance, const QByteArrayList &extraExts)
@@ -250,7 +274,7 @@ void QBasicPlatformVulkanInstance::initInstance(QVulkanInstance *instance, const
         instInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instInfo.pApplicationInfo = &appInfo;
 
-        QVector<const char *> layerNameVec;
+        QList<const char *> layerNameVec;
         for (const QByteArray &ba : qAsConst(m_enabledLayers))
             layerNameVec.append(ba.constData());
         if (!layerNameVec.isEmpty()) {
@@ -258,7 +282,7 @@ void QBasicPlatformVulkanInstance::initInstance(QVulkanInstance *instance, const
             instInfo.ppEnabledLayerNames = layerNameVec.constData();
         }
 
-        QVector<const char *> extNameVec;
+        QList<const char *> extNameVec;
         for (const QByteArray &ba : qAsConst(m_enabledExtensions))
             extNameVec.append(ba.constData());
         if (!extNameVec.isEmpty()) {
@@ -346,7 +370,7 @@ bool QBasicPlatformVulkanInstance::supportsPresent(VkPhysicalDevice physicalDevi
     return supported;
 }
 
-void QBasicPlatformVulkanInstance::setDebugFilters(const QVector<QVulkanInstance::DebugFilter> &filters)
+void QBasicPlatformVulkanInstance::setDebugFilters(const QList<QVulkanInstance::DebugFilter> &filters)
 {
     m_debugFilters = filters;
 }

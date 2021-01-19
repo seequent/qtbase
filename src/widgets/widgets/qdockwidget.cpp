@@ -129,7 +129,7 @@ public:
     QSize minimumSizeHint() const override
     { return sizeHint(); }
 
-    void enterEvent(QEvent *event) override;
+    void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
@@ -205,7 +205,7 @@ QSize QDockWidgetTitleButton::sizeHint() const
     return QSize(size, size);
 }
 
-void QDockWidgetTitleButton::enterEvent(QEvent *event)
+void QDockWidgetTitleButton::enterEvent(QEnterEvent *event)
 {
     if (isEnabled()) update();
     QAbstractButton::enterEvent(event);
@@ -222,7 +222,7 @@ void QDockWidgetTitleButton::paintEvent(QPaintEvent *)
     QPainter p(this);
 
     QStyleOptionToolButton opt;
-    opt.init(this);
+    opt.initFrom(this);
     opt.state |= QStyle::State_AutoRaise;
 
     if (style()->styleHint(QStyle::SH_DockWidget_ButtonsHaveFrame, nullptr, this))
@@ -295,7 +295,7 @@ bool QDockWidgetLayout::wmSupportsNativeWindowDeco()
  */
 bool QDockWidgetLayout::nativeWindowDeco(bool floating) const
 {
-    return wmSupportsNativeWindowDeco() && floating && item_list.at(QDockWidgetLayout::TitleBar) == 0;
+    return wmSupportsNativeWindowDeco() && floating && item_list.at(QDockWidgetLayout::TitleBar) == nullptr;
 }
 
 
@@ -754,8 +754,6 @@ void QDockWidgetPrivate::updateButtons()
     button->setAccessibleName(QDockWidget::tr("Close"));
     button->setAccessibleDescription(QDockWidget::tr("Closes the dock widget"));
 #endif
-    q->setAttribute(Qt::WA_ContentsPropagated,
-                    (canFloat || canClose) && !hideButtons);
 
     layout->invalidate();
 }
@@ -921,7 +919,7 @@ bool QDockWidgetPrivate::mousePressEvent(QMouseEvent *event)
             // check if the tool window is movable... do nothing if it
             // is not (but allow moving if the window is floating)
             (!hasFeature(this, QDockWidget::DockWidgetMovable) && !q->isFloating()) ||
-            (qobject_cast<QMainWindow*>(parent) == 0 && !floatingTab) ||
+            (qobject_cast<QMainWindow*>(parent) == nullptr && !floatingTab) ||
             isAnimating() || state != nullptr) {
             return false;
         }
@@ -1034,7 +1032,7 @@ void QDockWidgetPrivate::nonClientAreaMouseEvent(QMouseEvent *event)
                 break;
             if (state != nullptr)
                 break;
-            if (qobject_cast<QMainWindow*>(parent) == 0 && qobject_cast<QDockWidgetGroupWindow*>(parent) == 0)
+            if (qobject_cast<QMainWindow*>(parent) == nullptr && qobject_cast<QDockWidgetGroupWindow*>(parent) == nullptr)
                 break;
             if (isAnimating())
                 break;
@@ -1085,7 +1083,7 @@ void QDockWidgetPrivate::moveEvent(QMoveEvent *event)
     if (state == nullptr || !state->dragging || !state->nca)
         return;
 
-    if (!q->isWindow() && qobject_cast<QDockWidgetGroupWindow*>(parent) == 0)
+    if (!q->isWindow() && qobject_cast<QDockWidgetGroupWindow*>(parent) == nullptr)
         return;
 
     // When the native window frame is being dragged, all we get is these mouse
@@ -1466,7 +1464,7 @@ void QDockWidget::closeEvent(QCloseEvent *event)
 /*! \reimp */
 void QDockWidget::paintEvent(QPaintEvent *event)
 {
-    Q_UNUSED(event)
+    Q_UNUSED(event);
     Q_D(QDockWidget);
 
     QDockWidgetLayout *layout
@@ -1480,7 +1478,7 @@ void QDockWidget::paintEvent(QPaintEvent *event)
         // when not floating.
         if (isFloating()) {
             QStyleOptionFrame framOpt;
-            framOpt.init(this);
+            framOpt.initFrom(this);
             p.drawPrimitive(QStyle::PE_FrameDockWidget, framOpt);
         }
 
@@ -1588,8 +1586,8 @@ bool QDockWidget::event(QEvent *event)
 
         // Usually the window won't get resized while it's being moved, but it can happen,
         // for example on Windows when moving to a screen with bigger scale factor
-        // (and Qt::AA_EnableHighDpiScaling is enabled). If that happens we should
-        // update state->pressPos, otherwise it will be outside the window when the window shrinks.
+        // If that happens we should update state->pressPos, otherwise it will be outside
+        // the window when the window shrinks.
         if (d->state && d->state->dragging)
             d->recalculatePressPos(static_cast<QResizeEvent*>(event));
         break;

@@ -55,6 +55,8 @@
             "android-ndk-host": "string",
             "android-ndk-platform": "string",
             "android-sdk": "string",
+            "android-javac-target": "string",
+            "android-javac-source": "string",
 
             "android-style-assets": "boolean",
             "appstore-compliant": "boolean",
@@ -64,7 +66,6 @@
             "c++std": "cxxstd",
             "ccache": { "type": "boolean", "name": "ccache" },
             "commercial": "void",
-            "compile-examples": { "type": "boolean", "name": "compile_examples" },
             "confirm-license": "void",
             "coverage": "coverage",
             "dbus": { "type": "optionalString", "values": [ "no", "yes", "linked", "runtime" ] },
@@ -109,7 +110,6 @@
             "profile": "boolean",
             "qreal": "string",
             "qtlibinfix": { "type": "string", "name": "qt_libinfix" },
-            "qtlibinfix-plugins": { "type": "boolean", "name": "qt_libinfix_plugins" },
             "qtnamespace": { "type": "string", "name": "qt_namespace" },
             "reduce-exports": { "type": "boolean", "name": "reduce_exports" },
             "reduce-relocations": { "type": "boolean", "name": "reduce_relocations" },
@@ -241,11 +241,18 @@
 
     "testTypeDependencies": {
         "linkerSupportsFlag": [ "use_bfd_linker", "use_gold_linker", "use_lld_linker" ],
-        "verifySpec": [ "shared", "use_bfd_linker", "use_gold_linker", "use_lld_linker", "compiler-flags", "qmakeargs", "commit" ],
+        "verifySpec": [
+            "shared",
+            "use_bfd_linker", "use_gold_linker", "use_lld_linker",
+            "compiler-flags", "qmakeargs",
+            "simulator_and_device",
+            "thread",
+            "commit" ],
         "compile": [ "verifyspec" ],
         "detectPkgConfig": [ "cross_compile", "machineTuple" ],
         "library": [ "pkg-config", "compiler-flags" ],
-        "getPkgConfigVariable": [ "pkg-config" ]
+        "getPkgConfigVariable": [ "pkg-config" ],
+        "architecture" : [ "verifyspec" ]
     },
 
     "testTypeAliases": {
@@ -749,11 +756,11 @@
         },
         "architecture": {
             "label": "Architecture",
-            "output": [ "architecture" ]
+            "output": [ "architecture", "commitConfig" ]
         },
         "pkg-config": {
             "label": "Using pkg-config",
-            "autoDetect": "!config.darwin && !config.win32",
+            "autoDetect": "!config.darwin && !config.win32 && !config.android",
             "condition": "tests.pkg-config",
             "output": [
                 "publicFeature",
@@ -1085,7 +1092,7 @@
         },
         "avx": {
             "label": "AVX",
-            "condition": "features.sse4_2 && tests.avx",
+            "condition": "features.sse4_2 && tests.avx && (!config.android || !arch.x86_64)",
             "output": [
                 "privateConfig",
                 { "type": "define", "name": "QT_COMPILER_SUPPORTS_AVX", "value": 1 }
@@ -1101,7 +1108,7 @@
         },
         "avx2": {
             "label": "AVX2",
-            "condition": "features.avx && tests.avx2",
+            "condition": "features.avx && tests.avx2 && (!config.android || !arch.x86_64)",
             "output": [
                 "privateConfig",
                 "privateFeature",
@@ -1365,17 +1372,6 @@
             "condition": "libs.libudev",
             "output": [ "privateFeature" ]
         },
-        "qt_libinfix_plugins": {
-            "label": "Use QT_LIBINFIX for Plugins",
-            "autoDetect": false,
-            "enable": "input.qt_libinfix != '' && input.qt_libinfix_plugins == 'yes'",
-            "output": [ "privateConfig" ]
-        },
-        "compile_examples": {
-            "label": "Compile examples",
-            "autoDetect": "!config.wasm",
-            "output": [ "privateConfig" ]
-        },
         "incredibuild_xge": {
             "label": "IncrediBuild",
             "emitIf": "var.QMAKE_HOST.os == 'Windows'",
@@ -1477,11 +1473,6 @@
             "type": "note",
             "condition": "features.release_tools && !features.debug",
             "message": "-optimized-tools is not useful in -release mode."
-        },
-        {
-            "type": "note",
-            "condition": "input.qreal == 'double' && arch.arm",
-            "message": "Qt is using double for qreal on this system. This is binary-incompatible against Qt 5.1.  Configure with '-qreal float' to create a build that is binary-compatible with 5.1."
         },
         {
             "type": "error",

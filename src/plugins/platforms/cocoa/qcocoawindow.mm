@@ -80,7 +80,7 @@ static void qRegisterNotificationCallbacks()
 
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
 
-    const QMetaObject *metaObject = QMetaType::metaObjectForType(qRegisterMetaType<QCocoaWindow*>());
+    const QMetaObject *metaObject = QMetaType(qRegisterMetaType<QCocoaWindow*>()).metaObject();
     Q_ASSERT(metaObject);
 
     for (int i = 0; i < metaObject->methodCount(); ++i) {
@@ -145,7 +145,6 @@ QCocoaWindow::QCocoaWindow(QWindow *win, WId nativeHandle)
     , m_inSetGeometry(false)
     , m_inSetStyleMask(false)
     , m_menubar(nullptr)
-    , m_needsInvalidateShadow(false)
     , m_frameStrutEventsEnabled(false)
     , m_registerTouchCount(0)
     , m_resizableTransientParent(false)
@@ -172,10 +171,18 @@ void QCocoaWindow::initialize()
     if (!m_view)
         m_view = [[QNSView alloc] initWithCocoaWindow:this];
 
-    setGeometry(initialGeometry(window(), windowGeometry(), defaultWindowWidth, defaultWindowHeight));
+    // Compute the initial geometry based on the geometry set on the
+    // QWindow. This geometry has already been reflected to the
+    // QPlatformWindow in the constructor, so to ensure that the
+    // resulting setGeometry call does not think the geometry has
+    // already been applied, we reset the QPlatformWindow's view
+    // of the geometry first.
+    auto initialGeometry = QPlatformWindow::initialGeometry(window(),
+        windowGeometry(), defaultWindowWidth, defaultWindowHeight);
+    QPlatformWindow::d_ptr->rect = QRect();
+    setGeometry(initialGeometry);
 
     recreateWindowIfNeeded();
-    window()->setGeometry(geometry());
 
     m_initialized = true;
 }
@@ -216,14 +223,7 @@ QCocoaWindow::~QCocoaWindow()
 
 QSurfaceFormat QCocoaWindow::format() const
 {
-    QSurfaceFormat format = window()->requestedFormat();
-
-    // Upgrade the default surface format to include an alpha channel. The default RGB format
-    // causes Cocoa to spend an unreasonable amount of time converting it to RGBA internally.
-    if (format.alphaBufferSize() < 0)
-        format.setAlphaBufferSize(8);
-
-    return format;
+    return window()->requestedFormat();
 }
 
 void QCocoaWindow::setGeometry(const QRect &rectIn)
@@ -299,6 +299,9 @@ bool QCocoaWindow::startSystemMove()
     case NSEventTypeRightMouseDown:
     case NSEventTypeOtherMouseDown:
     case NSEventTypeMouseMoved:
+    case NSEventTypeLeftMouseDragged:
+    case NSEventTypeRightMouseDragged:
+    case NSEventTypeOtherMouseDragged:
         // The documentation only describes starting a system move
         // based on mouse down events, but move events also work.
         [m_view.window performWindowDragWithEvent:NSApp.currentEvent];
@@ -1048,27 +1051,15 @@ void QCocoaWindow::setMask(const QRegion &region)
 {
     qCDebug(lcQpaWindow) << "QCocoaWindow::setMask" << window() << region;
 
-    if (m_view.layer) {
-        if (!region.isEmpty()) {
-            QCFType<CGMutablePathRef> maskPath = CGPathCreateMutable();
-            for (const QRect &r : region)
-                CGPathAddRect(maskPath, nullptr, r.toCGRect());
-            CAShapeLayer *maskLayer = [CAShapeLayer layer];
-            maskLayer.path = maskPath;
-            m_view.layer.mask = maskLayer;
-        } else {
-            m_view.layer.mask = nil;
-        }
+    if (!region.isEmpty()) {
+        QCFType<CGMutablePathRef> maskPath = CGPathCreateMutable();
+        for (const QRect &r : region)
+            CGPathAddRect(maskPath, nullptr, r.toCGRect());
+        CAShapeLayer *maskLayer = [CAShapeLayer layer];
+        maskLayer.path = maskPath;
+        m_view.layer.mask = maskLayer;
     } else {
-        if (isContentView()) {
-            // Setting the mask requires invalidating the NSWindow shadow, but that needs
-            // to happen after the backingstore has been redrawn, so that AppKit can pick
-            // up the new window shape based on the backingstore content. Doing a display
-            // directly here is not an option, as the window might not be exposed at this
-            // time, and so would not result in an updated backingstore.
-            m_needsInvalidateShadow = true;
-            [m_view setNeedsDisplay:YES];
-        }
+        m_view.layer.mask = nil;
     }
 }
 
@@ -1105,11 +1096,9 @@ void QCocoaWindow::setParent(const QPlatformWindow *parentWindow)
 {
     qCDebug(lcQpaWindow) << "QCocoaWindow::setParent" << window() << (parentWindow ? parentWindow->window() : 0);
 
-    // recreate the window for compatibility
-    bool unhideAfterRecreate = parentWindow && !isEmbedded() && ![m_view isHidden];
+    // Recreate in case we need to get rid of a NSWindow, or create one
     recreateWindowIfNeeded();
-    if (unhideAfterRecreate)
-        [m_view setHidden:NO];
+
     setCocoaGeometry(geometry());
 }
 
@@ -1212,9 +1201,17 @@ void QCocoaWindow::windowDidBecomeKey()
         QWindowSystemInterface::handleEnterEvent(m_enterLeaveTargetWindow, windowPoint, screenPoint);
     }
 
-    if (!windowIsPopupType())
-        QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(
-            window(), Qt::ActiveWindowFocusReason);
+    QNSView *firstResponderView = qt_objc_cast<QNSView *>(m_view.window.firstResponder);
+    if (!firstResponderView)
+        return;
+
+    const QCocoaWindow *focusCocoaWindow = firstResponderView.platformWindow;
+    if (focusCocoaWindow->windowIsPopupType())
+        return;
+
+    // See also [QNSView becomeFirstResponder]
+    QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(
+                focusCocoaWindow->window(), Qt::ActiveWindowFocusReason);
 }
 
 void QCocoaWindow::windowDidResignKey()
@@ -1225,15 +1222,18 @@ void QCocoaWindow::windowDidResignKey()
     if (isForeignWindow())
         return;
 
-    // Key window will be non-nil if another window became key, so do not
-    // set the active window to zero here -- the new key window's
-    // NSWindowDidBecomeKeyNotification hander will change the active window.
-    NSWindow *keyWindow = [NSApp keyWindow];
-    if (!keyWindow || keyWindow == m_view.window) {
-        // No new key window, go ahead and set the active window to zero
-        if (!windowIsPopupType())
-            QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(
-                nullptr, Qt::ActiveWindowFocusReason);
+    // The current key window will be non-nil if another window became key. If that
+    // window is a Qt window, we delay the window activation event until the didBecomeKey
+    // notification is delivered to the active window, to ensure an atomic update.
+    NSWindow *newKeyWindow = [NSApp keyWindow];
+    if (newKeyWindow && newKeyWindow != m_view.window
+        && [newKeyWindow conformsToProtocol:@protocol(QNSWindowProtocol)])
+        return;
+
+    // Lost key window, go ahead and set the active window to zero
+    if (!windowIsPopupType()) {
+        QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(
+            nullptr, Qt::ActiveWindowFocusReason);
     }
 }
 
@@ -1457,11 +1457,6 @@ void QCocoaWindow::recreateWindowIfNeeded()
     if ((isContentView() && !shouldBeContentView) || (recreateReason & PanelChanged)) {
         if (m_nsWindow) {
             qCDebug(lcQpaWindow) << "Getting rid of existing window" << m_nsWindow;
-            if (m_nsWindow.observationInfo) {
-                qCCritical(lcQpaWindow) << m_nsWindow << "has active key-value observers (KVO)!"
-                    << "These will stop working now that the window is recreated, and will result in exceptions"
-                    << "when the observers are removed. Break in QCocoaWindow::recreateWindowIfNeeded to debug.";
-            }
             [m_nsWindow closeAndRelease];
             if (isContentView() && !isEmbeddedView) {
                 // We explicitly disassociate m_view from the window's contentView,
@@ -1497,15 +1492,8 @@ void QCocoaWindow::recreateWindowIfNeeded()
         setWindowFilePath(window()->filePath()); // Also sets window icon
         setWindowState(window()->windowState());
     } else {
-        // Child windows have no NSWindow, link the NSViews instead.
+        // Child windows have no NSWindow, re-parent to superview instead
         [parentCocoaWindow->m_view addSubview:m_view];
-        QRect rect = windowGeometry();
-        // Prevent setting a (0,0) window size; causes opengl context
-        // "Invalid Drawable" warnings.
-        if (rect.isNull())
-            rect.setSize(QSize(1, 1));
-        NSRect frame = NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height());
-        [m_view setFrame:frame];
         [m_view setHidden:!window()->isVisible()];
     }
 
@@ -1666,7 +1654,7 @@ QCocoaNSWindow *QCocoaWindow::createNSWindow(bool shouldBePanel)
 
     applyContentBorderThickness(nsWindow);
 
-    if (format().colorSpace() == QSurfaceFormat::sRGBColorSpace)
+    if (format().colorSpace() == QColorSpace::SRgb)
         nsWindow.colorSpace = NSColorSpace.sRGBColorSpace;
 
     return nsWindow;
@@ -1879,13 +1867,6 @@ bool QCocoaWindow::shouldRefuseKeyWindowAndFirstResponder()
     }
 
     return false;
-}
-
-QPoint QCocoaWindow::bottomLeftClippedByNSWindowOffsetStatic(QWindow *window)
-{
-    if (window->handle())
-        return static_cast<QCocoaWindow *>(window->handle())->bottomLeftClippedByNSWindowOffset();
-    return QPoint();
 }
 
 QPoint QCocoaWindow::bottomLeftClippedByNSWindowOffset() const

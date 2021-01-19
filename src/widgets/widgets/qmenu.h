@@ -249,7 +249,7 @@ protected:
 #if QT_CONFIG(wheelevent)
     void wheelEvent(QWheelEvent *) override;
 #endif
-    void enterEvent(QEvent *) override;
+    void enterEvent(QEnterEvent *) override;
     void leaveEvent(QEvent *) override;
     void hideEvent(QHideEvent *) override;
     void paintEvent(QPaintEvent *) override;
@@ -257,7 +257,7 @@ protected:
     void timerEvent(QTimerEvent *) override;
     bool event(QEvent *) override;
     bool focusNextPrevChild(bool next) override;
-    void initStyleOption(QStyleOptionMenuItem *option, const QAction *action) const;
+    virtual void initStyleOption(QStyleOptionMenuItem *option, const QAction *action) const;
 
 private Q_SLOTS:
     void internalDelayedPopup();

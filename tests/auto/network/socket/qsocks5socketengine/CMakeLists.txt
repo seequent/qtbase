@@ -8,7 +8,7 @@ endif()
 ## tst_qsocks5socketengine Test:
 #####################################################################
 
-add_qt_test(tst_qsocks5socketengine
+qt_internal_add_test(tst_qsocks5socketengine
     SOURCES
         tst_qsocks5socketengine.cpp
     INCLUDE_DIRECTORIES
@@ -16,6 +16,7 @@ add_qt_test(tst_qsocks5socketengine
     PUBLIC_LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
+    QT_TEST_SERVER_LIST "danted" "apache2" "cyrus" # special case
 )
 
 #### Keys ignored in scope 1:.:.:qsocks5socketengine.pro:<TRUE>:
@@ -28,14 +29,7 @@ add_qt_test(tst_qsocks5socketengine
 #### Keys ignored in scope 2:.:.:qsocks5socketengine.pro:LINUX:
 # QT_TEST_SERVER_LIST = "danted" "apache2" "cyrus"
 
-extend_target(tst_qsocks5socketengine CONDITION WIN32
+qt_internal_extend_target(tst_qsocks5socketengine CONDITION WIN32
     PUBLIC_LIBRARIES
         ws2_32
-)
-
-extend_target(tst_qsocks5socketengine CONDITION QT_FEATURE_reduce_exports AND UNIX
-    SOURCES
-        ${QT_SOURCE_TREE}/src/network/socket/qabstractsocketengine.cpp ${QT_SOURCE_TREE}/src/network/socket/qabstractsocketengine_p.h
-        ${QT_SOURCE_TREE}/src/network/socket/qnativesocketengine.cpp ${QT_SOURCE_TREE}/src/network/socket/qnativesocketengine_p.h
-        ${QT_SOURCE_TREE}/src/network/socket/qnativesocketengine_unix.cpp
 )

@@ -298,9 +298,9 @@ void QCborMap::clear()
 
     \sa QMap::keys(), QHash::keys()
  */
-QVector<QCborValue> QCborMap::keys() const
+QList<QCborValue> QCborMap::keys() const
 {
-    QVector<QCborValue> result;
+    QList<QCborValue> result;
     if (d) {
         result.reserve(size());
         for (qsizetype i = 0; i < d->elements.size(); i += 2)
@@ -834,9 +834,8 @@ QCborValueRef QCborMap::operator[](const QCborValue &key)
  */
 QCborMap::iterator QCborMap::find(qint64 key)
 {
+    detach();
     auto it = constFind(key);
-    if (it != constEnd())
-        detach();
     return { d.data(), it.item.i };
 }
 
@@ -860,9 +859,8 @@ QCborMap::iterator QCborMap::find(qint64 key)
  */
 QCborMap::iterator QCborMap::find(QLatin1String key)
 {
+    detach();
     auto it = constFind(key);
-    if (it != constEnd())
-        detach();
     return { d.data(), it.item.i };
 }
 
@@ -886,9 +884,8 @@ QCborMap::iterator QCborMap::find(QLatin1String key)
  */
 QCborMap::iterator QCborMap::find(const QString & key)
 {
+    detach();
     auto it = constFind(key);
-    if (it != constEnd())
-        detach();
     return { d.data(), it.item.i };
 }
 
@@ -912,9 +909,8 @@ QCborMap::iterator QCborMap::find(const QString & key)
  */
 QCborMap::iterator QCborMap::find(const QCborValue &key)
 {
+    detach();
     auto it = constFind(key);
-    if (it != constEnd())
-        detach();
     return { d.data(), it.item.i };
 }
 

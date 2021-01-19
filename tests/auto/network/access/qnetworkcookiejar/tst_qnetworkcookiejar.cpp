@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -477,7 +477,8 @@ void tst_QNetworkCookieJar::effectiveTLDs_data()
     QTest::newRow("no-wildcard3") << "whatever.uk" << false; // was changed at some point
     QTest::newRow("yes-wildcard4") << "anything.sendai.jp" << true;
     QTest::newRow("yes-wildcard5") << "foo.sch.uk" << true;
-    QTest::newRow("yes-wildcard6") << "something.platform.sh" << true;
+    QTest::newRow("yes-platform.sh") << "eu.platform.sh" << true;
+    QTest::newRow("no-platform.sh") << "something.platform.sh" << false;
 
     int i;
     for (i = 0; tldIndices[i] < tldChunks[0]; i++)  { }
@@ -518,7 +519,7 @@ void tst_QNetworkCookieJar::rfc6265_data()
     QVERIFY(!document.isNull());
     QVERIFY(document.isArray());
 
-    foreach (const QJsonValue& testCase, document.array()) {
+    for (const QJsonValue testCase : document.array()) {
         QJsonObject testObject = testCase.toObject();
 
         //"test" - the test case name
@@ -527,15 +528,15 @@ void tst_QNetworkCookieJar::rfc6265_data()
             continue;
 
         //"received" - the cookies received from the server
-        QJsonArray received = testObject.value("received").toArray();
+        const QJsonArray received = testObject.value("received").toArray();
         QStringList receivedList;
-        foreach (const QJsonValue& receivedCookie, received)
+        for (const QJsonValue receivedCookie : received)
             receivedList.append(receivedCookie.toString());
 
         //"sent" - the cookies sent back to the server
-        QJsonArray sent = testObject.value("sent").toArray();
+        const QJsonArray sent = testObject.value("sent").toArray();
         QList<QNetworkCookie> sentList;
-        foreach (const QJsonValue& sentCookie, sent) {
+        for (const QJsonValue sentCookie : sent) {
             QJsonObject sentCookieObject = sentCookie.toObject();
             QNetworkCookie cookie;
             cookie.setName(sentCookieObject.value("name").toString().toUtf8());

@@ -40,7 +40,6 @@
 #include "qtoolbutton.h"
 
 #include <qapplication.h>
-#include <private/qdesktopwidget_p.h>
 #include <qdrawutil.h>
 #include <qevent.h>
 #include <qicon.h>
@@ -528,7 +527,7 @@ void QToolButtonPrivate::_q_actionTriggered()
 /*!
     \reimp
  */
-void QToolButton::enterEvent(QEvent * e)
+void QToolButton::enterEvent(QEnterEvent * e)
 {
     Q_D(QToolButton);
     if (d->autoRaise)
@@ -629,7 +628,7 @@ void QToolButton::mouseReleaseEvent(QMouseEvent *e)
 bool QToolButton::hitButton(const QPoint &pos) const
 {
     Q_D(const QToolButton);
-    if(QAbstractButton::hitButton(pos))
+    if (QAbstractButton::hitButton(pos))
         return (d->buttonPressed != QToolButtonPrivate::MenuButtonPressed);
     return false;
 }
@@ -728,7 +727,7 @@ static QPoint positionMenu(const QToolButton *q, bool horizontal,
 {
     QPoint p;
     const QRect rect = q->rect(); // Find screen via point in case of QGraphicsProxyWidget.
-    QRect screen = QDesktopWidgetPrivate::availableGeometry(q->mapToGlobal(rect.center()));
+    const QRect screen = QWidgetPrivate::availableScreenGeometry(q);
     if (horizontal) {
         if (q->isRightToLeft()) {
             if (q->mapToGlobal(QPoint(0, rect.bottom())).y() + sh.height() <= screen.bottom()) {
@@ -805,7 +804,8 @@ void QToolButtonPrivate::popupTimerDone()
     // QTBUG-78966, Delay positioning until after aboutToShow().
     auto positionFunction = [q, horizontal](const QSize &sizeHint) {
         return positionMenu(q, horizontal, sizeHint); };
-    actualMenu->d_func()->exec({}, nullptr, positionFunction);
+    const auto initialPos = positionFunction(actualMenu->sizeHint());
+    actualMenu->d_func()->exec(initialPos, nullptr, positionFunction);
 
     if (!that)
         return;

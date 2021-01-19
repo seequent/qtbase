@@ -4,7 +4,7 @@
 ## tst_qvectornd Test:
 #####################################################################
 
-add_qt_test(tst_qvectornd
+qt_internal_add_test(tst_qvectornd
     SOURCES
         tst_qvectornd.cpp
     PUBLIC_LIBRARIES

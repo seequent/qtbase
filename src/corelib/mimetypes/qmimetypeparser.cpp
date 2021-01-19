@@ -63,6 +63,7 @@ static const char genericIconTagC[] = "generic-icon";
 static const char iconTagC[] = "icon";
 static const char nameAttributeC[] = "name";
 static const char globTagC[] = "glob";
+static const char globDeleteAllTagC[] = "glob-deleteall";
 static const char aliasTagC[] = "alias";
 static const char patternAttributeC[] = "pattern";
 static const char weightAttributeC[] = "weight";
@@ -107,7 +108,7 @@ static const char matchMaskAttributeC[] = "mask";
     Overwrite to process the sequence of parsed data
 */
 
-QMimeTypeParserBase::ParseState QMimeTypeParserBase::nextState(ParseState currentState, const QStringRef &startElement)
+QMimeTypeParserBase::ParseState QMimeTypeParserBase::nextState(ParseState currentState, QStringView startElement)
 {
     switch (currentState) {
     case ParseBeginning:
@@ -123,13 +124,14 @@ QMimeTypeParserBase::ParseState QMimeTypeParserBase::nextState(ParseState curren
     case ParseGenericIcon:
     case ParseIcon:
     case ParseGlobPattern:
+    case ParseGlobDeleteAll:
     case ParseSubClass:
     case ParseAlias:
     case ParseOtherMimeTypeSubTag:
     case ParseMagicMatchRule:
         if (startElement == QLatin1String(mimeTypeTagC)) // Sequence of <mime-type>
             return ParseMimeType;
-        if (startElement == QLatin1String(commentTagC ))
+        if (startElement == QLatin1String(commentTagC))
             return ParseComment;
         if (startElement == QLatin1String(genericIconTagC))
             return ParseGenericIcon;
@@ -137,6 +139,8 @@ QMimeTypeParserBase::ParseState QMimeTypeParserBase::nextState(ParseState curren
             return ParseIcon;
         if (startElement == QLatin1String(globTagC))
             return ParseGlobPattern;
+        if (startElement == QLatin1String(globDeleteAllTagC))
+            return ParseGlobDeleteAll;
         if (startElement == QLatin1String(subClassTagC))
             return ParseSubClass;
         if (startElement == QLatin1String(aliasTagC))
@@ -157,7 +161,7 @@ QMimeTypeParserBase::ParseState QMimeTypeParserBase::nextState(ParseState curren
 }
 
 // Parse int number from an (attribute) string
-bool QMimeTypeParserBase::parseNumber(const QStringRef &n, int *target, QString *errorMessage)
+bool QMimeTypeParserBase::parseNumber(QStringView n, int *target, QString *errorMessage)
 {
     bool ok;
     *target = n.toInt(&ok);
@@ -170,11 +174,12 @@ bool QMimeTypeParserBase::parseNumber(const QStringRef &n, int *target, QString 
 }
 
 #ifndef QT_NO_XMLSTREAMREADER
-struct CreateMagicMatchRuleResult {
+struct CreateMagicMatchRuleResult
+{
     QString errorMessage; // must be first
     QMimeMagicRule rule;
 
-    CreateMagicMatchRuleResult(const QStringRef &type, const QStringRef &value, const QStringRef &offsets, const QStringRef &mask)
+    CreateMagicMatchRuleResult(QStringView type, QStringView value, QStringView offsets, QStringView mask)
         : errorMessage(), rule(type.toString(), value.toUtf8(), offsets.toString(), mask.toLatin1(), &errorMessage)
     {
 
@@ -183,10 +188,10 @@ struct CreateMagicMatchRuleResult {
 
 static CreateMagicMatchRuleResult createMagicMatchRule(const QXmlStreamAttributes &atts)
 {
-    const QStringRef type = atts.value(QLatin1String(matchTypeAttributeC));
-    const QStringRef value = atts.value(QLatin1String(matchValueAttributeC));
-    const QStringRef offsets = atts.value(QLatin1String(matchOffsetAttributeC));
-    const QStringRef mask = atts.value(QLatin1String(matchMaskAttributeC));
+    const auto type = atts.value(QLatin1String(matchTypeAttributeC));
+    const auto value = atts.value(QLatin1String(matchValueAttributeC));
+    const auto offsets = atts.value(QLatin1String(matchOffsetAttributeC));
+    const auto mask = atts.value(QLatin1String(matchMaskAttributeC));
     return CreateMagicMatchRuleResult(type, value, offsets, mask);
 }
 #endif
@@ -242,6 +247,9 @@ bool QMimeTypeParserBase::parse(QIODevice *dev, const QString &fileName, QString
                 data.addGlobPattern(pattern); // just for QMimeType::globPatterns()
             }
                 break;
+            case ParseGlobDeleteAll:
+                data.globPatterns.clear();
+                break;
             case ParseSubClass: {
                 const QString inheritsFrom = atts.value(QLatin1String(mimeTypeAttributeC)).toString();
                 if (!inheritsFrom.isEmpty())
@@ -265,7 +273,7 @@ bool QMimeTypeParserBase::parse(QIODevice *dev, const QString &fileName, QString
                 break;
             case ParseMagic: {
                 priority = 50;
-                const QStringRef priorityS = atts.value(QLatin1String(priorityAttributeC));
+                const auto priorityS = atts.value(QLatin1String(priorityAttributeC));
                 if (!priorityS.isEmpty()) {
                     if (!parseNumber(priorityS, &priority, errorMessage))
                         return false;
@@ -301,7 +309,7 @@ bool QMimeTypeParserBase::parse(QIODevice *dev, const QString &fileName, QString
         // continue switch QXmlStreamReader::Token...
         case QXmlStreamReader::EndElement: // Finished element
         {
-            const QStringRef elementName = reader.name();
+            const auto elementName = reader.name();
             if (elementName == QLatin1String(mimeTypeTagC)) {
                 if (!process(QMimeType(data), errorMessage))
                     return false;

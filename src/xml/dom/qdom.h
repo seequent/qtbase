@@ -227,10 +227,10 @@ public:
 
     void save(QTextStream&, int, EncodingPolicy=QDomNode::EncodingFromDocument) const;
 
-    QDomElement firstChildElement(const QString &tagName = QString()) const;
-    QDomElement lastChildElement(const QString &tagName = QString()) const;
-    QDomElement previousSiblingElement(const QString &tagName = QString()) const;
-    QDomElement nextSiblingElement(const QString &taName = QString()) const;
+    QDomElement firstChildElement(const QString &tagName = QString(), const QString &namespaceURI = QString()) const;
+    QDomElement lastChildElement(const QString &tagName = QString(), const QString &namespaceURI = QString()) const;
+    QDomElement previousSiblingElement(const QString &tagName = QString(), const QString &namespaceURI = QString()) const;
+    QDomElement nextSiblingElement(const QString &taName = QString(), const QString &namespaceURI = QString()) const;
 
     int lineNumber() const;
     int columnNumber() const;
@@ -339,23 +339,9 @@ public:
     bool setContent(const QByteArray& text, bool namespaceProcessing, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
     bool setContent(const QString& text, bool namespaceProcessing, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
     bool setContent(QIODevice* dev, bool namespaceProcessing, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
-#if QT_DEPRECATED_SINCE(5, 15)
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    QT_DEPRECATED_X("Use other overloads instead")
-    bool setContent(QXmlInputSource *source, bool namespaceProcessing, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
-QT_WARNING_POP
-#endif
     bool setContent(const QByteArray& text, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
     bool setContent(const QString& text, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
     bool setContent(QIODevice* dev, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
-#if QT_DEPRECATED_SINCE(5, 15)
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-    QT_DEPRECATED_X("Use other overloads instead")
-    bool setContent(QXmlInputSource *source, QXmlReader *reader, QString *errorMsg=nullptr, int *errorLine=nullptr, int *errorColumn=nullptr );
-QT_WARNING_POP
-#endif
     bool setContent(QXmlStreamReader *reader, bool namespaceProcessing, QString *errorMsg = nullptr,
                     int *errorLine = nullptr, int *errorColumn = nullptr);
 

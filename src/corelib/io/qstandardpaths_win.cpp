@@ -84,7 +84,7 @@ static void appendOrganizationAndApp(QString &path) // Courtesy qstandardpaths_u
     if (!appName.isEmpty())
         path += QLatin1Char('/') + appName;
 #else // !QT_BOOTSTRAPPED
-    Q_UNUSED(path)
+    Q_UNUSED(path);
 #endif
 }
 
@@ -137,7 +137,7 @@ static GUID writableSpecialFolderId(QStandardPaths::StandardLocation type)
         FOLDERID_Videos,        // MoviesLocation
         FOLDERID_Pictures,      // PicturesLocation
         GUID(), GUID(),         // TempLocation/HomeLocation
-        FOLDERID_LocalAppData,  // AppLocalDataLocation ("Local" path), AppLocalDataLocation = DataLocation
+        FOLDERID_LocalAppData,  // AppLocalDataLocation ("Local" path)
         GUID(),                 // CacheLocation
         FOLDERID_LocalAppData,  // GenericDataLocation ("Local" path)
         GUID(),                 // RuntimeLocation
@@ -147,7 +147,7 @@ static GUID writableSpecialFolderId(QStandardPaths::StandardLocation type)
         FOLDERID_RoamingAppData,// AppDataLocation ("Roaming" path)
         FOLDERID_LocalAppData,  // AppConfigLocation ("Local" path)
     };
-    Q_STATIC_ASSERT(sizeof(folderIds) / sizeof(folderIds[0]) == size_t(QStandardPaths::AppConfigLocation + 1));
+    static_assert(sizeof(folderIds) / sizeof(folderIds[0]) == size_t(QStandardPaths::AppConfigLocation + 1));
 
     // folders for low integrity processes
     static const GUID folderIds_li[] = {
@@ -159,7 +159,7 @@ static GUID writableSpecialFolderId(QStandardPaths::StandardLocation type)
         FOLDERID_Videos,         // MoviesLocation
         FOLDERID_Pictures,       // PicturesLocation
         GUID(), GUID(),          // TempLocation/HomeLocation
-        FOLDERID_LocalAppDataLow,// AppLocalDataLocation ("Local" path), AppLocalDataLocation = DataLocation
+        FOLDERID_LocalAppDataLow,// AppLocalDataLocation ("Local" path)
         GUID(),                  // CacheLocation
         FOLDERID_LocalAppDataLow,// GenericDataLocation ("Local" path)
         GUID(),                  // RuntimeLocation
@@ -169,7 +169,7 @@ static GUID writableSpecialFolderId(QStandardPaths::StandardLocation type)
         FOLDERID_RoamingAppData, // AppDataLocation ("Roaming" path)
         FOLDERID_LocalAppDataLow,// AppConfigLocation ("Local" path)
     };
-    Q_STATIC_ASSERT(sizeof(folderIds_li) == sizeof(folderIds));
+    static_assert(sizeof(folderIds_li) == sizeof(folderIds));
 
     static bool low_integrity_process = isProcessLowIntegrity();
     if (size_t(type) < sizeof(folderIds) / sizeof(folderIds[0]))

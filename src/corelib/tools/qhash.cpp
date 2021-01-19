@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Copyright (C) 2012 Giuseppe D'Angelo <dangelog@gmail.com>.
 ** Contact: https://www.qt.io/licensing/
@@ -387,8 +387,157 @@ static uint siphash(const uint8_t *in, uint inlen, const uint seed)
 }
 #endif
 
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)  // GCC
+#  define QHASH_AES_SANITIZER_BUILD
+#elif QT_HAS_FEATURE(address_sanitizer) || QT_HAS_FEATURE(thread_sanitizer)  // Clang
+#  define QHASH_AES_SANITIZER_BUILD
+#endif
+
+// When built with a sanitizer, aeshash() is rightfully reported to have a
+// heap-buffer-overflow issue. However, we consider it to be safe in this
+// specific case and overcome the problem by correctly discarding the
+// out-of-range bits. To allow building the code with sanitizer,
+// QHASH_AES_SANITIZER_BUILD is used to disable aeshash() usage.
+#if QT_COMPILER_SUPPORTS_HERE(AES) && QT_COMPILER_SUPPORTS_HERE(SSE4_2) && \
+    !defined(QHASH_AES_SANITIZER_BUILD)
+#  define AESHASH
+
+#undef QHASH_AES_SANITIZER_BUILD
+
+QT_FUNCTION_TARGET(AES)
+static size_t aeshash(const uchar *p, size_t len, size_t seed) noexcept
+{
+    __m128i key;
+    if (sizeof(size_t) == 8) {
+#ifdef Q_PROCESSOR_X86_64
+        quint64 seededlen = seed ^ len;
+        __m128i mseed = _mm_cvtsi64_si128(seed);
+        key = _mm_insert_epi64(mseed, seededlen, 1);
+#endif
+    } else {
+        quint32 replicated_len = quint16(len) | (quint32(quint16(len)) << 16);
+        __m128i mseed = _mm_cvtsi32_si128(seed);
+        key = _mm_insert_epi32(mseed, replicated_len, 1);
+        key = _mm_unpacklo_epi64(key, key);
+    }
+
+    // This is inspired by the algorithm in the Go language. See:
+    // https://github.com/golang/go/blob/894abb5f680c040777f17f9f8ee5a5ab3a03cb94/src/runtime/asm_386.s#L902
+    // https://github.com/golang/go/blob/894abb5f680c040777f17f9f8ee5a5ab3a03cb94/src/runtime/asm_amd64.s#L903
+    //
+    // Even though we're using the AESENC instruction from the CPU, this code
+    // is not encryption and this routine makes no claim to be
+    // cryptographically secure. We're simply using the instruction that performs
+    // the scrambling round (step 3 in [1]) because it's just very good at
+    // spreading the bits around.
+    //
+    // [1] https://en.wikipedia.org/wiki/Advanced_Encryption_Standard#High-level_description_of_the_algorithm
+
+    // hash 16 bytes, running 3 scramble rounds of AES on itself (like label "final1")
+    const auto hash16bytes = [](__m128i &state0, __m128i data) QT_FUNCTION_TARGET(AES) {
+        state0 = _mm_xor_si128(state0, data);
+        state0 = _mm_aesenc_si128(state0, state0);
+        state0 = _mm_aesenc_si128(state0, state0);
+        state0 = _mm_aesenc_si128(state0, state0);
+    };
+
+    __m128i state0 = key;
+    auto src = reinterpret_cast<const __m128i *>(p);
+
+    if (len < 16)
+        goto lt16;
+    if (len < 32)
+        goto lt32;
+
+    // rounds of 32 bytes
+    {
+        // Make state1 = ~state0:
+        __m128i one = _mm_cmpeq_epi64(key, key);
+        __m128i state1 = _mm_xor_si128(state0, one);
+
+        // do simplified rounds of 32 bytes: unlike the Go code, we only
+        // scramble twice and we keep 256 bits of state
+        const auto srcend = src + (len / 32);
+        while (src < srcend) {
+            __m128i data0 = _mm_loadu_si128(src);
+            __m128i data1 = _mm_loadu_si128(src + 1);
+            state0 = _mm_xor_si128(data0, state0);
+            state1 = _mm_xor_si128(data1, state1);
+            state0 = _mm_aesenc_si128(state0, state0);
+            state1 = _mm_aesenc_si128(state1, state1);
+            state0 = _mm_aesenc_si128(state0, state0);
+            state1 = _mm_aesenc_si128(state1, state1);
+            src += 2;
+        }
+        state0 = _mm_xor_si128(state0, state1);
+    }
+    len &= 0x1f;
+
+    // do we still have 16 or more bytes?
+    if (len & 0x10) {
+lt32:
+        __m128i data = _mm_loadu_si128(src);
+        hash16bytes(state0, data);
+        ++src;
+    }
+    len &= 0xf;
+
+lt16:
+    if (len) {
+        // load the last chunk of data
+        // We're going to load 16 bytes and mask zero the part we don't care
+        // (the hash of a short string is different from the hash of a longer
+        // including NULLs at the end because the length is in the key)
+        // WARNING: this may produce valgrind warnings, but it's safe
+
+        __m128i data;
+
+        if (Q_LIKELY(quintptr(src + 1) & 0xff0)) {
+            // same page, we definitely can't fault:
+            // load all 16 bytes and mask off the bytes past the end of the source
+            static const qint8 maskarray[] = {
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+                };
+            __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(maskarray + 15 - len));
+            data = _mm_loadu_si128(src);
+            data = _mm_and_si128(data, mask);
+        } else {
+            // too close to the end of the page, it could fault:
+            // load 16 bytes ending at the data end, then shuffle them to the beginning
+            static const qint8 shufflecontrol[] = {
+                1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+            };
+            __m128i control = _mm_loadu_si128(reinterpret_cast<const __m128i *>(shufflecontrol + 15 - len));
+            p = reinterpret_cast<const uchar *>(src - 1);
+            data = _mm_loadu_si128(reinterpret_cast<const __m128i *>(p + len));
+            data = _mm_shuffle_epi8(data, control);
+        }
+
+        hash16bytes(state0, data);
+    }
+
+    // extract state0
+#  if QT_POINTER_SIZE == 8
+    return _mm_cvtsi128_si64(state0);
+#  else
+    return _mm_cvtsi128_si32(state0);
+#  endif
+}
+#endif
+
 size_t qHashBits(const void *p, size_t size, size_t seed) noexcept
 {
+#ifdef QT_BOOTSTRAPPED
+    // the seed is always 0 in bootstrapped mode (no seed generation code),
+    // so help the compiler do dead code elimination
+    seed = 0;
+#endif
+#ifdef AESHASH
+    if (seed && qCpuHasFeature(AES) && qCpuHasFeature(SSE4_2))
+        return aeshash(reinterpret_cast<const uchar *>(p), size, seed);
+#endif
     if (size <= QT_POINTER_SIZE)
         return murmurhash(p, size, seed);
 
@@ -400,17 +549,10 @@ size_t qHash(const QByteArray &key, size_t seed) noexcept
     return qHashBits(key.constData(), size_t(key.size()), seed);
 }
 
-#if QT_STRINGVIEW_LEVEL < 2
-size_t qHash(const QString &key, size_t seed) noexcept
+size_t qHash(const QByteArrayView &key, size_t seed) noexcept
 {
-    return qHashBits(key.unicode(), size_t(key.size())*sizeof(QChar), seed);
+    return qHashBits(key.constData(), size_t(key.size()), seed);
 }
-
-size_t qHash(const QStringRef &key, size_t seed) noexcept
-{
-    return qHashBits(key.unicode(), size_t(key.size())*sizeof(QChar), seed);
-}
-#endif
 
 size_t qHash(QStringView key, size_t seed) noexcept
 {
@@ -419,12 +561,12 @@ size_t qHash(QStringView key, size_t seed) noexcept
 
 size_t qHash(const QBitArray &bitArray, size_t seed) noexcept
 {
-    int m = bitArray.d.size() - 1;
+    qsizetype m = bitArray.d.size() - 1;
     size_t result = qHashBits(reinterpret_cast<const uchar *>(bitArray.d.constData()), size_t(qMax(0, m)), seed);
 
     // deal with the last 0 to 7 bits manually, because we can't trust that
     // the padding is initialized to 0 in bitArray.d
-    int n = bitArray.size();
+    qsizetype n = bitArray.size();
     if (n & 0x7)
         result = ((result << 4) + bitArray.d.at(m)) & ((1 << n) - 1);
     return result;
@@ -572,16 +714,6 @@ uint qt_hash(QStringView key, uint chained) noexcept
 }
 
 /*!
-    \fn template <typename T1, typename T2> size_t qHash(const QPair<T1, T2> &key, size_t seed = 0)
-    \since 5.0
-    \relates QHash
-
-    Returns the hash value for the \a key, using \a seed to seed the calculation.
-
-    Types \c T1 and \c T2 must be supported by qHash().
-*/
-
-/*!
     \fn template <typename T1, typename T2> size_t qHash(const std::pair<T1, T2> &key, size_t seed = 0)
     \since 5.7
     \relates QHash
@@ -589,11 +721,6 @@ uint qt_hash(QStringView key, uint chained) noexcept
     Returns the hash value for the \a key, using \a seed to seed the calculation.
 
     Types \c T1 and \c T2 must be supported by qHash().
-
-    \note The return type of this function is \e{not} the same as that of
-    \snippet code/src_corelib_tools_qhash.cpp 29
-    The two functions use different hashing algorithms; due to binary compatibility
-    constraints, we cannot change the QPair algorithm to match the std::pair one before Qt 6.
 */
 
 /*!
@@ -898,6 +1025,13 @@ size_t qHash(long double key, size_t seed) noexcept
     Returns the hash value for the \a key, using \a seed to seed the calculation.
 */
 
+/*! \fn size_t qHash(const QByteArrayView &key, size_t seed = 0)
+    \relates QHash
+    \since 6.0
+
+    Returns the hash value for the \a key, using \a seed to seed the calculation.
+*/
+
 /*! \fn size_t qHash(const QBitArray &key, size_t seed = 0)
     \relates QHash
     \since 5.0
@@ -906,13 +1040,6 @@ size_t qHash(long double key, size_t seed) noexcept
 */
 
 /*! \fn size_t qHash(const QString &key, size_t seed = 0)
-    \relates QHash
-    \since 5.0
-
-    Returns the hash value for the \a key, using \a seed to seed the calculation.
-*/
-
-/*! \fn size_t qHash(const QStringRef &key, size_t seed = 0)
     \relates QHash
     \since 5.0
 
@@ -946,6 +1073,21 @@ size_t qHash(long double key, size_t seed) noexcept
 
     Returns the hash value for the \a key, using \a seed to seed the calculation.
 */
+
+/*! \fn template<typename T> bool qHashEquals(const T &a, const T &b)
+    \relates QHash
+    \since 6.0
+    \internal
+
+    This method is being used by QHash to compare two keys. Returns true if the
+    keys \a a and \a b are considered equal for hashing purposes.
+
+    The default implementation returns the result of (a == b). It can be reimplemented
+    for a certain type if the equality operator is not suitable for hashing purposes.
+    This is for example the case if the equality operator uses qFuzzyCompare to compare
+    floating point values.
+*/
+
 
 /*!
     \class QHash
@@ -1067,22 +1209,26 @@ size_t qHash(long double key, size_t seed) noexcept
     instead, store a QWidget *.
 
     \target qHash
-    \section2 The qHash() hashing function
+    \section2 The hashing function
 
     A QHash's key type has additional requirements other than being an
     assignable data type: it must provide operator==(), and there must also be
-    a qHash() function in the type's namespace that returns a hash value for an
-    argument of the key's type.
+    a hashing function that returns a hash value for an argument of the
+    key's type.
 
-    The qHash() function computes a numeric value based on a key. It
+    The hashing function computes a numeric value based on a key. It
     can use any algorithm imaginable, as long as it always returns
     the same value if given the same argument. In other words, if
-    \c{e1 == e2}, then \c{qHash(e1) == qHash(e2)} must hold as well.
-    However, to obtain good performance, the qHash() function should
+    \c{e1 == e2}, then \c{hash(e1) == hash(e2)} must hold as well.
+    However, to obtain good performance, the hashing function should
     attempt to return different hash values for different keys to the
     largest extent possible.
 
-    For a key type \c{K}, the qHash function must have one of these signatures:
+    A hashing function for a key type \c{K} may be provided in two
+    different ways.
+
+    The first way is by having an overload of \c{qHash()} in \c{K}'s
+    namespace. The \c{qHash()} function must have one of these signatures:
 
     \snippet code/src_corelib_tools_qhash.cpp 32
 
@@ -1093,6 +1239,20 @@ size_t qHash(long double key, size_t seed) noexcept
     the latter is used by QHash (note that you can simply define a
     two-arguments version, and use a default value for the seed parameter).
 
+    The second way to provide a hashing function is by specializing
+    the \c{std::hash} class for the key type \c{K}, and providing a
+    suitable function call operator for it:
+
+    \snippet code/src_corelib_tools_qhash.cpp 33
+
+    The seed argument has the same meaning as for \c{qHash()},
+    and may be left out.
+
+    This second way allows to reuse the same hash function between
+    QHash and the C++ Standard Library unordered associative containers.
+    If both a \c{qHash()} overload and a \c{std::hash} specializations
+    are provided for a type, then the \c{qHash()} overload is preferred.
+
     Here's a partial list of the C++ and Qt types that can serve as keys in a
     QHash: any integer type (char, unsigned long, etc.), any pointer type,
     QChar, QString, and QByteArray. For all of these, the \c <QHash> header
@@ -1101,9 +1261,11 @@ size_t qHash(long double key, size_t seed) noexcept
     the documentation of each class.
 
     If you want to use other types as the key, make sure that you provide
-    operator==() and a qHash() implementation. The convenience qHashMulti()
-    function can be used to implement qHash() for a custom type, where
-    one usually wants to produce a hash value from multiple fields:
+    operator==() and a hash implementation.
+
+    The convenience qHashMulti() function can be used to implement
+    qHash() for a custom type, where one usually wants to produce a
+    hash value from multiple fields:
 
     Example:
     \snippet code/src_corelib_tools_qhash.cpp 13
@@ -1292,7 +1454,7 @@ size_t qHash(long double key, size_t seed) noexcept
 */
 
 
-/*! \fn template <class Key, class T> void QHash<Key, T>::reserve(int size)
+/*! \fn template <class Key, class T> void QHash<Key, T>::reserve(qsizetype size)
 
     Ensures that the QHash's internal hash table has space to store at
     least \a size items without having to grow the hash table.
@@ -1374,6 +1536,21 @@ size_t qHash(long double key, size_t seed) noexcept
     \sa clear(), take()
 */
 
+/*! \fn template <class Key, class T> template <typename Predicate> qsizetype QHash<Key, T>::removeIf(Predicate pred)
+    \since 6.1
+
+    Removes all elements for which the predicate \a pred returns true
+    from the hash.
+
+    The function supports predicates which take either an argument of
+    type \c{QHash<Key, T>::iterator}, or an argument of type
+    \c{std::pair<const Key &, T &>}.
+
+    Returns the number of elements removed, if any.
+
+    \sa clear(), take()
+*/
+
 /*! \fn template <class Key, class T> T QHash<Key, T>::take(const Key &key)
 
     Removes the item with the \a key from the hash and returns
@@ -1431,6 +1608,10 @@ size_t qHash(long double key, size_t seed) noexcept
 
     The order is guaranteed to be the same as that used by values().
 
+    This function creates a new list, in \l {linear time}. The time and memory
+    use that entails can be avoided by iterating from \l keyBegin() to
+    \l keyEnd().
+
     \sa values(), key()
 */
 
@@ -1452,6 +1633,10 @@ size_t qHash(long double key, size_t seed) noexcept
     arbitrary order.
 
     The order is guaranteed to be the same as that used by keys().
+
+    This function creates a new list, in \l {linear time}. The time and memory
+    use that entails can be avoided by iterating from \l keyValueBegin() to
+    \l keyValueEnd().
 
     \sa keys(), value()
 */
@@ -1631,10 +1816,6 @@ size_t qHash(long double key, size_t seed) noexcept
     \sa remove(), take(), find()
 */
 
-/*! \fn template <class Key, class T> QHash<Key, T>::iterator QHash<Key, T>::erase(iterator pos)
-    \overload
-*/
-
 /*! \fn template <class Key, class T> QHash<Key, T>::iterator QHash<Key, T>::find(const Key &key)
 
     Returns an iterator pointing to the item with the \a key in the
@@ -1680,8 +1861,8 @@ size_t qHash(long double key, size_t seed) noexcept
 */
 
 /*!
-    \fn template <typename T> template <typename ...Args> QHash<Key, T>::iterator QHash<Key, T>::emplace(const Key &key, Args&&... args)
-    \fn template <typename T> template <typename ...Args> QHash<Key, T>::iterator QHash<Key, T>::emplace(Key &&key, Args&&... args)
+    \fn template <class Key, class T> template <typename ...Args> QHash<Key, T>::iterator QHash<Key, T>::emplace(const Key &key, Args&&... args)
+    \fn template <class Key, class T> template <typename ...Args> QHash<Key, T>::iterator QHash<Key, T>::emplace(Key &&key, Args&&... args)
 
     Inserts a new element into the container. This new element
     is constructed in-place using \a args as the arguments for its
@@ -2102,8 +2283,6 @@ size_t qHash(long double key, size_t seed) noexcept
     item.
 
     Calling this function on QHash::end() leads to undefined results.
-
-    \sa operator--()
 */
 
 /*! \fn template <class Key, class T> QHash<Key, T>::const_iterator QHash<Key, T>::const_iterator::operator++(int)
@@ -2187,7 +2366,6 @@ size_t qHash(long double key, size_t seed) noexcept
 
     Calling this function on QHash::keyEnd() leads to undefined results.
 
-    \sa operator--()
 */
 
 /*! \fn template <class Key, class T> QHash<Key, T>::key_iterator QHash<Key, T>::key_iterator::operator++(int)
@@ -2328,8 +2506,6 @@ size_t qHash(long double key, size_t seed) noexcept
 
     Constructs a copy of \a other (which can be a QHash or a
     QMultiHash).
-
-    \sa operator=()
 */
 
 /*! \fn template <class Key, class T> template <class InputIterator> QMultiHash<Key, T>::QMultiHash(InputIterator begin, InputIterator end)
@@ -2369,8 +2545,8 @@ size_t qHash(long double key, size_t seed) noexcept
 */
 
 /*!
-    \fn template <typename T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplace(const Key &key, Args&&... args)
-    \fn template <typename T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplace(Key &&key, Args&&... args)
+    \fn template <class Key, class T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplace(const Key &key, Args&&... args)
+    \fn template <class Key, class T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplace(Key &&key, Args&&... args)
 
     Inserts a new element into the container. This new element
     is constructed in-place using \a args as the arguments for its
@@ -2387,8 +2563,8 @@ size_t qHash(long double key, size_t seed) noexcept
 */
 
 /*!
-    \fn template <typename T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplaceReplace(const Key &key, Args&&... args)
-    \fn template <typename T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplaceReplace(Key &&key, Args&&... args)
+    \fn template <class Key, class T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplaceReplace(const Key &key, Args&&... args)
+    \fn template <class Key, class T> template <typename ...Args> QMultiHash<Key, T>::iterator QMultiHash<Key, T>::emplaceReplace(Key &&key, Args&&... args)
 
     Inserts a new element into the container. This new element
     is constructed in-place using \a args as the arguments for its
@@ -2405,6 +2581,16 @@ size_t qHash(long double key, size_t seed) noexcept
 
 /*! \fn template <class Key, class T> QMultiHash &QMultiHash<Key, T>::unite(const QMultiHash &other)
     \since 5.13
+
+    Inserts all the items in the \a other hash into this hash
+    and returns a reference to this hash.
+
+    \sa insert()
+*/
+
+
+/*! \fn template <class Key, class T> QMultiHash &QMultiHash<Key, T>::unite(const QHash<Key, T> &other)
+    \since 6.0
 
     Inserts all the items in the \a other hash into this hash
     and returns a reference to this hash.
@@ -2495,6 +2681,30 @@ size_t qHash(long double key, size_t seed) noexcept
     \sa remove()
 */
 
+/*!
+    \fn template <class Key, class T> void QMultiHash<Key, T>::clear()
+    \since 4.3
+
+    Removes all items from the hash and frees up all memory used by it.
+
+    \sa remove()
+*/
+
+/*! \fn template <class Key, class T> template <typename Predicate> qsizetype QMultiHash<Key, T>::removeIf(Predicate pred)
+    \since 6.1
+
+    Removes all elements for which the predicate \a pred returns true
+    from the multi hash.
+
+    The function supports predicates which take either an argument of
+    type \c{QMultiHash<Key, T>::iterator}, or an argument of type
+    \c{std::pair<const Key &, T &>}.
+
+    Returns the number of elements removed, if any.
+
+    \sa clear(), take()
+*/
+
 /*! \fn template <class Key, class T> T QMultiHash<Key, T>::take(const Key &key)
 
     Removes the item with the \a key from the hash and returns
@@ -2518,6 +2728,10 @@ size_t qHash(long double key, size_t seed) noexcept
 
     The order is guaranteed to be the same as that used by values().
 
+    This function creates a new list, in \l {linear time}. The time and memory
+    use that entails can be avoided by iterating from \l keyBegin() to
+    \l keyEnd().
+
     \sa values(), key()
 */
 
@@ -2529,6 +2743,10 @@ size_t qHash(long double key, size_t seed) noexcept
     inserted one.
 
     The order is guaranteed to be the same as that used by keys().
+
+    This function creates a new list, in \l {linear time}. The time and memory
+    use that entails can be avoided by iterating from \l keyValueBegin() to
+    \l keyValueEnd().
 
     \sa keys(), value()
 */
@@ -2938,7 +3156,7 @@ size_t qHash(long double key, size_t seed) noexcept
     while iterators are active on that container. For more information,
     read \l{Implicit sharing iterator problem}.
 
-    \sa QMultiHash::iterator, QMultiHashIterator
+    \sa QMultiHash::iterator
 */
 
 /*! \fn template <class Key, class T> QMultiHash<Key, T>::const_iterator::const_iterator()
@@ -3011,8 +3229,6 @@ size_t qHash(long double key, size_t seed) noexcept
     item.
 
     Calling this function on QMultiHash::end() leads to undefined results.
-
-    \sa operator--()
 */
 
 /*! \fn template <class Key, class T> QMultiHash<Key, T>::const_iterator QMultiHash<Key, T>::const_iterator::operator++(int)
@@ -3095,8 +3311,6 @@ size_t qHash(long double key, size_t seed) noexcept
     item.
 
     Calling this function on QMultiHash::keyEnd() leads to undefined results.
-
-    \sa operator--()
 */
 
 /*! \fn template <class Key, class T> QMultiHash<Key, T>::key_iterator QMultiHash<Key, T>::key_iterator::operator++(int)
@@ -3176,6 +3390,34 @@ size_t qHash(long double key, size_t seed) noexcept
     Returns the hash value for the \a key, using \a seed to seed the calculation.
 
     Type \c T must be supported by qHash().
+*/
+
+/*! \fn template <typename Key, typename T, typename Predicate> qsizetype erase_if(QHash<Key, T> &hash, Predicate pred)
+    \relates QHash
+    \since 6.1
+
+    Removes all elements for which the predicate \a pred returns true
+    from the hash \a hash.
+
+    The function supports predicates which take either an argument of
+    type \c{QHash<Key, T>::iterator}, or an argument of type
+    \c{std::pair<const Key &, T &>}.
+
+    Returns the number of elements removed, if any.
+*/
+
+/*! \fn template <typename Key, typename T, typename Predicate> qsizetype erase_if(QMultiHash<Key, T> &hash, Predicate pred)
+    \relates QMultiHash
+    \since 6.1
+
+    Removes all elements for which the predicate \a pred returns true
+    from the multi hash \a hash.
+
+    The function supports predicates which take either an argument of
+    type \c{QMultiHash<Key, T>::iterator}, or an argument of type
+    \c{std::pair<const Key &, T &>}.
+
+    Returns the number of elements removed, if any.
 */
 
 QT_END_NAMESPACE

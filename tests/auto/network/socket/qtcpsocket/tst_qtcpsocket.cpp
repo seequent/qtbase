@@ -44,8 +44,8 @@
 
 #include <qplatformdefs.h>
 
-#include <QtTest/QtTest>
-
+#include <QTest>
+#include <QSignalSpy>
 #include <QAuthenticator>
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -80,6 +80,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
+
+#include <memory>
+
+#ifdef Q_OS_LINUX
+#include "private/qnativesocketengine_p.h"
+#endif // Q_OS_LINUX
 
 #include "private/qhostinfo_p.h"
 
@@ -271,7 +277,7 @@ class SocketPair: public QObject
 public:
     QTcpSocket *endPoints[2];
 
-    SocketPair(QObject *parent = 0)
+    SocketPair(QObject *parent = nullptr)
         : QObject(parent)
     {
         endPoints[0] = endPoints[1] = 0;
@@ -1375,7 +1381,7 @@ public:
     }
 
 protected:
-    void run()
+    void run() override
     {
         bool timedOut = false;
         while (!quit) {
@@ -1865,7 +1871,7 @@ public:
     }
 
 protected:
-    inline void run()
+    inline void run() override
     {
 #ifndef QT_NO_SSL
         QFETCH_GLOBAL(bool, ssl);
@@ -2088,33 +2094,51 @@ void tst_QTcpSocket::nestedEventLoopInErrorSlot()
 void tst_QTcpSocket::connectToHostError_data()
 {
     QTest::addColumn<QString>("host");
-    QTest::addColumn<int>("port");
+    QTest::addColumn<quint16>("port");
     QTest::addColumn<QAbstractSocket::SocketError>("expectedError");
 
-    QTest::newRow("localhost no service") << QStringLiteral("localhost") << 31415 << QAbstractSocket::ConnectionRefusedError;
-    QTest::newRow("unreachable") << QStringLiteral("0.0.0.1") << 65000 << QAbstractSocket::NetworkError;
+    QTest::newRow("localhost no service") << QStringLiteral("localhost") << quint16(31415) << QAbstractSocket::ConnectionRefusedError;
+    QTest::newRow("unreachable") << QStringLiteral("0.0.0.1") << quint16(65000) << QAbstractSocket::NetworkError;
 }
 
 
 void tst_QTcpSocket::connectToHostError()
 {
-    QTcpSocket *socket = newSocket();
+    // We are aware of at least one OS in our CI, that would fail
+    // the test due to timeout - it's Ubuntu 20.04 and 'connect'
+    // to 0.0.0.1 there return EINPROGRESS, with no other error
+    // ever received, so only our own internal 30 s. timer can
+    // detect a connection timeout.
+
+    std::unique_ptr<QTcpSocket> socket(newSocket());
 
     QAbstractSocket::SocketError error = QAbstractSocket::UnknownSocketError;
 
-    QFETCH(QString, host);
-    QFETCH(int, port);
+    QFETCH(const QString, host);
+    QFETCH(const quint16, port);
     QFETCH(QAbstractSocket::SocketError, expectedError);
 
-    connect(socket, &QAbstractSocket::errorOccurred, [&](QAbstractSocket::SocketError socketError){
+    QTestEventLoop eventLoop;
+    connect(socket.get(), &QAbstractSocket::errorOccurred, socket.get(),
+            [&](QAbstractSocket::SocketError socketError) {
         error = socketError;
+        QTimer::singleShot(0, &eventLoop, [&]{eventLoop.exitLoop();});
     });
-    socket->connectToHost(host, port); // no service running here, one suspects
-    QTRY_COMPARE(socket->state(), QTcpSocket::UnconnectedState);
+
+    socket->connectToHost(host, port);
+    eventLoop.enterLoopMSecs(10'000);
+    if (eventLoop.timeout()) {
+        // Let's at least verify it's not in connected state:
+        QVERIFY(socket->state() != QAbstractSocket::ConnectedState);
+        QSKIP("Connection to unreachable host timed out, skipping the rest of the test");
+    }
+
+    QCOMPARE(socket->state(), QTcpSocket::UnconnectedState);
+
     if (error != expectedError && error == QAbstractSocket::ConnectionRefusedError)
         QEXPECT_FAIL("unreachable", "CI firewall interfers with this test", Continue);
+
     QCOMPARE(error, expectedError);
-    delete socket;
 }
 
 //----------------------------------------------------------------------------------
@@ -2163,7 +2187,7 @@ public:
     bool networkTimeout;
     int count;
 
-    inline Foo(QObject *parent = 0) : QObject(parent)
+    inline Foo(QObject *parent = nullptr) : QObject(parent)
     {
         attemptedToConnect = false;
         networkTimeout = false;
@@ -2265,7 +2289,7 @@ class TestThread2 : public QThread
 {
     Q_OBJECT
 public:
-    void run()
+    void run() override
     {
         QFile fileWriter("fifo");
         QVERIFY(fileWriter.open(QFile::WriteOnly));
@@ -2880,7 +2904,7 @@ public:
         lastQuery = QNetworkProxyQuery();
     }
 
-    virtual QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery &query)
+    virtual QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery &query) override
     {
         lastQuery = query;
         ++callCount;

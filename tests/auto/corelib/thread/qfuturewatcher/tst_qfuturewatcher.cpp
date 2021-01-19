@@ -28,14 +28,14 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QElapsedTimer>
-#include <QtTest/QtTest>
+#include <QSignalSpy>
 
 #include <QtConcurrent>
 #include <private/qfutureinterface_p.h>
 
 using namespace QtConcurrent;
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 //#define PRINT
 
@@ -82,20 +82,31 @@ void tst_QFutureWatcher::startFinish()
 {
     QFutureWatcher<void> futureWatcher;
 
-    QSignalSpy startedSpy(&futureWatcher, &QFutureWatcher<void>::started);
-    QSignalSpy finishedSpy(&futureWatcher, &QFutureWatcher<void>::finished);
-
-    QVERIFY(startedSpy.isValid());
-    QVERIFY(finishedSpy.isValid());
+    int startedCount = 0;
+    int finishedCount = 0;
+    QObject::connect(&futureWatcher, &QFutureWatcher<void>::started,
+                     [&startedCount, &finishedCount](){
+        ++startedCount;
+        QCOMPARE(startedCount, 1);
+        QCOMPARE(finishedCount, 0);
+    });
+    QObject::connect(&futureWatcher, &QFutureWatcher<void>::finished,
+                     [&startedCount, &finishedCount](){
+        ++finishedCount;
+        QCOMPARE(startedCount, 1);
+        QCOMPARE(finishedCount, 1);
+    });
 
     futureWatcher.setFuture(QtConcurrent::run(sleeper));
-    QVERIFY(startedSpy.wait());
-    QCOMPARE(startedSpy.count(), 1);
-    QCOMPARE(finishedSpy.count(), 0);
     futureWatcher.future().waitForFinished();
-    QVERIFY(finishedSpy.wait());
-    QCOMPARE(startedSpy.count(), 1);
-    QCOMPARE(finishedSpy.count(), 1);
+
+    // waitForFinished() may unblock before asynchronous
+    // started() and finished() signals are delivered to the main thread.
+    // prosessEvents() should empty the pending queue.
+    qApp->processEvents();
+
+    QCOMPARE(startedCount, 1);
+    QCOMPARE(finishedCount, 1);
 }
 
 void mapSleeper(int &)
@@ -103,9 +114,9 @@ void mapSleeper(int &)
     QTest::qSleep(100);
 }
 
-QSet<int> progressValues;
-QSet<QString> progressTexts;
-QMutex mutex;
+static QSet<int> progressValues;
+static QSet<QString> progressTexts;
+static QMutex mutex;
 class ProgressObject : public QObject
 {
 Q_OBJECT
@@ -180,7 +191,7 @@ class CancelObject : public QObject
 Q_OBJECT
 public:
     bool wasCanceled;
-    CancelObject() : wasCanceled(false) {};
+    CancelObject() : wasCanceled(false) {}
 public slots:
     void cancel();
 };
@@ -221,7 +232,7 @@ void tst_QFutureWatcher::canceled()
 class IntTask : public RunFunctionTask<int>
 {
 public:
-    void runFunctor()
+    void runFunctor() override
     {
         result = 10;
     }
@@ -455,11 +466,11 @@ const int maxProgress = 100000;
 class ProgressEmitterTask : public RunFunctionTask<void>
 {
 public:
-    void runFunctor()
+    void runFunctor() override
     {
-        setProgressRange(0, maxProgress);
+        promise.setProgressRange(0, maxProgress);
         for (int p = 0; p <= maxProgress; ++p)
-            setProgressValue(p);
+            promise.setProgressValue(p);
     }
 };
 
@@ -485,21 +496,21 @@ template <typename T>
 class ProgressTextTask : public RunFunctionTask<T>
 {
 public:
-    void runFunctor()
+    void runFunctor() override
     {
-        this->setProgressValueAndText(1, QLatin1String("Foo 1"));
+        this->promise.setProgressValueAndText(1, QLatin1String("Foo 1"));
 
-        while (this->isProgressUpdateNeeded() == false)
+        while (this->promise.isProgressUpdateNeeded() == false)
             QTest::qSleep(1);
-        this->setProgressValueAndText(2, QLatin1String("Foo 2"));
+        this->promise.setProgressValueAndText(2, QLatin1String("Foo 2"));
 
-        while (this->isProgressUpdateNeeded() == false)
+        while (this->promise.isProgressUpdateNeeded() == false)
             QTest::qSleep(1);
-        this->setProgressValueAndText(3, QLatin1String("Foo 3"));
+        this->promise.setProgressValueAndText(3, QLatin1String("Foo 3"));
 
-        while (this->isProgressUpdateNeeded() == false)
+        while (this->promise.isProgressUpdateNeeded() == false)
             QTest::qSleep(1);
-        this->setProgressValueAndText(4, QLatin1String("Foo 4"));
+        this->promise.setProgressValueAndText(4, QLatin1String("Foo 4"));
     }
 };
 
@@ -853,7 +864,7 @@ void tst_QFutureWatcher::suspendEvents()
 
 void tst_QFutureWatcher::suspended()
 {
-    QFutureWatcher<void> watcher;
+    QFutureWatcher<int> watcher;
     QSignalSpy resultReadySpy(&watcher, &QFutureWatcher<int>::resultReadyAt);
 #if QT_DEPRECATED_SINCE(6, 0)
 QT_WARNING_PUSH

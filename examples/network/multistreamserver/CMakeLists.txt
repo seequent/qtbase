@@ -9,20 +9,28 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/network/multistreamserver")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/network/multistreamserver")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS Gui)
 find_package(Qt6 COMPONENTS Network)
 find_package(Qt6 COMPONENTS Widgets)
 
-add_qt_gui_executable(multistreamserver
+qt_add_executable(multistreamserver
     chatprovider.cpp chatprovider.h
     main.cpp
     movieprovider.cpp movieprovider.h
     provider.h
     server.cpp server.h
     timeprovider.cpp timeprovider.h
+)
+set_target_properties(multistreamserver PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
 )
 target_link_libraries(multistreamserver PUBLIC
     Qt::Core

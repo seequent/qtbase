@@ -35,8 +35,13 @@
 #include <QtCore/qpoint.h>
 #include <emscripten/html5.h>
 #include "qwasmwindow.h"
-#include <QtGui/qtouchdevice.h>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/qinputdevice.h>
+#else
+#include <QtGui/qpointingdevice.h>
+#endif
 #include <QHash>
+#include <QCursor>
 
 QT_BEGIN_NAMESPACE
 
@@ -49,6 +54,7 @@ class QWasmEventTranslator : public QObject
 public:
 
     explicit QWasmEventTranslator(QWasmScreen *screen);
+    ~QWasmEventTranslator();
 
     static int keyboard_cb(int eventType, const EmscriptenKeyboardEvent *keyEvent, void *userData);
     static int mouse_cb(int eventType, const EmscriptenMouseEvent *mouseEvent, void *userData);
@@ -88,11 +94,16 @@ private:
     QWasmWindow::ResizeMode resizeMode;
     QPoint resizePoint;
     QRect resizeStartRect;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QPointingDevice *touchDevice;
+#else
     QTouchDevice *touchDevice;
-    quint64 getTimestamp();
+#endif
+    static quint64 getTimestamp();
 
     Qt::Key m_emDeadKey = Qt::Key_unknown;
     bool m_emStickyDeadKey = false;
+    QCursor cursorForMode(QWasmWindow::ResizeMode mode);
 };
 
 QT_END_NAMESPACE

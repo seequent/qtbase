@@ -35,7 +35,6 @@
             "opengles3": "boolean",
             "openvg": "boolean",
             "qpa": { "type": "string", "name": "qpa_default_platform" },
-            "qpa-platform-guard": "boolean",
             "sm": { "type": "boolean", "name": "sessionmanager" },
             "tslib": "boolean",
             "vulkan": "boolean",
@@ -94,27 +93,6 @@
             "headers": "directfb.h",
             "sources": [
                 { "type": "pkgConfig", "args": "directfb" }
-            ]
-        },
-        "dwrite": {
-            "label": "DirectWrite",
-            "test": {
-                "main": [
-                    "IDWriteFactory *factory = 0;",
-                    "DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),",
-                    "                    (IUnknown **)(&factory));"
-                ]
-            },
-            "headers": "dwrite.h",
-            "sources": [
-                "-ldwrite"
-            ]
-        },
-        "dwrite_1": {
-            "label": "DirectWrite 1",
-            "headers": "dwrite_1.h",
-            "sources": [
-                "-ldwrite"
             ]
         },
         "dwrite_2": {
@@ -258,7 +236,7 @@
                     "hb_buffer_destroy(buffer);"
                 ]
             },
-            "headers": "harfbuzz/hb.h",
+            "headers": "hb.h",
             "sources": [
                 "-lharfbuzz"
             ]
@@ -617,15 +595,6 @@
             "sources": [
                 { "type": "pkgConfig", "args": "xcb-xfixes" },
                 "-lxcb-xfixes"
-            ],
-            "use": "xcb"
-        },
-        "xcb_xinerama": {
-            "label": "XCB Xinerama",
-            "headers": "xcb/xinerama.h",
-            "sources": [
-                { "type": "pkgConfig", "args": "xcb-xinerama" },
-                "-lxcb-xinerama"
             ],
             "use": "xcb"
         },
@@ -995,7 +964,6 @@
                     "xcb/shm.h",
                     "xcb/sync.h",
                     "xcb/xfixes.h",
-                    "xcb/xinerama.h",
                     "xcb/xcb_icccm.h",
                     "xcb/xcb_renderutil.h",
                     "xcb/xkb.h"
@@ -1018,7 +986,7 @@
                     "xcb_xkb_get_kbd_by_name_replies_key_names_value_list_sizeof(nullptr, 0, 0, 0, 0, 0, 0, 0, 0);"
                 ]
             },
-            "use": "xcb_icccm xcb_image xcb_keysyms xcb_randr xcb_render xcb_renderutil xcb_shape xcb_shm xcb_sync xcb_xfixes xcb_xinerama xcb_xkb xcb"
+            "use": "xcb_icccm xcb_image xcb_keysyms xcb_randr xcb_render xcb_renderutil xcb_shape xcb_shm xcb_sync xcb_xfixes xcb_xkb xcb"
         },
         "x11prefix": {
             "label": "X11 prefix",
@@ -1046,25 +1014,13 @@
         "directwrite": {
             "label": "DirectWrite",
             "emitIf": "config.win32",
-            "condition": "libs.dwrite",
-            "output": [ "privateFeature" ]
-        },
-        "directwrite1": {
-            "label": "DirectWrite 1",
-            "emitIf": "config.win32",
-            "condition": "libs.dwrite_1",
+            "condition": "libs.dwrite_2",
             "output": [ "privateFeature" ]
         },
         "directwrite3": {
             "label": "DirectWrite 3",
             "emitIf": "config.win32",
-            "condition": "features.directwrite1 && libs.dwrite_3",
-            "output": [ "privateFeature" ]
-        },
-        "directwrite2": {
-            "label": "DirectWrite 2",
-            "emitIf": "config.win32",
-            "condition": "features.directwrite1 && libs.dwrite_2",
+            "condition": "features.directwrite && libs.dwrite_3",
             "output": [ "privateFeature" ]
         },
         "direct2d": {
@@ -1099,7 +1055,7 @@
         "fontconfig": {
             "label": "Fontconfig",
             "autoDetect": "!config.darwin",
-            "condition": "!config.msvc && features.system-freetype && libs.fontconfig",
+            "condition": "!config.win32 && features.system-freetype && libs.fontconfig",
             "output": [ "privateFeature", "feature" ]
         },
         "gbm": {
@@ -1258,7 +1214,7 @@
         "egl": {
             "label": "EGL",
             "condition": "(features.opengl || features.openvg) && libs.egl && (features.dlopen || !config.unix || config.integrity)",
-            "output": [ "privateFeature", "feature" ]
+            "output": [ "publicFeature", "feature" ]
         },
         "egl_x11": {
             "label": "EGL on X11",
@@ -1365,6 +1321,13 @@
             "autoDetect": "features.system-zlib",
             "condition": "features.png && libs.libpng",
             "output": [ "privateFeature" ]
+        },
+        "imageio-text-loading": {
+            "label": "Image Text section loading",
+            "output": [
+                "privateFeature",
+                { "type": "define", "negative": true, "name": "QT_NO_IMAGEIO_TEXT_LOADING" }
+            ]
         },
         "qpa_default_platform": {
             "label": "QPA default platform",
@@ -1575,6 +1538,13 @@
             "condition": "features.itemmodel",
             "output": [ "publicFeature", "feature" ]
         },
+        "filesystemmodel": {
+            "label": "QFileSystemModel",
+            "purpose": "Provides a data model for the local filesystem.",
+            "section": "File I/O",
+            "condition": "features.itemmodel",
+            "output": [ "publicFeature", "feature" ]
+        },
         "imageformatplugin": {
             "label": "QImageIOPlugin",
             "purpose": "Provides a base for writing a image format plugins.",
@@ -1736,11 +1706,6 @@
         },
         {
             "type": "warning",
-            "condition": "input.qpa-platform-guard != ''",
-            "message": "The [-no]-qpa-platform-guard argument is deprecated and has no effect."
-        },
-        {
-            "type": "warning",
             "condition": "features.gui && config.linux && !config.android && !features.xcb && !features.eglfs && !features.directfb && !features.linuxfb",
             "message": "No QPA platform plugin enabled! This will produce a Qt that cannot run GUI applications.  See \"Platform backends\" in the output of --help."
         },
@@ -1867,7 +1832,7 @@
                     "section": "Windows",
                     "condition": "config.win32",
                     "entries": [
-                        "direct2d", "directwrite", "directwrite2"
+                        "direct2d", "directwrite", "directwrite3"
                     ]
                 }
             ]

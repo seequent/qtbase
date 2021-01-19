@@ -49,52 +49,42 @@
 
 QT_BEGIN_NAMESPACE
 
-/*
-    \internal
-    A Mac KeyboardLayoutItem has 8 possible states:
-        1. Unmodified
-        2. Shift
-        3. Control
-        4. Control + Shift
-        5. Alt
-        6. Alt + Shift
-        7. Alt + Control
-        8. Alt + Control + Shift
-        9. Meta
-        10. Meta + Shift
-        11. Meta + Control
-        12. Meta + Control + Shift
-        13. Meta + Alt
-        14. Meta + Alt + Shift
-        15. Meta + Alt + Control
-        16. Meta + Alt + Control + Shift
-*/
-struct KeyboardLayoutItem {
-    bool dirty;
-    quint32 qtKey[16]; // Can by any Qt::Key_<foo>, or unicode character
-};
-
-
 class QCocoaKeyMapper
 {
 public:
-    QCocoaKeyMapper();
-    ~QCocoaKeyMapper();
     static Qt::KeyboardModifiers queryKeyboardModifiers();
     QList<int> possibleKeys(const QKeyEvent *event) const;
-    bool updateKeyboard();
-    void deleteLayouts();
-    void updateKeyMap(unsigned short macVirtualKey, QChar unicodeKey);
-    void clearMappings();
+
+    static Qt::KeyboardModifiers fromCocoaModifiers(NSEventModifierFlags cocoaModifiers);
+    static NSEventModifierFlags toCocoaModifiers(Qt::KeyboardModifiers);
+
+    static QChar toCocoaKey(Qt::Key key);
+    static Qt::Key fromCocoaKey(QChar keyCode);
 
 private:
-    QCFType<TISInputSourceRef> currentInputSource = nullptr;
+    static constexpr int kNumModifierCombinations = 16;
+    struct KeyMap : std::array<char32_t, kNumModifierCombinations>
+    {
+        // Initialize first element to a sentinel that allows us
+        // to distinguish an uninitialized map from an initialized.
+        // Using 0 would not allow us to map U+0000 (NUL), however
+        // unlikely that is.
+        KeyMap() : std::array<char32_t, 16>{Qt::Key_unknown} {}
+    };
 
-    enum { NullMode, UnicodeMode, OtherMode } keyboard_mode = NullMode;
-    const UCKeyboardLayout *keyboard_layout_format = nullptr;
-    KeyboardLayoutKind keyboard_kind = kKLKCHRuchrKind;
-    UInt32 keyboard_dead = 0;
-    KeyboardLayoutItem *keyLayout[256];
+    bool updateKeyboard();
+
+    using VirtualKeyCode = unsigned short;
+    const KeyMap &keyMapForKey(VirtualKeyCode virtualKey, QChar unicodeKey) const;
+
+    QCFType<TISInputSourceRef> m_currentInputSource = nullptr;
+
+    enum { NullMode, UnicodeMode, OtherMode } m_keyboardMode = NullMode;
+    const UCKeyboardLayout *m_keyboardLayoutFormat = nullptr;
+    KeyboardLayoutKind m_keyboardKind = kKLKCHRuchrKind;
+    mutable UInt32 m_deadKeyState = 0; // Maintains dead key state beween calls to UCKeyTranslate
+
+    mutable QHash<VirtualKeyCode, KeyMap> m_keyMap;
 };
 
 QT_END_NAMESPACE

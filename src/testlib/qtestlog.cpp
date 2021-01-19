@@ -58,9 +58,9 @@
 
 #include <QtCore/qatomic.h>
 #include <QtCore/qbytearray.h>
-#include <QtCore/QElapsedTimer>
-#include <QtCore/QVariant>
-#include <QtCore/qvector.h>
+#include <QtCore/qelapsedtimer.h>
+#include <QtCore/qlist.h>
+#include <QtCore/qvariant.h>
 #if QT_CONFIG(regularexpression)
 #include <QtCore/QRegularExpression>
 #endif
@@ -99,7 +99,7 @@ static void saveCoverageTool(const char * appname, bool testfailed, bool install
 static QElapsedTimer elapsedFunctionTime;
 static QElapsedTimer elapsedTotalTime;
 
-#define FOREACH_TEST_LOGGER for (QAbstractTestLogger *logger : QTest::loggers)
+#define FOREACH_TEST_LOGGER for (QAbstractTestLogger *logger : *QTest::loggers())
 
 namespace QTest {
 
@@ -144,7 +144,7 @@ namespace QTest {
             // (the space was added automatically by ~QDebug() until Qt 5.3,
             //  so autotests still might expect it)
             if (expected.endsWith(QLatin1Char(' ')))
-                return actual == expected.leftRef(expected.length() - 1);
+                return actual == QStringView{expected}.left(expected.length() - 1);
 
             return false;
         }
@@ -168,8 +168,7 @@ namespace QTest {
 
     static IgnoreResultList *ignoreResultList = nullptr;
 
-    static QVector<QAbstractTestLogger*> loggers;
-    static bool loggerUsingStdout = false;
+    Q_GLOBAL_STATIC(QList<QAbstractTestLogger *>, loggers)
 
     static int verbosity = 0;
     static int maxWarnings = 2002;
@@ -430,8 +429,7 @@ void QTestLog::stopLogging()
         logger->stopLogging();
         delete logger;
     }
-    QTest::loggers.clear();
-    QTest::loggerUsingStdout = false;
+    QTest::loggers()->clear();
     saveCoverageTool(QTestResult::currentAppName(), failCount() != 0, QTestLog::installedTestCoverage());
 }
 
@@ -439,8 +437,6 @@ void QTestLog::addLogger(LogMode mode, const char *filename)
 {
     if (filename && strcmp(filename, "-") == 0)
         filename = nullptr;
-    if (!filename)
-        QTest::loggerUsingStdout = true;
 
     QAbstractTestLogger *logger = nullptr;
     switch (mode) {
@@ -478,17 +474,36 @@ void QTestLog::addLogger(LogMode mode, const char *filename)
     }
 
     QTEST_ASSERT(logger);
-    QTest::loggers.append(logger);
+    addLogger(logger);
+}
+
+/*!
+    \internal
+
+    Adds a new logger to the set of loggers that will be used
+    to report incidents and messages during testing.
+
+    The function takes ownership of the logger.
+*/
+void QTestLog::addLogger(QAbstractTestLogger *logger)
+{
+    QTEST_ASSERT(logger);
+    QTest::loggers()->append(logger);
 }
 
 int QTestLog::loggerCount()
 {
-    return QTest::loggers.size();
+    return QTest::loggers()->size();
 }
 
 bool QTestLog::loggerUsingStdout()
 {
-    return QTest::loggerUsingStdout;
+    FOREACH_TEST_LOGGER {
+        if (logger->isLoggingToStdout())
+            return true;
+    }
+
+    return false;
 }
 
 void QTestLog::warn(const char *msg, const char *file, int line)

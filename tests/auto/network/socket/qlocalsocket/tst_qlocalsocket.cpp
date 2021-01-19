@@ -28,7 +28,12 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QSignalSpy>
+#include <QProcess>
+#include <QWaitCondition>
+#include <QLoggingCategory>
+#include <QMutex>
 
 #include <qtextstream.h>
 #include <qdatastream.h>
@@ -168,14 +173,14 @@ class LocalSocket : public QLocalSocket
     Q_OBJECT
 
 public:
-    LocalSocket(QObject *parent = 0) : QLocalSocket(parent)
+    LocalSocket(QObject *parent = nullptr) : QLocalSocket(parent)
     {
         connect(this, SIGNAL(connected()),
                 this, SLOT(slotConnected()));
         connect(this, SIGNAL(disconnected()),
                 this, SLOT(slotDisconnected()));
         connect(this, SIGNAL(errorOccurred(QLocalSocket::LocalSocketError)),
-                this, SLOT(slotError(QLocalSocket::LocalSocketError)));
+                this, SLOT(slotErrorOccurred(QLocalSocket::LocalSocketError)));
         connect(this, SIGNAL(stateChanged(QLocalSocket::LocalSocketState)),
                 this, SLOT(slotStateChanged(QLocalSocket::LocalSocketState)));
         connect(this, SIGNAL(readyRead()),
@@ -935,7 +940,7 @@ void tst_QLocalSocket::processConnection_data()
 class ProcessOutputDumper
 {
 public:
-    ProcessOutputDumper(QProcess *p = 0)
+    ProcessOutputDumper(QProcess *p = nullptr)
         : process(p)
     {}
 
@@ -947,7 +952,7 @@ public:
 
     void clear()
     {
-        process = 0;
+        process = nullptr;
     }
 
 private:
@@ -1267,6 +1272,7 @@ void tst_QLocalSocket::syncDisconnectNotify()
     QVERIFY(serverSocket);
     delete serverSocket;
     QCOMPARE(client.waitForReadyRead(), false);
+    QVERIFY(!client.putChar(0));
 }
 
 void tst_QLocalSocket::asyncDisconnectNotify()

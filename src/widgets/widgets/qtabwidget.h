@@ -104,7 +104,7 @@ public:
     int currentIndex() const;
     QWidget *currentWidget() const;
     QWidget *widget(int index) const;
-    int indexOf(QWidget *widget) const;
+    int indexOf(const QWidget *widget) const;
     int count() const;
 
     enum TabPosition { North, South, West, East };
@@ -171,7 +171,7 @@ protected:
     void setTabBar(QTabBar *);
     void changeEvent(QEvent *) override;
     bool event(QEvent *) override;
-    void initStyleOption(QStyleOptionTabWidgetFrame *option) const;
+    virtual void initStyleOption(QStyleOptionTabWidgetFrame *option) const;
 
 
 private:

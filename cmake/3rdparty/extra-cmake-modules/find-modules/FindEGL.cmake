@@ -68,7 +68,7 @@ ecm_find_package_version_check(EGL)
 
 # Use pkg-config to get the directories and then use these values
 # in the FIND_PATH() and FIND_LIBRARY() calls
-find_package(PkgConfig)
+find_package(PkgConfig QUIET)
 pkg_check_modules(PKG_EGL QUIET egl)
 
 set(EGL_DEFINITIONS ${PKG_EGL_CFLAGS_OTHER})
@@ -118,6 +118,7 @@ endif()
 cmake_push_check_state(RESET)
 list(APPEND CMAKE_REQUIRED_LIBRARIES "${EGL_LIBRARY}")
 list(APPEND CMAKE_REQUIRED_INCLUDES "${EGL_INCLUDE_DIR}")
+list(APPEND CMAKE_REQUIRED_DEFINITIONS "${EGL_DEFINITIONS}")
 
 check_cxx_source_compiles("
 #include <EGL/egl.h>

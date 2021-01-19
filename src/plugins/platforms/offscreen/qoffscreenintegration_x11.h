@@ -41,6 +41,7 @@
 #define QOFFSCREENINTEGRATION_X11_H
 
 #include "qoffscreenintegration.h"
+#include "qoffscreencommon.h"
 
 #include <qglobal.h>
 #include <qscopedpointer.h>
@@ -52,22 +53,27 @@ QT_BEGIN_NAMESPACE
 class QOffscreenX11Connection;
 class QOffscreenX11Info;
 
-class QOffscreenX11Integration : public QOffscreenIntegration,  public QPlatformNativeInterface
+class QOffscreenX11PlatformNativeInterface : public QOffscreenPlatformNativeInterface
 {
 public:
-    bool hasCapability(QPlatformIntegration::Capability cap) const override;
+    ~QOffscreenX11PlatformNativeInterface();
 
-    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const override;
-    QPlatformNativeInterface *nativeInterface()const override;
-
-    // QPlatformNativeInterface
     void *nativeResourceForScreen(const QByteArray &resource, QScreen *screen) override;
 #ifndef QT_NO_OPENGL
     void *nativeResourceForContext(const QByteArray &resource, QOpenGLContext *context) override;
 #endif
 
-private:
-    mutable QScopedPointer<QOffscreenX11Connection> m_connection;
+    QScopedPointer<QOffscreenX11Connection> m_connection;
+};
+
+class QOffscreenX11Integration : public QOffscreenIntegration
+{
+public:
+    ~QOffscreenX11Integration();
+    bool hasCapability(QPlatformIntegration::Capability cap) const override;
+
+    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const override;
+    QOffscreenX11PlatformNativeInterface *nativeInterface() const override;
 };
 
 class QOffscreenX11Connection {
@@ -90,6 +96,7 @@ private:
 class QOffscreenX11GLXContextData;
 
 class QOffscreenX11GLXContext : public QPlatformOpenGLContext
+                              , public QNativeInterface::QGLXContext
 {
 public:
     QOffscreenX11GLXContext(QOffscreenX11Info *x11, QOpenGLContext *context);
@@ -104,8 +111,10 @@ public:
     bool isSharing() const override;
     bool isValid() const override;
 
+    GLXContext nativeContext() const override { return glxContext(); }
+
     void *glxConfig() const;
-    void *glxContext() const;
+    GLXContext glxContext() const;
 
 private:
     QScopedPointer<QOffscreenX11GLXContextData> d;

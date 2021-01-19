@@ -43,7 +43,7 @@
 #include <qcoreapplication.h>
 #include <private/qcoreapplication_p.h>
 #include <qhash.h>
-#include <qvector.h>
+#include <qlist.h>
 #include <qdebug.h>
 #if defined(Q_OS_WIN) && !defined(QT_BOOTSTRAPPED)
 #  include <qt_windows.h>
@@ -109,7 +109,7 @@ public:
         QString description;
         QString syntax;
     };
-    QVector<PositionalArgumentDefinition> positionalArgumentDefinitions;
+    QList<PositionalArgumentDefinition> positionalArgumentDefinitions;
 
     //! The parsing mode for "-abc"
     QCommandLineParser::SingleDashWordOptionMode singleDashWordOptionMode;
@@ -126,7 +126,7 @@ public:
     //! True if parse() needs to be called
     bool needsParsing;
 };
-Q_DECLARE_TYPEINFO(QCommandLineParserPrivate::PositionalArgumentDefinition, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QCommandLineParserPrivate::PositionalArgumentDefinition, Q_RELOCATABLE_TYPE);
 
 QStringList QCommandLineParserPrivate::aliases(const QString &optionName) const
 {
@@ -1103,7 +1103,7 @@ static QString wrapText(const QString &names, int optionNameMaxWidth, const QStr
             const int numChars = breakAt - lineStart;
             //qDebug() << "breakAt=" << description.at(breakAt) << "breakAtSpace=" << breakAtSpace << lineStart << "to" << breakAt << description.mid(lineStart, numChars);
             text += indentation + nextNameSection().leftJustified(optionNameMaxWidth) + QLatin1Char(' ');
-            text += description.midRef(lineStart, numChars) + nl;
+            text += QStringView{description}.mid(lineStart, numChars) + nl;
             x = 0;
             lastBreakable = -1;
             lineStart = nextLineStart;
@@ -1135,7 +1135,7 @@ QString QCommandLineParserPrivate::helpText(bool includeQtOptions) const
         usage += QLatin1Char(' ') + arg.syntax;
     text += QCommandLineParser::tr("Usage: %1").arg(usage) + nl;
     if (!description.isEmpty())
-       text += description + nl;
+        text += description + nl;
     text += nl;
     if (!options.isEmpty())
         text += QCommandLineParser::tr("Options:") + nl;

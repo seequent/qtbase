@@ -86,7 +86,7 @@ QT_BEGIN_NAMESPACE
 
 #  define DEFINEFUNC(ret, func, arg, a, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg); \
-    static _q_PTR_##func _q_##func = 0; \
+    static _q_PTR_##func _q_##func = nullptr; \
     ret q_##func(arg) { \
         if (Q_UNLIKELY(!_q_##func)) { \
             qsslSocketUnresolvedSymbolWarning(#func); \
@@ -98,7 +98,7 @@ QT_BEGIN_NAMESPACE
 // ret func(arg1, arg2)
 #  define DEFINEFUNC2(ret, func, arg1, a, arg2, b, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg1, arg2);         \
-    static _q_PTR_##func _q_##func = 0;               \
+    static _q_PTR_##func _q_##func = nullptr;         \
     ret q_##func(arg1, arg2) { \
         if (Q_UNLIKELY(!_q_##func)) { \
             qsslSocketUnresolvedSymbolWarning(#func);\
@@ -110,7 +110,7 @@ QT_BEGIN_NAMESPACE
 // ret func(arg1, arg2, arg3)
 #  define DEFINEFUNC3(ret, func, arg1, a, arg2, b, arg3, c, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg1, arg2, arg3);            \
-    static _q_PTR_##func _q_##func = 0;                        \
+    static _q_PTR_##func _q_##func = nullptr;                  \
     ret q_##func(arg1, arg2, arg3) { \
         if (Q_UNLIKELY(!_q_##func)) { \
             qsslSocketUnresolvedSymbolWarning(#func); \
@@ -122,7 +122,7 @@ QT_BEGIN_NAMESPACE
 // ret func(arg1, arg2, arg3, arg4)
 #  define DEFINEFUNC4(ret, func, arg1, a, arg2, b, arg3, c, arg4, d, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg1, arg2, arg3, arg4);               \
-    static _q_PTR_##func _q_##func = 0;                                 \
+    static _q_PTR_##func _q_##func = nullptr;                           \
     ret q_##func(arg1, arg2, arg3, arg4) { \
          if (Q_UNLIKELY(!_q_##func)) { \
              qsslSocketUnresolvedSymbolWarning(#func); \
@@ -134,7 +134,7 @@ QT_BEGIN_NAMESPACE
 // ret func(arg1, arg2, arg3, arg4, arg5)
 #  define DEFINEFUNC5(ret, func, arg1, a, arg2, b, arg3, c, arg4, d, arg5, e, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg1, arg2, arg3, arg4, arg5);         \
-    static _q_PTR_##func _q_##func = 0;                                 \
+    static _q_PTR_##func _q_##func = nullptr;                           \
     ret q_##func(arg1, arg2, arg3, arg4, arg5) { \
         if (Q_UNLIKELY(!_q_##func)) { \
             qsslSocketUnresolvedSymbolWarning(#func); \
@@ -146,7 +146,7 @@ QT_BEGIN_NAMESPACE
 // ret func(arg1, arg2, arg3, arg4, arg6)
 #  define DEFINEFUNC6(ret, func, arg1, a, arg2, b, arg3, c, arg4, d, arg5, e, arg6, f, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg1, arg2, arg3, arg4, arg5, arg6);   \
-    static _q_PTR_##func _q_##func = 0;                                 \
+    static _q_PTR_##func _q_##func = nullptr;                           \
     ret q_##func(arg1, arg2, arg3, arg4, arg5, arg6) { \
         if (Q_UNLIKELY(!_q_##func)) { \
             qsslSocketUnresolvedSymbolWarning(#func); \
@@ -158,7 +158,7 @@ QT_BEGIN_NAMESPACE
 // ret func(arg1, arg2, arg3, arg4, arg6, arg7)
 #  define DEFINEFUNC7(ret, func, arg1, a, arg2, b, arg3, c, arg4, d, arg5, e, arg6, f, arg7, g, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg1, arg2, arg3, arg4, arg5, arg6, arg7);   \
-    static _q_PTR_##func _q_##func = 0;                                       \
+    static _q_PTR_##func _q_##func = nullptr;                                 \
     ret q_##func(arg1, arg2, arg3, arg4, arg5, arg6, arg7) { \
         if (Q_UNLIKELY(!_q_##func)) { \
             qsslSocketUnresolvedSymbolWarning(#func); \
@@ -170,7 +170,7 @@ QT_BEGIN_NAMESPACE
 // ret func(arg1, arg2, arg3, arg4, arg6, arg7, arg8, arg9)
 #  define DEFINEFUNC9(ret, func, arg1, a, arg2, b, arg3, c, arg4, d, arg5, e, arg6, f, arg7, g, arg8, h, arg9, i, err, funcret) \
     typedef ret (*_q_PTR_##func)(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);   \
-    static _q_PTR_##func _q_##func = 0;                                                   \
+    static _q_PTR_##func _q_##func = nullptr;                                             \
     ret q_##func(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) { \
         if (Q_UNLIKELY(!_q_##func)) { \
             qsslSocketUnresolvedSymbolWarning(#func); \
@@ -368,6 +368,7 @@ long q_ASN1_INTEGER_get(ASN1_INTEGER *a);
 int q_ASN1_INTEGER_cmp(const ASN1_INTEGER *x, const ASN1_INTEGER *y);
 int q_ASN1_STRING_length(ASN1_STRING *a);
 int q_ASN1_STRING_to_UTF8(unsigned char **a, ASN1_STRING *b);
+int q_ASN1_TIME_to_tm(const ASN1_TIME *s, struct tm *tm);
 long q_BIO_ctrl(BIO *a, int b, long c, void *d);
 Q_AUTOTEST_EXPORT int q_BIO_free(BIO *a);
 BIO *q_BIO_new_mem_buf(void *a, int b);
@@ -414,7 +415,7 @@ const EVP_CIPHER *q_EVP_aes_256_cbc();
 #endif // OPENSSL_NO_AES
 
 Q_AUTOTEST_EXPORT const EVP_MD *q_EVP_sha1();
-int q_EVP_PKEY_assign(EVP_PKEY *a, int b, char *c);
+int q_EVP_PKEY_assign(EVP_PKEY *a, int b, void *r);
 Q_AUTOTEST_EXPORT int q_EVP_PKEY_set1_RSA(EVP_PKEY *a, RSA *b);
 Q_AUTOTEST_EXPORT int q_EVP_PKEY_set1_DSA(EVP_PKEY *a, DSA *b);
 Q_AUTOTEST_EXPORT int q_EVP_PKEY_set1_DH(EVP_PKEY *a, DH *b);
@@ -751,6 +752,9 @@ void *q_CRYPTO_malloc(size_t num, const char *file, int line);
 void q_SSL_set_info_callback(SSL *ssl, void (*cb) (const SSL *ssl, int type, int val));
 const char *q_SSL_alert_type_string(int value);
 const char *q_SSL_alert_desc_string_long(int value);
+
+int q_SSL_CTX_get_security_level(const SSL_CTX *ctx);
+void q_SSL_CTX_set_security_level(SSL_CTX *ctx, int level);
 
 QT_END_NAMESPACE
 

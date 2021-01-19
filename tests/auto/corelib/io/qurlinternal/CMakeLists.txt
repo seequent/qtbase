@@ -8,10 +8,10 @@ endif()
 ## tst_qurlinternal Test:
 #####################################################################
 
-add_qt_test(tst_qurlinternal
+qt_internal_add_test(tst_qurlinternal
     SOURCES
-        ../../codecs/utf8/utf8data.cpp
         tst_qurlinternal.cpp
+        utf8data.cpp
     PUBLIC_LIBRARIES
         Qt::CorePrivate
 )

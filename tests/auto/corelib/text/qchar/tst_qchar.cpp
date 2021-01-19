@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qchar.h>
 #include <qfile.h>
 #include <qstringlist.h>
@@ -76,19 +76,12 @@ private slots:
     void unicodeVersion();
 };
 
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
-
 void tst_QChar::fromChar16_t()
 {
-#if defined(Q_COMPILER_UNICODE_STRINGS)
     QChar aUmlaut = u'\u00E4'; // German small letter a-umlaut
     QCOMPARE(aUmlaut, QChar(0xE4));
     QChar replacementCharacter = u'\uFFFD';
     QCOMPARE(replacementCharacter, QChar(QChar::ReplacementCharacter));
-#else
-    QSKIP("This test requires C++11 char16_t support enabled in the compiler.");
-#endif
 }
 
 void tst_QChar::fromUcs4_data()
@@ -122,9 +115,9 @@ void tst_QChar::fromUcs4()
 void tst_QChar::fromWchar_t()
 {
 #if defined(Q_OS_WIN)
-    QChar aUmlaut = L'\u00E4'; // German small letter a-umlaut
+    QChar aUmlaut(L'\u00E4'); // German small letter a-umlaut
     QCOMPARE(aUmlaut, QChar(0xE4));
-    QChar replacementCharacter = L'\uFFFD';
+    QChar replacementCharacter(L'\uFFFD');
     QCOMPARE(replacementCharacter, QChar(QChar::ReplacementCharacter));
 #else
     QSKIP("This is a Windows-only test.");
@@ -881,7 +874,7 @@ void tst_QChar::normalization()
     QFETCH(QStringList, columns);
     QFETCH(int, part);
 
-    Q_UNUSED(part)
+    Q_UNUSED(part);
 
         // CONFORMANCE:
         // 1. The following invariants must be true for all conformant implementations

@@ -54,7 +54,9 @@
 #include <QtGui/private/qtguiglobal_p.h>
 #include "qcolortransferfunction_p.h"
 
-#include <QVector>
+#include <QList>
+
+#include <algorithm>
 #include <cmath>
 
 QT_BEGIN_NAMESPACE
@@ -66,47 +68,59 @@ public:
     QColorTransferTable() noexcept
             : m_tableSize(0)
     { }
-    QColorTransferTable(uint32_t size, const QVector<uint8_t> &table) noexcept
-            : m_tableSize(size)
-            , m_table8(table)
-    { }
-    QColorTransferTable(uint32_t size, const QVector<uint16_t> &table) noexcept
-            : m_tableSize(size)
-            , m_table16(table)
-    { }
-
-    bool isValid() const
+    QColorTransferTable(uint32_t size, const QList<uint8_t> &table) noexcept
+        : m_tableSize(size), m_table8(table)
     {
+        Q_ASSERT(qsizetype(size) <= table.count());
+    }
+    QColorTransferTable(uint32_t size, const QList<uint16_t> &table) noexcept
+        : m_tableSize(size), m_table16(table)
+    {
+        Q_ASSERT(qsizetype(size) <= table.count());
+    }
+
+    bool isEmpty() const
+    {
+        return m_tableSize == 0;
+    }
+
+    bool checkValidity() const
+    {
+        if (isEmpty())
+            return true;
+        // Only one table can be set
+        if (!m_table8.isEmpty() && !m_table16.isEmpty())
+            return false;
+        // At least 2 elements
         if (m_tableSize < 2)
             return false;
-
-#if !defined(QT_NO_DEBUG)
         // The table must describe an injective curve:
         if (!m_table8.isEmpty()) {
             uint8_t val = 0;
             for (uint i = 0; i < m_tableSize; ++i) {
-                Q_ASSERT(m_table8[i] >= val);
+                if (m_table8[i] < val)
+                    return false;
                 val = m_table8[i];
             }
         }
         if (!m_table16.isEmpty()) {
             uint16_t val = 0;
             for (uint i = 0; i < m_tableSize; ++i) {
-                Q_ASSERT(m_table16[i] >= val);
+                if (m_table16[i] < val)
+                    return false;
                 val = m_table16[i];
             }
         }
-#endif
-        return !m_table8.isEmpty() || !m_table16.isEmpty();
+        return true;
     }
 
     float apply(float x) const
     {
-        x = std::min(std::max(x, 0.0f), 1.0f);
+        x = std::clamp(x, 0.0f, 1.0f);
         x *= m_tableSize - 1;
-        uint32_t lo = (int)std::floor(x);
-        uint32_t hi = std::min(lo + 1, m_tableSize);
-        float frac = x - lo;
+        const uint32_t lo = static_cast<uint32_t>(std::floor(x));
+        const uint32_t hi = std::min(lo + 1, m_tableSize);
+        const float frac = x - lo;
         if (!m_table16.isEmpty())
             return (m_table16[lo] * (1.0f - frac) + m_table16[hi] * frac) * (1.0f/65535.0f);
         if (!m_table8.isEmpty())
@@ -123,34 +137,30 @@ public:
         if (x >= 1.0f)
             return 1.0f;
         if (!m_table16.isEmpty()) {
-            float v = x * 65535.0f;
-            uint i = std::floor(resultLargerThan * (m_tableSize - 1)) + 1;
-            for ( ; i < m_tableSize; ++i) {
-                if (m_table16[i] > v)
-                    break;
-            }
+            const float v = x * 65535.0f;
+            uint32_t i = static_cast<uint32_t>(std::floor(resultLargerThan * (m_tableSize - 1))) + 1;
+            auto it = std::lower_bound(m_table16.cbegin() + i, m_table16.cend(), v);
+            i = it - m_table16.cbegin();
             if (i >= m_tableSize - 1)
                 return 1.0f;
-            float y1 = m_table16[i - 1];
-            float y2 = m_table16[i];
+            const float y1 = m_table16[i - 1];
+            const float y2 = m_table16[i];
             Q_ASSERT(x >= y1 && x < y2);
-            float fr = (v - y1) / (y2 - y1);
+            const float fr = (v - y1) / (y2 - y1);
             return (i + fr) * (1.0f / (m_tableSize - 1));
 
         }
         if (!m_table8.isEmpty()) {
-            float v = x * 255.0f;
-            uint i = std::floor(resultLargerThan * (m_tableSize - 1)) + 1;
-            for ( ; i < m_tableSize; ++i) {
-                if (m_table8[i] > v)
-                    break;
-            }
+            const float v = x * 255.0f;
+            uint32_t i = static_cast<uint32_t>(std::floor(resultLargerThan * (m_tableSize - 1))) + 1;
+            auto it = std::lower_bound(m_table8.cbegin() + i, m_table8.cend(), v);
+            i = it - m_table8.cbegin();
             if (i >= m_tableSize - 1)
                 return 1.0f;
-            float y1 = m_table8[i - 1];
-            float y2 = m_table8[i];
+            const float y1 = m_table8[i - 1];
+            const float y2 = m_table8[i];
             Q_ASSERT(x >= y1 && x < y2);
-            float fr = (v - y1) / (y2 - y1);
+            const float fr = (v - y1) / (y2 - y1);
             return (i + fr) * (1.0f / (m_tableSize - 1));
         }
         return x;
@@ -158,8 +168,9 @@ public:
 
     bool asColorTransferFunction(QColorTransferFunction *transferFn)
     {
-        Q_ASSERT(isValid());
         Q_ASSERT(transferFn);
+        if (m_tableSize < 2)
+            return false;
         if (!m_table8.isEmpty() && (m_table8[0] != 0 || m_table8[m_tableSize - 1] != 255))
             return false;
         if (!m_table16.isEmpty() && (m_table16[0] != 0 || m_table16[m_tableSize - 1] != 65535))
@@ -208,8 +219,8 @@ public:
     friend inline bool operator==(const QColorTransferTable &t1, const QColorTransferTable &t2);
 
     uint32_t m_tableSize;
-    QVector<uint8_t> m_table8;
-    QVector<uint16_t> m_table16;
+    QList<uint8_t> m_table8;
+    QList<uint16_t> m_table16;
 };
 
 inline bool operator!=(const QColorTransferTable &t1, const QColorTransferTable &t2)
@@ -221,13 +232,13 @@ inline bool operator!=(const QColorTransferTable &t1, const QColorTransferTable 
     if (t1.m_table16.isEmpty() != t2.m_table16.isEmpty())
         return true;
     if (!t1.m_table8.isEmpty()) {
-        for (quint32 i = 0; i < t1.m_tableSize; ++i) {
+        for (uint32_t i = 0; i < t1.m_tableSize; ++i) {
             if (t1.m_table8[i] != t2.m_table8[i])
                 return true;
         }
     }
     if (!t1.m_table16.isEmpty()) {
-        for (quint32 i = 0; i < t1.m_tableSize; ++i) {
+        for (uint32_t i = 0; i < t1.m_tableSize; ++i) {
             if (t1.m_table16[i] != t2.m_table16[i])
                 return true;
         }

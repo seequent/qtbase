@@ -42,7 +42,7 @@ public:
     TokenStream &operator<<(uint n) { ts += QChar(n & 0xffff); ts += QChar(n >> 16); return *this; }
     TokenStream &operator<<(QStringView s) { ts += s; return *this; }
     TokenStream &operator<<(const ProString &s) { return *this << ushort(s.length()) << s.toQStringView(); }
-    TokenStream &operator<<(const ProKey &s) { return *this << s.hash() << s.toString(); }
+    TokenStream &operator<<(const ProKey &s) { return *this << uint(s.hash()) << s.toString(); }
 
 private:
     QString ts;
@@ -2031,7 +2031,7 @@ void tst_qmakelib::proParser()
     handler.setExpectedMessages(msgs.split('\n', Qt::SkipEmptyParts));
     QMakeVfs vfs;
     QMakeParser parser(0, &vfs, &handler);
-    ProFile *pro = parser.parsedProBlock(QStringRef(&in), 0, "in", 1, QMakeParser::FullGrammar);
+    ProFile *pro = parser.parsedProBlock(QStringView{ in }, 0, "in", 1, QMakeParser::FullGrammar);
     if (handler.printedMessages()) {
         qWarning("Got unexpected message(s)");
         verified = false;

@@ -220,7 +220,7 @@ QFreetypeFace *QFreetypeFace::getFace(const QFontEngine::FaceId &face_id,
 
     QtFreetypeData *freetypeData = qt_getFreetypeData();
 
-    QFreetypeFace *freetype = freetypeData->faces.value(face_id, 0);
+    QFreetypeFace *freetype = freetypeData->faces.value(face_id, nullptr);
     if (freetype) {
         freetype->ref.ref();
     } else {
@@ -629,7 +629,7 @@ namespace {
 
         void updateFamilyNameAndStyle()
         {
-            fontDef.family = QString::fromLatin1(freetype->face->family_name);
+            fontDef.families = QStringList(QString::fromLatin1(freetype->face->family_name));
 
             if (freetype->face->style_flags & FT_STYLE_FLAG_ITALIC)
                 fontDef.style = QFont::StyleItalic;
@@ -734,7 +734,7 @@ bool QFontEngineFT::init(FaceId faceId, bool antialias, GlyphFormat format,
     PS_FontInfoRec psrec;
     // don't assume that type1 fonts are symbol fonts by default
     if (FT_Get_PS_Font_Info(freetype->face, &psrec) == FT_Err_Ok) {
-        symbol = bool(fontDef.family.contains(QLatin1String("symbol"), Qt::CaseInsensitive));
+        symbol = !fontDef.families.isEmpty() && bool(fontDef.families.first().contains(QLatin1String("symbol"), Qt::CaseInsensitive));
     }
 
     freetype->computeSize(fontDef, &xsize, &ysize, &defaultGlyphSet.outline_drawing, &scalableBitmapScaleFactor);
@@ -742,15 +742,15 @@ bool QFontEngineFT::init(FaceId faceId, bool antialias, GlyphFormat format,
     FT_Face face = lockFace();
 
     if (FT_IS_SCALABLE(face)) {
-        bool fake_oblique = (fontDef.style != QFont::StyleNormal) && !(face->style_flags & FT_STYLE_FLAG_ITALIC);
+        bool fake_oblique = (fontDef.style != QFont::StyleNormal) && !(face->style_flags & FT_STYLE_FLAG_ITALIC) && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_ITALIC");
         if (fake_oblique)
             obliquen = true;
         FT_Set_Transform(face, &matrix, nullptr);
         freetype->matrix = matrix;
         // fake bold
-        if ((fontDef.weight >= QFont::Bold) && !(face->style_flags & FT_STYLE_FLAG_BOLD) && !FT_IS_FIXED_WIDTH(face)) {
+        if ((fontDef.weight >= QFont::Bold) && !(face->style_flags & FT_STYLE_FLAG_BOLD) && !FT_IS_FIXED_WIDTH(face)  && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_BOLD")) {
             if (const TT_OS2 *os2 = reinterpret_cast<const TT_OS2 *>(FT_Get_Sfnt_Table(face, ft_sfnt_os2))) {
-                if (os2->usWeightClass < 700)
+                if (os2->usWeightClass < 700 && fontDef.pixelSize < 64)
                     embolden = true;
             }
         }
@@ -1210,7 +1210,7 @@ QFontEngine::Properties QFontEngineFT::properties() const
 {
     Properties p = freetype->properties();
     if (p.postscriptName.isEmpty()) {
-        p.postscriptName = QFontEngine::convertToPostscriptFontFamilyName(fontDef.family.toUtf8());
+        p.postscriptName = QFontEngine::convertToPostscriptFontFamilyName(fontDef.families.first().toUtf8());
     }
 
     return freetype->properties();
@@ -1396,7 +1396,7 @@ void QFontEngineFT::TransformedGlyphSets::moveToFront(int i)
 QFontEngineFT::QGlyphSet *QFontEngineFT::loadGlyphSet(const QTransform &matrix)
 {
     if (matrix.type() > QTransform::TxShear || !cacheEnabled)
-        return 0;
+        return nullptr;
 
     // FT_Set_Transform only supports scalable fonts
     if (!FT_IS_SCALABLE(freetype->face))

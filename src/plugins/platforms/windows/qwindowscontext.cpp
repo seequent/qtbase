@@ -70,7 +70,7 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <QtGui/qguiapplication.h>
 #include <QtGui/qopenglcontext.h>
-#include <QtGui/qtouchdevice.h>
+#include <QtGui/qpointingdevice.h>
 
 #include <QtCore/qset.h>
 #include <QtCore/qhash.h>
@@ -347,31 +347,38 @@ bool QWindowsContext::initTouch(unsigned integrationOptions)
 {
     if (d->m_systemInfo & QWindowsContext::SI_SupportsTouch)
         return true;
-
-    QTouchDevice *touchDevice = (d->m_systemInfo & QWindowsContext::SI_SupportsPointer) ?
-                d->m_pointerHandler.ensureTouchDevice() : d->m_mouseHandler.ensureTouchDevice();
-    if (!touchDevice)
+    const bool usePointerHandler = (d->m_systemInfo & QWindowsContext::SI_SupportsPointer) != 0;
+    auto touchDevice = usePointerHandler ? d->m_pointerHandler.touchDevice() : d->m_mouseHandler.touchDevice();
+    if (touchDevice.isNull()) {
+        const bool mouseEmulation =
+            (integrationOptions & QWindowsIntegration::DontPassOsMouseEventsSynthesizedFromTouch) == 0;
+        touchDevice = QWindowsPointerHandler::createTouchDevice(mouseEmulation);
+    }
+    if (touchDevice.isNull())
         return false;
-
-    if (!(integrationOptions & QWindowsIntegration::DontPassOsMouseEventsSynthesizedFromTouch))
-        touchDevice->setCapabilities(touchDevice->capabilities() | QTouchDevice::MouseEmulation);
-
-    QWindowSystemInterface::registerTouchDevice(touchDevice);
+    d->m_pointerHandler.setTouchDevice(touchDevice);
+    d->m_mouseHandler.setTouchDevice(touchDevice);
+    QWindowSystemInterface::registerInputDevice(touchDevice.data());
 
     d->m_systemInfo |= QWindowsContext::SI_SupportsTouch;
 
     // A touch device was plugged while the app is running. Register all windows for touch.
-    if (QGuiApplicationPrivate::is_app_running) {
-        for (QWindowsWindow *w : qAsConst(d->m_windows))
-            w->registerTouchWindow();
-    }
+    registerTouchWindows();
 
     return true;
 }
 
-bool QWindowsContext::initTablet(unsigned integrationOptions)
+void QWindowsContext::registerTouchWindows()
 {
-    Q_UNUSED(integrationOptions);
+    if (QGuiApplicationPrivate::is_app_running
+        && (d->m_systemInfo & QWindowsContext::SI_SupportsTouch) != 0) {
+        for (QWindowsWindow *w : qAsConst(d->m_windows))
+            w->registerTouchWindow();
+    }
+}
+
+bool QWindowsContext::initTablet()
+{
 #if QT_CONFIG(tabletevent)
     d->m_tabletSupport.reset(QWindowsTabletSupport::create());
     return true;
@@ -457,10 +464,9 @@ bool QWindowsContext::initPowerNotificationHandler()
 void QWindowsContext::setTabletAbsoluteRange(int a)
 {
 #if QT_CONFIG(tabletevent)
-    if (!d->m_tabletSupport.isNull())
-        d->m_tabletSupport->setAbsoluteRange(a);
+    QWindowsTabletSupport::setAbsoluteRange(a);
 #else
-    Q_UNUSED(a)
+    Q_UNUSED(a);
 #endif
 }
 
@@ -1229,21 +1235,19 @@ bool QWindowsContext::windowsProc(HWND hwnd, UINT message,
         if (QWindowsTheme *t = QWindowsTheme::instance())
             t->displayChanged();
         QWindowsWindow::displayChanged();
-        return d->m_screenManager.handleDisplayChange(wParam, lParam);
+        d->m_screenManager.handleScreenChanges();
+        return false;
     case QtWindows::SettingChangedEvent: {
         QWindowsWindow::settingsChanged();
         const bool darkMode = QWindowsTheme::queryDarkMode();
         if (darkMode != QWindowsContextPrivate::m_darkMode) {
             QWindowsContextPrivate::m_darkMode = darkMode;
-            auto nativeInterface =
-                static_cast<QWindowsNativeInterface *>(QWindowsIntegration::instance()->nativeInterface());
-            emit nativeInterface->darkModeChanged(darkMode);
-            const auto options = QWindowsIntegration::instance()->options();
-            if ((options & QWindowsIntegration::DarkModeWindowFrames) != 0) {
+            auto integration = QWindowsIntegration::instance();
+            if (integration->darkModeHandling().testFlag(QWindowsApplication::DarkModeWindowFrames)) {
                 for (QWindowsWindow *w : d->m_windows)
                     w->setDarkBorder(QWindowsContextPrivate::m_darkMode);
             }
-            if ((options & QWindowsIntegration::DarkModeStyle) != 0) {
+            if (integration->darkModeHandling().testFlag(QWindowsApplication::DarkModeStyle)) {
                 QWindowsTheme::instance()->refresh();
                 for (QWindowsWindow *w : d->m_windows)
                     QWindowSystemInterface::handleThemeChange(w->window());
@@ -1629,12 +1633,6 @@ bool QWindowsContext::asyncExpose() const
 void QWindowsContext::setAsyncExpose(bool value)
 {
     d->m_asyncExpose = value;
-}
-
-QTouchDevice *QWindowsContext::touchDevice() const
-{
-    return (d->m_systemInfo & QWindowsContext::SI_SupportsPointer) ?
-        d->m_pointerHandler.touchDevice() : d->m_mouseHandler.touchDevice();
 }
 
 DWORD QWindowsContext::readAdvancedExplorerSettings(const wchar_t *subKey, DWORD defaultValue)

@@ -27,8 +27,8 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
-
+#include <QTest>
+#include <QSignalSpy>
 
 #include "qbuttongroup.h"
 #include <qaction.h>
@@ -51,7 +51,7 @@ public:
     { }
 
 protected:
-    void focusInEvent(QFocusEvent *)
+    void focusInEvent(QFocusEvent *) override
     {
         QCoreApplication::postEvent(this, new QKeyEvent(QEvent::KeyPress,
                                                         Qt::Key_Down, Qt::NoModifier));

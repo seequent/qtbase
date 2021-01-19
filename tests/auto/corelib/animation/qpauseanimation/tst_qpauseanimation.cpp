@@ -26,11 +26,13 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QtCore/qpauseanimation.h>
 #include <QtCore/qpropertyanimation.h>
 #include <QtCore/qsequentialanimationgroup.h>
+
+#include <QParallelAnimationGroup>
 
 #include <private/qabstractanimation_p.h>
 
@@ -56,7 +58,7 @@ class TestablePauseAnimation : public QPauseAnimation
 {
     Q_OBJECT
 public:
-    TestablePauseAnimation(QObject *parent = 0)
+    TestablePauseAnimation(QObject *parent = nullptr)
         : QPauseAnimation(parent),
         m_updateCurrentTimeCount(0)
     {
@@ -64,7 +66,7 @@ public:
 
     int m_updateCurrentTimeCount;
 protected:
-    void updateCurrentTime(int currentTime)
+    void updateCurrentTime(int currentTime) override
     {
         QPauseAnimation::updateCurrentTime(currentTime);
         ++m_updateCurrentTimeCount;

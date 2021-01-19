@@ -41,7 +41,6 @@
 
 #include <private/qpixmapcache_p.h>
 #include <private/qpaintengine_p.h>
-#include <private/qpolygonclipper_p.h>
 #include <private/qpainterpath_p.h>
 #include <private/qdrawhelper_p.h>
 #include <private/qfontengineglyphcache_p.h>
@@ -51,6 +50,7 @@
 #endif
 
 #include "qpaintengine_x11_p.h"
+#include "qpolygonclipper_p.h"
 #include "qtessellator_p.h"
 #include "qpixmap_x11_p.h"
 #include "qcolormap_x11_p.h"
@@ -150,17 +150,11 @@ public:
                             || (render_hints & QPainter::Antialiasing);
     }
     void decideCoordAdjust() {
-        adjust_coords = !(render_hints & QPainter::Antialiasing)
-                        && (render_hints & QPainter::Qt4CompatiblePainting)
-                        && (has_alpha_pen
-                            || (has_alpha_brush && has_pen && !has_alpha_pen)
-                            || (cpen.style() > Qt::SolidLine));
+        adjust_coords = false;
     }
     void clipPolygon_dev(const QPolygonF &poly, QPolygonF *clipped_poly);
     void systemStateChanged() override;
     inline bool isCosmeticPen() const {
-        if ((render_hints & QPainter::Qt4CompatiblePainting) && cpen == QPen())
-            return true;
         return cpen.isCosmetic();
     }
 
@@ -392,7 +386,7 @@ static inline void x11SetClipRegion(Display *dpy, GC gc, GC gc2,
 {
 //    int num;
 //    XRectangle *rects = (XRectangle *)qt_getClipRects(r, num);
-    QVector<XRectangle> rects = qt_region_to_xrectangles(r);
+    QList<XRectangle> rects = qt_region_to_xrectangles(r);
     int num = rects.size();
 
     if (gc)
@@ -2129,7 +2123,7 @@ void QX11PaintEngine::drawPixmap(const QRectF &r, const QPixmap &px, const QRect
         XSetBackground(d->dpy, cgc, 0);
         XSetForeground(d->dpy, cgc, 1);
         if (!d->crgn.isEmpty()) {
-            QVector<XRectangle> rects = qt_region_to_xrectangles(d->crgn);
+            QList<XRectangle> rects = qt_region_to_xrectangles(d->crgn);
             XSetClipRectangles(d->dpy, cgc, -x, -y, rects.data(), rects.size(), Unsorted);
         } else if (d->has_clipping) {
             XSetClipRectangles(d->dpy, cgc, 0, 0, 0, 0, Unsorted);
@@ -2152,7 +2146,7 @@ void QX11PaintEngine::drawPixmap(const QRectF &r, const QPixmap &px, const QRect
             GC cgc = XCreateGC(d->dpy, comb, 0, 0);
             XSetForeground(d->dpy, cgc, 0);
             XFillRectangle(d->dpy, comb, cgc, 0, 0, sw, sh);
-            QVector<XRectangle> rects = qt_region_to_xrectangles(d->crgn);
+            QList<XRectangle> rects = qt_region_to_xrectangles(d->crgn);
             XSetClipRectangles(d->dpy, cgc, -x, -y, rects.data(), rects.size(), Unsorted);
             XCopyArea(d->dpy, qt_x11PixmapHandle(pixmap), comb, cgc, sx, sy, sw, sh, 0, 0);
             XFreeGC(d->dpy, cgc);
@@ -2201,7 +2195,7 @@ void QX11PaintEngine::drawPixmap(const QRectF &r, const QPixmap &px, const QRect
 
     if (restore_clip) {
         XSetClipOrigin(d->dpy, d->gc, 0, 0);
-        QVector<XRectangle> rects = qt_region_to_xrectangles(d->crgn);
+        QList<XRectangle> rects = qt_region_to_xrectangles(d->crgn);
         if (rects.isEmpty())
             XSetClipMask(d->dpy, d->gc, XNone);
         else
@@ -2303,21 +2297,6 @@ void QX11PaintEngine::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap, co
 
 #if QT_CONFIG(xrender)
     if (X11->use_xrender && d->picture && qt_x11PictureHandle(pixmap)) {
-#if 0
-        // ### Qt 5: enable this
-        XRenderPictureAttributes attrs;
-        attrs.repeat = true;
-        XRenderChangePicture(d->dpy, pixmap.x11PictureHandle(), CPRepeat, &attrs);
-
-        if (mono_src) {
-            qt_render_bitmap(d->dpy, d->scrn, pixmap.x11PictureHandle(), d->picture,
-                             sx, sy, x, y, w, h, d->cpen);
-        } else {
-            XRenderComposite(d->dpy, d->composition_mode,
-                             pixmap.x11PictureHandle(), XNone, d->picture,
-                             sx, sy, 0, 0, x, y, w, h);
-        }
-#else
         const int numTiles = (w / pixmap.width()) * (h / pixmap.height());
         if (numTiles < 100) {
             // this is essentially qt_draw_tile(), inlined for
@@ -2400,7 +2379,6 @@ void QX11PaintEngine::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap, co
                                  pmPicture, XNone, d->picture,
                                  sx, sy, 0, 0, x, y, w, h);
         }
-#endif
     } else
 #endif // QT_CONFIG(xrender)
         if (pixmap.depth() > 1 && !static_cast<QX11PlatformPixmap*>(pixmap.handle())->x11_mask) {

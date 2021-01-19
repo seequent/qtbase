@@ -259,6 +259,7 @@ void QHttpNetworkConnectionPrivate::prepareRequest(HttpMessagePair &messagePair)
     QByteArray value;
     // check if Content-Length is provided
     QNonContiguousByteDevice* uploadByteDevice = request.uploadByteDevice();
+#ifndef Q_OS_WASM
     if (uploadByteDevice) {
         const qint64 contentLength = request.contentLength();
         const qint64 uploadDeviceSize = uploadByteDevice->size();
@@ -274,6 +275,7 @@ void QHttpNetworkConnectionPrivate::prepareRequest(HttpMessagePair &messagePair)
             qFatal("QHttpNetworkConnectionPrivate: Neither content-length nor upload device size were given");
         }
     }
+#endif
     // set the Connection/Proxy-Connection: Keep-Alive headers
 #ifndef QT_NO_NETWORKPROXY
     if (networkProxy.type() == QNetworkProxy::HttpCachingProxy)  {
@@ -297,7 +299,8 @@ void QHttpNetworkConnectionPrivate::prepareRequest(HttpMessagePair &messagePair)
     value = request.headerField("accept-encoding");
     if (value.isEmpty()) {
 #ifndef QT_NO_COMPRESS
-        request.setHeaderField("Accept-Encoding", "gzip, deflate");
+        const QByteArrayList &acceptedEncoding = QDecompressHelper::acceptedEncoding();
+        request.setHeaderField("Accept-Encoding", acceptedEncoding.join(", "));
         request.d->autoDecompress = true;
 #else
         // if zlib is not available set this to false always
@@ -446,7 +449,14 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
         if (auth->isNull())
             auth->detach();
         QAuthenticatorPrivate *priv = QAuthenticatorPrivate::getPrivate(*auth);
-        priv->parseHttpResponse(fields, isProxy);
+        priv->parseHttpResponse(fields, isProxy, reply->url().host());
+        // Update method in case it changed
+        if (priv->method == QAuthenticatorPrivate::None)
+            return false;
+        if (isProxy)
+            channels[i].proxyAuthMethod = priv->method;
+        else
+            channels[i].authMethod = priv->method;
 
         if (priv->phase == QAuthenticatorPrivate::Done) {
             pauseConnection();
@@ -1054,8 +1064,10 @@ void QHttpNetworkConnectionPrivate::_q_startNextRequest()
     }
     case QHttpNetworkConnection::ConnectionTypeHTTP2Direct:
     case QHttpNetworkConnection::ConnectionTypeHTTP2: {
-        if (channels[0].h2RequestsToSend.isEmpty() && channels[0].switchedToHttp2)
+        if (channels[0].h2RequestsToSend.isEmpty() && !channels[0].reply
+            && highPriorityQueue.isEmpty() && lowPriorityQueue.isEmpty()) {
             return;
+        }
 
         if (networkLayerState == IPv4)
             channels[0].networkLayerPreference = QAbstractSocket::IPv4Protocol;
@@ -1063,8 +1075,18 @@ void QHttpNetworkConnectionPrivate::_q_startNextRequest()
             channels[0].networkLayerPreference = QAbstractSocket::IPv6Protocol;
         channels[0].ensureConnection();
         if (channels[0].socket && channels[0].socket->state() == QAbstractSocket::ConnectedState
-                && !channels[0].pendingEncrypt && channels[0].h2RequestsToSend.size())
-            channels[0].sendRequest();
+            && !channels[0].pendingEncrypt) {
+            if (channels[0].h2RequestsToSend.size()) {
+                channels[0].sendRequest();
+            } else if (!channels[0].reply && !channels[0].switchedToHttp2) {
+                // This covers an edge-case where we're already connected and the "connected"
+                // signal was already sent, but we didn't have any request available at the time,
+                // so it was missed. As such we need to dequeue a request and send it now that we
+                // have one.
+                dequeueRequest(channels[0].socket);
+                channels[0].sendRequest();
+            }
+        }
         break;
     }
     }
@@ -1439,7 +1461,9 @@ void QHttpNetworkConnection::ignoreSslErrors(int channel)
         return;
 
     if (channel == -1) { // ignore for all channels
-        for (int i = 0; i < d->activeChannelCount; ++i) {
+        // We need to ignore for all channels, even the ones that are not in use just in case they
+        // will be in the future.
+        for (int i = 0; i < d->channelCount; ++i) {
             d->channels[i].ignoreSslErrors();
         }
 
@@ -1455,7 +1479,9 @@ void QHttpNetworkConnection::ignoreSslErrors(const QList<QSslError> &errors, int
         return;
 
     if (channel == -1) { // ignore for all channels
-        for (int i = 0; i < d->activeChannelCount; ++i) {
+        // We need to ignore for all channels, even the ones that are not in use just in case they
+        // will be in the future.
+        for (int i = 0; i < d->channelCount; ++i) {
             d->channels[i].ignoreSslErrors(errors);
         }
 
@@ -1513,7 +1539,8 @@ void QHttpNetworkConnectionPrivate::emitProxyAuthenticationRequired(const QHttpN
     // dialog is displaying
     pauseConnection();
     QHttpNetworkReply *reply;
-    if (connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2
+    if ((connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2
+         && (chan->switchedToHttp2 || chan->h2RequestsToSend.count() > 0))
         || connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
         // we choose the reply to emit the proxyAuth signal from somewhat arbitrarily,
         // but that does not matter because the signal will ultimately be emitted

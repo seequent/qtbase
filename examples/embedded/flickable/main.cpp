@@ -72,7 +72,7 @@ static QStringList colorPairs(int max)
     // randomize it
     colors.clear();
     while (combinedColors.count()) {
-        int i = QRandomGenerator::global()->bounded(combinedColors.count());
+        int i = QRandomGenerator::global()->bounded(int(combinedColors.count()));
         colors << combinedColors[i];
         combinedColors.removeAt(i);
         if (colors.count() == max)
@@ -87,7 +87,7 @@ class ColorList : public QWidget, public Flickable
     Q_OBJECT
 
 public:
-    ColorList(QWidget *parent = 0)
+    ColorList(QWidget *parent = nullptr)
             : QWidget(parent) {
         m_offset = 0;
         m_height = QFontMetrics(font()).height() + 5;

@@ -66,6 +66,8 @@
 #include "qpixmap_raster_p.h"
 #include "private/qhexstring_p.h"
 
+#include <qtgui_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
 
 static bool qt_pixmap_thread_test()
@@ -222,6 +224,14 @@ QPixmap::QPixmap(const QPixmap &pixmap)
     }
 }
 
+/*! \fn QPixmap::QPixmap(QPixmap &&other)
+    Move-constructs a QPixmap instance from \a other.
+
+    \sa swap() operator=(QPixmap&&)
+*/
+
+QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QPlatformPixmap)
+
 /*!
     Constructs a pixmap from the given \a xpm data, which must be a
     valid XPM image.
@@ -231,7 +241,7 @@ QPixmap::QPixmap(const QPixmap &pixmap)
     Note that it's possible to squeeze the XPM variable a little bit
     by using an unusual declaration:
 
-    \snippet code/src_gui_image_qpixmap.cpp 0
+    \snippet code/src_gui_image_qimage.cpp 2
 
     The extra \c const makes the entire definition read-only, which is
     slightly more efficient (for example, when the code is in a shared
@@ -402,7 +412,7 @@ QPixmap &QPixmap::operator=(const QPixmap &pixmap)
 */
 QPixmap::operator QVariant() const
 {
-    return QVariant(QMetaType::QPixmap, this);
+    return QVariant::fromValue(*this);
 }
 
 /*!
@@ -1053,6 +1063,8 @@ QPixmap QPixmap::scaled(const QSize& s, Qt::AspectRatioMode aspectMode, Qt::Tran
     if (newSize == size())
         return *this;
 
+    Q_TRACE_SCOPE(QPixmap_scaled, s, aspectMode, mode);
+
     QTransform wm = QTransform::fromScale((qreal)newSize.width() / width(),
                                           (qreal)newSize.height() / height());
     QPixmap pix = transformed(wm, mode);
@@ -1082,6 +1094,8 @@ QPixmap QPixmap::scaledToWidth(int w, Qt::TransformationMode mode) const
     if (w <= 0)
         return QPixmap();
 
+    Q_TRACE_SCOPE(QPixmap_scaledToWidth, w, mode);
+
     qreal factor = (qreal) w / width();
     QTransform wm = QTransform::fromScale(factor, factor);
     return transformed(wm, mode);
@@ -1109,6 +1123,8 @@ QPixmap QPixmap::scaledToHeight(int h, Qt::TransformationMode mode) const
     }
     if (h <= 0)
         return QPixmap();
+
+    Q_TRACE_SCOPE(QPixmap_scaledToHeight, h, mode);
 
     qreal factor = (qreal) h / height();
     QTransform wm = QTransform::fromScale(factor, factor);

@@ -27,7 +27,8 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QTimer>
 
 #include <qapplication.h>
 #include <private/qguiapplication_p.h>
@@ -84,7 +85,7 @@ public:
     TransformTranslator() : QTranslator() {}
     TransformTranslator(QObject *parent) : QTranslator(parent) {}
     QString translate(const char *context, const char *sourceText,
-                              const char *disambiguation = 0, int = -1) const
+                              const char *disambiguation = 0, int = -1) const override
     {
         QByteArray total(context);
         total.append("::");
@@ -108,7 +109,7 @@ public:
         return res;
     }
 
-    virtual bool isEmpty() const { return false; }
+    virtual bool isEmpty() const override { return false; }
 
 public:
     mutable QSet<QByteArray> m_translations;
@@ -196,9 +197,6 @@ void tst_languageChange::retranslatability_data()
                     << "QFileDialog::Back"
                     << "QFileDialog::Create New Folder"
                     << "QFileDialog::Detail View"
-#if !defined(Q_OS_MAC)
-                    << "QFileDialog::File"
-#endif
                     << "QFileDialog::Files of type:"
                     << "QFileDialog::Forward"
                     << "QFileDialog::List View"
@@ -259,9 +257,6 @@ void tst_languageChange::retranslatability()
 #endif
         break;
     case FileDialog: {
-#ifdef Q_OS_MAC
-        QSKIP("The native file dialog is used on Mac OS");
-#endif
         QFileDialog dlg;
         dlg.setOption(QFileDialog::DontUseNativeDialog);
         QString tempDirPattern = QDir::tempPath();
@@ -291,7 +286,7 @@ void tst_languageChange::retranslatability()
     // In case we use a Color dialog, we do not want to test for
     // strings non existing in the dialog and which do not get
     // translated.
-    const QSize desktopSize = QApplication::desktop()->size();
+    const QSize desktopSize = QGuiApplication::primaryScreen()->size();
     if (dialogType == ColorDialog && (desktopSize.width() < 480 || desktopSize.height() < 350)) {
         expected.remove("QColorDialog::&Basic colors");
         expected.remove("QColorDialog::&Custom colors");

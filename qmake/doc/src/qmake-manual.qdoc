@@ -907,14 +907,6 @@
     to specify a list of libraries that each project needs to link against,
     and \c QMAKE_LIBS_X11 would be used to extend this list.
 
-    \target ANDROID_ABI
-    \section1 ANDROID_ABI
-
-    \note This variable applies only to Android targets.
-
-    Specifies the Android target ABI. Valid values are: armeabi-v7a, arm64-v8a,
-    x86, x86_64.
-
     \target ANDROID_ABIS
     \section1 ANDROID_ABIS
 
@@ -929,13 +921,9 @@
     qmake ANDROID_ABIS="armeabi-v7a arm64-v8a"
     \endcode
 
-    Or directly in the \c .pro file:
-
-    \badcode
-    ANDROID_ABIS = \
-        armeabi-v7a \
-        arm64-v8a
-    \endcode
+    \note It is possible to use this variable inside the *.pro file, however,
+    it is not recommended since it will override any ABIs specified on the
+    \c qmake command line.
 
     \target ANDROID_API_VERSION
     \section1 ANDROID_API_VERSION
@@ -944,6 +932,19 @@
 
     Specifies the Android API level number. For more information, see
     \l{Android: Build Numbers}{Android Build Numbers}.
+
+    \target ANDROID_APPLICATION_ARGUMENTS
+    \section1 ANDROID_APPLICATION_ARGUMENTS
+
+    \note This variable applies only to Android targets.
+
+    Specifies extra command-line arguments to the Android app using the
+    \c AndroidManifest.xml with the tag "android.app.arguments". This takes
+    a string of arguments:
+
+    \badcode
+    ANDROID_APPLICATION_ARGUMENTS = "arg1 arg2 arg3"
+    \endcode
 
     \target ANDROID_BUNDLED_JAR_DEPENDENCIES
     \section1 ANDROID_BUNDLED_JAR_DEPENDENCIES
@@ -954,7 +955,7 @@
     dependencies used by the module in a \c .jar format, for example:
 
     \badcode
-    ANDROID_BUNDLED_JAR_DEPENDENCIES += jar/QtAndroid.jar
+    ANDROID_BUNDLED_JAR_DEPENDENCIES += jar/Qt6Android.jar
     \endcode
 
     \target ANDROID_DEPLOYMENT_DEPENDENCIES
@@ -996,15 +997,59 @@
     to enable OpenSSL in your application. For more information, see
     \l{Adding OpenSSL Support for Android}.
 
+    To include external libraries for multiple ABIs, where each ABIs has its own
+    directory, use the following:
+
+    \badcode
+    for (abi, ANDROID_ABIS): ANDROID_EXTRA_LIBS += $$PWD/$${abi}/library_name.so
+    \endcode
+
+    Otherwise, if the ABI is included in the library name, use the following:
+
+    \badcode
+    for (abi, ANDROID_ABIS): ANDROID_EXTRA_LIBS += $$PWD/library_name_$${abi}.so
+    \endcode
+
     \target ANDROID_EXTRA_PLUGINS
     \section1 ANDROID_EXTRA_PLUGINS
 
     \note This variable applies only to Android targets.
 
-    Specifies different resources that your application has to bundle but that
-    cannot be delivered through the assets system, such as QML plugins. With this
-    variable, \l androiddeployqt will make sure everything is packaged and
-    deployed properly.
+    Specifies a path to C++ plugins or resources that your application has to bundle
+    but that cannot be delivered through the assets system, such as QML plugins.
+    With this variable, \l androiddeployqt will make sure everything is packaged
+    and deployed properly.
+
+    \c ANDROID_EXTRA_PLUGINS must point to the directory where the extra plugin(s)
+    are built. In addition, the build directory structure must follow a naming
+    convention similar to Qt plugins, that is, \e {plugins/<plugin name>}.
+
+    The plugins libraries should have the name format \e {libplugins_<type>_<name>_<abi>.so}.
+    To achieve that the plugin pro file could be defined as follows:
+
+    \badcode
+    TEMPLATE = lib
+    CONFIG += plugin
+
+    PLUGIN_TYPE = imageformats
+    DESTDIR = $$top_builddir/plugins/myplugin
+    TARGET = $$qt5LibraryTarget(myplugin, "plugins/$$PLUGIN_TYPE/")
+    \endcode
+
+    with top_builddir defined in .qmake.conf as:
+    \badcode
+    top_builddir=$$shadowed($$PWD)
+    \endcode
+
+    This will ensure that the correct name mangling is applied to the plugin
+    library (\e plugins/myplugin/libplugins_imageformats_myplugin_armeabi-v7a.so).
+
+    Then, assuming an extra image format plugin \e myplugin is built as
+    \e {$$DESTDIR/plugins/myplugin/}, the following ensures it is packaged correctly:
+
+    \badcode
+    ANDROID_EXTRA_PLUGINS += $$top_builddir/plugins
+    \endcode
 
     \target ANDROID_FEATURES
     \section1 ANDROID_FEATURES
@@ -1038,7 +1083,7 @@
     \note This variable applies only to Android targets.
 
     Specifies the minimum Android API level for the project. By default, this
-    variable is set to API level 21.
+    variable is set to API level 23.
 
     \target ANDROID_PACKAGE_SOURCE_DIR
     \section1 ANDROID_PACKAGE_SOURCE_DIR
@@ -1080,7 +1125,7 @@
     \note This variable applies only to Android targets.
 
     Specifies the target Android API level for the project. By default, this
-    variable is set to API level 28.
+    variable is set to API level 29.
 
     \target ANDROID_VERSION_CODE
     \section1 ANDROID_VERSION_CODE
@@ -2260,6 +2305,9 @@
     \row
         \li \c ${WATCHOS_DEPLOYMENT_TARGET}
         \li Expands to the value of QMAKE_WATCHOS_DEPLOYMENT_TARGET.
+    \row
+        \li \c ${IOS_LAUNCH_SCREEN}
+        \li Expands to the value of QMAKE_IOS_LAUNCH_SCREEN.
     \endtable
 
     \note When using the Xcode generator, the above \c{${var}}-style
@@ -2282,6 +2330,13 @@
     Specifies the hard minimum version of iOS that the application supports.
 
     For more information, see \l {Expressing Supported iOS Versions}.
+
+    \section1 QMAKE_IOS_LAUNCH_SCREEN
+
+    \note This variable is used on the iOS platform only.
+
+    Specifies the launch screen that is used by the application. If this is not set
+    then a default launch screen is used.
 
     \section1 QMAKE_LFLAGS
 
@@ -3535,7 +3590,8 @@
     \section2 re_escape(string)
 
     Returns the \c string with every special regular expression character
-    escaped with a backslash. This function is a wrapper around QRegExp::escape.
+    escaped with a backslash. This function is a wrapper around
+    QRegularExpression::escape.
 
     \section2 read_registry(tree, key[, flag])
 
@@ -3914,8 +3970,9 @@
 
     Tests whether a file with the given \c filename exists.
     If the file exists, the function succeeds; otherwise it fails.
-    If a regular expression is specified for the filename, this function
-    succeeds if any file matches the regular expression specified.
+
+    The \c filename argument may contain wildcards.
+    In that case, this function succeeds if any file matches.
 
     For example:
     \snippet code/doc_src_qmake-manual.pro 63

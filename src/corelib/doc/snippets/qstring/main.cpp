@@ -55,7 +55,7 @@
 class Widget : public QWidget
 {
 public:
-    Widget(QWidget *parent = 0);
+    Widget(QWidget *parent = nullptr);
 
     void constCharPointer();
     void constCharArray();
@@ -85,11 +85,9 @@ public:
     void isNullFunction();
     void isEmptyFunction();
     void lastIndexOfFunction();
-    void leftFunction();
+    void firstFunction();
     void leftJustifiedFunction();
-    void leftRefFunction();
-    void midFunction();
-    void midRefFunction();
+    void slicedFunction();
     void numberFunction();
 
     void prependFunction();
@@ -97,9 +95,8 @@ public:
     void replaceFunction();
     void reserveFunction();
     void resizeFunction();
-    void rightFunction();
+    void lastFunction();
     void rightJustifiedFunction();
-    void rightRefFunction();
     void sectionFunction();
     void setNumFunction();
     void simplifiedFunction();
@@ -167,7 +164,7 @@ void Widget::atFunction()
     //! [3]
     QString str;
 
-    for (int i = 0; i < str.size(); ++i) {
+    for (qsizetype i = 0; i < str.size(); ++i) {
         if (str.at(i) >= QChar('a') && str.at(i) <= QChar('f'))
             qDebug() << "Found character in range [a-f]";
     }
@@ -200,7 +197,7 @@ void Widget::index()
 {
     //! [6]
     QString str = "We must be <b>bold</b>, very <b>bold</b>";
-    int j = 0;
+    qsizetype j = 0;
 
     while ((j = str.indexOf("<b>", j)) != -1) {
         qDebug() << "Found <b> tag at index position" << j;
@@ -396,7 +393,7 @@ void Widget::fromRawDataFunction()
     static const QChar unicode[] = {
             0x005A, 0x007F, 0x00A4, 0x0060,
             0x1009, 0x0020, 0x0020};
-    int size = sizeof(unicode) / sizeof(QChar);
+    qsizetype size = sizeof(unicode) / sizeof(QChar);
 
     QString str = QString::fromRawData(unicode, size);
     if (str.contains(pattern) {
@@ -481,11 +478,11 @@ void Widget::lastIndexOfFunction()
     //! [94]
 }
 
-void Widget::leftFunction()
+void Widget::firstFunction()
 {
     //! [31]
     QString x = "Pineapple";
-    QString y = x.left(4);      // y == "Pine"
+    QString y = x.first(4);      // y == "Pine"
     //! [31]
 }
 
@@ -502,12 +499,12 @@ void Widget::leftJustifiedFunction()
     //! [33]
 }
 
-void Widget::midFunction()
+void Widget::slicedFunction()
 {
     //! [34]
     QString x = "Nine pineapples";
-    QString y = x.mid(5, 4);            // y == "pine"
-    QString z = x.mid(5);               // z == "pineapples"
+    QString y = x.sliced(5, 4);            // y == "pine"
+    QString z = x.sliced(5);               // z == "pineapples"
     //! [34]
 }
 
@@ -589,7 +586,7 @@ void Widget::reserveFunction()
 {
     //! [44]
     QString result;
-    int maxSize;
+    qsizetype maxSize;
     bool condition;
     QChar nextChar;
 
@@ -626,11 +623,11 @@ void Widget::resizeFunction()
     //! [47]
 }
 
-void Widget::rightFunction()
+void Widget::lastFunction()
 {
     //! [48]
     QString x = "Pineapple";
-    QString y = x.right(5);      // y == "apple"
+    QString y = x.last(5);      // y == "apple"
     //! [48]
 }
 
@@ -703,7 +700,7 @@ void Widget::sizeFunction()
 {
     //! [58]
     QString str = "World";
-    int n = str.size();         // n == 5
+    qsizetype n = str.size();   // n == 5
     str.data()[0];              // returns 'W'
     str.data()[4];              // returns 'd'
     //! [58]
@@ -957,31 +954,6 @@ void Widget::arrayOperator()
     if (str[0] == QChar('?'))
         str[0] = QChar('_');
     //! [85]
-}
-
-void Widget::midRefFunction()
-{
-    //! [midRef]
-    QString x = "Nine pineapples";
-    QStringRef y = x.midRef(5, 4);      // y == "pine"
-    QStringRef z = x.midRef(5);         // z == "pineapples"
-    //! [midRef]
-}
-
-void Widget::leftRefFunction()
-{
-    //! [leftRef]
-    QString x = "Pineapple";
-    QStringRef y = x.leftRef(4);        // y == "Pine"
-    //! [leftRef]
-}
-
-void Widget::rightRefFunction()
-{
-    //! [rightRef]
-    QString x = "Pineapple";
-    QStringRef y = x.rightRef(5);       // y == "apple"
-    //! [rightRef]
 }
 
 

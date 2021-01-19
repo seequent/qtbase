@@ -28,7 +28,7 @@
 
 
 #include <QtCore/QString>
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtCore/QCoreApplication>
 #include <QtNetwork/QAuthenticator>
 
@@ -82,8 +82,8 @@ void tst_QAuthenticator::basicAuth()
     QCOMPARE(priv->phase, QAuthenticatorPrivate::Start);
 
     QList<QPair<QByteArray, QByteArray> > headers;
-    headers << qMakePair<QByteArray, QByteArray>(QByteArray("WWW-Authenticate"), "Basic " + data.toUtf8());
-    priv->parseHttpResponse(headers, /*isProxy = */ false);
+    headers << qMakePair(QByteArray("WWW-Authenticate"), "Basic " + data.toUtf8());
+    priv->parseHttpResponse(headers, /*isProxy = */ false, {});
 
     QCOMPARE(auth.realm(), realm);
     QCOMPARE(auth.option("realm").toString(), realm);
@@ -130,8 +130,8 @@ void tst_QAuthenticator::ntlmAuth()
     // This phase of NTLM contains no information, other than what we're willing to negotiate
     // Current implementation uses flags:
     //  NTLMSSP_NEGOTIATE_UNICODE | NTLMSSP_NEGOTIATE_NTLM | NTLMSSP_REQUEST_TARGET
-    headers << qMakePair<QByteArray, QByteArray>("WWW-Authenticate", "NTLM");
-    priv->parseHttpResponse(headers, /*isProxy = */ false);
+    headers << qMakePair(QByteArrayLiteral("WWW-Authenticate"), QByteArrayLiteral("NTLM"));
+    priv->parseHttpResponse(headers, /*isProxy = */ false, {});
     if (sso)
         QVERIFY(priv->calculateResponse("GET", "/", "").startsWith("NTLM "));
     else
@@ -139,8 +139,8 @@ void tst_QAuthenticator::ntlmAuth()
 
     // NTLM phase 2: challenge
     headers.clear();
-    headers << qMakePair<QByteArray, QByteArray>(QByteArray("WWW-Authenticate"), "NTLM " + data.toUtf8());
-    priv->parseHttpResponse(headers, /*isProxy = */ false);
+    headers << qMakePair(QByteArray("WWW-Authenticate"), "NTLM " + data.toUtf8());
+    priv->parseHttpResponse(headers, /*isProxy = */ false, {});
 
     QEXPECT_FAIL("with-realm", "NTLM authentication code doesn't extract the realm", Continue);
     QEXPECT_FAIL("with-realm-sso", "NTLM authentication code doesn't extract the realm", Continue);

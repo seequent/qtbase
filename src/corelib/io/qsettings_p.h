@@ -64,7 +64,6 @@
 #ifndef QT_NO_QOBJECT
 #include "private/qobject_p.h"
 #endif
-#include "private/qscopedpointer_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -94,7 +93,7 @@ class QSettingsKey : public QString
 {
 public:
     inline QSettingsKey(const QString &key, Qt::CaseSensitivity cs, int position = -1)
-         : QString(key), theOriginalKey(key), theOriginalKeyPosition(position)
+        : QString(key), theOriginalKey(key), theOriginalKeyPosition(position)
     {
         if (cs == Qt::CaseInsensitive)
             QString::operator=(toLower());
@@ -109,7 +108,7 @@ private:
 };
 #endif
 
-Q_DECLARE_TYPEINFO(QSettingsKey, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QSettingsKey, Q_RELOCATABLE_TYPE);
 
 typedef QMap<QSettingsKey, QByteArray> UnparsedSettingsMap;
 typedef QMap<QSettingsKey, QVariant> ParsedSettingsMap;
@@ -135,7 +134,7 @@ public:
     int num;
     int maxNum;
 };
-Q_DECLARE_TYPEINFO(QSettingsGroup, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QSettingsGroup, Q_RELOCATABLE_TYPE);
 
 inline QString QSettingsGroup::toString() const
 {
@@ -293,7 +292,7 @@ private:
     void ensureAllSectionsParsed(QConfFile *confFile) const;
     void ensureSectionParsed(QConfFile *confFile, const QSettingsKey &key) const;
 
-    QVector<QConfFile *> confFiles;
+    QList<QConfFile *> confFiles;
     QSettings::ReadFunc readFunc;
     QSettings::WriteFunc writeFunc;
     QString extension;

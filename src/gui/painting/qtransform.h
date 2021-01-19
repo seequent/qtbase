@@ -113,9 +113,9 @@ public:
                    qreal m21, qreal m22, qreal m23,
                    qreal m31, qreal m32, qreal m33);
 
-    Q_REQUIRED_RESULT QTransform inverted(bool *invertible = nullptr) const;
-    Q_REQUIRED_RESULT QTransform adjoint() const;
-    Q_REQUIRED_RESULT QTransform transposed() const;
+    [[nodiscard]] QTransform inverted(bool *invertible = nullptr) const;
+    [[nodiscard]] QTransform adjoint() const;
+    [[nodiscard]] QTransform transposed() const;
 
     QTransform &translate(qreal dx, qreal dy);
     QTransform &scale(qreal sx, qreal sy);
@@ -177,7 +177,7 @@ private:
     mutable uint m_type : 5;
     mutable uint m_dirty : 5;
 };
-Q_DECLARE_TYPEINFO(QTransform, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QTransform, Q_RELOCATABLE_TYPE);
 
 Q_GUI_EXPORT Q_DECL_CONST_FUNCTION size_t qHash(const QTransform &key, size_t seed = 0) noexcept;
 
@@ -269,9 +269,7 @@ inline qreal QTransform::dy() const
 }
 
 QT_WARNING_PUSH
-QT_WARNING_DISABLE_CLANG("-Wfloat-equal")
-QT_WARNING_DISABLE_GCC("-Wfloat-equal")
-QT_WARNING_DISABLE_INTEL(1572)
+QT_WARNING_DISABLE_FLOAT_COMPARE
 
 inline QTransform &QTransform::operator*=(qreal num)
 {

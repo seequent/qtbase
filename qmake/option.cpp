@@ -174,7 +174,7 @@ bool usage(const char *a0)
             "  -set <prop> <value> Set persistent property\n"
             "  -unset <prop>  Unset persistent property\n"
             "  -query <prop>  Query persistent property. Show all if <prop> is empty.\n"
-            "  -qtconf file   Use file instead of looking for qt.conf\n"
+            "  -qtconf file   Use file instead of looking for qt" QT_STRINGIFY(QT_VERSION_MAJOR) ".conf, then qt.conf\n"
             "  -cache file    Use file as cache           [makefile mode only]\n"
             "  -spec spec     Use spec as QMAKESPEC       [makefile mode only]\n"
             "  -nocache       Don't use a cache file      [makefile mode only]\n"
@@ -218,7 +218,7 @@ Option::parseCommandLine(QStringList &args, QMakeCmdLineParserState &state)
                             "QMake version %s\n"
                             "Using Qt version %s in %s\n",
                             QMAKE_VERSION_STR, QT_VERSION_STR,
-                            QLibraryInfo::location(QLibraryInfo::LibrariesPath).toLatin1().constData());
+                            QLibraryInfo::path(QLibraryInfo::LibrariesPath).toLatin1().constData());
 #ifdef QMAKE_OPENSOURCE_VERSION
                     fprintf(stdout, "QMake is Open Source software from The Qt Company Ltd and/or its subsidiary(-ies).\n");
 #endif
@@ -420,6 +420,11 @@ Option::init(int argc, char **argv)
                 Option::qmake_mode = Option::QMAKE_QUERY_PROPERTY;
             } else if (opt == "-makefile") {
                 Option::qmake_mode = Option::QMAKE_GENERATE_MAKEFILE;
+            } else if (opt == "-qtconf") {
+                // Move the argument following "-qtconf <file>" in front and check again.
+                if (args.length() >= 3)
+                    args.prepend(args.takeAt(2));
+                continue;
             } else {
                 break;
             }
@@ -613,7 +618,7 @@ void EvalHandler::message(int type, const QString &msg, const QString &fileName,
 
 void EvalHandler::fileMessage(int type, const QString &msg)
 {
-    Q_UNUSED(type)
+    Q_UNUSED(type);
     fprintf(stderr, "%s\n", qPrintable(msg));
 }
 
@@ -655,8 +660,15 @@ QString qmake_libraryInfoFile()
 {
     if (!Option::globals->qtconf.isEmpty())
         return Option::globals->qtconf;
-    if (!Option::globals->qmake_abslocation.isEmpty())
-        return QDir(QFileInfo(Option::globals->qmake_abslocation).absolutePath()).filePath("qt.conf");
+    if (!Option::globals->qmake_abslocation.isEmpty()) {
+        QDir dir(QFileInfo(Option::globals->qmake_abslocation).absolutePath());
+        QString qtconfig = dir.filePath("qt" QT_STRINGIFY(QT_VERSION_MAJOR) ".conf");
+        if (QFile::exists(qtconfig))
+            return qtconfig;
+        qtconfig = dir.filePath("qt.conf");
+        if (QFile::exists(qtconfig))
+            return qtconfig;
+    }
     return QString();
 }
 

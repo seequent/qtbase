@@ -25,6 +25,21 @@
     },
 
     "libraries": {
+        "brotli": {
+            "label": "Brotli Decompression",
+            "test": {
+                "main": [
+                  "BrotliDecoderState *state = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);"
+                ]
+            },
+            "headers": [
+                "brotli/decode.h"
+            ],
+            "sources": [
+                { "type": "pkgConfig", "args": "libbrotlidec" },
+                "-lbrotlidec"
+            ]
+        },
         "corewlan": {
             "label": "CoreWLan",
             "export": "",
@@ -65,7 +80,7 @@
                     "#  error OpenSSL >= 1.1.1 is required",
                     "#endif",
                     "#if !defined(OPENSSL_NO_EC) && !defined(SSL_CTRL_SET_CURVES)",
-                    "#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it's libressl which is unsupported",
+                    "#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it is libressl which is unsupported",
                     "#endif"
                 ]
             },
@@ -92,10 +107,6 @@
                 {
                     "libs": "-llibssl -llibcrypto -lUser32 -lWs2_32 -lAdvapi32 -lCrypt32",
                     "condition": "config.msvc"
-                },
-                {
-                    "libs": "-lssl_arm64-v8a -lcrypto_arm64-v8a",
-                    "condition": "config.android"
                 },
                 {
                     "libs": "-lssl -lcrypto",
@@ -258,7 +269,7 @@
         },
         "linux-netlink": {
             "label": "Linux AF_NETLINK",
-            "condition": "config.linux && tests.linux-netlink",
+            "condition": "config.linux && !config.android && tests.linux-netlink",
             "output": [ "privateFeature" ]
         },
         "openssl": {
@@ -289,7 +300,7 @@
         },
         "securetransport": {
             "label": "SecureTransport",
-            "disable": "input.securetransport == 'no' || input.ssl == 'no'",
+            "disable": "input.ssl == 'no'",
             "condition": "config.darwin && (input.openssl == '' || input.openssl == 'no')",
             "output": [
                 "publicFeature",
@@ -298,8 +309,9 @@
         },
         "schannel": {
             "label": "Schannel",
-            "disable": "input.schannel == 'no' || input.ssl == 'no'",
-            "condition": "input.schannel == 'yes' && config.win32 && (input.openssl == '' || input.openssl == 'no')",
+            "autoDetect": false,
+            "disable": "input.ssl == 'no'",
+            "condition": "config.win32 && (input.openssl == '' || input.openssl == 'no')",
             "output": [
                 "publicFeature",
                 { "type": "define", "name": "QT_SCHANNEL" }
@@ -339,14 +351,6 @@
             "label": "Use system proxies",
             "output": [ "privateFeature" ]
         },
-        "ftp": {
-            "label": "FTP",
-            "purpose": "Provides support for the File Transfer Protocol in QNetworkAccessManager.",
-            "section": "Networking",
-            "autoDetect": false,
-            "condition": "features.textdate && features.regularexpression",
-            "output": [ "publicFeature", "feature" ]
-        },
         "http": {
             "label": "HTTP",
             "purpose": "Provides support for the Hypertext Transfer Protocol in QNetworkAccessManager.",
@@ -385,6 +389,13 @@
             "purpose": "Provides a disk cache for network resources.",
             "section": "Networking",
             "condition": "features.temporaryfile",
+            "output": [ "publicFeature", "feature" ]
+        },
+        "brotli": {
+            "label": "Brotli Decompression Support",
+            "purpose": "Support for downloading and decompressing resources compressed with Brotli through QNetworkAccessManager.",
+            "section": "Networking",
+            "condition": "libs.brotli",
             "output": [ "publicFeature", "feature" ]
         },
         "localserver": {
@@ -432,17 +443,12 @@
     "report": [
         {
             "type": "note",
-            "condition": "!config.android && features.openssl-linked && libs.openssl.source != 0
+            "condition": "features.openssl-linked && libs.openssl.source != 0
                           && input.openssl.prefix == '' && input.openssl.libs == '' && input.openssl.libs.debug == ''",
             "message": "When linking against OpenSSL, you can override the default
 library names through OPENSSL_LIBS.
 For example:
     OPENSSL_LIBS='-L/opt/ssl/lib -lssl -lcrypto' ./configure -openssl-linked"
-        },
-        {
-            "type": "warning",
-            "condition": "features.libproxy && input.qt_namespace == ''",
-            "message": "Some of libproxy's plugins may use incompatible Qt versions.  Some platforms and distributions ship libproxy with plugins, such as config_kde4.so, that are linked against old versions of Qt; and libproxy loads these plugins automatically when initialized. If Qt is not in a namespace, that loading causes a crash. Even if the systems on which you build and test have no such plugins, your users' systems may have them. We therefore recommend that you combine -libproxy with -qtnamespace when configuring Qt."
         }
     ],
 
@@ -476,10 +482,10 @@ For example:
                 "opensslv11",
                 "dtls",
                 "ocsp",
-                "ftp",
                 "sctp",
                 "system-proxies",
-                "gssapi"
+                "gssapi",
+                "brotli"
             ]
         }
     ]

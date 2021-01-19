@@ -58,7 +58,8 @@ QT_BEGIN_NAMESPACE
   referring to this documentation is kind to readers.  Comments can also be used
   to indicate the reasons for ignoring particular cases.
 
-  The key "ci" applies only when run by COIN.  Other keys name platforms,
+  The key "ci" applies only when run by COIN.
+  The key "cmake" applies when Qt is built using CMake. Other keys name platforms,
   operating systems, distributions, tool-chains or architectures; a !  prefix
   reverses what it checks.  A version, joined to a key (at present, only for
   distributions and for msvc) with a hyphen, limits the key to the specific
@@ -87,9 +88,27 @@ QT_BEGIN_NAMESPACE
         [testfunction2:testData]
         msvc-2010
 
+  QML test functions are identified using the following format:
+
+        <TestCase name>::<function name>:<data tag>
+
+  For example, to blacklist a QML test on RHEL 7.6:
+
+        # QTBUG-12345
+        [Button::test_display:TextOnly]
+        ci rhel-7.6
+
   Keys are lower-case.  Distribution name and version are supported if
-  QSysInfo's productType() and productVersion() return them. Keys can be
-  added via the space-separated QTEST_ENVIRONMENT environment variable.
+  QSysInfo's productType() and productVersion() return them.
+
+  Keys can be added via the space-separated QTEST_ENVIRONMENT
+  environment variable:
+
+        QTEST_ENVIRONMENT=ci ./tst_stuff
+
+  This can be used to "mock" a test environment. In the example above,
+  we add "ci" to the list of keys for the test environment, making it
+  possible to test BLACKLIST files that blacklist tests in a CI environment.
 
   The other known keys are listed below:
 */
@@ -163,6 +182,10 @@ static QSet<QByteArray> keywords()
 
 #ifdef QT_BUILD_INTERNAL
             << "developer-build"
+#endif
+
+#ifdef QT_CMAKE_BUILD
+            << "cmake"
 #endif
             ;
 

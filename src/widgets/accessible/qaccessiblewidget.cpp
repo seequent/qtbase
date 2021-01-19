@@ -158,7 +158,7 @@ QString qt_accHotKey(const QString &text)
     if (ampIndex != -1)
         return QKeySequence(Qt::ALT).toString(QKeySequence::NativeText) + text.at(ampIndex + 1);
 #else
-    Q_UNUSED(text)
+    Q_UNUSED(text);
 #endif
 
     return QString();
@@ -299,10 +299,10 @@ static inline bool isAncestor(const QObject *obj, const QObject *child)
 }
 
 /*! \reimp */
-QVector<QPair<QAccessibleInterface*, QAccessible::Relation> >
+QList<QPair<QAccessibleInterface *, QAccessible::Relation>>
 QAccessibleWidget::relations(QAccessible::Relation match /*= QAccessible::AllRelations*/) const
 {
-    QVector<QPair<QAccessibleInterface*, QAccessible::Relation> > rels;
+    QList<QPair<QAccessibleInterface *, QAccessible::Relation>> rels;
     if (match & QAccessible::Label) {
         const QAccessible::Relation rel = QAccessible::Label;
         if (QWidget *parent = widget()->parentWidget()) {

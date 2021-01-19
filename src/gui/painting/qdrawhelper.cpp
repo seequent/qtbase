@@ -487,7 +487,7 @@ static const QRgba64 *QT_FASTCALL fetchUntransformedRGBA64PM(QRgba64 *, const Op
 template<TextureBlendType blendType>
 inline void fetchTransformed_pixelBounds(int max, int l1, int l2, int &v)
 {
-    Q_STATIC_ASSERT(blendType == BlendTransformed || blendType == BlendTransformedTiled);
+    static_assert(blendType == BlendTransformed || blendType == BlendTransformedTiled);
     if (blendType == BlendTransformedTiled) {
         if (v < 0 || v >= max) {
             v %= max;
@@ -519,7 +519,7 @@ template<TextureBlendType blendType, QPixelLayout::BPP bpp, typename T>
 static void QT_FASTCALL fetchTransformed_fetcher(T *buffer, const QSpanData *data,
                                                  int y, int x, int length)
 {
-    Q_STATIC_ASSERT(blendType == BlendTransformed || blendType == BlendTransformedTiled);
+    static_assert(blendType == BlendTransformed || blendType == BlendTransformedTiled);
     const QTextureData &image = data->texture;
 
     const qreal cx = x + qreal(0.5);
@@ -683,7 +683,7 @@ template<TextureBlendType blendType, QPixelLayout::BPP bpp>
 static const uint *QT_FASTCALL fetchTransformed(uint *buffer, const Operator *, const QSpanData *data,
                                                 int y, int x, int length)
 {
-    Q_STATIC_ASSERT(blendType == BlendTransformed || blendType == BlendTransformedTiled);
+    static_assert(blendType == BlendTransformed || blendType == BlendTransformedTiled);
     const QPixelLayout *layout = &qPixelLayouts[data->texture.format];
     fetchTransformed_fetcher<blendType, bpp, uint>(buffer, data, y, x, length);
     layout->convertToARGB32PM(buffer, length, data->texture.colorTable);
@@ -847,7 +847,7 @@ static void QT_FASTCALL intermediate_adder(uint *b, uint *end, const Intermediat
 {
 #if defined(QT_COMPILER_SUPPORTS_AVX2)
     extern void QT_FASTCALL intermediate_adder_avx2(uint *b, uint *end, const IntermediateBuffer &intermediate, int offset, int &fx, int fdx);
-    if (qCpuHasFeature(AVX2))
+    if (qCpuHasFeature(ArchHaswell))
         return intermediate_adder_avx2(b, end, intermediate, offset, fx, fdx);
 #endif
 
@@ -1484,7 +1484,7 @@ static const uint * QT_FASTCALL fetchTransformedBilinearARGB32PM(uint *buffer, c
 {
     const qreal cx = x + qreal(0.5);
     const qreal cy = y + qreal(0.5);
-    Q_CONSTEXPR int tiled = (blendType == BlendTransformedBilinearTiled) ? 1 : 0;
+    constexpr int tiled = (blendType == BlendTransformedBilinearTiled) ? 1 : 0;
 
     uint *end = buffer + length;
     uint *b = buffer;
@@ -1583,7 +1583,7 @@ static void QT_FASTCALL fetchTransformedBilinear_simple_scale_helper(uint *b, ui
                                                                      int &fx, int &fy, int fdx, int /*fdy*/)
 {
     const QPixelLayout *layout = &qPixelLayouts[image.format];
-    const QVector<QRgb> *clut = image.colorTable;
+    const QList<QRgb> *clut = image.colorTable;
     const FetchAndConvertPixelsFunc fetch = layout->fetchToARGB32PM;
 
     int y1 = (fy >> 16);
@@ -1890,7 +1890,7 @@ static const uint *QT_FASTCALL fetchTransformedBilinear(uint *buffer, const Oper
                                                         const QSpanData *data, int y, int x, int length)
 {
     const QPixelLayout *layout = &qPixelLayouts[data->texture.format];
-    const QVector<QRgb> *clut = data->texture.colorTable;
+    const QList<QRgb> *clut = data->texture.colorTable;
     Q_ASSERT(bpp == QPixelLayout::BPPNone || layout->bpp == bpp);
 
     const qreal cx = x + qreal(0.5);
@@ -2038,7 +2038,7 @@ static const QRgba64 *QT_FASTCALL fetchTransformedBilinear64_uint32(QRgba64 *buf
                                                                     int y, int x, int length)
 {
     const QPixelLayout *layout = &qPixelLayouts[data->texture.format];
-    const QVector<QRgb> *clut = data->texture.colorTable;
+    const QList<QRgb> *clut = data->texture.colorTable;
 
     const qreal cx = x + qreal(0.5);
     const qreal cy = y + qreal(0.5);
@@ -2712,17 +2712,19 @@ static TextureBlendType getBlendType(const QSpanData *data)
 {
     TextureBlendType ft;
     if (data->txop <= QTransform::TxTranslate)
-        if (data->texture.type == QTextureData::Tiled)
+        if (data->texture.type == QTextureData::Tiled || data->texture.type == QTextureData::Pattern)
             ft = BlendTiled;
         else
             ft = BlendUntransformed;
     else if (data->bilinear)
-        if (data->texture.type == QTextureData::Tiled)
+        if (data->texture.type == QTextureData::Tiled || data->texture.type == QTextureData::Pattern)
             ft = BlendTransformedBilinearTiled;
         else
             ft = BlendTransformedBilinear;
     else
-        if (data->texture.type == QTextureData::Tiled)
+        if (data->texture.type == QTextureData::Pattern)
+            ft = BlendTiled;
+        else if (data->texture.type == QTextureData::Tiled)
             ft = BlendTransformedTiled;
         else
             ft = BlendTransformed;
@@ -2971,83 +2973,6 @@ void blend_color_generic_rgb64(int count, const QSpan *spans, void *userData)
 #else
     blend_color_generic(count, spans, userData);
 #endif
-}
-
-static void blend_color_rgb16(int count, const QSpan *spans, void *userData)
-{
-    QSpanData *data = reinterpret_cast<QSpanData *>(userData);
-
-    /*
-        We duplicate a little logic from getOperator() and calculate the
-        composition mode directly.  This allows blend_color_rgb16 to be used
-        from qt_gradient_quint16 with minimal overhead.
-     */
-    QPainter::CompositionMode mode = data->rasterBuffer->compositionMode;
-    if (mode == QPainter::CompositionMode_SourceOver && data->solidColor.isOpaque())
-        mode = QPainter::CompositionMode_Source;
-
-    if (mode == QPainter::CompositionMode_Source) {
-        // inline for performance
-        ushort c = data->solidColor.toRgb16();
-        for (; count--; spans++) {
-            if (!spans->len)
-                continue;
-            ushort *target = ((ushort *)data->rasterBuffer->scanLine(spans->y)) + spans->x;
-            if (spans->coverage == 255) {
-                qt_memfill(target, c, spans->len);
-            } else {
-                ushort color = BYTE_MUL_RGB16(c, spans->coverage);
-                int ialpha = 255 - spans->coverage;
-                const ushort *end = target + spans->len;
-                while (target < end) {
-                    *target = color + BYTE_MUL_RGB16(*target, ialpha);
-                    ++target;
-                }
-            }
-        }
-        return;
-    }
-
-    if (mode == QPainter::CompositionMode_SourceOver) {
-        for (; count--; spans++) {
-            if (!spans->len)
-                continue;
-            uint color = BYTE_MUL(data->solidColor.toArgb32(), spans->coverage);
-            int ialpha = qAlpha(~color);
-            ushort c = qConvertRgb32To16(color);
-            ushort *target = ((ushort *)data->rasterBuffer->scanLine(spans->y)) + spans->x;
-            int len = spans->len;
-            bool pre = (((quintptr)target) & 0x3) != 0;
-            bool post = false;
-            if (pre) {
-                // skip to word boundary
-                *target = c + BYTE_MUL_RGB16(*target, ialpha);
-                ++target;
-                --len;
-            }
-            if (len & 0x1) {
-                post = true;
-                --len;
-            }
-            uint *target32 = (uint*)target;
-            uint c32 = c | (c<<16);
-            len >>= 1;
-            uint salpha = (ialpha+1) >> 3; // calculate here rather than in loop
-            while (len--) {
-                // blend full words
-                *target32 = c32 + BYTE_MUL_RGB16_32(*target32, salpha);
-                ++target32;
-                target += 2;
-            }
-            if (post) {
-                // one last pixel beyond a full word
-                *target = c + BYTE_MUL_RGB16(*target, ialpha);
-            }
-        }
-        return;
-    }
-
-    blend_color_generic(count, spans, userData);
 }
 
 template <typename T>
@@ -3907,10 +3832,6 @@ void qBlendGradient(int count, const QSpan *spans, void *userData)
         data->type == QSpanData::LinearGradient &&
         data->gradient.linear.end.x == data->gradient.linear.origin.x;
     switch (data->rasterBuffer->format) {
-    case QImage::Format_RGB16:
-        if (isVerticalGradient)
-            return blend_vertical_gradient<blend_color_rgb16>(count, spans, userData);
-        return blend_src_generic(count, spans, userData);
     case QImage::Format_RGB32:
     case QImage::Format_ARGB32_Premultiplied:
         if (isVerticalGradient)
@@ -4840,7 +4761,7 @@ DrawHelper qDrawHelper[QImage::NImageFormats] =
     },
     // Format_RGB16
     {
-        blend_color_rgb16,
+        blend_color_generic,
         qt_bitmapblit_quint16,
         qt_alphamapblit_quint16,
         qt_alphargbblit_generic,
@@ -5103,7 +5024,7 @@ decltype(qt_memfill64_sse2) *qt_memfill64 = nullptr;
 #endif
 
 #ifdef QT_COMPILER_SUPPORTS_SSE4_1
-template<QtPixelOrder> void QT_FASTCALL storeA2RGB30PMFromARGB32PM_sse4(uchar *dest, const uint *src, int index, int count, const QVector<QRgb> *, QDitherInfo *);
+template<QtPixelOrder> void QT_FASTCALL storeA2RGB30PMFromARGB32PM_sse4(uchar *dest, const uint *src, int index, int count, const QList<QRgb> *, QDitherInfo *);
 #endif
 
 extern void qInitBlendFunctions();
@@ -5193,30 +5114,30 @@ static void qInitDrawhelperFunctions()
 
 #if defined(QT_COMPILER_SUPPORTS_SSE4_1)
     if (qCpuHasFeature(SSE4_1)) {
-        extern void QT_FASTCALL convertARGB32ToARGB32PM_sse4(uint *buffer, int count, const QVector<QRgb> *);
-        extern void QT_FASTCALL convertRGBA8888ToARGB32PM_sse4(uint *buffer, int count, const QVector<QRgb> *);
+        extern void QT_FASTCALL convertARGB32ToARGB32PM_sse4(uint *buffer, int count, const QList<QRgb> *);
+        extern void QT_FASTCALL convertRGBA8888ToARGB32PM_sse4(uint *buffer, int count, const QList<QRgb> *);
         extern const uint *QT_FASTCALL fetchARGB32ToARGB32PM_sse4(uint *buffer, const uchar *src, int index, int count,
-                                                                  const QVector<QRgb> *, QDitherInfo *);
+                                                                  const QList<QRgb> *, QDitherInfo *);
         extern const uint *QT_FASTCALL fetchRGBA8888ToARGB32PM_sse4(uint *buffer, const uchar *src, int index, int count,
-                                                                    const QVector<QRgb> *, QDitherInfo *);
+                                                                    const QList<QRgb> *, QDitherInfo *);
         extern const QRgba64 * QT_FASTCALL convertARGB32ToRGBA64PM_sse4(QRgba64 *buffer, const uint *src, int count,
-                                                                        const QVector<QRgb> *, QDitherInfo *);
+                                                                        const QList<QRgb> *, QDitherInfo *);
         extern const QRgba64 * QT_FASTCALL convertRGBA8888ToRGBA64PM_sse4(QRgba64 *buffer, const uint *src, int count,
-                                                                          const QVector<QRgb> *, QDitherInfo *);
+                                                                          const QList<QRgb> *, QDitherInfo *);
         extern const QRgba64 *QT_FASTCALL fetchARGB32ToRGBA64PM_sse4(QRgba64 *buffer, const uchar *src, int index, int count,
-                                                                     const QVector<QRgb> *, QDitherInfo *);
+                                                                     const QList<QRgb> *, QDitherInfo *);
         extern const QRgba64 *QT_FASTCALL fetchRGBA8888ToRGBA64PM_sse4(QRgba64 *buffer, const uchar *src, int index, int count,
-                                                                       const QVector<QRgb> *, QDitherInfo *);
+                                                                       const QList<QRgb> *, QDitherInfo *);
         extern void QT_FASTCALL storeARGB32FromARGB32PM_sse4(uchar *dest, const uint *src, int index, int count,
-                                                                      const QVector<QRgb> *, QDitherInfo *);
+                                                                      const QList<QRgb> *, QDitherInfo *);
         extern void QT_FASTCALL storeRGBA8888FromARGB32PM_sse4(uchar *dest, const uint *src, int index, int count,
-                                                                        const QVector<QRgb> *, QDitherInfo *);
+                                                                        const QList<QRgb> *, QDitherInfo *);
         extern void QT_FASTCALL storeRGBXFromARGB32PM_sse4(uchar *dest, const uint *src, int index, int count,
-                                                                    const QVector<QRgb> *, QDitherInfo *);
+                                                                    const QList<QRgb> *, QDitherInfo *);
         extern void QT_FASTCALL storeARGB32FromRGBA64PM_sse4(uchar *dest, const QRgba64 *src, int index, int count,
-                                                             const QVector<QRgb> *, QDitherInfo *);
+                                                             const QList<QRgb> *, QDitherInfo *);
         extern void QT_FASTCALL storeRGBA8888FromRGBA64PM_sse4(uchar *dest, const QRgba64 *src, int index, int count,
-                                                              const QVector<QRgb> *, QDitherInfo *);
+                                                              const QList<QRgb> *, QDitherInfo *);
         extern void QT_FASTCALL destStore64ARGB32_sse4(QRasterBuffer *rasterBuffer, int x, int y, const QRgba64 *buffer, int length);
         extern void QT_FASTCALL destStore64RGBA8888_sse4(QRasterBuffer *rasterBuffer, int x, int y, const QRgba64 *buffer, int length);
 #  ifndef __AVX2__
@@ -5290,22 +5211,22 @@ static void qInitDrawhelperFunctions()
         bilinearFastTransformHelperARGB32PM[0][DownscaleTransform] = fetchTransformedBilinearARGB32PM_downscale_helper_avx2;
         bilinearFastTransformHelperARGB32PM[0][FastRotateTransform] = fetchTransformedBilinearARGB32PM_fast_rotate_helper_avx2;
 
-        extern void QT_FASTCALL convertARGB32ToARGB32PM_avx2(uint *buffer, int count, const QVector<QRgb> *);
-        extern void QT_FASTCALL convertRGBA8888ToARGB32PM_avx2(uint *buffer, int count, const QVector<QRgb> *);
+        extern void QT_FASTCALL convertARGB32ToARGB32PM_avx2(uint *buffer, int count, const QList<QRgb> *);
+        extern void QT_FASTCALL convertRGBA8888ToARGB32PM_avx2(uint *buffer, int count, const QList<QRgb> *);
         extern const uint *QT_FASTCALL fetchARGB32ToARGB32PM_avx2(uint *buffer, const uchar *src, int index, int count,
-                                                                  const QVector<QRgb> *, QDitherInfo *);
+                                                                  const QList<QRgb> *, QDitherInfo *);
         extern const uint *QT_FASTCALL fetchRGBA8888ToARGB32PM_avx2(uint *buffer, const uchar *src, int index, int count,
-                                                                    const QVector<QRgb> *, QDitherInfo *);
+                                                                    const QList<QRgb> *, QDitherInfo *);
         qPixelLayouts[QImage::Format_ARGB32].fetchToARGB32PM = fetchARGB32ToARGB32PM_avx2;
         qPixelLayouts[QImage::Format_ARGB32].convertToARGB32PM = convertARGB32ToARGB32PM_avx2;
         qPixelLayouts[QImage::Format_RGBA8888].fetchToARGB32PM = fetchRGBA8888ToARGB32PM_avx2;
         qPixelLayouts[QImage::Format_RGBA8888].convertToARGB32PM = convertRGBA8888ToARGB32PM_avx2;
 
 #if QT_CONFIG(raster_64bit)
-        extern const QRgba64 * QT_FASTCALL convertARGB32ToRGBA64PM_avx2(QRgba64 *, const uint *, int, const QVector<QRgb> *, QDitherInfo *);
-        extern const QRgba64 * QT_FASTCALL convertRGBA8888ToRGBA64PM_avx2(QRgba64 *, const uint *, int count, const QVector<QRgb> *, QDitherInfo *);
-        extern const QRgba64 *QT_FASTCALL fetchARGB32ToRGBA64PM_avx2(QRgba64 *, const uchar *, int, int, const QVector<QRgb> *, QDitherInfo *);
-        extern const QRgba64 *QT_FASTCALL fetchRGBA8888ToRGBA64PM_avx2(QRgba64 *, const uchar *, int, int, const QVector<QRgb> *, QDitherInfo *);
+        extern const QRgba64 * QT_FASTCALL convertARGB32ToRGBA64PM_avx2(QRgba64 *, const uint *, int, const QList<QRgb> *, QDitherInfo *);
+        extern const QRgba64 * QT_FASTCALL convertRGBA8888ToRGBA64PM_avx2(QRgba64 *, const uint *, int count, const QList<QRgb> *, QDitherInfo *);
+        extern const QRgba64 *QT_FASTCALL fetchARGB32ToRGBA64PM_avx2(QRgba64 *, const uchar *, int, int, const QList<QRgb> *, QDitherInfo *);
+        extern const QRgba64 *QT_FASTCALL fetchRGBA8888ToRGBA64PM_avx2(QRgba64 *, const uchar *, int, int, const QList<QRgb> *, QDitherInfo *);
         qPixelLayouts[QImage::Format_ARGB32].convertToRGBA64PM = convertARGB32ToRGBA64PM_avx2;
         qPixelLayouts[QImage::Format_RGBX8888].convertToRGBA64PM = convertRGBA8888ToRGBA64PM_avx2;
         qPixelLayouts[QImage::Format_ARGB32].fetchToRGBA64PM = fetchARGB32ToRGBA64PM_avx2;
@@ -5340,26 +5261,26 @@ static void qInitDrawhelperFunctions()
     sourceFetchUntransformed[QImage::Format_RGB888] = qt_fetchUntransformed_888_neon;
 
 #if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
-    extern void QT_FASTCALL convertARGB32ToARGB32PM_neon(uint *buffer, int count, const QVector<QRgb> *);
-    extern void QT_FASTCALL convertRGBA8888ToARGB32PM_neon(uint *buffer, int count, const QVector<QRgb> *);
+    extern void QT_FASTCALL convertARGB32ToARGB32PM_neon(uint *buffer, int count, const QList<QRgb> *);
+    extern void QT_FASTCALL convertRGBA8888ToARGB32PM_neon(uint *buffer, int count, const QList<QRgb> *);
     extern const uint *QT_FASTCALL fetchARGB32ToARGB32PM_neon(uint *buffer, const uchar *src, int index, int count,
-                                                              const QVector<QRgb> *, QDitherInfo *);
+                                                              const QList<QRgb> *, QDitherInfo *);
     extern const uint *QT_FASTCALL fetchRGBA8888ToARGB32PM_neon(uint *buffer, const uchar *src, int index, int count,
-                                                                const QVector<QRgb> *, QDitherInfo *);
+                                                                const QList<QRgb> *, QDitherInfo *);
    extern const QRgba64 * QT_FASTCALL convertARGB32ToRGBA64PM_neon(QRgba64 *buffer, const uint *src, int count,
-                                                                   const QVector<QRgb> *, QDitherInfo *);
+                                                                   const QList<QRgb> *, QDitherInfo *);
    extern const QRgba64 * QT_FASTCALL convertRGBA8888ToRGBA64PM_neon(QRgba64 *buffer, const uint *src, int count,
-                                                                     const QVector<QRgb> *, QDitherInfo *);
+                                                                     const QList<QRgb> *, QDitherInfo *);
    extern const QRgba64 *QT_FASTCALL fetchARGB32ToRGBA64PM_neon(QRgba64 *buffer, const uchar *src, int index, int count,
-                                                                const QVector<QRgb> *, QDitherInfo *);
+                                                                const QList<QRgb> *, QDitherInfo *);
    extern const QRgba64 *QT_FASTCALL fetchRGBA8888ToRGBA64PM_neon(QRgba64 *buffer, const uchar *src, int index, int count,
-                                                                  const QVector<QRgb> *, QDitherInfo *);
+                                                                  const QList<QRgb> *, QDitherInfo *);
     extern void QT_FASTCALL storeARGB32FromARGB32PM_neon(uchar *dest, const uint *src, int index, int count,
-                                                         const QVector<QRgb> *, QDitherInfo *);
+                                                         const QList<QRgb> *, QDitherInfo *);
     extern void QT_FASTCALL storeRGBA8888FromARGB32PM_neon(uchar *dest, const uint *src, int index, int count,
-                                                           const QVector<QRgb> *, QDitherInfo *);
+                                                           const QList<QRgb> *, QDitherInfo *);
     extern void QT_FASTCALL storeRGBXFromARGB32PM_neon(uchar *dest, const uint *src, int index, int count,
-                                                       const QVector<QRgb> *, QDitherInfo *);
+                                                       const QList<QRgb> *, QDitherInfo *);
     qPixelLayouts[QImage::Format_ARGB32].fetchToARGB32PM = fetchARGB32ToARGB32PM_neon;
     qPixelLayouts[QImage::Format_ARGB32].convertToARGB32PM = convertARGB32ToARGB32PM_neon;
     qPixelLayouts[QImage::Format_ARGB32].storeFromARGB32PM = storeARGB32FromARGB32PM_neon;

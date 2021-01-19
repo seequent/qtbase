@@ -28,7 +28,7 @@
 ****************************************************************************/
 
 #include <QtCore/QUrl>
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include "private/qurl_p.h"
 
@@ -84,8 +84,6 @@ private Q_SLOTS:
     void encodingRecode();
     void encodingRecodeInvalidUtf8_data();
     void encodingRecodeInvalidUtf8();
-    void recodeByteArray_data();
-    void recodeByteArray();
 };
 #include "tst_qurlinternal.moc"
 
@@ -519,23 +517,23 @@ void tst_QUrlInternal::nameprep_highcodes_data()
     QTest::addColumn<int>("rc");
 
     {
-        QChar st[] = { '-', 0xd801, 0xdc1d, 'a' };
-        QChar se[] = { '-', 0xd801, 0xdc45, 'a' };
+        QChar st[] = { '-', QChar(0xd801), QChar(0xdc1d), 'a' };
+        QChar se[] = { '-', QChar(0xd801), QChar(0xdc45), 'a' };
         QTest::newRow("highcodes (U+1041D)")
             << QString(st, sizeof(st)/sizeof(st[0]))
             << QString(se, sizeof(se)/sizeof(se[0]))
             << QString() << 0 << 0;
     }
     {
-        QChar st[] = { 0x011C, 0xd835, 0xdf6e, 0x0110 };
-        QChar se[] = { 0x011D, 0x03C9, 0x0111 };
+        QChar st[] = { QChar(0x011C), QChar(0xd835), QChar(0xdf6e), QChar(0x0110) };
+        QChar se[] = { QChar(0x011D), QChar(0x03C9), QChar(0x0111) };
         QTest::newRow("highcodes (U+1D76E)")
             << QString(st, sizeof(st)/sizeof(st[0]))
             << QString(se, sizeof(se)/sizeof(se[0]))
             << QString() << 0 << 0;
     }
     {
-        QChar st[] = { 'D', 'o', '\'', 0x2060, 'h' };
+        QChar st[] = { 'D', 'o', '\'', QChar(0x2060), 'h' };
         QChar se[] = { 'd', 'o', '\'', 'h' };
         QTest::newRow("highcodes (D, o, ', U+2060, h)")
             << QString(st, sizeof(st)/sizeof(st[0]))
@@ -1065,36 +1063,6 @@ void tst_QUrlInternal::encodingRecodeInvalidUtf8()
         QVERIFY2(output.at(i).unicode() < 0x80 || output.at(i) == QChar::ReplacementCharacter,
                  qPrintable(QString("Character at i == %1 was U+%2").arg(i).arg(output.at(i).unicode(), 4, 16, QLatin1Char('0'))));
     }
-}
-
-void tst_QUrlInternal::recodeByteArray_data()
-{
-    QTest::addColumn<QByteArray>("input");
-    QTest::addColumn<QString>("expected");
-
-    QTest::newRow("null") << QByteArray() << QString();
-    QTest::newRow("empty") << QByteArray("") << QString("");
-    QTest::newRow("normal") << QByteArray("Hello") << "Hello";
-    QTest::newRow("valid-utf8") << QByteArray("\xc3\xa9") << "%C3%A9";
-    QTest::newRow("percent-encoded") << QByteArray("%C3%A9%00%C0%80") << "%C3%A9%00%C0%80";
-    QTest::newRow("invalid-utf8-1") << QByteArray("\xc3\xc3") << "%C3%C3";
-    QTest::newRow("invalid-utf8-2") << QByteArray("\xc0\x80") << "%C0%80";
-
-    // note: percent-encoding the control characters ("\0" -> "%00") would also
-    // be correct, but it's unnecessary for this function
-    QTest::newRow("binary") << QByteArray("\0\x1f", 2) << QString::fromLatin1("\0\x1f", 2);;
-    QTest::newRow("binary+percent-encoded") << QByteArray("\0%25", 4) << QString::fromLatin1("\0%25", 4);
-}
-
-void tst_QUrlInternal::recodeByteArray()
-{
-    QFETCH(QByteArray, input);
-    QFETCH(QString, expected);
-    QString output = qt_urlRecodeByteArray(input);
-
-    QCOMPARE(output.isNull(), input.isNull());
-    QCOMPARE(output.isEmpty(), input.isEmpty());
-    QCOMPARE(output, expected);
 }
 
 QTEST_APPLESS_MAIN(tst_QUrlInternal)

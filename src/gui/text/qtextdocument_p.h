@@ -52,22 +52,23 @@
 //
 
 #include <QtGui/private/qtguiglobal_p.h>
-#include "QtCore/qstring.h"
-#include "QtCore/qvector.h"
-#include "QtCore/qlist.h"
-#include "private/qobject_p.h"
-#include "private/qfragmentmap_p.h"
-#include "QtGui/qtextlayout.h"
-#include "QtGui/qtextoption.h"
-#include "private/qtextformat_p.h"
-#include "QtGui/qtextdocument.h"
-#include "QtGui/qtextobject.h"
 #include "QtGui/qtextcursor.h"
+#include "QtGui/qtextdocument.h"
+#include "QtGui/qtextlayout.h"
+#include "QtGui/qtextobject.h"
+#include "QtGui/qtextoption.h"
+
+#include "QtCore/qlist.h"
 #include "QtCore/qmap.h"
-#include "QtCore/qvariant.h"
 #include "QtCore/qset.h"
+#include "QtCore/qstring.h"
 #include "QtCore/qurl.h"
+#include "QtCore/qvariant.h"
+
 #include "private/qcssparser_p.h"
+#include "private/qfragmentmap_p.h"
+#include "private/qobject_p.h"
+#include "private/qtextformat_p.h"
 
 // #define QT_QMAP_DEBUG
 
@@ -112,7 +113,7 @@ public:
     mutable QTextLayout *layout;
     mutable QTextBlockUserData *userData;
     mutable int userState;
-    mutable int revision : 31;
+    mutable signed int revision : 31;
     mutable uint hidden : 1;
 };
 
@@ -339,7 +340,7 @@ private:
     QString text;
     uint unreachableCharacterCount;
 
-    QVector<QTextUndoCommand> undoStack;
+    QList<QTextUndoCommand> undoStack;
     bool undoEnabled;
     int undoState;
     int revision;
@@ -365,6 +366,7 @@ private:
     QMap<int, QTextObject *> objects;
     QMap<QUrl, QVariant> resources;
     QMap<QUrl, QVariant> cachedResources;
+    QUrlResourceProvider *resourceProvider;
     QString defaultStyleSheet;
 
     int lastBlockCount;

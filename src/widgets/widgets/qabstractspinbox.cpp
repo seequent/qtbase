@@ -420,7 +420,7 @@ bool QAbstractSpinBox::isAccelerated() const
      \since 5.3
 
 
-     This property holds whether a thousands separator is enabled. By default this
+     \brief whether a thousands separator is enabled. By default this
      property is false.
 */
 bool QAbstractSpinBox::isGroupSeparatorShown() const
@@ -1010,6 +1010,8 @@ void QAbstractSpinBox::keyPressEvent(QKeyEvent *event)
 {
     Q_D(QAbstractSpinBox);
 
+    d->keyboardModifiers = event->modifiers();
+
     if (!event->text().isEmpty() && d->edit->cursorPosition() < d->prefix.size())
         d->edit->setCursorPosition(d->prefix.size());
 
@@ -1046,8 +1048,8 @@ void QAbstractSpinBox::keyPressEvent(QKeyEvent *event)
         }
         if (d->spinClickTimerId == -1)
             stepBy(steps);
-        if(event->isAutoRepeat() && !isPgUpOrDown) {
-            if(d->spinClickThresholdTimerId == -1 && d->spinClickTimerId == -1) {
+        if (event->isAutoRepeat() && !isPgUpOrDown) {
+            if (d->spinClickThresholdTimerId == -1 && d->spinClickTimerId == -1) {
                 d->updateState(up, true);
             }
         }
@@ -1150,6 +1152,7 @@ void QAbstractSpinBox::keyReleaseEvent(QKeyEvent *event)
 {
     Q_D(QAbstractSpinBox);
 
+    d->keyboardModifiers = event->modifiers();
     if (d->buttonState & Keyboard && !event->isAutoRepeat())  {
         d->reset();
     } else {
@@ -1282,7 +1285,7 @@ void QAbstractSpinBox::timerEvent(QTimerEvent *event)
     }
 
     if (doStep) {
-        const bool increaseStepRate = QGuiApplication::keyboardModifiers() & d->stepModifier;
+        const bool increaseStepRate = d->keyboardModifiers & d->stepModifier;
         const StepEnabled st = stepEnabled();
         if (d->buttonState & Up) {
             if (!(st & StepUpEnabled)) {
@@ -1359,6 +1362,7 @@ void QAbstractSpinBox::mouseMoveEvent(QMouseEvent *event)
 {
     Q_D(QAbstractSpinBox);
 
+    d->keyboardModifiers = event->modifiers();
     d->updateHoverControl(event->position().toPoint());
 
     // If we have a timer ID, update the state
@@ -1382,6 +1386,7 @@ void QAbstractSpinBox::mousePressEvent(QMouseEvent *event)
 {
     Q_D(QAbstractSpinBox);
 
+    d->keyboardModifiers = event->modifiers();
     if (event->button() != Qt::LeftButton || d->buttonState != None) {
         return;
     }
@@ -1406,6 +1411,7 @@ void QAbstractSpinBox::mouseReleaseEvent(QMouseEvent *event)
 {
     Q_D(QAbstractSpinBox);
 
+    d->keyboardModifiers = event->modifiers();
     if ((d->buttonState & Mouse) != 0)
         d->reset();
     event->accept();
@@ -1419,15 +1425,9 @@ void QAbstractSpinBox::mouseReleaseEvent(QMouseEvent *event)
 */
 
 QAbstractSpinBoxPrivate::QAbstractSpinBoxPrivate()
-    : edit(nullptr), type(QMetaType::UnknownType), spinClickTimerId(-1),
-      spinClickTimerInterval(100), spinClickThresholdTimerId(-1), spinClickThresholdTimerInterval(-1),
-      effectiveSpinRepeatRate(1), buttonState(None), cachedText(QLatin1String("\x01")),
-      cachedState(QValidator::Invalid), pendingEmit(false), readOnly(false), wrapping(false),
-      ignoreCursorPositionChanged(false), frame(true), accelerate(false), keyboardTracking(true),
-      cleared(false), ignoreUpdateEdit(false), correctionMode(QAbstractSpinBox::CorrectToPreviousValue),
-      stepModifier(Qt::ControlModifier), acceleration(0), hoverControl(QStyle::SC_None),
-      buttonSymbols(QAbstractSpinBox::UpDownArrows), validator(nullptr), showGroupSeparator(0),
-      wheelDeltaRemainder(0)
+    :  pendingEmit(false), readOnly(false), wrapping(false),
+       ignoreCursorPositionChanged(false), frame(true), accelerate(false), keyboardTracking(true),
+       cleared(false), ignoreUpdateEdit(false), showGroupSeparator(false)
 {
 }
 
@@ -1482,7 +1482,7 @@ QStyle::SubControl QAbstractSpinBoxPrivate::newHoverControl(const QPoint &pos)
 
 QString QAbstractSpinBoxPrivate::stripped(const QString &t, int *pos) const
 {
-    QStringRef text(&t);
+    QStringView text(t);
     if (specialValueText.size() == 0 || text != specialValueText) {
         int from = 0;
         int size = text.size();
@@ -1629,6 +1629,8 @@ void QAbstractSpinBoxPrivate::init()
     edit->setValidator(validator);
 
     QStyleOptionSpinBox opt;
+    // ### This is called from the ctor and thus we shouldn't call initStyleOption yet
+    // ### as we only call the base class implementation of initStyleOption called.
     q->initStyleOption(&opt);
     spinClickTimerInterval = q->style()->styleHint(QStyle::SH_SpinBox_ClickAutoRepeatRate, &opt, q);
     spinClickThresholdTimerInterval = q->style()->styleHint(QStyle::SH_SpinBox_ClickAutoRepeatThreshold, &opt, q);
@@ -1676,12 +1678,12 @@ void QAbstractSpinBoxPrivate::updateState(bool up, bool fromKeyboard /* = false 
     reset();
     if (q && (q->stepEnabled() & (up ? QAbstractSpinBox::StepUpEnabled
                                   : QAbstractSpinBox::StepDownEnabled))) {
-        spinClickThresholdTimerId = q->startTimer(spinClickThresholdTimerInterval);
         buttonState = (up ? Up : Down) | (fromKeyboard ? Keyboard : Mouse);
         int steps = up ? 1 : -1;
-        if (QGuiApplication::keyboardModifiers() & stepModifier)
+        if (keyboardModifiers & stepModifier)
             steps *= 10;
         q->stepBy(steps);
+        spinClickThresholdTimerId = q->startTimer(spinClickThresholdTimerInterval);
 #ifndef QT_NO_ACCESSIBILITY
         QAccessibleValueChangeEvent event(q, value);
         QAccessible::updateAccessibility(&event);
@@ -1952,7 +1954,7 @@ void QAbstractSpinBoxPrivate::clearCache() const
 
 QVariant QAbstractSpinBoxPrivate::calculateAdaptiveDecimalStep(int steps) const
 {
-    Q_UNUSED(steps)
+    Q_UNUSED(steps);
     return singleStep;
 }
 

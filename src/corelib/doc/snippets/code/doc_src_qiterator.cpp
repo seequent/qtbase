@@ -64,23 +64,6 @@ while (i.hasPrevious())
     qDebug() << i.previous();
 //! [1]
 
-//! [4]
-QVector<float> vector;
-...
-QVectorIterator<float> i(vector);
-while (i.hasNext())
-    qDebug() << i.next();
-//! [4]
-
-
-//! [5]
-QVectorIterator<float> i(vector);
-i.toBack();
-while (i.hasPrevious())
-    qDebug() << i.previous();
-//! [5]
-
-
 //! [6]
 QSet<QString> set;
 ...
@@ -127,35 +110,6 @@ while (i.hasNext()) {
 }
 //! [10]
 
-//! [14]
-QVector<float> vector;
-...
-QMutableVectorIterator<float> i(vector);
-while (i.hasNext())
-    qDebug() << i.next();
-//! [14]
-
-//! [15]
-QMutableVectorIterator<float> i(vector);
-i.toBack();
-while (i.hasPrevious())
-    qDebug() << i.previous();
-//! [15]
-
-
-//! [16]
-QMutableVectorIterator<int> i(vector);
-while (i.hasNext()) {
-    int val = i.next();
-    if (val < 0) {
-        i.setValue(-val);
-    } else if (val == 0) {
-        i.remove();
-    }
-}
-//! [16]
-
-
 //! [17]
 QSet<float> set;
 ...
@@ -163,15 +117,6 @@ QMutableSetIterator<float> i(set);
 while (i.hasNext())
     qDebug() << i.next();
 //! [17]
-
-
-//! [18]
-QMutableSetIterator<float> i(set);
-i.toBack();
-while (i.hasPrevious())
-    qDebug() << i.previous();
-//! [18]
-
 
 //! [19]
 QMutableListIterator<int> i(list);
@@ -181,16 +126,6 @@ while (i.hasNext()) {
         i.remove();
 }
 //! [19]
-
-//! [21]
-QMutableVectorIterator<int> i(vector);
-while (i.hasNext()) {
-    int val = i.next();
-    if (val < -32768 || val > 32767)
-        i.remove();
-}
-//! [21]
-
 
 //! [22]
 QMutableSetIterator<int> i(set);
@@ -209,15 +144,6 @@ while (i.hasNext()) {
     i.setValue(std::sqrt(val));
 }
 //! [23]
-
-//! [25]
-QMutableVectorIterator<double> i(list);
-while (i.hasNext()) {
-    double val = i.next();
-    i.setValue(std::sqrt(val));
-}
-//! [25]
-
 
 //! [26]
 QMap<int, QWidget *> map;
@@ -248,6 +174,35 @@ while (i.findNext(widget)) {
 }
 //! [28]
 
+//! [26multi]
+QMultiMap<int, QWidget *> multimap;
+...
+QMultiMapIterator<int, QWidget *> i(multimap);
+while (i.hasNext()) {
+    i.next();
+    qDebug() << i.key() << ": " << i.value();
+}
+//! [26multi]
+
+
+//! [27multi]
+QMultiMapIterator<int, QWidget *> i(multimap);
+i.toBack();
+while (i.hasPrevious()) {
+    i.previous();
+    qDebug() << i.key() << ": " << i.value();
+}
+//! [27multi]
+
+
+//! [28multi]
+QMultiMapIterator<int, QWidget *> i(multimap);
+while (i.findNext(widget)) {
+    qDebug() << "Found widget " << widget << " under key "
+             << i.key();
+}
+//! [28multi]
+
 
 //! [29]
 QHash<int, QWidget *> hash;
@@ -258,16 +213,6 @@ while (i.hasNext()) {
     qDebug() << i.key() << ": " << i.value();
 }
 //! [29]
-
-
-//! [30]
-QHashIterator<int, QWidget *> i(hash);
-i.toBack();
-while (i.hasPrevious()) {
-    i.previous();
-    qDebug() << i.key() << ": " << i.value();
-}
-//! [30]
 
 
 //! [31]
@@ -319,6 +264,46 @@ while (i.hasNext()) {
 //! [35]
 
 
+//! [32multi]
+QMultiMap<int, QWidget *> multimap;
+...
+QMutableMultiMapIterator<int, QWidget *> i(multimap);
+while (i.hasNext()) {
+    i.next();
+    qDebug() << i.key() << ": " << i.value();
+}
+//! [32multi]
+
+
+//! [33multi]
+QMutableMultiMapIterator<int, QWidget *> i(multimap);
+i.toBack();
+while (i.hasPrevious()) {
+    i.previous();
+    qDebug() << i.key() << ": " << i.value();
+}
+//! [33multi]
+
+
+//! [34multi]
+QMutableMultiMapIterator<int, QWidget *> i(multimap);
+while (i.findNext(widget)) {
+    qDebug() << "Found widget " << widget << " under key "
+             << i.key();
+}
+//! [34multi]
+
+
+//! [35multi]
+QMutableMultiMapIterator<QString, QString> i(multimap);
+while (i.hasNext()) {
+    i.next();
+    if (i.key() == i.value())
+        i.remove();
+}
+//! [35multi]
+
+
 //! [36]
 QHash<int, QWidget *> hash;
 ...
@@ -328,16 +313,6 @@ while (i.hasNext()) {
     qDebug() << i.key() << ": " << i.value();
 }
 //! [36]
-
-
-//! [37]
-QMutableHashIterator<int, QWidget *> i(hash);
-i.toBack();
-while (i.hasPrevious()) {
-    i.previous();
-    qDebug() << i.key() << ": " << i.value();
-}
-//! [37]
 
 
 //! [38]

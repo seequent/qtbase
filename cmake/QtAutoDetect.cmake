@@ -5,7 +5,37 @@
 # Make sure to not run detection when building standalone tests, because the detection was already
 # done when initially configuring qtbase.
 
+function(qt_auto_detect_cmake_generator)
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT QT_SILENCE_CMAKE_GENERATOR_WARNING)
+        message(WARNING
+               "The officially supported CMake generator for building Qt is Ninja. "
+               "You are using: '${CMAKE_GENERATOR}' instead. "
+               "Thus, you might encounter issues. Use at your own risk.")
+    endif()
+endfunction()
+
 function(qt_auto_detect_android)
+    # Auto-detect NDK root
+    if(NOT DEFINED CMAKE_ANDROID_NDK_ROOT AND DEFINED ANDROID_SDK_ROOT)
+        set(ndk_root "${ANDROID_SDK_ROOT}/ndk-bundle")
+        if(IS_DIRECTORY "${ndk_root}")
+            message(STATUS "Android NDK detected: ${ndk_root}")
+            set(ANDROID_NDK_ROOT "${ndk_root}" CACHE STRING "")
+        endif()
+    endif()
+
+    # Auto-detect toolchain file
+    if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ANDROID_NDK_ROOT)
+        set(toolchain_file "${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake")
+        if(EXISTS "${toolchain_file}")
+            message(STATUS "Android toolchain file within NDK detected: ${toolchain_file}")
+            set(CMAKE_TOOLCHAIN_FILE "${toolchain_file}" CACHE STRING "")
+        else()
+            message(FATAL_ERROR "Cannot find the toolchain file '${toolchain_file}'. "
+                "Please specify the toolchain file with -DCMAKE_TOOLCHAIN_FILE=<file>.")
+        endif()
+    endif()
+
     if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED QT_AUTODETECT_ANDROID)
 
         file(READ ${CMAKE_TOOLCHAIN_FILE} toolchain_file_content OFFSET 0 LIMIT 80)
@@ -19,8 +49,8 @@ function(qt_auto_detect_android)
         if(android_detected)
             message(STATUS "Android toolchain file detected, checking configuration defaults...")
             if(NOT DEFINED ANDROID_NATIVE_API_LEVEL)
-                message(STATUS "ANDROID_NATIVE_API_LEVEL was not specified, using API level 21 as default")
-                set(ANDROID_NATIVE_API_LEVEL 21 CACHE STRING "")
+                message(STATUS "ANDROID_NATIVE_API_LEVEL was not specified, using API level 23 as default")
+                set(ANDROID_NATIVE_API_LEVEL 23 CACHE STRING "")
             endif()
             if(NOT DEFINED ANDROID_STL)
                 set(ANDROID_STL "c++_shared" CACHE STRING "")
@@ -69,14 +99,10 @@ function(qt_auto_detect_ios)
         # If the variable is explicitly provided, assume simulator_and_device to be off.
         if(QT_UIKIT_SDK)
             set(simulator_and_device OFF)
-        elseif(QT_FORCE_SIMULATOR_AND_DEVICE)
-            # TODO: Once we get simulator_and_device support in upstream CMake, only then allow
-            # usage of simulator_and_device without forcing.
-            set(simulator_and_device ON)
         else()
-            # If QT_UIKIT_SDK is not provided, default to simulator.
-            set(simulator_and_device OFF)
-            set(QT_UIKIT_SDK "iphonesimulator" CACHE "STRING" "Chosen uikit SDK.")
+            # Default to simulator_and_device when an explicit sdk is not requested.
+            # Requires CMake 3.17.0+.
+            set(simulator_and_device ON)
         endif()
 
         message(STATUS "simulator_and_device set to: \"${simulator_and_device}\".")
@@ -139,9 +165,6 @@ function(qt_auto_detect_ios)
         if(QT_UIKIT_SDK)
             set(CMAKE_OSX_SYSROOT "${QT_UIKIT_SDK}" CACHE STRING "")
         endif()
-        message(STATUS "CMAKE_OSX_SYSROOT set to: \"${CMAKE_OSX_SYSROOT}\".")
-
-        message(STATUS "CMAKE_OSX_ARCHITECTURES set to: \"${osx_architectures}\".")
         set(CMAKE_OSX_ARCHITECTURES "${osx_architectures}" CACHE STRING "")
 
         if(NOT DEFINED BUILD_SHARED_LIBS)
@@ -194,6 +217,45 @@ function(qt_auto_detect_cyclic_toolchain)
     endif()
 endfunction()
 
+function(qt_internal_get_darwin_sdk_version out_var)
+    if(APPLE)
+        if(IOS)
+            set(sdk_name "iphoneos")
+        elseif(TVOS)
+            set(sdk_name "appletvos")
+        elseif(WATCHOS)
+            set(sdk_name "watchos")
+        else()
+            # Default to macOS
+            set(sdk_name "macosx")
+        endif()
+        set(xcrun_version_arg "--show-sdk-version")
+        execute_process(COMMAND /usr/bin/xcrun --sdk ${sdk_name} ${xcrun_version_arg}
+                        OUTPUT_VARIABLE sdk_version
+                        ERROR_VARIABLE xcrun_error)
+        if(NOT sdk_version)
+            message(FATAL_ERROR
+                    "Can't determine darwin ${sdk_name} SDK version. Error: ${xcrun_error}")
+        endif()
+        string(STRIP "${sdk_version}" sdk_version)
+        set(${out_var} "${sdk_version}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(qt_internal_get_xcode_version out_var)
+    if(APPLE)
+        execute_process(COMMAND /usr/bin/xcrun  xcodebuild -version
+                        OUTPUT_VARIABLE xcode_version
+                        ERROR_VARIABLE xcrun_error)
+        if(NOT xcode_version)
+            message(NOTICE "Can't determine Xcode version. Error: ${xcrun_error}")
+        endif()
+        string(REPLACE "\n" " " xcode_version "${xcode_version}")
+        string(STRIP "${xcode_version}" xcode_version)
+        set(${out_var} "${xcode_version}" PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(qt_auto_detect_darwin)
     if(APPLE)
         # If no CMAKE_OSX_DEPLOYMENT_TARGET is provided, default to a value that Qt defines.
@@ -216,10 +278,12 @@ function(qt_auto_detect_darwin)
                 set(CMAKE_OSX_DEPLOYMENT_TARGET "${version}" CACHE STRING "${description}")
             endif()
         endif()
-        if(CMAKE_OSX_DEPLOYMENT_TARGET)
-            message(STATUS
-                "CMAKE_OSX_DEPLOYMENT_TARGET set to: \"${CMAKE_OSX_DEPLOYMENT_TARGET}\".")
-        endif()
+
+        qt_internal_get_darwin_sdk_version(darwin_sdk_version)
+        set(QT_MAC_SDK_VERSION "${darwin_sdk_version}" CACHE STRING "Darwin SDK version.")
+
+        qt_internal_get_xcode_version(xcode_version)
+        set(QT_MAC_XCODE_VERSION "${xcode_version}" CACHE STRING "Xcode version.")
     endif()
 endfunction()
 
@@ -239,6 +303,7 @@ function(qt_auto_detect_pch)
     option(BUILD_WITH_PCH "Build Qt using precompiled headers?" "${default_value}")
 endfunction()
 
+qt_auto_detect_cmake_generator()
 qt_auto_detect_cyclic_toolchain()
 qt_auto_detect_cmake_config()
 qt_auto_detect_darwin()

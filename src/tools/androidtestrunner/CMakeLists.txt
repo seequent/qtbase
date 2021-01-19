@@ -1,10 +1,10 @@
 # Generated from androidtestrunner.pro.
 
 #####################################################################
-## androidtestrunner Binary:
+## androidtestrunner App:
 #####################################################################
 
-qt_add_executable(androidtestrunner
+qt_internal_add_app(androidtestrunner
     SOURCES
         main.cpp
     DEFINES
@@ -14,6 +14,9 @@ qt_add_executable(androidtestrunner
     PUBLIC_LIBRARIES
         Qt::Gui
 )
+set_target_properties(androidtestrunner PROPERTIES
+    WIN32_EXECUTABLE FALSE
+)
 
 #### Keys ignored in scope 1:.:.:androidtestrunner.pro:<TRUE>:
 # _OPTION = "host_build"
@@ -21,7 +24,7 @@ qt_add_executable(androidtestrunner
 ## Scopes:
 #####################################################################
 
-qt_extend_target(androidtestrunner CONDITION windows
+qt_internal_extend_target(androidtestrunner CONDITION windows
     COMPILE_OPTIONS
         -U__STRICT_ANSI__
 )

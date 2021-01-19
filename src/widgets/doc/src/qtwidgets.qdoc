@@ -29,8 +29,11 @@
     \module QtWidgets
     \title Qt Widgets C++ Classes
     \ingroup modules
+    \qtcmakepackage Widgets
     \qtvariable widgets
 
     \brief The Qt Widgets module extends Qt GUI with C++ widget functionality.
+
+    The \l{Qt Widgets} page contains information about how to use the module.
 */
 

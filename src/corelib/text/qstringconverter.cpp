@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2018 Intel Corporation.
+** Copyright (C) 2020 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -50,6 +50,10 @@
 #include <qt_windows.h>
 #endif
 
+#if __has_include(<bit>) && __cplusplus > 201703L
+#include <bit>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 enum { Endian = 0, Data = 1 };
@@ -60,12 +64,16 @@ static const uchar utf8bom[] = { 0xef, 0xbb, 0xbf };
     || (defined(__ARM_NEON__) && defined(Q_PROCESSOR_ARM_64))
 static Q_ALWAYS_INLINE uint qBitScanReverse(unsigned v) noexcept
 {
+#if defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L
+     return std::bit_width(v) - 1;
+#else
     uint result = qCountLeadingZeroBits(v);
     // Now Invert the result: clz will count *down* from the msb to the lsb, so the msb index is 31
     // and the lsb index is 0. The result for _bit_scan_reverse is expected to be the index when
     // counting up: msb index is 0 (because it starts there), and the lsb index is 31.
     result ^= sizeof(unsigned) * 8 - 1;
     return result;
+#endif
 }
 #endif
 
@@ -260,6 +268,98 @@ static inline const uchar *simdFindNonAscii(const uchar *src, const uchar *end, 
     nextAscii = end;
     return src;
 }
+
+// Compare only the US-ASCII beginning of [src8, end8) and [src16, end16)
+// and advance src8 and src16 to the first character that could not be compared
+static void simdCompareAscii(const char8_t *&src8, const char8_t *end8, const char16_t *&src16, const char16_t *end16)
+{
+    int bitSpacing = 1;
+    qptrdiff len = qMin(end8 - src8, end16 - src16);
+    qptrdiff offset = 0;
+    uint mask = 0;
+
+    // do sixteen characters at a time
+    for ( ; offset + 16 < len; offset += 16) {
+        __m128i data8 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src8 + offset));
+#ifdef __AVX2__
+        // AVX2 version, use 256-bit registers and VPMOVXZBW
+        __m256i data16 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src16 + offset));
+
+        // expand US-ASCII as if it were Latin1 and confirm it's US-ASCII
+        __m256i datax8 = _mm256_cvtepu8_epi16(data8);
+        mask = _mm256_movemask_epi8(datax8);
+        if (mask)
+            break;
+
+        // compare Latin1 to UTF-16
+        __m256i latin1cmp = _mm256_cmpeq_epi16(datax8, data16);
+        mask = ~_mm256_movemask_epi8(latin1cmp);
+        if (mask)
+            break;
+#else
+        // non-AVX2 code
+        __m128i datalo16 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src16 + offset));
+        __m128i datahi16 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src16 + offset) + 1);
+
+        // expand US-ASCII as if it were Latin1, we'll confirm later
+        __m128i datalo8 = _mm_unpacklo_epi8(data8, _mm_setzero_si128());
+        __m128i datahi8 = _mm_unpackhi_epi8(data8, _mm_setzero_si128());
+
+        // compare Latin1 to UTF-16
+        __m128i latin1cmplo = _mm_cmpeq_epi16(datalo8, datalo16);
+        __m128i latin1cmphi = _mm_cmpeq_epi16(datahi8, datahi16);
+        mask = _mm_movemask_epi8(latin1cmphi) << 16;
+        mask |= ushort(_mm_movemask_epi8(latin1cmplo));
+        mask = ~mask;
+        if (mask)
+            break;
+
+        // confirm it was US-ASCII
+        mask = _mm_movemask_epi8(data8);
+        if (mask) {
+            bitSpacing = 0;
+            break;
+        }
+#endif
+    }
+
+    // helper for comparing 4 or 8 characters
+    auto cmp_lt_16 = [&mask, &offset](int n, __m128i data8, __m128i data16) {
+        // n = 4  ->  sizemask = 0xff
+        // n = 8  ->  sizemask = 0xffff
+        unsigned sizemask = (1U << (2 * n)) - 1;
+
+        // expand as if Latin1
+        data8 = _mm_unpacklo_epi8(data8, _mm_setzero_si128());
+
+        // compare and confirm it's US-ASCII
+        __m128i latin1cmp = _mm_cmpeq_epi16(data8, data16);
+        mask = ~_mm_movemask_epi8(latin1cmp) & sizemask;
+        mask |= _mm_movemask_epi8(data8);
+        if (mask == 0)
+            offset += n;
+    };
+
+    // do eight characters at a time
+    if (mask == 0 && offset + 8 < len) {
+        __m128i data8 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(src8 + offset));
+        __m128i data16 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src16 + offset));
+        cmp_lt_16(8, data8, data16);
+    }
+
+    // do four characters
+    if (mask == 0 && offset + 4 < len) {
+        __m128i data8 = _mm_cvtsi32_si128(qFromUnaligned<quint32>(src8 + offset));
+        __m128i data16 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(src16 + offset));
+        cmp_lt_16(4, data8, data16);
+    }
+
+    // correct the source pointers to point to the first character we couldn't deal with
+    if (mask)
+        offset += qCountTrailingZeroBits(mask) >> bitSpacing;
+    src8 += offset;
+    src16 += offset;
+}
 #elif defined(__ARM_NEON__) && defined(Q_PROCESSOR_ARM_64) // vaddv is only available on Aarch64
 static inline bool simdEncodeAscii(uchar *&dst, const ushort *&nextAscii, const ushort *&src, const ushort *end)
 {
@@ -356,6 +456,10 @@ static inline const uchar *simdFindNonAscii(const uchar *src, const uchar *end, 
     nextAscii = end;
     return src;
 }
+
+static void simdCompareAscii(const char8_t *&, const char8_t *, const char16_t *&, const char16_t *)
+{
+}
 #else
 static inline bool simdEncodeAscii(uchar *, const ushort *, const ushort *, const ushort *)
 {
@@ -372,16 +476,22 @@ static inline const uchar *simdFindNonAscii(const uchar *src, const uchar *end, 
     nextAscii = end;
     return src;
 }
+
+static void simdCompareAscii(const char8_t *&, const char8_t *, const char16_t *&, const char16_t *)
+{
+}
 #endif
 
 enum { HeaderDone = 1 };
 
-QByteArray QUtf8::convertFromUnicode(const QChar *uc, qsizetype len)
+QByteArray QUtf8::convertFromUnicode(QStringView in)
 {
+    qsizetype len = in.size();
+
     // create a QByteArray with the worst case scenario size
     QByteArray result(len * 3, Qt::Uninitialized);
     uchar *dst = reinterpret_cast<uchar *>(const_cast<char *>(result.constData()));
-    const ushort *src = reinterpret_cast<const ushort *>(uc);
+    const ushort *src = reinterpret_cast<const ushort *>(in.data());
     const ushort *const end = src + len;
 
     while (src != end) {
@@ -390,8 +500,8 @@ QByteArray QUtf8::convertFromUnicode(const QChar *uc, qsizetype len)
             break;
 
         do {
-            ushort uc = *src++;
-            int res = QUtf8Functions::toUtf8<QUtf8BaseTraits>(uc, dst, src, end);
+            ushort u = *src++;
+            int res = QUtf8Functions::toUtf8<QUtf8BaseTraits>(u, dst, src, end);
             if (res < 0) {
                 // encoding error - append '?'
                 *dst++ = '?';
@@ -403,10 +513,10 @@ QByteArray QUtf8::convertFromUnicode(const QChar *uc, qsizetype len)
     return result;
 }
 
-QByteArray QUtf8::convertFromUnicode(const QChar *uc, qsizetype len, QStringConverterBase::State *state)
+QByteArray QUtf8::convertFromUnicode(QStringView in, QStringConverterBase::State *state)
 {
-    QByteArray ba(3*len +3, Qt::Uninitialized);
-    char *end = convertFromUnicode(ba.data(), QStringView(uc, len), state);
+    QByteArray ba(3*in.size() +3, Qt::Uninitialized);
+    char *end = convertFromUnicode(ba.data(), in, state);
     ba.truncate(end - ba.data());
     return ba;
 }
@@ -482,7 +592,7 @@ char *QUtf8::convertFromUnicode(char *out, QStringView in, QStringConverter::Sta
     return reinterpret_cast<char *>(cursor);
 }
 
-QString QUtf8::convertToUnicode(const char *chars, qsizetype len)
+QString QUtf8::convertToUnicode(QByteArrayView in)
 {
     // UTF-8 to UTF-16 always needs the exact same number of words or less:
     //    UTF-8     UTF-16
@@ -496,9 +606,9 @@ QString QUtf8::convertToUnicode(const char *chars, qsizetype len)
     //
     // The table holds for invalid sequences too: we'll insert one replacement char
     // per invalid byte.
-    QString result(len, Qt::Uninitialized);
+    QString result(in.size(), Qt::Uninitialized);
     QChar *data = const_cast<QChar*>(result.constData()); // we know we're not shared
-    const QChar *end = convertToUnicode(data, chars, len);
+    const QChar *end = convertToUnicode(data, in);
     result.truncate(end - data);
     return result;
 }
@@ -507,10 +617,10 @@ QString QUtf8::convertToUnicode(const char *chars, qsizetype len)
     \since 5.7
     \overload
 
-    Converts the UTF-8 sequence of \a len octets beginning at \a chars to
-    a sequence of QChar starting at \a buffer. The buffer is expected to be
-    large enough to hold the result. An upper bound for the size of the
-    buffer is \a len QChars.
+    Converts the UTF-8 sequence of bytes viewed by \a in to a sequence of
+    QChar starting at \a buffer. The buffer is expected to be large enough
+    to hold the result. An upper bound for the size of the buffer is
+    \c in.size() QChars.
 
     If, during decoding, an error occurs, a QChar::ReplacementCharacter is
     written.
@@ -520,18 +630,19 @@ QString QUtf8::convertToUnicode(const char *chars, qsizetype len)
     This function never throws.
 */
 
-QChar *QUtf8::convertToUnicode(QChar *buffer, const char *chars, qsizetype len) noexcept
+QChar *QUtf8::convertToUnicode(QChar *buffer, QByteArrayView in) noexcept
 {
     ushort *dst = reinterpret_cast<ushort *>(buffer);
-    const uchar *src = reinterpret_cast<const uchar *>(chars);
-    const uchar *end = src + len;
+    const uchar *const start = reinterpret_cast<const uchar *>(in.data());
+    const uchar *src = start;
+    const uchar *end = src + in.size();
 
     // attempt to do a full decoding in SIMD
     const uchar *nextAscii = end;
     if (!simdDecodeAscii(dst, nextAscii, src, end)) {
         // at least one non-ASCII entry
         // check if we failed to decode the UTF-8 BOM; if so, skip it
-        if (Q_UNLIKELY(src == reinterpret_cast<const uchar *>(chars))
+        if (Q_UNLIKELY(src == start)
                 && end - src >= 3
                 && Q_UNLIKELY(src[0] == utf8bom[0] && src[1] == utf8bom[1] && src[2] == utf8bom[2])) {
             src += 3;
@@ -556,7 +667,7 @@ QChar *QUtf8::convertToUnicode(QChar *buffer, const char *chars, qsizetype len) 
     return reinterpret_cast<QChar *>(dst);
 }
 
-QString QUtf8::convertToUnicode(const char *chars, qsizetype len, QStringConverter::State *state)
+QString QUtf8::convertToUnicode(QByteArrayView in, QStringConverter::State *state)
 {
     // See above for buffer requirements for stateless decoding. However, that
     // fails if the state is not empty. The following situations can add to the
@@ -568,14 +679,16 @@ QString QUtf8::convertToUnicode(const char *chars, qsizetype len, QStringConvert
     //   1 of 2 bytes       invalid continuation        +1 (need to insert replacement and restart)
     //   2 of 3 bytes       same                        +1 (same)
     //   3 of 4 bytes       same                        +1 (same)
-    QString result(len + 1, Qt::Uninitialized);
-    QChar *end = convertToUnicode(result.data(), chars, len, state);
+    QString result(in.size() + 1, Qt::Uninitialized);
+    QChar *end = convertToUnicode(result.data(), in, state);
     result.truncate(end - result.constData());
     return result;
 }
 
-QChar *QUtf8::convertToUnicode(QChar *out, const char *chars, qsizetype len, QStringConverter::State *state)
+QChar *QUtf8::convertToUnicode(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
+    qsizetype len = in.size();
+
     Q_ASSERT(state);
     if (!len)
         return out;
@@ -589,7 +702,7 @@ QChar *QUtf8::convertToUnicode(QChar *out, const char *chars, qsizetype len, QSt
     uchar ch = 0;
 
     ushort *dst = reinterpret_cast<ushort *>(out);
-    const uchar *src = reinterpret_cast<const uchar *>(chars);
+    const uchar *src = reinterpret_cast<const uchar *>(in.data());
     const uchar *end = src + len;
 
     if (!(state->flags & QStringConverter::Flag::Stateless)) {
@@ -682,10 +795,10 @@ struct QUtf8NoOutputTraits : public QUtf8BaseTraitsNoAscii
     static void appendUcs4(const NoOutput &, uint) {}
 };
 
-QUtf8::ValidUtf8Result QUtf8::isValidUtf8(const char *chars, qsizetype len)
+QUtf8::ValidUtf8Result QUtf8::isValidUtf8(QByteArrayView in)
 {
-    const uchar *src = reinterpret_cast<const uchar *>(chars);
-    const uchar *end = src + len;
+    const uchar *src = reinterpret_cast<const uchar *>(in.data());
+    const uchar *end = src + in.size();
     const uchar *nextAscii = src;
     bool isValidAscii = true;
 
@@ -713,36 +826,48 @@ QUtf8::ValidUtf8Result QUtf8::isValidUtf8(const char *chars, qsizetype len)
     return { true, isValidAscii };
 }
 
-int QUtf8::compareUtf8(const char *utf8, qsizetype u8len, const QChar *utf16, qsizetype u16len)
+int QUtf8::compareUtf8(QByteArrayView utf8, QStringView utf16) noexcept
 {
-    uint uc1, uc2;
-    auto src1 = reinterpret_cast<const uchar *>(utf8);
-    auto end1 = src1 + u8len;
-    QStringIterator src2(utf16, utf16 + u16len);
+    auto src1 = reinterpret_cast<const char8_t *>(utf8.data());
+    auto end1 = src1 + utf8.size();
+    auto src2 = reinterpret_cast<const char16_t *>(utf16.data());
+    auto end2 = src2 + utf16.size();
 
-    while (src1 < end1 && src2.hasNext()) {
-        uchar b = *src1++;
-        uint *output = &uc1;
-        int res = QUtf8Functions::fromUtf8<QUtf8BaseTraits>(b, output, src1, end1);
-        if (res < 0) {
-            // decoding error
-            uc1 = QChar::ReplacementCharacter;
+    do {
+        simdCompareAscii(src1, end1, src2, end2);
+
+        if (src1 < end1 && src2 < end2) {
+            char32_t uc1 = *src1++;
+            char32_t uc2 = *src2++;
+
+            if (uc1 >= 0x80) {
+                char32_t *output = &uc1;
+                int res = QUtf8Functions::fromUtf8<QUtf8BaseTraitsNoAscii>(uc1, output, src1, end1);
+                if (res < 0) {
+                    // decoding error
+                    uc1 = QChar::ReplacementCharacter;
+                }
+
+                // Only decode the UTF-16 surrogate pair if the UTF-8 code point
+                // wasn't US-ASCII (a surrogate cannot match US-ASCII).
+                if (QChar::isHighSurrogate(uc2) && src2 < end2 && QChar::isLowSurrogate(*src2))
+                    uc2 = QChar::surrogateToUcs4(uc2, *src2++);
+            }
+
+            if (uc1 != uc2)
+                return int(uc1) - int(uc2);
         }
-
-        uc2 = src2.next();
-        if (uc1 != uc2)
-            return int(uc1) - int(uc2);
-    }
+    } while (src1 < end1 && src2 < end2);
 
     // the shorter string sorts first
-    return (end1 > src1) - int(src2.hasNext());
+    return (end1 > src1) - int(end2 > src2);
 }
 
-int QUtf8::compareUtf8(const char *utf8, qsizetype u8len, QLatin1String s)
+int QUtf8::compareUtf8(QByteArrayView utf8, QLatin1String s)
 {
-    uint uc1;
-    auto src1 = reinterpret_cast<const uchar *>(utf8);
-    auto end1 = src1 + u8len;
+    uint uc1 = QChar::Null;
+    auto src1 = reinterpret_cast<const uchar *>(utf8.data());
+    auto end1 = src1 + utf8.size();
     auto src2 = reinterpret_cast<const uchar *>(s.latin1());
     auto end2 = src2 + s.size();
 
@@ -764,15 +889,15 @@ int QUtf8::compareUtf8(const char *utf8, qsizetype u8len, QLatin1String s)
     return (end1 > src1) - (end2 > src2);
 }
 
-QByteArray QUtf16::convertFromUnicode(const QChar *uc, qsizetype len, QStringConverter::State *state, DataEndianness endian)
+QByteArray QUtf16::convertFromUnicode(QStringView in, QStringConverter::State *state, DataEndianness endian)
 {
     bool writeBom = !(state->internalState & HeaderDone) && state->flags & QStringConverter::Flag::WriteBom;
-    qsizetype length =  2*len;
+    qsizetype length = 2 * in.size();
     if (writeBom)
         length += 2;
 
     QByteArray d(length, Qt::Uninitialized);
-    char *end = convertFromUnicode(d.data(), QStringView(uc, len), state, endian);
+    char *end = convertFromUnicode(d.data(), in, state, endian);
     Q_ASSERT(end - d.constData() == d.length());
     Q_UNUSED(end);
     return d;
@@ -787,6 +912,7 @@ char *QUtf16::convertFromUnicode(char *out, QStringView in, QStringConverter::St
         endian = (QSysInfo::ByteOrder == QSysInfo::BigEndian) ? BigEndianness : LittleEndianness;
 
     if (writeBom) {
+        // set them up the BOM
         QChar bom(QChar::ByteOrderMark);
         if (endian == BigEndianness)
             qToBigEndian(bom.unicode(), out);
@@ -804,16 +930,19 @@ char *QUtf16::convertFromUnicode(char *out, QStringView in, QStringConverter::St
     return out + 2*in.length();
 }
 
-QString QUtf16::convertToUnicode(const char *chars, qsizetype len, QStringConverter::State *state, DataEndianness endian)
+QString QUtf16::convertToUnicode(QByteArrayView in, QStringConverter::State *state, DataEndianness endian)
 {
-    QString result((len + 1) >> 1, Qt::Uninitialized); // worst case
-    QChar *qch = convertToUnicode(result.data(), chars, len, state, endian);
+    QString result((in.size() + 1) >> 1, Qt::Uninitialized); // worst case
+    QChar *qch = convertToUnicode(result.data(), in, state, endian);
     result.truncate(qch - result.constData());
     return result;
 }
 
-QChar *QUtf16::convertToUnicode(QChar *out, const char *chars, qsizetype len, QStringConverter::State *state, DataEndianness endian)
+QChar *QUtf16::convertToUnicode(QChar *out, QByteArrayView in, QStringConverter::State *state, DataEndianness endian)
 {
+    qsizetype len = in.size();
+    const char *chars = in.data();
+
     Q_ASSERT(state);
 
     if (endian == DetectEndianness)
@@ -846,6 +975,7 @@ QChar *QUtf16::convertToUnicode(QChar *out, const char *chars, qsizetype len, QS
         state->internalState |= HeaderDone;
         QChar ch(buf, *chars++);
         if (endian == DetectEndianness) {
+            // someone set us up the BOM
             if (ch == QChar::ByteOrderSwapped) {
                 endian = BigEndianness;
             } else if (ch == QChar::ByteOrderMark) {
@@ -889,14 +1019,14 @@ QChar *QUtf16::convertToUnicode(QChar *out, const char *chars, qsizetype len, QS
     return out;
 }
 
-QByteArray QUtf32::convertFromUnicode(const QChar *uc, qsizetype len, QStringConverter::State *state, DataEndianness endian)
+QByteArray QUtf32::convertFromUnicode(QStringView in, QStringConverter::State *state, DataEndianness endian)
 {
     bool writeBom = !(state->internalState & HeaderDone) && state->flags & QStringConverter::Flag::WriteBom;
-    int length =  4*len;
+    int length =  4*in.size();
     if (writeBom)
         length += 4;
     QByteArray ba(length, Qt::Uninitialized);
-    char *end = convertFromUnicode(ba.data(), QStringView(uc, len), state, endian);
+    char *end = convertFromUnicode(ba.data(), in, state, endian);
     Q_ASSERT(end - ba.constData() == length);
     Q_UNUSED(end);
     return ba;
@@ -915,6 +1045,7 @@ char *QUtf32::convertFromUnicode(char *out, QStringView in, QStringConverter::St
         endian = (QSysInfo::ByteOrder == QSysInfo::BigEndian) ? BigEndianness : LittleEndianness;
 
     if (writeBom) {
+        // set them up the BOM
         if (endian == BigEndianness) {
             out[0] = 0;
             out[1] = 0;
@@ -935,7 +1066,9 @@ char *QUtf32::convertFromUnicode(char *out, QStringView in, QStringConverter::St
     QChar ch;
     uint ucs4;
     if (state->remainingChars == 1) {
-        ch = state->state_data[Data];
+        auto character = state->state_data[Data];
+        Q_ASSERT(character <= 0xFFFF);
+        ch = QChar(character);
         // this is ugly, but shortcuts a whole lot of logic that would otherwise be required
         state->remainingChars = 0;
         goto decode_surrogate;
@@ -973,17 +1106,20 @@ decode_surrogate:
     return out;
 }
 
-QString QUtf32::convertToUnicode(const char *chars, qsizetype len, QStringConverter::State *state, DataEndianness endian)
+QString QUtf32::convertToUnicode(QByteArrayView in, QStringConverter::State *state, DataEndianness endian)
 {
     QString result;
-    result.resize((len + 7) >> 1); // worst case
-    QChar *end = convertToUnicode(result.data(), chars, len, state, endian);
+    result.resize((in.size() + 7) >> 1); // worst case
+    QChar *end = convertToUnicode(result.data(), in, state, endian);
     result.truncate(end - result.constData());
     return result;
 }
 
-QChar *QUtf32::convertToUnicode(QChar *out, const char *chars, qsizetype len, QStringConverter::State *state, DataEndianness endian)
+QChar *QUtf32::convertToUnicode(QChar *out, QByteArrayView in, QStringConverter::State *state, DataEndianness endian)
 {
+    qsizetype len = in.size();
+    const char *chars = in.data();
+
     Q_ASSERT(state);
     if (endian == DetectEndianness)
         endian = (DataEndianness)state->state_data[Endian];
@@ -1018,6 +1154,7 @@ QChar *QUtf32::convertToUnicode(QChar *out, const char *chars, qsizetype len, QS
         while (num < 4)
             tuple[num++] = *chars++;
         if (endian == DetectEndianness) {
+            // someone set us up the BOM?
             if (tuple[0] == 0xff && tuple[1] == 0xfe && tuple[2] == 0 && tuple[3] == 0) {
                 endian = LittleEndianness;
             } else if (tuple[0] == 0 && tuple[1] == 0 && tuple[2] == 0xfe && tuple[3] == 0xff) {
@@ -1067,29 +1204,12 @@ QChar *QUtf32::convertToUnicode(QChar *out, const char *chars, qsizetype len, QS
     return out;
 }
 
-QString qFromUtfEncoded(const QByteArray &ba)
-{
-    const qsizetype arraySize = ba.size();
-    const uchar *buf = reinterpret_cast<const uchar *>(ba.constData());
-    const uint bom = 0xfeff;
-
-    if (arraySize > 3) {
-        uint uc = qFromUnaligned<uint>(buf);
-        if (uc == qToBigEndian(bom) || uc == qToLittleEndian(bom))
-            return QUtf32::convertToUnicode(ba.constData(), ba.length(), nullptr); // utf-32
-    }
-
-    if (arraySize > 1) {
-        ushort uc = qFromUnaligned<ushort>(buf);
-        if (uc == qToBigEndian(ushort(bom)) || qToLittleEndian(ushort(bom)))
-            return QUtf16::convertToUnicode(ba.constData(), ba.length(), nullptr); // utf-16
-    }
-    return QUtf8::convertToUnicode(ba.constData(), ba.length());
-}
-
 #if defined(Q_OS_WIN) && !defined(QT_BOOTSTRAPPED)
-static QString convertToUnicodeCharByChar(const char *chars, qsizetype length, QStringConverter::State *state)
+static QString convertToUnicodeCharByChar(QByteArrayView in, QStringConverter::State *state)
 {
+    qsizetype length = in.size();
+    const char *chars = in.data();
+
     Q_ASSERT(state);
     if (state->flags & QStringConverter::Flag::Stateless) // temporary
         state = nullptr;
@@ -1103,7 +1223,7 @@ static QString convertToUnicodeCharByChar(const char *chars, qsizetype length, Q
         copyLocation = state->remainingChars;
         extra += copyLocation;
     }
-    int newLength = length + extra;
+    qsizetype newLength = length + extra;
     char *mbcs = new char[newLength];
     //ensure that we have a NULL terminated string
     mbcs[newLength-1] = 0;
@@ -1138,10 +1258,12 @@ static QString convertToUnicodeCharByChar(const char *chars, qsizetype length, Q
 }
 
 
-QString QLocal8Bit::convertToUnicode(const char *chars, qsizetype length, QStringConverter::State *state)
+QString QLocal8Bit::convertToUnicode(QByteArrayView in, QStringConverter::State *state)
 {
+    qsizetype length = in.size();
+
     Q_ASSERT(length < INT_MAX); // ### FIXME
-    const char *mb = chars;
+    const char *mb = in.data();
     int mblen = length;
 
     if (!mb || !mblen)
@@ -1194,7 +1316,7 @@ QString QLocal8Bit::convertToUnicode(const char *chars, qsizetype length, QStrin
                 mblen--;
             //check whether,  we hit an invalid character in the middle
             if ((mblen <= 1) || (remainingChars && state_data))
-                return convertToUnicodeCharByChar(chars, length, state);
+                return convertToUnicodeCharByChar(in, state);
             //Remove the last character and try again...
             state_data = mb[mblen-1];
             remainingChars = 1;
@@ -1224,8 +1346,11 @@ QString QLocal8Bit::convertToUnicode(const char *chars, qsizetype length, QStrin
     return s;
 }
 
-QByteArray QLocal8Bit::convertFromUnicode(const QChar *ch, qsizetype uclen, QStringConverter::State *state)
+QByteArray QLocal8Bit::convertFromUnicode(QStringView in, QStringConverter::State *state)
 {
+    const QChar *ch = in.data();
+    qsizetype uclen = in.size();
+
     Q_ASSERT(uclen < INT_MAX); // ### FIXME
     Q_ASSERT(state);
     Q_UNUSED(state); // ### Fixme
@@ -1275,9 +1400,9 @@ void QStringConverter::State::clear()
     internalState = 0;
 }
 
-static QChar *fromUtf16(QChar *out, const char *in, qsizetype length, QStringConverter::State *state)
+static QChar *fromUtf16(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
-    return QUtf16::convertToUnicode(out, in, length, state, DetectEndianness);
+    return QUtf16::convertToUnicode(out, in, state, DetectEndianness);
 }
 
 static char *toUtf16(char *out, QStringView in, QStringConverter::State *state)
@@ -1285,9 +1410,9 @@ static char *toUtf16(char *out, QStringView in, QStringConverter::State *state)
     return QUtf16::convertFromUnicode(out, in, state, DetectEndianness);
 }
 
-static QChar *fromUtf16BE(QChar *out, const char *in, qsizetype length, QStringConverter::State *state)
+static QChar *fromUtf16BE(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
-    return QUtf16::convertToUnicode(out, in, length, state, BigEndianness);
+    return QUtf16::convertToUnicode(out, in, state, BigEndianness);
 }
 
 static char *toUtf16BE(char *out, QStringView in, QStringConverter::State *state)
@@ -1295,9 +1420,9 @@ static char *toUtf16BE(char *out, QStringView in, QStringConverter::State *state
     return QUtf16::convertFromUnicode(out, in, state, BigEndianness);
 }
 
-static QChar *fromUtf16LE(QChar *out, const char *in, qsizetype length, QStringConverter::State *state)
+static QChar *fromUtf16LE(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
-    return QUtf16::convertToUnicode(out, in, length, state, LittleEndianness);
+    return QUtf16::convertToUnicode(out, in, state, LittleEndianness);
 }
 
 static char *toUtf16LE(char *out, QStringView in, QStringConverter::State *state)
@@ -1305,9 +1430,9 @@ static char *toUtf16LE(char *out, QStringView in, QStringConverter::State *state
     return QUtf16::convertFromUnicode(out, in, state, LittleEndianness);
 }
 
-static QChar *fromUtf32(QChar *out, const char *in, qsizetype length, QStringConverter::State *state)
+static QChar *fromUtf32(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
-    return QUtf32::convertToUnicode(out, in, length, state, DetectEndianness);
+    return QUtf32::convertToUnicode(out, in, state, DetectEndianness);
 }
 
 static char *toUtf32(char *out, QStringView in, QStringConverter::State *state)
@@ -1315,9 +1440,9 @@ static char *toUtf32(char *out, QStringView in, QStringConverter::State *state)
     return QUtf32::convertFromUnicode(out, in, state, DetectEndianness);
 }
 
-static QChar *fromUtf32BE(QChar *out, const char *in, qsizetype length, QStringConverter::State *state)
+static QChar *fromUtf32BE(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
-    return QUtf32::convertToUnicode(out, in, length, state, BigEndianness);
+    return QUtf32::convertToUnicode(out, in, state, BigEndianness);
 }
 
 static char *toUtf32BE(char *out, QStringView in, QStringConverter::State *state)
@@ -1325,9 +1450,9 @@ static char *toUtf32BE(char *out, QStringView in, QStringConverter::State *state
     return QUtf32::convertFromUnicode(out, in, state, BigEndianness);
 }
 
-static QChar *fromUtf32LE(QChar *out, const char *in, qsizetype length, QStringConverter::State *state)
+static QChar *fromUtf32LE(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
-    return QUtf32::convertToUnicode(out, in, length, state, LittleEndianness);
+    return QUtf32::convertToUnicode(out, in, state, LittleEndianness);
 }
 
 static char *toUtf32LE(char *out, QStringView in, QStringConverter::State *state)
@@ -1337,13 +1462,13 @@ static char *toUtf32LE(char *out, QStringView in, QStringConverter::State *state
 
 void qt_from_latin1(char16_t *dst, const char *str, size_t size) noexcept;
 
-static QChar *fromLatin1(QChar *out, const char *chars, qsizetype len, QStringConverter::State *state)
+static QChar *fromLatin1(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
     Q_ASSERT(state);
     Q_UNUSED(state);
 
-    qt_from_latin1(reinterpret_cast<char16_t *>(out), chars, size_t(len));
-    return out + len;
+    qt_from_latin1(reinterpret_cast<char16_t *>(out), in.data(), size_t(in.size()));
+    return out + in.size();
 }
 
 
@@ -1369,16 +1494,16 @@ static char *toLatin1(char *out, QStringView in, QStringConverter::State *state)
     return out;
 }
 
-static QChar *fromLocal8Bit(QChar *out, const char *in, qsizetype length, QStringConverter::State *state)
+static QChar *fromLocal8Bit(QChar *out, QByteArrayView in, QStringConverter::State *state)
 {
-    QString s = QLocal8Bit::convertToUnicode(in, length, state);
+    QString s = QLocal8Bit::convertToUnicode(in, state);
     memcpy(out, s.constData(), s.length()*sizeof(QChar));
     return out + s.length();
 }
 
 static char *toLocal8Bit(char *out, QStringView in, QStringConverter::State *state)
 {
-    QByteArray s = QLocal8Bit::convertFromUnicode(in.data(), in.length(), state);
+    QByteArray s = QLocal8Bit::convertFromUnicode(in, state);
     memcpy(out, s.constData(), s.length());
     return out + s.length();
 }
@@ -1515,6 +1640,7 @@ static qsizetype toLatin1Len(qsizetype l) { return l + 1; }
     \value System Create a converter to or from the underlying encoding of the
            operating systems locale. This is always assumed to be UTF-8 for Unix based
            systems. On Windows, this converts to and from the locale code page.
+    \omitvalue LastEncoding
 */
 
 /*!
@@ -1627,16 +1753,18 @@ std::optional<QStringConverter::Encoding> QStringConverter::encodingForName(cons
 }
 
 /*!
-   Returns the encoding for the content of \a buf if it can be determined.
+   Returns the encoding for the content of \a data if it can be determined.
    \a expectedFirstCharacter can be passed as an additional hint to help determine
    the encoding.
 
    The returned optional is empty, if the encoding is unclear.
  */
-std::optional<QStringConverter::Encoding> QStringConverter::encodingForData(const char *buf, qsizetype arraySize, char16_t expectedFirstCharacter)
+std::optional<QStringConverter::Encoding> QStringConverter::encodingForData(QByteArrayView data, char16_t expectedFirstCharacter)
 {
+    // someone set us up the BOM?
+    qsizetype arraySize = data.size();
     if (arraySize > 3) {
-        uint uc = qFromUnaligned<uint>(buf);
+        uint uc = qFromUnaligned<uint>(data.data());
         if (uc == qToBigEndian(uint(QChar::ByteOrderMark)))
             return QStringConverter::Utf32BE;
         if (uc == qToLittleEndian(uint(QChar::ByteOrderMark)))
@@ -1651,13 +1779,12 @@ std::optional<QStringConverter::Encoding> QStringConverter::encodingForData(cons
     }
 
     if (arraySize > 2) {
-        static const char utf8bom[] = "\xef\xbb\xbf";
-        if (memcmp(buf, utf8bom, sizeof(utf8bom) - 1) == 0)
+        if (memcmp(data.data(), utf8bom, sizeof(utf8bom)) == 0)
             return QStringConverter::Utf8;
     }
 
     if (arraySize > 1) {
-        ushort uc = qFromUnaligned<ushort>(buf);
+        ushort uc = qFromUnaligned<ushort>(data.data());
         if (uc == qToBigEndian(ushort(QChar::ByteOrderMark)))
             return QStringConverter::Utf16BE;
         if (uc == qToLittleEndian(ushort(QChar::ByteOrderMark)))
@@ -1674,24 +1801,25 @@ std::optional<QStringConverter::Encoding> QStringConverter::encodingForData(cons
 }
 
 /*!
-   Tries to determine the encoding of the HTML in \a buf by looking at leading byte order marks or
-   a charset specifier in the HTML meta tag. If the optional is empty, the encoding specified is
-   not supported by QStringConverter. If no encoding is detected, the method returns Utf8.
- */
-std::optional<QStringConverter::Encoding> QStringConverter::encodingForHtml(const char *buf, qsizetype arraySize)
+    Tries to determine the encoding of the HTML in \a data by looking at leading byte
+    order marks or a charset specifier in the HTML meta tag. If the optional is empty,
+    the encoding specified is not supported by QStringConverter. If no encoding is
+    detected, the method returns Utf8.
+*/
+std::optional<QStringConverter::Encoding> QStringConverter::encodingForHtml(QByteArrayView data)
 {
     // determine charset
-    auto encoding = encodingForData(buf, arraySize);
+    auto encoding = encodingForData(data);
     if (encoding)
         // trust the initial BOM
         return encoding;
 
-    QByteArray header = QByteArray(buf, qMin(arraySize, qsizetype(1024))).toLower();
+    QByteArray header = data.first(qMin(data.size(), qsizetype(1024))).toByteArray().toLower();
     int pos = header.indexOf("meta ");
     if (pos != -1) {
         pos = header.indexOf("charset=", pos);
         if (pos != -1) {
-            pos += qstrlen("charset=");
+            pos += int(qstrlen("charset="));
             if (pos < header.size() && (header.at(pos) == '\"' || header.at(pos) == '\''))
                 ++pos;
 
@@ -1718,7 +1846,7 @@ std::optional<QStringConverter::Encoding> QStringConverter::encodingForHtml(cons
 }
 
 /*!
-    Returns the canonical name for \a encoding.
+    Returns the canonical name for encoding \a e.
 */
 const char *QStringConverter::nameForEncoding(QStringConverter::Encoding e)
 {
@@ -1784,23 +1912,12 @@ const char *QStringConverter::nameForEncoding(QStringConverter::Encoding e)
 */
 
 /*!
+    \fn QByteArray QStringEncoder::encode(const QString &in)
+    \fn QByteArray QStringEncoder::encode(QStringView in)
     \fn QByteArray QStringEncoder::operator()(const QString &in)
+    \fn QByteArray QStringEncoder::operator()(QStringView in)
 
     Converts \a in and returns the data as a byte array.
-*/
-
-/*!
-    \fn QByteArray QStringEncoder::operator()(const QStringView in)
-    \overload
-
-    Converts \a in and returns the data as a byte array.
-*/
-
-/*!
-    \fn QByteArray QStringEncoder::operator()(const QChar *in, qsizetype length)
-    \overload
-
-    Converts \a length QChars from \a in and returns the data as a byte array.
 */
 
 /*!
@@ -1809,20 +1926,20 @@ const char *QStringConverter::nameForEncoding(QStringConverter::Encoding e)
     Returns the maximum amount of characters required to be able to process
     \a inputLength decoded data.
 
-    \sa appendToBuffer
+    \sa appendToBuffer()
 */
 
 /*!
-    \fn char *QStringEncoder::appendToBuffer(char *out, const QChar *in, qsizetype length)
+    \fn char *QStringEncoder::appendToBuffer(char *out, QStringView in)
 
-    Encodes \a length QChars from \a in and writes the encoded result into the buffer
-    starting at \a out. Returns a pointer to the end of data written.
+    Encodes \a in and writes the encoded result into the buffer
+    starting at \a out. Returns a pointer to the end of the data written.
 
-    \a out needs to be large enough to be able to hold all the decoded data. Use
-    \l{requiredSpace} to determine the maximum size requirements to be able to encode
-    a QChar buffer of \a length.
+    \note \a out must be large enough to be able to hold all the decoded data. Use
+    requiredSpace() to determine the maximum size requirement to be able to encode
+    \a in.
 
-    \sa requiredSpace
+    \sa requiredSpace()
 */
 
 /*!
@@ -1884,23 +2001,12 @@ const char *QStringConverter::nameForEncoding(QStringConverter::Encoding e)
 */
 
 /*!
-    \fn QByteArray QStringDecoder::operator()(const QString &in)
+    \fn QString QStringDecoder::operator()(const QByteArray &ba)
+    \fn QString QStringDecoder::decode(const QByteArray &ba)
+    \fn QString QStringDecoder::operator()(QByteArrayView ba)
+    \fn QString QStringDecoder::decode(QByteArrayView ba)
 
-    Converts \a in and returns the data as a QString.
-*/
-
-/*!
-    \fn QByteArray QStringDecoder::operator()(const QStringView in)
-    \overload
-
-    Converts \a in and returns the data as a QString.
-*/
-
-/*!
-    \fn QByteArray QStringDecoder::operator()(const QChar *in, qsizetype length)
-    \overload
-
-    Converts \a length QChars from \a in and returns the data as a QString.
+    Converts \a ba and returns the data as a QString.
 */
 
 /*!
@@ -1913,14 +2019,14 @@ const char *QStringConverter::nameForEncoding(QStringConverter::Encoding e)
 */
 
 /*!
-    \fn QChar *QStringDecoder::appendToBuffer(QChar *out, const char *in, qsizetype length)
+    \fn QChar *QStringDecoder::appendToBuffer(QChar *out, QByteArrayView in)
 
-    Decodes \a length bytes from \a in and writes the decoded result into the buffer
-    starting at \a out. Returns a pointer to the end of data written.
+    Decodes the sequence of bytes viewed by \a in and writes the decoded result into
+    the buffer starting at \a out. Returns a pointer to the end of data written.
 
     \a out needs to be large enough to be able to hold all the decoded data. Use
     \l{requiredSpace} to determine the maximum size requirements to decode an encoded
-    data buffer of \a length.
+    data buffer of \c in.size() bytes.
 
     \sa requiredSpace
 */

@@ -4,7 +4,7 @@
 ## mylib Generic Library:
 #####################################################################
 
-add_cmake_library(mylib2 # special case
+qt_internal_add_cmake_library(mylib2 # special case
     SHARED
     INSTALL_DIRECTORY "${INSTALL_TESTSDIR}tst_qlibrary"
     #OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../" # special case
@@ -40,7 +40,6 @@ if(WIN32)
 endif()
 
 if (UNIX)
-    add_dependencies(mylib2 mylib)
     add_custom_command(TARGET mylib2 POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:mylib2>
@@ -84,7 +83,7 @@ endif()
 ## Scopes:
 #####################################################################
 
-extend_target(mylib2 CONDITION MSVC # special case
+qt_internal_extend_target(mylib2 CONDITION MSVC # special case
     DEFINES
         WIN32_MSVC
 )

@@ -4,7 +4,7 @@
 ## scrolltest Binary:
 #####################################################################
 
-add_qt_benchmark(scrolltest
+qt_internal_add_benchmark(scrolltest
     GUI
     SOURCES
         main.cpp

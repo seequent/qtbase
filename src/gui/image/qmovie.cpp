@@ -45,9 +45,7 @@
     \brief The QMovie class is a convenience class for playing movies
     with QImageReader.
 
-    This class is used to show simple animations without sound. If you want
-    to display video and media content, use the \l{Qt Multimedia}
-    multimedia framework instead.
+    This class is used to show simple animations without sound.
 
     First, create a QMovie object by passing either the name of a file or a
     pointer to a QIODevice containing an animated image format to QMovie's
@@ -222,7 +220,7 @@ public:
     static inline QFrameInfo endMarker()
     { return QFrameInfo(true); }
 };
-Q_DECLARE_TYPEINFO(QFrameInfo, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QFrameInfo, Q_RELOCATABLE_TYPE);
 
 class QMoviePrivate : public QObjectPrivate
 {
@@ -1024,7 +1022,7 @@ QList<QByteArray> QMovie::supportedFormats()
                 return !QImageReader(&buffer, format).supportsOption(QImageIOHandler::Animation);
             };
 
-    list.erase(std::remove_if(list.begin(), list.end(), doesntSupportAnimation), list.end());
+    list.removeIf(doesntSupportAnimation);
     return list;
 }
 

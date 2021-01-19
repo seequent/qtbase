@@ -578,7 +578,7 @@ void QWidgetLineControl::processInputMethodEvent(QInputMethodEvent *event)
     const int oldPreeditCursor = m_preeditCursor;
     m_preeditCursor = event->preeditString().length();
     m_hideCursor = false;
-    QVector<QTextLayout::FormatRange> formats;
+    QList<QTextLayout::FormatRange> formats;
     formats.reserve(event->attributes().size());
     for (int i = 0; i < event->attributes().size(); ++i) {
         const QInputMethodEvent::Attribute &a = event->attributes().at(i);
@@ -627,7 +627,7 @@ void QWidgetLineControl::processInputMethodEvent(QInputMethodEvent *event)
 */
 void QWidgetLineControl::draw(QPainter *painter, const QPoint &offset, const QRect &clip, int flags)
 {
-    QVector<QTextLayout::FormatRange> selections;
+    QList<QTextLayout::FormatRange> selections;
     if (flags & DrawSelections) {
         QTextLayout::FormatRange o;
         if (m_selstart < m_selend) {
@@ -669,7 +669,7 @@ void QWidgetLineControl::draw(QPainter *painter, const QPoint &offset, const QRe
 void QWidgetLineControl::selectWordAtPos(int cursor)
 {
     int next = cursor + 1;
-    if(next > end())
+    if (next > end())
         --next;
     int c = textLayout()->previousCursorPosition(next, QTextLayout::SkipWords);
     moveCursor(c, false);
@@ -694,7 +694,7 @@ void QWidgetLineControl::selectWordAtPos(int cursor)
 */
 bool QWidgetLineControl::finishChange(int validateFromState, bool update, bool edited)
 {
-    Q_UNUSED(update)
+    Q_UNUSED(update);
 
     if (m_textDirty) {
         // do validation
@@ -788,7 +788,7 @@ void QWidgetLineControl::internalSetText(const QString &txt, int pos, bool edite
         }
     }
 #else
-    Q_UNUSED(changed)
+    Q_UNUSED(changed);
 #endif
 }
 
@@ -1215,14 +1215,14 @@ QString QWidgetLineControl::maskString(int pos, const QString &str, bool clear) 
                     int n = findInMask(i, true, true, str[(int)strIndex]);
                     if (n != -1) {
                         if (str.length() != 1 || i == 0 || (i > 0 && (!m_maskData[i-1].separator || m_maskData[i-1].maskChar != str[(int)strIndex]))) {
-                            s += fill.midRef(i, n - i + 1);
+                            s += QStringView{fill}.mid(i, n - i + 1);
                             i = n + 1; // update i to find + 1
                         }
                     } else {
                         // search for valid m_blank if not
                         n = findInMask(i, true, false, str[(int)strIndex]);
                         if (n != -1) {
-                            s += fill.midRef(i, n - i);
+                            s += QStringView{fill}.mid(i, n - i);
                             switch (m_maskData[n].caseMode) {
                             case MaskInputData::Upper:
                                 s += str[(int)strIndex].toUpper();

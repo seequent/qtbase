@@ -1208,6 +1208,7 @@ QSqlRecord QSqlDatabase::record(const QString& tablename) const
     \li QSQLITE_OPEN_URI
     \li QSQLITE_ENABLE_SHARED_CACHE
     \li QSQLITE_ENABLE_REGEXP
+    \li QSQLITE_NO_USE_EXTENDED_RESULT_CODES
     \endlist
 
     \li
@@ -1446,7 +1447,7 @@ QString QSqlDatabase::connectionName() const
 */
 void QSqlDatabase::setNumericalPrecisionPolicy(QSql::NumericalPrecisionPolicy precisionPolicy)
 {
-    if(driver())
+    if (driver())
         driver()->setNumericalPrecisionPolicy(precisionPolicy);
     d->precisionPolicy = precisionPolicy;
 }
@@ -1461,7 +1462,7 @@ void QSqlDatabase::setNumericalPrecisionPolicy(QSql::NumericalPrecisionPolicy pr
 */
 QSql::NumericalPrecisionPolicy QSqlDatabase::numericalPrecisionPolicy() const
 {
-    if(driver())
+    if (driver())
         return driver()->numericalPrecisionPolicy();
     else
         return d->precisionPolicy;

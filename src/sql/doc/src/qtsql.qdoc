@@ -30,8 +30,8 @@
     \brief Provides a driver layer, SQL API layer, and a user
     interface layer for SQL databases
 
-    Qt SQL is an essential module which provides support for SQL databases. Qt
-    SQL's APIs are divided into different layers:
+    The Qt SQL module provides support for SQL databases. Qt SQL's APIs are
+    divided into different layers:
 
     \list
     \li Driver layer
@@ -44,10 +44,14 @@
     \include module-use.qdocinc using qt module
     \snippet snippets/CMakeLists.txt cmake_use
 
-    See also the \l[QtDoc]{Building with CMake} overview.
+    See also the \l {Build with CMake} overview.
 
     \include module-use.qdocinc building with qmake
-    \snippet snippets/snippets.pro qmake_use
+    \snippet snippets/code/code.pro qmake_use
+
+    \section1 Module Evolution
+    \l{Changes to Qt SQL} lists important changes in the module API
+    and functionality that were done for the Qt 6 series of Qt.
 
     \section1 Licenses and Attributions
 
@@ -75,10 +79,10 @@
     \module QtSql
     \title Qt SQL C++ Classes
     \ingroup modules
+    \qtcmakepackage Sql
     \qtvariable sql
     \brief Provides a driver layer, SQL API layer, and a user
     interface layer for SQL databases.
 
-    See the \l{Qt SQL} page and the \l{SQL Programming} guide for further
-    information about using this module in your application.
+    The \l{Qt SQL} page contains information about how to use the module.
 */

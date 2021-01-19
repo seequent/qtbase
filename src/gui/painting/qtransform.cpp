@@ -2033,7 +2033,7 @@ void QTransform::map(int x, int y, int *tx, int *ty) const
   */
 QTransform::TransformationType QTransform::type() const
 {
-    if(m_dirty == TxNone || m_dirty < m_type)
+    if (m_dirty == TxNone || m_dirty < m_type)
         return static_cast<TransformationType>(m_type);
 
     switch (static_cast<TransformationType>(m_dirty)) {
@@ -2046,7 +2046,7 @@ QTransform::TransformationType QTransform::type() const
     case TxShear:
     case TxRotate:
         if (!qFuzzyIsNull(m_matrix[0][1]) || !qFuzzyIsNull(m_matrix[1][0])) {
-            const qreal dot = m_matrix[0][0] * m_matrix[0][1] + m_matrix[1][0] * m_matrix[1][1];
+            const qreal dot = m_matrix[0][0] * m_matrix[1][0] + m_matrix[0][1] * m_matrix[1][1];
             if (qFuzzyIsNull(dot))
                 m_type = TxRotate;
             else
@@ -2081,7 +2081,7 @@ QTransform::TransformationType QTransform::type() const
 */
 QTransform::operator QVariant() const
 {
-    return QVariant(QMetaType::QTransform, this);
+    return QVariant::fromValue(*this);
 }
 
 

@@ -43,7 +43,9 @@
 
 #include "qwizard_win_p.h"
 #include <private/qapplication_p.h>
-#include <qpa/qplatformnativeinterface.h>
+#include <private/qwindowsfontdatabasebase_p.h>
+#include <qpa/qplatformwindow.h>
+#include <qpa/qplatformwindow_p.h>
 #include "qwizard.h"
 #include "qpaintengine.h"
 #include "qapplication.h"
@@ -52,6 +54,7 @@
 #include <QtCore/QDebug>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QWindow>
+#include <QtGui/private/qhighdpiscaling_p.h>
 
 #include <uxtheme.h>
 #include <vssym32.h>
@@ -91,7 +94,7 @@ QSize QVistaBackButton::sizeHint() const
     return QSize(width, height);
 }
 
-void QVistaBackButton::enterEvent(QEvent *event)
+void QVistaBackButton::enterEvent(QEnterEvent *event)
 {
     if (isEnabled())
         update();
@@ -165,6 +168,8 @@ QVistaHelper::~QVistaHelper()
 
 void QVistaHelper::updateCustomMargins(bool vistaMargins)
 {
+    using namespace QNativeInterface::Private;
+
     if (QWindow *window = wizard->windowHandle()) {
         // Reduce top frame to zero since we paint it ourselves. Use
         // device pixel to avoid rounding errors.
@@ -175,11 +180,8 @@ void QVistaHelper::updateCustomMargins(bool vistaMargins)
         // The dynamic property takes effect when creating the platform window.
         window->setProperty("_q_windowsCustomMargins", customMarginsV);
         // If a platform window exists, change via native interface.
-        if (QPlatformWindow *platformWindow = window->handle()) {
-            QGuiApplication::platformNativeInterface()->
-                setWindowProperty(platformWindow, QStringLiteral("WindowsCustomMargins"),
-                                  customMarginsV);
-        }
+        if (auto platformWindow = dynamic_cast<QWindowsWindow *>(window->handle()))
+            platformWindow->setCustomMargins(customMarginsDp);
     }
 }
 
@@ -258,11 +260,8 @@ static bool getCaptionQFont(int dpi, QFont *result)
         return false;
     // Call into QWindowsNativeInterface to convert the LOGFONT into a QFont.
     const LOGFONT logFont = getCaptionLogFont(hTheme);
-    QPlatformNativeInterface *ni = QGuiApplication::platformNativeInterface();
-    return ni && QMetaObject::invokeMethod(ni, "logFontToQFont", Qt::DirectConnection,
-                                           Q_RETURN_ARG(QFont, *result),
-                                           Q_ARG(const void*, &logFont),
-                                           Q_ARG(int, dpi));
+    *result = QWindowsFontDatabaseBase::LOGFONT_to_QFont(logFont, dpi);
+    return true;
 }
 
 void QVistaHelper::drawTitleBar(QPainter *painter)
@@ -501,6 +500,12 @@ void QVistaHelper::mouseReleaseEvent(QMouseEvent *event)
     event->ignore();
 }
 
+static inline LPARAM pointToLParam(const QPointF &p, const QWidget *w)
+{
+    const auto point = QHighDpi::toNativePixels(p, w->screen()).toPoint();
+    return MAKELPARAM(point.x(), point.y());
+}
+
 bool QVistaHelper::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj != wizard)
@@ -512,7 +517,7 @@ bool QVistaHelper::eventFilter(QObject *obj, QEvent *event)
         MSG msg;
         msg.message = WM_NCHITTEST;
         msg.wParam  = 0;
-        msg.lParam = MAKELPARAM(mouseEvent->globalX(), mouseEvent->globalY());
+        msg.lParam = pointToLParam(mouseEvent->globalPosition(), wizard);
         msg.hwnd = wizardHWND();
         winEvent(&msg, &result);
         msg.wParam = result;
@@ -526,7 +531,7 @@ bool QVistaHelper::eventFilter(QObject *obj, QEvent *event)
             MSG msg;
             msg.message = WM_NCHITTEST;
             msg.wParam  = 0;
-            msg.lParam = MAKELPARAM(mouseEvent->globalX(), mouseEvent->globalY());
+            msg.lParam = pointToLParam(mouseEvent->globalPosition(), wizard);
             msg.hwnd = wizardHWND();
             winEvent(&msg, &result);
             msg.wParam = result;
@@ -541,7 +546,7 @@ bool QVistaHelper::eventFilter(QObject *obj, QEvent *event)
             MSG msg;
             msg.message = WM_NCHITTEST;
             msg.wParam  = 0;
-            msg.lParam = MAKELPARAM(mouseEvent->globalX(), mouseEvent->globalY());
+            msg.lParam = pointToLParam(mouseEvent->globalPosition(), wizard);
             msg.hwnd = wizardHWND();
             winEvent(&msg, &result);
             msg.wParam = result;

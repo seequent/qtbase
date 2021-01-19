@@ -27,7 +27,8 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QLibraryInfo>
 #include <QtCore/QString>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QByteArray>
@@ -103,10 +104,7 @@ private:
 
 void tst_rcc::initTestCase()
 {
-    // rcc uses a QHash to store files in the resource system.
-    // we must force a certain hash order when testing or tst_rcc will fail, see QTBUG-25078
-    QVERIFY(qputenv("QT_RCC_TEST", "1"));
-    m_rcc = QLibraryInfo::location(QLibraryInfo::BinariesPath) + QLatin1String("/rcc");
+    m_rcc = QLibraryInfo::path(QLibraryInfo::BinariesPath) + QLatin1String("/rcc");
 
     m_dataPath = QFINDTESTDATA("data");
     QVERIFY(!m_dataPath.isEmpty());
@@ -152,7 +150,7 @@ static QString doCompare(const QStringList &actual, const QStringList &expected,
         if (expectedLine != actual.at(i)) {
             qDebug() << "LINES" << (i + 1) << "DIFFER";
             ba.append(
-             "\n<<<<<< actual\n" + actual.at(i) + "\n======\n" + expectedLine
+             "\n<<<<<< actual\n" + actual.at(i).toUtf8() + "\n======\n" + expectedLine.toUtf8()
                 + "\n>>>>>> expected\n"
             );
         }

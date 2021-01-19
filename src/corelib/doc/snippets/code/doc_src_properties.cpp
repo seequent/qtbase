@@ -59,9 +59,10 @@ Q_PROPERTY(type name
            [SCRIPTABLE bool]
            [STORED bool]
            [USER bool]
+           [BINDABLE bindableProperty]
            [CONSTANT]
-           [FINAL])
-           [REQUIRED]
+           [FINAL]
+           [REQUIRED])
 //! [0]
 
 
@@ -106,7 +107,7 @@ class MyClass : public QObject
     Q_PROPERTY(Priority priority READ priority WRITE setPriority NOTIFY priorityChanged)
 
 public:
-    MyClass(QObject *parent = 0);
+    MyClass(QObject *parent = nullptr);
     ~MyClass();
 
     enum Priority { High, Low, VeryHigh, VeryLow };

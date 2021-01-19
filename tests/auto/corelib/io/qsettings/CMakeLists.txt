@@ -4,7 +4,7 @@
 ## tst_qsettings Test:
 #####################################################################
 
-add_qt_test(tst_qsettings
+qt_internal_add_test(tst_qsettings
     SOURCES
         tst_qsettings.cpp
     DEFINES
@@ -26,9 +26,10 @@ set(qsettings_resource_files
     "resourcefile5.ini"
     "resourcefile6.plist"
     "withcomments.ini"
+    "float.ini"
 )
 
-add_qt_resource(tst_qsettings "qsettings"
+qt_internal_add_resource(tst_qsettings "qsettings"
     PREFIX
         "/"
     FILES
@@ -39,12 +40,12 @@ add_qt_resource(tst_qsettings "qsettings"
 ## Scopes:
 #####################################################################
 
-extend_target(tst_qsettings CONDITION MSVC
+qt_internal_extend_target(tst_qsettings CONDITION MSVC
     PUBLIC_LIBRARIES
         advapi32
 )
 
-extend_target(tst_qsettings CONDITION APPLE
+qt_internal_extend_target(tst_qsettings CONDITION APPLE
     PUBLIC_LIBRARIES
         ${FWCoreFoundation}
 )

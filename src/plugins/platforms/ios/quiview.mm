@@ -49,7 +49,7 @@
 #include "qiosmenu.h"
 #endif
 
-#include <QtGui/qtouchdevice.h>
+#include <QtGui/qpointingdevice.h>
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qwindow_p.h>
 #include <qpa/qwindowsysteminterface_p.h>
@@ -57,7 +57,7 @@
 Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
 
 @implementation QUIView {
-    QHash<UITouch *, QWindowSystemInterface::TouchPoint> m_activeTouches;
+    QHash<NSUInteger, QWindowSystemInterface::TouchPoint> m_activeTouches;
     UITouch *m_activePencilTouch;
     int m_nextTouchId;
     NSMutableArray<UIAccessibilityElement *> *m_accessibleElements;
@@ -351,13 +351,11 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
 {
     [super traitCollectionDidChange: previousTraitCollection];
 
-    QTouchDevice *touchDevice = QIOSIntegration::instance()->touchDevice();
-    QTouchDevice::Capabilities touchCapabilities = touchDevice->capabilities();
+    QPointingDevice *touchDevice = QIOSIntegration::instance()->touchDevice();
+    QPointingDevice::Capabilities touchCapabilities = touchDevice->capabilities();
 
-    if (self.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable)
-        touchCapabilities |= QTouchDevice::Pressure;
-    else
-        touchCapabilities &= ~QTouchDevice::Pressure;
+    touchCapabilities.setFlag(QPointingDevice::Capability::Pressure,
+                              (self.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable));
 
     touchDevice->setCapabilities(touchCapabilities);
 }
@@ -369,10 +367,10 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
     return [super pointInside:point withEvent:event];
 }
 
-- (void)handleTouches:(NSSet *)touches withEvent:(UIEvent *)event withState:(Qt::TouchPointState)state withTimestamp:(ulong)timeStamp
+- (void)handleTouches:(NSSet *)touches withEvent:(UIEvent *)event withState:(QEventPoint::State)state withTimestamp:(ulong)timeStamp
 {
     QIOSIntegration *iosIntegration = QIOSIntegration::instance();
-    bool supportsPressure = QIOSIntegration::instance()->touchDevice()->capabilities() & QTouchDevice::Pressure;
+    bool supportsPressure = QIOSIntegration::instance()->touchDevice()->capabilities() & QPointingDevice::Capability::Pressure;
 
 #if QT_CONFIG(tabletevent)
     if (m_activePencilTouch && [touches containsObject:m_activePencilTouch]) {
@@ -396,7 +394,7 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
                      << "xTilt" << qBound(-60.0, altitudeAngle * azimuth.dx, 60.0) << "yTilt" << qBound(-60.0, altitudeAngle * azimuth.dy, 60.0);
             QWindowSystemInterface::handleTabletEvent(self.platformWindow->window(), timeStamp, localViewPosition, globalScreenPosition,
                     // device, pointerType, buttons
-                    QTabletEvent::RotationStylus, QTabletEvent::Pen, state == Qt::TouchPointReleased ? Qt::NoButton : Qt::LeftButton,
+                    int(QInputDevice::DeviceType::Stylus), int(QPointingDevice::PointerType::Pen), state == QEventPoint::State::Released ? Qt::NoButton : Qt::LeftButton,
                     // pressure, xTilt, yTilt
                     pressure, qBound(-60.0, altitudeAngle * azimuth.dx, 60.0), qBound(-60.0, altitudeAngle * azimuth.dy, 60.0),
                     // tangentialPressure, rotation, z, uid, modifiers
@@ -406,10 +404,20 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
     }
 #endif
 
-    for (UITouch *uiTouch : m_activeTouches.keys()) {
-        QWindowSystemInterface::TouchPoint &touchPoint = m_activeTouches[uiTouch];
-        if (![touches containsObject:uiTouch]) {
-            touchPoint.state = Qt::TouchPointStationary;
+    if (m_activeTouches.isEmpty())
+        return;
+    for (auto it = m_activeTouches.begin(); it != m_activeTouches.end(); ++it) {
+        auto hash = it.key();
+        QWindowSystemInterface::TouchPoint &touchPoint = it.value();
+        UITouch *uiTouch = nil;
+        for (UITouch *touch in touches) {
+            if (touch.hash == hash) {
+                uiTouch = touch;
+                break;
+            }
+        }
+        if (!uiTouch) {
+            touchPoint.state = QEventPoint::State::Stationary;
         } else {
             touchPoint.state = state;
 
@@ -422,7 +430,7 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
 
             touchPoint.area = QRectF(globalScreenPosition, QSize(0, 0));
 
-            // FIXME: Do we really need to support QTouchDevice::NormalizedPosition?
+            // FIXME: Do we really need to support QPointingDevice::Capability::NormalizedPosition?
             QSize screenSize = self.platformWindow->screen()->geometry().size();
             touchPoint.normalPosition = QPointF(globalScreenPosition.x() / screenSize.width(),
                                                 globalScreenPosition.y() / screenSize.height());
@@ -434,14 +442,12 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
                 // sending a touch press event to Qt, just to have a valid pressure.
                 touchPoint.pressure = uiTouch.force / uiTouch.maximumPossibleForce;
             } else {
-                // We don't claim that our touch device supports QTouchDevice::Pressure,
+                // We don't claim that our touch device supports QPointingDevice::Capability::Pressure,
                 // but fill in a meaningful value in case clients use it anyway.
-                touchPoint.pressure = (state == Qt::TouchPointReleased) ? 0.0 : 1.0;
+                touchPoint.pressure = (state == QEventPoint::State::Released) ? 0.0 : 1.0;
             }
         }
     }
-    if (m_activeTouches.isEmpty())
-            return;
 
     if ([self.window isKindOfClass:[QUIWindow class]] &&
             !static_cast<QUIWindow *>(self.window).sendingEvent) {
@@ -477,9 +483,9 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
             m_activePencilTouch = touch;
         } else
         {
-            Q_ASSERT(!m_activeTouches.contains(touch));
+            Q_ASSERT(!m_activeTouches.contains(touch.hash));
 #endif
-            m_activeTouches[touch].id = m_nextTouchId++;
+            m_activeTouches[touch.hash].id = m_nextTouchId++;
 #if QT_CONFIG(tabletevent)
         }
 #endif
@@ -493,19 +499,20 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
             topLevel->requestActivateWindow();
     }
 
-    [self handleTouches:touches withEvent:event withState:Qt::TouchPointPressed withTimestamp:ulong(event.timestamp * 1000)];
+    [self handleTouches:touches withEvent:event withState:QEventPoint::State::Pressed withTimestamp:ulong(event.timestamp * 1000)];
 }
 
 - (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
 {
-    [self handleTouches:touches withEvent:event withState:Qt::TouchPointMoved withTimestamp:ulong(event.timestamp * 1000)];
+    [self handleTouches:touches withEvent:event withState:QEventPoint::State::Updated withTimestamp:ulong(event.timestamp * 1000)];
 }
 
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
 {
-    [self handleTouches:touches withEvent:event withState:Qt::TouchPointReleased withTimestamp:ulong(event.timestamp * 1000)];
+    [self handleTouches:touches withEvent:event withState:QEventPoint::State::Released withTimestamp:ulong(event.timestamp * 1000)];
 
     // Remove ended touch points from the active set:
+#ifndef Q_OS_TVOS
     for (UITouch *touch in touches) {
 #if QT_CONFIG(tabletevent)
         if (touch.type == UITouchTypeStylus) {
@@ -513,9 +520,14 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
         } else
 #endif
         {
-            m_activeTouches.remove(touch);
+            m_activeTouches.remove(touch.hash);
         }
     }
+#else
+    // tvOS only supports single touch
+    m_activeTouches.clear();
+#endif
+
     if (m_activeTouches.isEmpty() && !m_activePencilTouch)
         m_nextTouchId = 0;
 }
@@ -615,15 +627,15 @@ Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
     // Check first if QIOSMenu should handle the action before continuing up the responder chain
     return [QIOSMenu::menuActionTarget() targetForAction:action withSender:sender] != 0;
 #else
-    Q_UNUSED(action)
-    Q_UNUSED(sender)
+    Q_UNUSED(action);
+    Q_UNUSED(sender);
     return false;
 #endif
 }
 
 - (id)forwardingTargetForSelector:(SEL)selector
 {
-    Q_UNUSED(selector)
+    Q_UNUSED(selector);
 #ifndef Q_OS_TVOS
     return QIOSMenu::menuActionTarget();
 #else

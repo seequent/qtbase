@@ -26,13 +26,11 @@
 **
 ****************************************************************************/
 
-
-#include <QtTest/QtTest>
-
 #include "qmdisubwindow.h"
 #include "private/qmdisubwindow_p.h"
 #include "qmdiarea.h"
 
+#include <QTest>
 #include <QLayout>
 #include <QLineEdit>
 #include <QMainWindow>
@@ -48,8 +46,8 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QSizeGrip>
-
-#include <QVector>
+#include <QSignalSpy>
+#include <QList>
 
 QT_BEGIN_NAMESPACE
 extern bool qt_tab_all_widgets();
@@ -260,7 +258,7 @@ void tst_QMdiSubWindow::minimumSizeHint()
     public:
         Widget() = default;
 
-        QSize minimumSizeHint() const
+        QSize minimumSizeHint() const override
         {
             return QSize(100, 100);
         }
@@ -401,7 +399,7 @@ void tst_QMdiSubWindow::setWindowState()
 
 void tst_QMdiSubWindow::mainWindowSupport()
 {
-    QVector<QMdiSubWindow *> windows;
+    QList<QMdiSubWindow *> windows;
     QMdiArea *workspace = new QMdiArea;
     QMainWindow mainWindow;
     mainWindow.setCentralWidget(workspace);

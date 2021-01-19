@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -44,13 +44,13 @@
 #include <QtCore/qlist.h>
 #include <QtCore/qshareddata.h>
 #include <QtCore/qmetatype.h>
+#include <QtCore/qdatetime.h>
 
 QT_BEGIN_NAMESPACE
 
 
 class QDir;
 class QDirIteratorPrivate;
-class QDateTime;
 class QFileInfoPrivate;
 
 class Q_CORE_EXPORT QFileInfo
@@ -59,27 +59,36 @@ class Q_CORE_EXPORT QFileInfo
 public:
     explicit QFileInfo(QFileInfoPrivate *d);
 
+#ifdef QT_IMPLICIT_QFILEINFO_CONSTRUCTION
+#define QFILEINFO_MAYBE_EXPLICIT Q_IMPLICIT
+#else
+#define QFILEINFO_MAYBE_EXPLICIT explicit
+#endif
+
     QFileInfo();
-    QFileInfo(const QString &file);
-    QFileInfo(const QFile &file);
-    QFileInfo(const QDir &dir, const QString &file);
+    QFILEINFO_MAYBE_EXPLICIT QFileInfo(const QString &file);
+    QFILEINFO_MAYBE_EXPLICIT QFileInfo(const QFileDevice &file);
+    QFILEINFO_MAYBE_EXPLICIT QFileInfo(const QDir &dir, const QString &file);
     QFileInfo(const QFileInfo &fileinfo);
 #ifdef Q_CLANG_QDOC
     QFileInfo(const std::filesystem::path &file);
     QFileInfo(const QDir &dir, const std::filesystem::path &file);
 #elif QT_CONFIG(cxx17_filesystem)
     template<typename T, QtPrivate::ForceFilesystemPath<T> = 0>
-    QFileInfo(const T &file) : QFileInfo(QtPrivate::fromFilesystemPath(file)) { }
+    QFILEINFO_MAYBE_EXPLICIT QFileInfo(const T &file) : QFileInfo(QtPrivate::fromFilesystemPath(file)) { }
 
     template<typename T, QtPrivate::ForceFilesystemPath<T> = 0>
-    QFileInfo(const QDir &dir, const T &file) : QFileInfo(dir, QtPrivate::fromFilesystemPath(file))
+    QFILEINFO_MAYBE_EXPLICIT QFileInfo(const QDir &dir, const T &file) : QFileInfo(dir, QtPrivate::fromFilesystemPath(file))
     {
     }
 #endif // QT_CONFIG(cxx17_filesystem)
+
+#undef QFILEINFO_MAYBE_EXPLICIT
+
     ~QFileInfo();
 
     QFileInfo &operator=(const QFileInfo &fileinfo);
-    QFileInfo &operator=(QFileInfo &&other) noexcept { swap(other); return *this; }
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(QFileInfo)
 
     void swap(QFileInfo &other) noexcept
     { qSwap(d_ptr, other.d_ptr); }
@@ -88,7 +97,7 @@ public:
     inline bool operator!=(const QFileInfo &fileinfo) const { return !(operator==(fileinfo)); }
 
     void setFile(const QString &file);
-    void setFile(const QFile &file);
+    void setFile(const QFileDevice &file);
     void setFile(const QDir &dir, const QString &file);
 #ifdef Q_CLANG_QDOC
     void setFile(const std::filesystem::path &file);
@@ -104,7 +113,7 @@ public:
     QString filePath() const;
     QString absoluteFilePath() const;
     QString canonicalFilePath() const;
-#if QT_CONFIG(cxx17_filesystem)
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
     std::filesystem::path filesystemFilePath() const
     { return QtPrivate::toFilesystemPath(filePath()); }
     std::filesystem::path filesystemAbsoluteFilePath() const
@@ -122,7 +131,7 @@ public:
     QString path() const;
     QString absolutePath() const;
     QString canonicalPath() const;
-#if QT_CONFIG(cxx17_filesystem)
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
     std::filesystem::path filesystemPath() const { return QtPrivate::toFilesystemPath(path()); }
     std::filesystem::path filesystemAbsolutePath() const
     { return QtPrivate::toFilesystemPath(absolutePath()); }
@@ -151,12 +160,8 @@ public:
     bool isRoot() const;
     bool isBundle() const;
 
-#if QT_DEPRECATED_SINCE(5, 13)
-    QT_DEPRECATED_X("Use QFileInfo::symLinkTarget() instead")
-    QString readLink() const;
-#endif
     QString symLinkTarget() const;
-#if QT_CONFIG(cxx17_filesystem)
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
     std::filesystem::path filesystemSymLinkTarget() const
     { return QtPrivate::toFilesystemPath(symLinkTarget()); }
 #endif // QT_CONFIG(cxx17_filesystem)
@@ -171,19 +176,15 @@ public:
 
     qint64 size() const;
 
-    // ### Qt6: inline these functions
-#if QT_DEPRECATED_SINCE(5, 10)
-    QT_DEPRECATED_X("Use either birthTime() or metadataChangeTime()")
-    QDateTime created() const;
-#endif
-    QDateTime birthTime() const;
-    QDateTime metadataChangeTime() const;
-    QDateTime lastModified() const;
-    QDateTime lastRead() const;
+    QDateTime birthTime() const { return fileTime(QFile::FileBirthTime); }
+    QDateTime metadataChangeTime() const { return fileTime(QFile::FileMetadataChangeTime); }
+    QDateTime lastModified() const { return fileTime(QFile::FileModificationTime); }
+    QDateTime lastRead() const { return fileTime(QFile::FileAccessTime); }
     QDateTime fileTime(QFile::FileTime time) const;
 
     bool caching() const;
     void setCaching(bool on);
+    void stat();
 
 protected:
     QSharedDataPointer<QFileInfoPrivate> d_ptr;

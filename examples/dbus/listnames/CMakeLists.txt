@@ -9,18 +9,32 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/dbus/listnames")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/dbus/listnames")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS DBus)
 
-add_qt_gui_executable(listnames
+qt_add_executable(listnames
     listnames.cpp
+)
+set_target_properties(listnames PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
 )
 target_link_libraries(listnames PUBLIC
     Qt::Core
     Qt::DBus
 )
+
+if(WIN32)
+    set_target_properties(listnames PROPERTIES
+        WIN32_EXECUTABLE FALSE
+    )
+endif()
 
 install(TARGETS listnames
     RUNTIME DESTINATION "${INSTALL_EXAMPLEDIR}"

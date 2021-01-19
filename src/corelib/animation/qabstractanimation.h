@@ -147,18 +147,12 @@ public:
 
     virtual qint64 elapsed() const;
 
-#if QT_DEPRECATED_SINCE(5, 13)
-    QT_DEPRECATED void setStartTime(qint64 startTime);
-    QT_DEPRECATED qint64 startTime() const;
-#endif
-
 Q_SIGNALS:
     void started();
     void stopped();
 
 protected:
-    // ### Qt6: Remove timestep argument
-    void advanceAnimation(qint64 timeStep = -1);
+    void advanceAnimation();
     virtual void start();
     virtual void stop();
 

@@ -20,18 +20,26 @@ function(qt_print_build_instructions)
 
     set(build_command "cmake --build . --parallel")
     set(install_command "cmake --install .")
-
-    message("Qt is now configured for building. Just run '${build_command}'.")
-    if(QT_WILL_INSTALL)
-        message("Once everything is built, you must run '${install_command}'.")
-        message("Qt will be installed into '${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}'")
+    set(configure_module_command "qt-configure-module")
+    if(CMAKE_HOST_WIN32)
+        string(APPEND configure_module_command ".bat")
+    endif()
+    if("${CMAKE_STAGING_PREFIX}" STREQUAL "")
+        set(local_install_prefix "${CMAKE_INSTALL_PREFIX}")
     else()
-        message("Once everything is built, Qt is installed.")
-        message("You should NOT run '${install_command}'")
+        set(local_install_prefix "${CMAKE_STAGING_PREFIX}")
+    endif()
+
+    message("Qt is now configured for building. Just run '${build_command}'\n")
+    if(QT_WILL_INSTALL)
+        message("Once everything is built, you must run '${install_command}'")
+        message("Qt will be installed into '${CMAKE_INSTALL_PREFIX}'")
+    else()
+        message("Once everything is built, Qt is installed. You should NOT run '${install_command}'")
         message("Note that this build cannot be deployed to other machines or devices.")
     endif()
-    message("To configure and build other modules, you can use the following convenience script:
-        ${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}/qt-cmake")
+    message("\nTo configure and build other Qt modules, you can use the following convenience script:
+        ${local_install_prefix}/${INSTALL_BINDIR}/${configure_module_command}")
     message("\nIf reconfiguration fails for some reason, try to remove 'CMakeCache.txt' \
 from the build directory \n")
 endfunction()
@@ -40,30 +48,43 @@ function(qt_configure_print_summary)
     # Evaluate all recorded commands.
     qt_configure_eval_commands()
 
+    set(summary_file "${CMAKE_BINARY_DIR}/config.summary")
+    file(WRITE "${summary_file}" "")
     # Show Qt-specific configure summary and any notes, wranings, etc.
     if(__qt_configure_reports)
         message("Configure summary:\n${__qt_configure_reports}")
+        file(APPEND "${summary_file}" "${__qt_configure_reports}")
     endif()
     if(__qt_configure_notes)
         message("${__qt_configure_notes}")
+        file(APPEND "${summary_file}" "${__qt_configure_notes}")
     endif()
     if(__qt_configure_warnings)
         message("${__qt_configure_warnings}")
+        file(APPEND "${summary_file}" "${__qt_configure_warnings}")
     endif()
     if(__qt_configure_errors)
         message("${__qt_configure_errors}")
+        file(APPEND "${summary_file}" "${__qt_configure_errors}")
     endif()
     message("")
     if(__qt_configure_an_error_occurred)
         message(FATAL_ERROR "Check the configuration messages for an error that has occurred.")
     endif()
+    file(APPEND "${summary_file}" "\n")
 endfunction()
 
 # Takes a list of arguments, and saves them to be evaluated at the end of the configuration
 # phase when the configuration summary is shown.
+#
+# RECORD_ON_FEATURE_EVALUATION option allows to record the command even while the feature
+# evaluation-only stage.
 function(qt_configure_record_command)
+    cmake_parse_arguments(arg "RECORD_ON_FEATURE_EVALUATION"
+                          ""
+                          "" ${ARGV})
     # Don't record commands when only evaluating features of a configure.cmake file.
-    if(__QtFeature_only_evaluate_features)
+    if(__QtFeature_only_evaluate_features AND NOT arg_RECORD_ON_FEATURE_EVALUATION)
         return()
     endif()
 
@@ -71,11 +92,11 @@ function(qt_configure_record_command)
 
     if(NOT DEFINED command_count)
         set(command_count 0)
-    else()
-        math(EXPR command_count "${command_count}+1")
     endif()
 
-    set_property(GLOBAL PROPERTY qt_configure_command_${command_count} "${ARGV}")
+    set_property(GLOBAL PROPERTY qt_configure_command_${command_count} "${arg_UNPARSED_ARGUMENTS}")
+
+    math(EXPR command_count "${command_count}+1")
     set_property(GLOBAL PROPERTY qt_configure_command_count "${command_count}")
 endfunction()
 
@@ -132,13 +153,32 @@ macro(qt_configure_add_report_padded label message)
     set(__qt_configure_reports "${__qt_configure_reports}" PARENT_SCOPE)
 endmacro()
 
+# Pad 'label' and 'value' with dots like this:
+# "label ............... value"
+#
+# PADDING_LENGTH specifies the number of characters from the start to the last dot.
+#                Default is 30.
+# MIN_PADDING    specifies the minimum number of dots that are used for the padding.
+#                Default is 0.
 function(qt_configure_get_padded_string label value out_var)
-    set(pad_string "........................................")
+    cmake_parse_arguments(arg "" "PADDING_LENGTH;MIN_PADDING" "" ${ARGN})
+    if("${arg_MIN_PADDING}" STREQUAL "")
+        set(arg_MIN_PADDING 0)
+    endif()
+    if(arg_PADDING_LENGTH)
+        set(pad_string "")
+        math(EXPR n "${arg_PADDING_LENGTH} - 1")
+        foreach(i RANGE ${n})
+            string(APPEND pad_string ".")
+        endforeach()
+    else()
+        set(pad_string ".........................................")
+    endif()
     string(LENGTH "${label}" label_len)
     string(LENGTH "${pad_string}" pad_len)
     math(EXPR pad_len "${pad_len}-${label_len}")
     if(pad_len LESS "0")
-        set(pad_len "0")
+        set(pad_len ${arg_MIN_PADDING})
     endif()
     string(SUBSTRING "${pad_string}" 0 "${pad_len}" pad_string)
     set(output "${label} ${pad_string} ${value}")
@@ -327,6 +367,11 @@ endfunction()
 
 function(qt_configure_add_report_entry)
     qt_configure_record_command(ADD_REPORT_ENTRY ${ARGV})
+endfunction()
+
+function(qt_configure_add_report_error error)
+    message(SEND_ERROR "${error}")
+    qt_configure_add_report_entry(TYPE ERROR MESSAGE "${error}" CONDITION TRUE ${ARGN})
 endfunction()
 
 function(qt_configure_process_add_report_entry)

@@ -9,14 +9,18 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/vulkan/hellovulkancubes")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/vulkan/hellovulkancubes")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS Gui)
 find_package(Qt6 COMPONENTS Widgets)
 find_package(Qt6 COMPONENTS Concurrent)
 
-add_qt_gui_executable(hellovulkancubes
+qt_add_executable(hellovulkancubes
     camera.cpp camera.h
     main.cpp
     mainwindow.cpp mainwindow.h
@@ -24,6 +28,10 @@ add_qt_gui_executable(hellovulkancubes
     renderer.cpp renderer.h
     shader.cpp shader.h
     vulkanwindow.cpp vulkanwindow.h
+)
+set_target_properties(hellovulkancubes PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
 )
 target_link_libraries(hellovulkancubes PUBLIC
     Qt::Concurrent

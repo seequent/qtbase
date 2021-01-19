@@ -84,7 +84,7 @@
 #undef register
 #endif
 
-#define XCOORD_MAX 16383
+#define XCOORD_MAX 32767
 enum {
     defaultWindowWidth = 160,
     defaultWindowHeight = 160
@@ -356,23 +356,8 @@ void QXcbWindow::create()
                  | XCB_CW_BIT_GRAVITY
                  | XCB_CW_OVERRIDE_REDIRECT
                  | XCB_CW_SAVE_UNDER
-                 | XCB_CW_EVENT_MASK;
-
-    static auto haveOpenGL = []() {
-        static const bool result = QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::OpenGL);
-        return result;
-    };
-
-    if ((window()->supportsOpenGL() && haveOpenGL()) || m_format.hasAlpha()) {
-        m_cmap = xcb_generate_id(xcb_connection());
-        xcb_create_colormap(xcb_connection(),
-                            XCB_COLORMAP_ALLOC_NONE,
-                            m_cmap,
-                            xcb_parent_id,
-                            m_visualId);
-
-        mask |= XCB_CW_COLORMAP;
-    }
+                 | XCB_CW_EVENT_MASK
+                 | XCB_CW_COLORMAP;
 
     quint32 values[] = {
         XCB_BACK_PIXMAP_NONE,
@@ -381,7 +366,7 @@ void QXcbWindow::create()
         type == Qt::Popup || type == Qt::ToolTip || (window()->flags() & Qt::BypassWindowManagerHint),
         type == Qt::Popup || type == Qt::Tool || type == Qt::SplashScreen || type == Qt::ToolTip || type == Qt::Drawer,
         defaultEventMask,
-        m_cmap
+        platformScreen->colormapForVisual(m_visualId)
     };
 
     m_window = xcb_generate_id(xcb_connection());
@@ -480,12 +465,8 @@ void QXcbWindow::create()
                         atom(QXcbAtom::_XEMBED_INFO),
                         32, 2, (void *)data);
 
-    if (connection()->hasXInput2()) {
-        if (connection()->xi2MouseEventsDisabled())
-            connection()->xi2SelectDeviceEventsCompatibility(m_window);
-        else
-            connection()->xi2SelectDeviceEvents(m_window);
-    }
+    if (connection()->hasXInput2())
+        connection()->xi2SelectDeviceEvents(m_window);
 
     setWindowState(window()->windowStates());
     setWindowFlags(window()->flags());
@@ -511,7 +492,7 @@ void QXcbWindow::create()
 
     if (window()->dynamicPropertyNames().contains(wm_window_role_property_id)) {
         QByteArray wmWindowRole = window()->property(wm_window_role_property_id).toByteArray();
-        setWmWindowRole(wmWindowRole);
+        setWindowRole(QString::fromLatin1(wmWindowRole));
     }
 
     if (m_trayIconWindow)
@@ -556,9 +537,7 @@ void QXcbWindow::destroy()
         xcb_destroy_window(xcb_connection(), m_window);
         m_window = 0;
     }
-    if (m_cmap) {
-        xcb_free_colormap(xcb_connection(), m_cmap);
-    }
+
     m_mapped = false;
 
     if (m_pendingSyncRequest)
@@ -632,7 +611,7 @@ QMargins QXcbWindow::frameMargins() const
 
         bool foundRoot = false;
 
-        const QVector<xcb_window_t> &virtualRoots =
+        const QList<xcb_window_t> &virtualRoots =
             connection()->wmSupport()->virtualRoots();
 
         while (!foundRoot) {
@@ -919,9 +898,9 @@ void QXcbWindow::setWindowFlags(Qt::WindowFlags flags)
 
     xcb_change_window_attributes(xcb_connection(), xcb_window(), mask, values);
 
-    QXcbWindowFunctions::WmWindowTypes wmWindowTypes;
+    WindowTypes wmWindowTypes;
     if (window()->dynamicPropertyNames().contains(wm_window_type_property_id)) {
-        wmWindowTypes = static_cast<QXcbWindowFunctions::WmWindowTypes>(
+        wmWindowTypes = static_cast<WindowTypes>(
             qvariant_cast<int>(window()->property(wm_window_type_property_id)));
     }
 
@@ -1086,7 +1065,7 @@ void QXcbWindow::setNetWmStateOnUnmappedWindow()
     // we first read it and then merge our hints with the existing values, allowing a user
     // to set custom hints.
 
-    QVector<xcb_atom_t> atoms;
+    QList<xcb_atom_t> atoms;
     auto reply = Q_XCB_REPLY_UNCHECKED(xcb_get_property, xcb_connection(),
                                        0, m_window, atom(QXcbAtom::_NET_WM_STATE),
                                        XCB_ATOM_ATOM, 0, 1024);
@@ -1293,7 +1272,7 @@ void QXcbWindow::setWindowIconText(const QString &title)
 
 void QXcbWindow::setWindowIcon(const QIcon &icon)
 {
-    QVector<quint32> icon_data;
+    QList<quint32> icon_data;
     if (!icon.isNull()) {
         QList<QSize> availableSizes = icon.availableSizes();
         if (availableSizes.isEmpty()) {
@@ -1392,7 +1371,7 @@ void QXcbWindow::propagateSizeHints()
 
     xcb_icccm_set_wm_normal_hints(xcb_connection(), m_window, &hints);
 
-    m_sizeHintsScaleFactor = QHighDpiScaling::scaleAndOrigin(screen()).factor;
+    m_sizeHintsScaleFactor = QHighDpiScaling::factor(screen());
 }
 
 void QXcbWindow::requestActivateWindow()
@@ -1445,38 +1424,9 @@ QSurfaceFormat QXcbWindow::format() const
     return m_format;
 }
 
-void QXcbWindow::setWmWindowTypeStatic(QWindow *window, QXcbWindowFunctions::WmWindowTypes windowTypes)
+QXcbWindow::WindowTypes QXcbWindow::wmWindowTypes() const
 {
-    window->setProperty(wm_window_type_property_id, QVariant::fromValue(static_cast<int>(windowTypes)));
-
-    if (window->handle())
-        static_cast<QXcbWindow *>(window->handle())->setWmWindowType(windowTypes, window->flags());
-}
-
-void QXcbWindow::setWindowIconTextStatic(QWindow *window, const QString &text)
-{
-    if (window->handle())
-        static_cast<QXcbWindow *>(window->handle())->setWindowIconText(text);
-}
-
-void QXcbWindow::setWmWindowRoleStatic(QWindow *window, const QByteArray &role)
-{
-    if (window->handle())
-        static_cast<QXcbWindow *>(window->handle())->setWmWindowRole(role);
-    else
-        window->setProperty(wm_window_role_property_id, role);
-}
-
-uint QXcbWindow::visualIdStatic(QWindow *window)
-{
-    if (window && window->handle())
-        return static_cast<QXcbWindow *>(window->handle())->visualId();
-    return UINT_MAX;
-}
-
-QXcbWindowFunctions::WmWindowTypes QXcbWindow::wmWindowTypes() const
-{
-    QXcbWindowFunctions::WmWindowTypes result;
+    WindowTypes result;
 
     auto reply = Q_XCB_REPLY_UNCHECKED(xcb_get_property, xcb_connection(),
                                        0, m_window, atom(QXcbAtom::_NET_WM_WINDOW_TYPE),
@@ -1488,49 +1438,49 @@ QXcbWindowFunctions::WmWindowTypes QXcbWindow::wmWindowTypes() const
             QXcbAtom::Atom type = connection()->qatom(*types);
             switch (type) {
             case QXcbAtom::_NET_WM_WINDOW_TYPE_NORMAL:
-                result |= QXcbWindowFunctions::Normal;
+                result |= WindowType::Normal;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_DESKTOP:
-                result |= QXcbWindowFunctions::Desktop;
+                result |= WindowType::Desktop;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_DOCK:
-                result |= QXcbWindowFunctions::Dock;
+                result |= WindowType::Dock;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_TOOLBAR:
-                result |= QXcbWindowFunctions::Toolbar;
+                result |= WindowType::Toolbar;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_MENU:
-                result |= QXcbWindowFunctions::Menu;
+                result |= WindowType::Menu;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_UTILITY:
-                result |= QXcbWindowFunctions::Utility;
+                result |= WindowType::Utility;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_SPLASH:
-                result |= QXcbWindowFunctions::Splash;
+                result |= WindowType::Splash;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_DIALOG:
-                result |= QXcbWindowFunctions::Dialog;
+                result |= WindowType::Dialog;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_DROPDOWN_MENU:
-                result |= QXcbWindowFunctions::DropDownMenu;
+                result |= WindowType::DropDownMenu;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_POPUP_MENU:
-                result |= QXcbWindowFunctions::PopupMenu;
+                result |= WindowType::PopupMenu;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_TOOLTIP:
-                result |= QXcbWindowFunctions::Tooltip;
+                result |= WindowType::Tooltip;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_NOTIFICATION:
-                result |= QXcbWindowFunctions::Notification;
+                result |= WindowType::Notification;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_COMBO:
-                result |= QXcbWindowFunctions::Combo;
+                result |= WindowType::Combo;
                 break;
             case QXcbAtom::_NET_WM_WINDOW_TYPE_DND:
-                result |= QXcbWindowFunctions::Dnd;
+                result |= WindowType::Dnd;
                 break;
             case QXcbAtom::_KDE_NET_WM_WINDOW_TYPE_OVERRIDE:
-                result |= QXcbWindowFunctions::KdeOverride;
+                result |= WindowType::KdeOverride;
                 break;
             default:
                 break;
@@ -1540,46 +1490,46 @@ QXcbWindowFunctions::WmWindowTypes QXcbWindow::wmWindowTypes() const
     return result;
 }
 
-void QXcbWindow::setWmWindowType(QXcbWindowFunctions::WmWindowTypes types, Qt::WindowFlags flags)
+void QXcbWindow::setWmWindowType(WindowTypes types, Qt::WindowFlags flags)
 {
-    QVector<xcb_atom_t> atoms;
+    QList<xcb_atom_t> atoms;
 
     // manual selection 1 (these are never set by Qt and take precedence)
-    if (types & QXcbWindowFunctions::Normal)
+    if (types & WindowType::Normal)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_NORMAL));
-    if (types & QXcbWindowFunctions::Desktop)
+    if (types & WindowType::Desktop)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_DESKTOP));
-    if (types & QXcbWindowFunctions::Dock)
+    if (types & WindowType::Dock)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_DOCK));
-    if (types & QXcbWindowFunctions::Notification)
+    if (types & WindowType::Notification)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_NOTIFICATION));
 
     // manual selection 2 (Qt uses these during auto selection);
-    if (types & QXcbWindowFunctions::Utility)
+    if (types & WindowType::Utility)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_UTILITY));
-    if (types & QXcbWindowFunctions::Splash)
+    if (types & WindowType::Splash)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_SPLASH));
-    if (types & QXcbWindowFunctions::Dialog)
+    if (types & WindowType::Dialog)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_DIALOG));
-    if (types & QXcbWindowFunctions::Tooltip)
+    if (types & WindowType::Tooltip)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_TOOLTIP));
-    if (types & QXcbWindowFunctions::KdeOverride)
+    if (types & WindowType::KdeOverride)
         atoms.append(atom(QXcbAtom::_KDE_NET_WM_WINDOW_TYPE_OVERRIDE));
 
     // manual selection 3 (these can be set by Qt, but don't have a
     // corresponding Qt::WindowType). note that order of the *MENU
     // atoms is important
-    if (types & QXcbWindowFunctions::Menu)
+    if (types & WindowType::Menu)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_MENU));
-    if (types & QXcbWindowFunctions::DropDownMenu)
+    if (types & WindowType::DropDownMenu)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_DROPDOWN_MENU));
-    if (types & QXcbWindowFunctions::PopupMenu)
+    if (types & WindowType::PopupMenu)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_POPUP_MENU));
-    if (types & QXcbWindowFunctions::Toolbar)
+    if (types & WindowType::Toolbar)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_TOOLBAR));
-    if (types & QXcbWindowFunctions::Combo)
+    if (types & WindowType::Combo)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_COMBO));
-    if (types & QXcbWindowFunctions::Dnd)
+    if (types & WindowType::Dnd)
         atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_DND));
 
     // automatic selection
@@ -1587,27 +1537,27 @@ void QXcbWindow::setWmWindowType(QXcbWindowFunctions::WmWindowTypes types, Qt::W
     switch (type) {
     case Qt::Dialog:
     case Qt::Sheet:
-        if (!(types & QXcbWindowFunctions::Dialog))
+        if (!(types & WindowType::Dialog))
             atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_DIALOG));
         break;
     case Qt::Tool:
     case Qt::Drawer:
-        if (!(types & QXcbWindowFunctions::Utility))
+        if (!(types & WindowType::Utility))
             atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_UTILITY));
         break;
     case Qt::ToolTip:
-        if (!(types & QXcbWindowFunctions::Tooltip))
+        if (!(types & WindowType::Tooltip))
             atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_TOOLTIP));
         break;
     case Qt::SplashScreen:
-        if (!(types & QXcbWindowFunctions::Splash))
+        if (!(types & WindowType::Splash))
             atoms.append(atom(QXcbAtom::_NET_WM_WINDOW_TYPE_SPLASH));
         break;
     default:
         break;
     }
 
-    if ((flags & Qt::FramelessWindowHint) && !(type & QXcbWindowFunctions::KdeOverride)) {
+    if ((flags & Qt::FramelessWindowHint) && !(type & WindowType::KdeOverride)) {
         // override netwm type - quick and easy for KDE noborder
         atoms.append(atom(QXcbAtom::_KDE_NET_WM_WINDOW_TYPE_OVERRIDE));
     }
@@ -1627,11 +1577,12 @@ void QXcbWindow::setWmWindowType(QXcbWindowFunctions::WmWindowTypes types, Qt::W
     xcb_flush(xcb_connection());
 }
 
-void QXcbWindow::setWmWindowRole(const QByteArray &role)
+void QXcbWindow::setWindowRole(const QString &role)
 {
+    QByteArray roleData = role.toLatin1();
     xcb_change_property(xcb_connection(), XCB_PROP_MODE_REPLACE, m_window,
                         atom(QXcbAtom::WM_WINDOW_ROLE), XCB_ATOM_STRING, 8,
-                        role.size(), role.constData());
+                        roleData.size(), roleData.constData());
 }
 
 void QXcbWindow::setParentRelativeBackPixmap()
@@ -1667,7 +1618,7 @@ void QXcbWindow::handleExposeEvent(const xcb_expose_event_t *event)
 
     bool pending = true;
 
-    connection()->eventQueue()->peek(QXcbEventQueue::PeekRemoveMatchContinue,
+    connection()->eventQueue()->peek(QXcbEventQueue::PeekConsumeMatchAndContinue,
                                      [this, &pending](xcb_generic_event_t *event, int type) {
         if (type != XCB_EXPOSE)
             return false;
@@ -1784,7 +1735,7 @@ void QXcbWindow::handleConfigureNotifyEvent(const xcb_configure_notify_event_t *
     // will make the comparison later.
     QWindowSystemInterface::handleWindowScreenChanged(window(), newScreen->screen());
 
-    if (!qFuzzyCompare(QHighDpiScaling::scaleAndOrigin(newScreen).factor, m_sizeHintsScaleFactor))
+    if (!qFuzzyCompare(QHighDpiScaling::factor(newScreen), m_sizeHintsScaleFactor))
         propagateSizeHints();
 
     // Send the synthetic expose event on resize only when the window is shrinked,
@@ -1943,7 +1894,7 @@ static inline bool doCheckUnGrabAncestor(QXcbConnection *conn)
     */
     if (conn) {
         const bool mouseButtonsPressed = (conn->buttonState() != Qt::NoButton);
-        return mouseButtonsPressed || (conn->hasXInput2() && !conn->xi2MouseEventsDisabled());
+        return mouseButtonsPressed || conn->hasXInput2();
     }
     return true;
 }
@@ -2294,7 +2245,7 @@ bool QXcbWindow::setMouseGrabEnabled(bool grab)
     if (grab && !connection()->canGrab())
         return false;
 
-    if (connection()->hasXInput2() && !connection()->xi2MouseEventsDisabled()) {
+    if (connection()->hasXInput2()) {
         bool result = connection()->xi2SetMouseGrabEnabled(m_window, grab);
         if (grab && result)
             connection()->setMouseGrabber(this);
@@ -2526,9 +2477,9 @@ void QXcbWindow::setOpacity(qreal level)
                         (uchar *)&value);
 }
 
-QVector<xcb_rectangle_t> qRegionToXcbRectangleList(const QRegion &region)
+QList<xcb_rectangle_t> qRegionToXcbRectangleList(const QRegion &region)
 {
-    QVector<xcb_rectangle_t> rects;
+    QList<xcb_rectangle_t> rects;
     rects.reserve(region.rectCount());
     for (const QRect &r : region)
         rects.push_back(qRectToXCBRectangle(r));

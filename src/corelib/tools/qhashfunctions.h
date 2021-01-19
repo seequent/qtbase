@@ -62,7 +62,6 @@ QT_BEGIN_NAMESPACE
 class QBitArray;
 class QByteArray;
 class QString;
-class QStringRef;
 class QLatin1String;
 
 Q_CORE_EXPORT int qGlobalQHashSeed();
@@ -91,30 +90,38 @@ Q_DECL_CONST_FUNCTION constexpr size_t hash(size_t key, size_t seed) noexcept
     }
 }
 
+template <typename T, typename = void>
+constexpr inline bool HasQHashSingleArgOverload = false;
+
+template <typename T>
+constexpr inline bool HasQHashSingleArgOverload<T, std::enable_if_t<
+    std::is_convertible_v<decltype(qHash(std::declval<const T &>())), size_t>
+>> = true;
+
 }
 
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHashBits(const void *p, size_t size, size_t seed = 0) noexcept;
 
 // C++ builtin types
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(char key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(char key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(uchar key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(uchar key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(signed char key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(signed char key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(ushort key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(ushort key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(short key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(short key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(uint key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(uint key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(int key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(int key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(ulong key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(ulong key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(long key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(long key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(quint64 key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(quint64 key, size_t seed = 0) noexcept
 {
     if constexpr (sizeof(quint64) > sizeof(size_t))
         key ^= (key >> 32);
@@ -133,14 +140,14 @@ Q_CORE_EXPORT Q_DECL_CONST_FUNCTION size_t qHash(double key, size_t seed = 0) no
 #if !defined(Q_OS_DARWIN) || defined(Q_CLANG_QDOC)
 Q_CORE_EXPORT Q_DECL_CONST_FUNCTION size_t qHash(long double key, size_t seed = 0) noexcept;
 #endif
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(wchar_t key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(wchar_t key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(char16_t key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(char16_t key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(char32_t key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(char32_t key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
 #ifdef __cpp_char8_t
-Q_DECL_CONST_FUNCTION Q_DECL_CONSTEXPR inline size_t qHash(char8_t key, size_t seed = 0) noexcept
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(char8_t key, size_t seed = 0) noexcept
 { return QHashPrivate::hash(size_t(key), seed); }
 #endif
 template <class T> inline size_t qHash(const T *key, size_t seed = 0) noexcept
@@ -155,22 +162,32 @@ Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(std::nullptr_t, size_t seed 
 // (some) Qt types
 Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(const QChar key, size_t seed = 0) noexcept { return qHash(key.unicode(), seed); }
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QByteArray &key, size_t seed = 0) noexcept;
-#if QT_STRINGVIEW_LEVEL < 2
-Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QString &key, size_t seed = 0) noexcept;
-Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QStringRef &key, size_t seed = 0) noexcept;
-#endif
+Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QByteArrayView &key, size_t seed = 0) noexcept;
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(QStringView key, size_t seed = 0) noexcept;
+#if QT_STRINGVIEW_LEVEL < 2
+inline Q_DECL_PURE_FUNCTION size_t qHash(const QString &key, size_t seed = 0) noexcept
+{ return qHash(QStringView{key}, seed); }
+#endif
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QBitArray &key, size_t seed = 0) noexcept;
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(QLatin1String key, size_t seed = 0) noexcept;
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(QKeyCombination key, size_t seed = 0) noexcept
+{ return qHash(key.toCombined(), seed); }
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION uint qt_hash(QStringView key, uint chained = 0) noexcept;
 
-template<typename T> inline size_t qHash(const T &t, size_t seed)
-    noexcept(noexcept(qHash(t)))
+template <typename T, std::enable_if_t<QHashPrivate::HasQHashSingleArgOverload<T>, bool> = true>
+size_t qHash(const T &t, size_t seed) noexcept(noexcept(qHash(t)))
 { return qHash(t) ^ seed; }
+
+template<typename T>
+bool qHashEquals(const T &a, const T &b)
+{
+    return a == b;
+}
 
 namespace QtPrivate {
 
-struct QHashCombine {
+struct QHashCombine
+{
     typedef size_t result_type;
     template <typename T>
     constexpr result_type operator()(size_t seed, const T &t) const noexcept(noexcept(qHash(t)))
@@ -178,7 +195,8 @@ struct QHashCombine {
     { return seed ^ (qHash(t) + 0x9e3779b9 + (seed << 6) + (seed >> 2)) ; }
 };
 
-struct QHashCombineCommutative {
+struct QHashCombineCommutative
+{
     // QHashCombine is a good hash combiner, but is not commutative,
     // ie. it depends on the order of the input elements. That is
     // usually what we want: {0,1,3} should hash differently than
@@ -252,15 +270,6 @@ inline size_t qHashRangeCommutative(InputIterator first, InputIterator last, siz
     return std::accumulate(first, last, seed, QtPrivate::QHashCombineCommutative());
 }
 
-template <typename T1, typename T2> inline size_t qHash(const QPair<T1, T2> &key, size_t seed = 0)
-    noexcept(noexcept(qHash(key.first, seed)) && noexcept(qHash(key.second, seed)))
-{
-    QtPrivate::QHashCombine hash;
-    seed = hash(seed, key.first);
-    seed = hash(seed, key.second);
-    return seed;
-}
-
 template <typename T1, typename T2> inline size_t qHash(const std::pair<T1, T2> &key, size_t seed = 0)
     noexcept(noexcept(qHash(key.first, seed)) && noexcept(qHash(key.second, seed)))
 {
@@ -296,7 +305,6 @@ template <typename T1, typename T2> inline size_t qHash(const std::pair<T1, T2> 
     QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH(Class, argument_type)
 
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_CREF(QString)
-QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_CREF(QStringRef)
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_VALUE(QStringView)
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_VALUE(QLatin1String)
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_CREF(QByteArray)

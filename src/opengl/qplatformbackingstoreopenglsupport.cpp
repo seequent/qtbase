@@ -94,7 +94,7 @@ static QRegion deviceRegion(const QRegion &region, QWindow *window, const QPoint
     if (offset.isNull() && window->devicePixelRatio() <= 1)
         return region;
 
-    QVector<QRect> rects;
+    QVarLengthArray<QRect, 4> rects;
     rects.reserve(region.rectCount());
     for (const QRect &rect : region)
         rects.append(deviceRect(rect.translated(offset), window));
@@ -450,17 +450,14 @@ GLuint QPlatformBackingStoreOpenGLSupport::toTexture(const QRegion &dirtyRegion,
     return textureId;
 }
 
-static QPlatformBackingStoreOpenGLSupportBase *createOpenGLSupport()
+void qt_registerDefaultPlatformBackingStoreOpenGLSupport()
 {
-    return new QPlatformBackingStoreOpenGLSupport;
+    if (!QPlatformBackingStoreOpenGLSupportBase::factoryFunction()) {
+        QPlatformBackingStoreOpenGLSupportBase::setFactoryFunction([]() -> QPlatformBackingStoreOpenGLSupportBase* {
+            return new QPlatformBackingStoreOpenGLSupport;
+        });
+    }
 }
-
-static void setDefaultOpenGLSupportFactoryFunction()
-{
-    if (!QPlatformBackingStoreOpenGLSupportBase::factoryFunction())
-        QPlatformBackingStoreOpenGLSupportBase::setFactoryFunction(createOpenGLSupport);
-}
-Q_CONSTRUCTOR_FUNCTION(setDefaultOpenGLSupportFactoryFunction);
 
 #endif // QT_NO_OPENGL
 

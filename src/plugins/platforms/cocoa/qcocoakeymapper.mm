@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -41,19 +41,385 @@
 
 #include "qcocoakeymapper.h"
 
-#include <QtCore/QDebug>
+#include <QtCore/qloggingcategory.h>
 #include <QtGui/QGuiApplication>
 
 QT_BEGIN_NAMESPACE
 
-// QCocoaKeyMapper debug facilities
-//#define DEBUG_KEY_BINDINGS
-//#define DEBUG_KEY_BINDINGS_MODIFIERS
-//#define DEBUG_KEY_MAPS
+Q_LOGGING_CATEGORY(lcQpaKeyMapper, "qt.qpa.keymapper");
+Q_LOGGING_CATEGORY(lcQpaKeyMapperKeys, "qt.qpa.keymapper.keys");
 
-// Possible modifier states.
-// NOTE: The order of these states match the order in updatePossibleKeyCodes()!
-static const Qt::KeyboardModifiers ModsTbl[] = {
+static Qt::KeyboardModifiers swapModifiersIfNeeded(const Qt::KeyboardModifiers modifiers)
+{
+    if (QCoreApplication::testAttribute(Qt::AA_MacDontSwapCtrlAndMeta))
+        return modifiers;
+
+    Qt::KeyboardModifiers swappedModifiers = modifiers;
+    swappedModifiers &= ~(Qt::MetaModifier | Qt::ControlModifier);
+
+    if (modifiers & Qt::ControlModifier)
+        swappedModifiers |= Qt::MetaModifier;
+    if (modifiers & Qt::MetaModifier)
+        swappedModifiers |= Qt::ControlModifier;
+
+    return swappedModifiers;
+}
+
+static constexpr std::tuple<NSEventModifierFlags, Qt::KeyboardModifier> cocoaModifierMap[] = {
+    { NSEventModifierFlagShift, Qt::ShiftModifier },
+    { NSEventModifierFlagControl, Qt::ControlModifier },
+    { NSEventModifierFlagCommand, Qt::MetaModifier },
+    { NSEventModifierFlagOption, Qt::AltModifier },
+    { NSEventModifierFlagNumericPad, Qt::KeypadModifier }
+};
+
+Qt::KeyboardModifiers QCocoaKeyMapper::fromCocoaModifiers(NSEventModifierFlags cocoaModifiers)
+{
+    Qt::KeyboardModifiers qtModifiers = Qt::NoModifier;
+    for (const auto &[cocoaModifier, qtModifier] : cocoaModifierMap) {
+        if (cocoaModifiers & cocoaModifier)
+            qtModifiers |= qtModifier;
+    }
+
+    return swapModifiersIfNeeded(qtModifiers);
+}
+
+NSEventModifierFlags QCocoaKeyMapper::toCocoaModifiers(Qt::KeyboardModifiers qtModifiers)
+{
+    qtModifiers = swapModifiersIfNeeded(qtModifiers);
+
+    NSEventModifierFlags cocoaModifiers = 0;
+    for (const auto &[cocoaModifier, qtModifier] : cocoaModifierMap) {
+        if (qtModifiers & qtModifier)
+            cocoaModifiers |= cocoaModifier;
+    }
+
+    return cocoaModifiers;
+}
+
+using CarbonModifiers = UInt32; // As opposed to EventModifiers which is UInt16
+
+static CarbonModifiers toCarbonModifiers(Qt::KeyboardModifiers qtModifiers)
+{
+    qtModifiers = swapModifiersIfNeeded(qtModifiers);
+
+    static constexpr std::tuple<int, Qt::KeyboardModifier> carbonModifierMap[] = {
+        { shiftKey, Qt::ShiftModifier },
+        { controlKey, Qt::ControlModifier },
+        { cmdKey, Qt::MetaModifier },
+        { optionKey, Qt::AltModifier },
+        { kEventKeyModifierNumLockMask, Qt::KeypadModifier }
+    };
+
+    CarbonModifiers carbonModifiers = 0;
+    for (const auto &[carbonModifier, qtModifier] : carbonModifierMap) {
+        if (qtModifiers & qtModifier)
+            carbonModifiers |= carbonModifier;
+    }
+
+    return carbonModifiers;
+}
+
+// Keyboard keys (non-modifiers)
+static QHash<char16_t, Qt::Key> standardKeys = {
+    { kHomeCharCode, Qt::Key_Home },
+    { kEnterCharCode, Qt::Key_Enter },
+    { kEndCharCode, Qt::Key_End },
+    { kBackspaceCharCode, Qt::Key_Backspace },
+    { kTabCharCode, Qt::Key_Tab },
+    { kPageUpCharCode, Qt::Key_PageUp },
+    { kPageDownCharCode, Qt::Key_PageDown },
+    { kReturnCharCode, Qt::Key_Return },
+    { kEscapeCharCode, Qt::Key_Escape },
+    { kLeftArrowCharCode, Qt::Key_Left },
+    { kRightArrowCharCode, Qt::Key_Right },
+    { kUpArrowCharCode, Qt::Key_Up },
+    { kDownArrowCharCode, Qt::Key_Down },
+    { kHelpCharCode, Qt::Key_Help },
+    { kDeleteCharCode, Qt::Key_Delete },
+    // ASCII maps, for debugging
+    { ':', Qt::Key_Colon },
+    { ';', Qt::Key_Semicolon },
+    { '<', Qt::Key_Less },
+    { '=', Qt::Key_Equal },
+    { '>', Qt::Key_Greater },
+    { '?', Qt::Key_Question },
+    { '@', Qt::Key_At },
+    { ' ', Qt::Key_Space },
+    { '!', Qt::Key_Exclam },
+    { '"', Qt::Key_QuoteDbl },
+    { '#', Qt::Key_NumberSign },
+    { '$', Qt::Key_Dollar },
+    { '%', Qt::Key_Percent },
+    { '&', Qt::Key_Ampersand },
+    { '\'', Qt::Key_Apostrophe },
+    { '(', Qt::Key_ParenLeft },
+    { ')', Qt::Key_ParenRight },
+    { '*', Qt::Key_Asterisk },
+    { '+', Qt::Key_Plus },
+    { ',', Qt::Key_Comma },
+    { '-', Qt::Key_Minus },
+    { '.', Qt::Key_Period },
+    { '/', Qt::Key_Slash },
+    { '[', Qt::Key_BracketLeft },
+    { ']', Qt::Key_BracketRight },
+    { '\\', Qt::Key_Backslash },
+    { '_', Qt::Key_Underscore },
+    { '`', Qt::Key_QuoteLeft },
+    { '{', Qt::Key_BraceLeft },
+    { '}', Qt::Key_BraceRight },
+    { '|', Qt::Key_Bar },
+    { '~', Qt::Key_AsciiTilde },
+    { '^', Qt::Key_AsciiCircum }
+};
+
+static QHash<char16_t, Qt::Key> virtualKeys = {
+    { kVK_F1, Qt::Key_F1 },
+    { kVK_F2, Qt::Key_F2 },
+    { kVK_F3, Qt::Key_F3 },
+    { kVK_F4, Qt::Key_F4 },
+    { kVK_F5, Qt::Key_F5 },
+    { kVK_F6, Qt::Key_F6 },
+    { kVK_F7, Qt::Key_F7 },
+    { kVK_F8, Qt::Key_F8 },
+    { kVK_F9, Qt::Key_F9 },
+    { kVK_F10, Qt::Key_F10 },
+    { kVK_F11, Qt::Key_F11 },
+    { kVK_F12, Qt::Key_F12 },
+    { kVK_F13, Qt::Key_F13 },
+    { kVK_F14, Qt::Key_F14 },
+    { kVK_F15, Qt::Key_F15 },
+    { kVK_F16, Qt::Key_F16 },
+    { kVK_Return, Qt::Key_Return },
+    { kVK_Tab, Qt::Key_Tab },
+    { kVK_Escape, Qt::Key_Escape },
+    { kVK_Help, Qt::Key_Help },
+    { kVK_UpArrow, Qt::Key_Up },
+    { kVK_DownArrow, Qt::Key_Down },
+    { kVK_LeftArrow, Qt::Key_Left },
+    { kVK_RightArrow, Qt::Key_Right },
+    { kVK_PageUp, Qt::Key_PageUp },
+    { kVK_PageDown, Qt::Key_PageDown }
+};
+
+static QHash<char16_t, Qt::Key> functionKeys = {
+    { NSUpArrowFunctionKey, Qt::Key_Up },
+    { NSDownArrowFunctionKey, Qt::Key_Down },
+    { NSLeftArrowFunctionKey, Qt::Key_Left },
+    { NSRightArrowFunctionKey, Qt::Key_Right },
+    // F1-35 function keys handled manually below
+    { NSInsertFunctionKey, Qt::Key_Insert },
+    { NSDeleteFunctionKey, Qt::Key_Delete },
+    { NSHomeFunctionKey, Qt::Key_Home },
+    { NSEndFunctionKey, Qt::Key_End },
+    { NSPageUpFunctionKey, Qt::Key_PageUp },
+    { NSPageDownFunctionKey, Qt::Key_PageDown },
+    { NSPrintScreenFunctionKey, Qt::Key_Print },
+    { NSScrollLockFunctionKey, Qt::Key_ScrollLock },
+    { NSPauseFunctionKey, Qt::Key_Pause },
+    { NSSysReqFunctionKey, Qt::Key_SysReq },
+    { NSMenuFunctionKey, Qt::Key_Menu },
+    { NSPrintFunctionKey, Qt::Key_Printer },
+    { NSClearDisplayFunctionKey, Qt::Key_Clear },
+    { NSInsertCharFunctionKey, Qt::Key_Insert },
+    { NSDeleteCharFunctionKey, Qt::Key_Delete },
+    { NSSelectFunctionKey, Qt::Key_Select },
+    { NSExecuteFunctionKey, Qt::Key_Execute },
+    { NSUndoFunctionKey, Qt::Key_Undo },
+    { NSRedoFunctionKey, Qt::Key_Redo },
+    { NSFindFunctionKey, Qt::Key_Find },
+    { NSHelpFunctionKey, Qt::Key_Help },
+    { NSModeSwitchFunctionKey, Qt::Key_Mode_switch }
+};
+
+static int toKeyCode(const QChar &key, int virtualKey, int modifiers)
+{
+    qCDebug(lcQpaKeyMapperKeys, "Mapping key: %d (0x%04x) / vk %d (0x%04x)",
+        key.unicode(), key.unicode(), virtualKey, virtualKey);
+
+    if (key == QChar(kClearCharCode) && virtualKey == 0x47)
+        return Qt::Key_Clear;
+
+    if (key.isDigit()) {
+        qCDebug(lcQpaKeyMapperKeys, "Got digit key: %d", key.digitValue());
+        return key.digitValue() + Qt::Key_0;
+    }
+
+    if (key.isLetter()) {
+        qCDebug(lcQpaKeyMapperKeys, "Got letter key: %d", (key.toUpper().unicode() - 'A'));
+        return (key.toUpper().unicode() - 'A') + Qt::Key_A;
+    }
+    if (key.isSymbol()) {
+        qCDebug(lcQpaKeyMapperKeys, "Got symbol key: %d", (key.unicode()));
+        return key.unicode();
+    }
+
+    if (auto qtKey = standardKeys.value(key.unicode())) {
+        // To work like Qt for X11 we issue Backtab when Shift + Tab are pressed
+        if (qtKey == Qt::Key_Tab && (modifiers & Qt::ShiftModifier)) {
+            qCDebug(lcQpaKeyMapperKeys, "Got key: Qt::Key_Backtab");
+            return Qt::Key_Backtab;
+        }
+
+        qCDebug(lcQpaKeyMapperKeys) << "Got" << qtKey;
+        return qtKey;
+    }
+
+    // Last ditch try to match the scan code
+    if (auto qtKey = virtualKeys.value(virtualKey)) {
+        qCDebug(lcQpaKeyMapperKeys) << "Got scancode" << qtKey;
+        return qtKey;
+    }
+
+    // Check if they belong to key codes in private unicode range
+    if (key >= QChar(NSUpArrowFunctionKey) && key <= QChar(NSModeSwitchFunctionKey)) {
+        if (auto qtKey = functionKeys.value(key.unicode())) {
+            qCDebug(lcQpaKeyMapperKeys) << "Got" << qtKey;
+            return qtKey;
+        } else if (key >= QChar(NSF1FunctionKey) && key <= QChar(NSF35FunctionKey)) {
+            auto functionKey = Qt::Key_F1 + (key.unicode() - NSF1FunctionKey) ;
+            qCDebug(lcQpaKeyMapperKeys) << "Got" << functionKey;
+            return functionKey;
+        }
+    }
+
+    qCDebug(lcQpaKeyMapperKeys, "Unknown case.. %d[%d] %d", key.unicode(), key.toLatin1(), virtualKey);
+    return Qt::Key_unknown;
+}
+
+// --------- Cocoa key mapping moved from Qt Core ---------
+
+static const int NSEscapeCharacter = 27; // not defined by Cocoa headers
+
+static const QHash<char16_t, Qt::Key> cocoaKeys = {
+    { NSEnterCharacter, Qt::Key_Enter },
+    { NSBackspaceCharacter, Qt::Key_Backspace },
+    { NSTabCharacter, Qt::Key_Tab },
+    { NSNewlineCharacter, Qt::Key_Return },
+    { NSCarriageReturnCharacter, Qt::Key_Return },
+    { NSBackTabCharacter, Qt::Key_Backtab },
+    { NSEscapeCharacter, Qt::Key_Escape },
+    { NSDeleteCharacter, Qt::Key_Backspace },
+    { NSUpArrowFunctionKey, Qt::Key_Up },
+    { NSDownArrowFunctionKey, Qt::Key_Down },
+    { NSLeftArrowFunctionKey, Qt::Key_Left },
+    { NSRightArrowFunctionKey, Qt::Key_Right },
+    { NSF1FunctionKey, Qt::Key_F1 },
+    { NSF2FunctionKey, Qt::Key_F2 },
+    { NSF3FunctionKey, Qt::Key_F3 },
+    { NSF4FunctionKey, Qt::Key_F4 },
+    { NSF5FunctionKey, Qt::Key_F5 },
+    { NSF6FunctionKey, Qt::Key_F6 },
+    { NSF7FunctionKey, Qt::Key_F7 },
+    { NSF8FunctionKey, Qt::Key_F8 },
+    { NSF9FunctionKey, Qt::Key_F9 },
+    { NSF10FunctionKey, Qt::Key_F10 },
+    { NSF11FunctionKey, Qt::Key_F11 },
+    { NSF12FunctionKey, Qt::Key_F12 },
+    { NSF13FunctionKey, Qt::Key_F13 },
+    { NSF14FunctionKey, Qt::Key_F14 },
+    { NSF15FunctionKey, Qt::Key_F15 },
+    { NSF16FunctionKey, Qt::Key_F16 },
+    { NSF17FunctionKey, Qt::Key_F17 },
+    { NSF18FunctionKey, Qt::Key_F18 },
+    { NSF19FunctionKey, Qt::Key_F19 },
+    { NSF20FunctionKey, Qt::Key_F20 },
+    { NSF21FunctionKey, Qt::Key_F21 },
+    { NSF22FunctionKey, Qt::Key_F22 },
+    { NSF23FunctionKey, Qt::Key_F23 },
+    { NSF24FunctionKey, Qt::Key_F24 },
+    { NSF25FunctionKey, Qt::Key_F25 },
+    { NSF26FunctionKey, Qt::Key_F26 },
+    { NSF27FunctionKey, Qt::Key_F27 },
+    { NSF28FunctionKey, Qt::Key_F28 },
+    { NSF29FunctionKey, Qt::Key_F29 },
+    { NSF30FunctionKey, Qt::Key_F30 },
+    { NSF31FunctionKey, Qt::Key_F31 },
+    { NSF32FunctionKey, Qt::Key_F32 },
+    { NSF33FunctionKey, Qt::Key_F33 },
+    { NSF34FunctionKey, Qt::Key_F34 },
+    { NSF35FunctionKey, Qt::Key_F35 },
+    { NSInsertFunctionKey, Qt::Key_Insert },
+    { NSDeleteFunctionKey, Qt::Key_Delete },
+    { NSHomeFunctionKey, Qt::Key_Home },
+    { NSEndFunctionKey, Qt::Key_End },
+    { NSPageUpFunctionKey, Qt::Key_PageUp },
+    { NSPageDownFunctionKey, Qt::Key_PageDown },
+    { NSPrintScreenFunctionKey, Qt::Key_Print },
+    { NSScrollLockFunctionKey, Qt::Key_ScrollLock },
+    { NSPauseFunctionKey, Qt::Key_Pause },
+    { NSSysReqFunctionKey, Qt::Key_SysReq },
+    { NSMenuFunctionKey, Qt::Key_Menu },
+    { NSHelpFunctionKey, Qt::Key_Help },
+};
+
+QChar QCocoaKeyMapper::toCocoaKey(Qt::Key key)
+{
+    // Prioritize overloaded keys
+    if (key == Qt::Key_Return)
+        return QChar(NSNewlineCharacter);
+    if (key == Qt::Key_Backspace)
+        return QChar(NSBackspaceCharacter);
+
+    static QHash<Qt::Key, char16_t> reverseCocoaKeys;
+    if (reverseCocoaKeys.isEmpty()) {
+        reverseCocoaKeys.reserve(cocoaKeys.size());
+        for (auto it = cocoaKeys.begin(); it != cocoaKeys.end(); ++it)
+            reverseCocoaKeys.insert(it.value(), it.key());
+    }
+
+    return reverseCocoaKeys.value(key);
+}
+
+Qt::Key QCocoaKeyMapper::fromCocoaKey(QChar keyCode)
+{
+    if (auto key = cocoaKeys.value(keyCode.unicode()))
+        return key;
+
+    return Qt::Key(keyCode.toUpper().unicode());
+}
+
+// ------------------------------------------------
+
+Qt::KeyboardModifiers QCocoaKeyMapper::queryKeyboardModifiers()
+{
+    return fromCocoaModifiers(NSEvent.modifierFlags);
+}
+
+bool QCocoaKeyMapper::updateKeyboard()
+{
+    QCFType<TISInputSourceRef> source = TISCopyInputMethodKeyboardLayoutOverride();
+    if (!source)
+        source = TISCopyCurrentKeyboardInputSource();
+
+    if (m_keyboardMode != NullMode && source == m_currentInputSource)
+        return false;
+
+    Q_ASSERT(source);
+    m_currentInputSource = source;
+    m_keyboardKind = LMGetKbdType();
+    m_deadKeyState = 0;
+
+    m_keyMap.clear();
+
+    if (auto data = CFDataRef(TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData))) {
+        const UCKeyboardLayout *uchrData = reinterpret_cast<const UCKeyboardLayout *>(CFDataGetBytePtr(data));
+        Q_ASSERT(uchrData);
+        m_keyboardLayoutFormat = uchrData;
+        m_keyboardMode = UnicodeMode;
+    } else {
+        m_keyboardLayoutFormat = nullptr;
+        m_keyboardMode = NullMode;
+    }
+
+    qCDebug(lcQpaKeyMapper) << "Updated keyboard to"
+        << QString::fromCFString(CFStringRef(TISGetInputSourceProperty(
+            m_currentInputSource, kTISPropertyLocalizedName)));
+
+    return true;
+}
+
+static constexpr Qt::KeyboardModifiers modifierCombinations[] = {
     Qt::NoModifier,                                             // 0
     Qt::ShiftModifier,                                          // 1
     Qt::ControlModifier,                                        // 2
@@ -64,409 +430,117 @@ static const Qt::KeyboardModifiers ModsTbl[] = {
     Qt::AltModifier | Qt::ShiftModifier | Qt::ControlModifier,  // 7
     Qt::MetaModifier,                                           // 8
     Qt::MetaModifier | Qt::ShiftModifier,                       // 9
-    Qt::MetaModifier | Qt::ControlModifier,                    // 10
-    Qt::MetaModifier | Qt::ControlModifier | Qt::ShiftModifier,// 11
-    Qt::MetaModifier | Qt::AltModifier,                        // 12
-    Qt::MetaModifier | Qt::AltModifier | Qt::ShiftModifier,    // 13
-    Qt::MetaModifier | Qt::AltModifier | Qt::ControlModifier,  // 14
+    Qt::MetaModifier | Qt::ControlModifier,                     // 10
+    Qt::MetaModifier | Qt::ControlModifier | Qt::ShiftModifier, // 11
+    Qt::MetaModifier | Qt::AltModifier,                         // 12
+    Qt::MetaModifier | Qt::AltModifier | Qt::ShiftModifier,     // 13
+    Qt::MetaModifier | Qt::AltModifier | Qt::ControlModifier,   // 14
     Qt::MetaModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::ControlModifier,  // 15
 };
 
-bool qt_mac_eat_unicode_key = false;
-
-
-/* key maps */
-struct qt_mac_enum_mapper
+/*
+    Returns a key map for the given \virtualKey based on all
+    possible modifier combinations.
+*/
+const QCocoaKeyMapper::KeyMap &QCocoaKeyMapper::keyMapForKey(VirtualKeyCode virtualKey, QChar unicodeKey) const
 {
-    int mac_code;
-    int qt_code;
-#if defined(DEBUG_KEY_BINDINGS)
-#   define QT_MAC_MAP_ENUM(x) x, #x
-    const char *desc;
-#else
-#   define QT_MAC_MAP_ENUM(x) x
-#endif
-};
+    static_assert(sizeof(modifierCombinations) / sizeof(Qt::KeyboardModifiers) == kNumModifierCombinations);
 
-//modifiers
-static qt_mac_enum_mapper qt_mac_modifier_symbols[] = {
-    { shiftKey, QT_MAC_MAP_ENUM(Qt::ShiftModifier) },
-    { rightShiftKey, QT_MAC_MAP_ENUM(Qt::ShiftModifier) },
-    { controlKey, QT_MAC_MAP_ENUM(Qt::MetaModifier) },
-    { rightControlKey, QT_MAC_MAP_ENUM(Qt::MetaModifier) },
-    { cmdKey, QT_MAC_MAP_ENUM(Qt::ControlModifier) },
-    { optionKey, QT_MAC_MAP_ENUM(Qt::AltModifier) },
-    { rightOptionKey, QT_MAC_MAP_ENUM(Qt::AltModifier) },
-    { kEventKeyModifierNumLockMask, QT_MAC_MAP_ENUM(Qt::KeypadModifier) },
-    { 0, QT_MAC_MAP_ENUM(0) }
-};
-Qt::KeyboardModifiers qt_mac_get_modifiers(int keys)
-{
-#ifdef DEBUG_KEY_BINDINGS_MODIFIERS
-    qDebug("Qt: internal: **Mapping modifiers: %d (0x%04x)", keys, keys);
-#endif
-    Qt::KeyboardModifiers ret = Qt::NoModifier;
-    for (int i = 0; qt_mac_modifier_symbols[i].qt_code; i++) {
-        if (keys & qt_mac_modifier_symbols[i].mac_code) {
-#ifdef DEBUG_KEY_BINDINGS_MODIFIERS
-            qDebug("Qt: internal: got modifier: %s", qt_mac_modifier_symbols[i].desc);
-#endif
-            ret |= Qt::KeyboardModifier(qt_mac_modifier_symbols[i].qt_code);
-        }
-    }
-    if (qApp->testAttribute(Qt::AA_MacDontSwapCtrlAndMeta)) {
-        Qt::KeyboardModifiers oldModifiers = ret;
-        ret &= ~(Qt::MetaModifier | Qt::ControlModifier);
-        if (oldModifiers & Qt::ControlModifier)
-            ret |= Qt::MetaModifier;
-        if (oldModifiers & Qt::MetaModifier)
-            ret |= Qt::ControlModifier;
-    }
-    return ret;
-}
-static int qt_mac_get_mac_modifiers(Qt::KeyboardModifiers keys)
-{
-#ifdef DEBUG_KEY_BINDINGS_MODIFIERS
-    qDebug("Qt: internal: **Mapping modifiers: %d (0x%04x)", (int)keys, (int)keys);
-#endif
-    int ret = 0;
-    for (int i = 0; qt_mac_modifier_symbols[i].qt_code; i++) {
-        if (keys & qt_mac_modifier_symbols[i].qt_code) {
-#ifdef DEBUG_KEY_BINDINGS_MODIFIERS
-            qDebug("Qt: internal: got modifier: %s", qt_mac_modifier_symbols[i].desc);
-#endif
-            ret |= qt_mac_modifier_symbols[i].mac_code;
-        }
-    }
+    const_cast<QCocoaKeyMapper *>(this)->updateKeyboard();
 
-    if (qApp->testAttribute(Qt::AA_MacDontSwapCtrlAndMeta)) {
-        int oldModifiers = ret;
-        ret &= ~(controlKeyBit | cmdKeyBit);
-        if (oldModifiers & controlKeyBit)
-            ret |= cmdKeyBit;
-        if (oldModifiers & cmdKeyBit)
-            ret |= controlKeyBit;
-    }
-    return ret;
-}
+    auto &keyMap = m_keyMap[virtualKey];
+    if (keyMap[Qt::NoModifier] != Qt::Key_unknown)
+        return keyMap; // Already filled
 
-//keyboard keys (non-modifiers)
-static qt_mac_enum_mapper qt_mac_keyboard_symbols[] = {
-    { kHomeCharCode, QT_MAC_MAP_ENUM(Qt::Key_Home) },
-    { kEnterCharCode, QT_MAC_MAP_ENUM(Qt::Key_Enter) },
-    { kEndCharCode, QT_MAC_MAP_ENUM(Qt::Key_End) },
-    { kBackspaceCharCode, QT_MAC_MAP_ENUM(Qt::Key_Backspace) },
-    { kTabCharCode, QT_MAC_MAP_ENUM(Qt::Key_Tab) },
-    { kPageUpCharCode, QT_MAC_MAP_ENUM(Qt::Key_PageUp) },
-    { kPageDownCharCode, QT_MAC_MAP_ENUM(Qt::Key_PageDown) },
-    { kReturnCharCode, QT_MAC_MAP_ENUM(Qt::Key_Return) },
-    { kEscapeCharCode, QT_MAC_MAP_ENUM(Qt::Key_Escape) },
-    { kLeftArrowCharCode, QT_MAC_MAP_ENUM(Qt::Key_Left) },
-    { kRightArrowCharCode, QT_MAC_MAP_ENUM(Qt::Key_Right) },
-    { kUpArrowCharCode, QT_MAC_MAP_ENUM(Qt::Key_Up) },
-    { kDownArrowCharCode, QT_MAC_MAP_ENUM(Qt::Key_Down) },
-    { kHelpCharCode, QT_MAC_MAP_ENUM(Qt::Key_Help) },
-    { kDeleteCharCode, QT_MAC_MAP_ENUM(Qt::Key_Delete) },
-//ascii maps, for debug
-    { ':', QT_MAC_MAP_ENUM(Qt::Key_Colon) },
-    { ';', QT_MAC_MAP_ENUM(Qt::Key_Semicolon) },
-    { '<', QT_MAC_MAP_ENUM(Qt::Key_Less) },
-    { '=', QT_MAC_MAP_ENUM(Qt::Key_Equal) },
-    { '>', QT_MAC_MAP_ENUM(Qt::Key_Greater) },
-    { '?', QT_MAC_MAP_ENUM(Qt::Key_Question) },
-    { '@', QT_MAC_MAP_ENUM(Qt::Key_At) },
-    { ' ', QT_MAC_MAP_ENUM(Qt::Key_Space) },
-    { '!', QT_MAC_MAP_ENUM(Qt::Key_Exclam) },
-    { '"', QT_MAC_MAP_ENUM(Qt::Key_QuoteDbl) },
-    { '#', QT_MAC_MAP_ENUM(Qt::Key_NumberSign) },
-    { '$', QT_MAC_MAP_ENUM(Qt::Key_Dollar) },
-    { '%', QT_MAC_MAP_ENUM(Qt::Key_Percent) },
-    { '&', QT_MAC_MAP_ENUM(Qt::Key_Ampersand) },
-    { '\'', QT_MAC_MAP_ENUM(Qt::Key_Apostrophe) },
-    { '(', QT_MAC_MAP_ENUM(Qt::Key_ParenLeft) },
-    { ')', QT_MAC_MAP_ENUM(Qt::Key_ParenRight) },
-    { '*', QT_MAC_MAP_ENUM(Qt::Key_Asterisk) },
-    { '+', QT_MAC_MAP_ENUM(Qt::Key_Plus) },
-    { ',', QT_MAC_MAP_ENUM(Qt::Key_Comma) },
-    { '-', QT_MAC_MAP_ENUM(Qt::Key_Minus) },
-    { '.', QT_MAC_MAP_ENUM(Qt::Key_Period) },
-    { '/', QT_MAC_MAP_ENUM(Qt::Key_Slash) },
-    { '[', QT_MAC_MAP_ENUM(Qt::Key_BracketLeft) },
-    { ']', QT_MAC_MAP_ENUM(Qt::Key_BracketRight) },
-    { '\\', QT_MAC_MAP_ENUM(Qt::Key_Backslash) },
-    { '_', QT_MAC_MAP_ENUM(Qt::Key_Underscore) },
-    { '`', QT_MAC_MAP_ENUM(Qt::Key_QuoteLeft) },
-    { '{', QT_MAC_MAP_ENUM(Qt::Key_BraceLeft) },
-    { '}', QT_MAC_MAP_ENUM(Qt::Key_BraceRight) },
-    { '|', QT_MAC_MAP_ENUM(Qt::Key_Bar) },
-    { '~', QT_MAC_MAP_ENUM(Qt::Key_AsciiTilde) },
-    { '^', QT_MAC_MAP_ENUM(Qt::Key_AsciiCircum) },
-    {   0, QT_MAC_MAP_ENUM(0) }
-};
+    qCDebug(lcQpaKeyMapper, "Updating key map for virtual key = 0x%02x!", (uint)virtualKey);
 
-static qt_mac_enum_mapper qt_mac_keyvkey_symbols[] = { //real scan codes
-    { kVK_F1, QT_MAC_MAP_ENUM(Qt::Key_F1) },
-    { kVK_F2, QT_MAC_MAP_ENUM(Qt::Key_F2) },
-    { kVK_F3, QT_MAC_MAP_ENUM(Qt::Key_F3) },
-    { kVK_F4, QT_MAC_MAP_ENUM(Qt::Key_F4) },
-    { kVK_F5, QT_MAC_MAP_ENUM(Qt::Key_F5) },
-    { kVK_F6, QT_MAC_MAP_ENUM(Qt::Key_F6) },
-    { kVK_F7, QT_MAC_MAP_ENUM(Qt::Key_F7) },
-    { kVK_F8, QT_MAC_MAP_ENUM(Qt::Key_F8) },
-    { kVK_F9, QT_MAC_MAP_ENUM(Qt::Key_F9) },
-    { kVK_F10, QT_MAC_MAP_ENUM(Qt::Key_F10) },
-    { kVK_F11, QT_MAC_MAP_ENUM(Qt::Key_F11) },
-    { kVK_F12, QT_MAC_MAP_ENUM(Qt::Key_F12) },
-    { kVK_F13, QT_MAC_MAP_ENUM(Qt::Key_F13) },
-    { kVK_F14, QT_MAC_MAP_ENUM(Qt::Key_F14) },
-    { kVK_F15, QT_MAC_MAP_ENUM(Qt::Key_F15) },
-    { kVK_F16, QT_MAC_MAP_ENUM(Qt::Key_F16) },
-    { kVK_Return, QT_MAC_MAP_ENUM(Qt::Key_Return) },
-    { kVK_Tab, QT_MAC_MAP_ENUM(Qt::Key_Tab) },
-    { kVK_Escape, QT_MAC_MAP_ENUM(Qt::Key_Escape) },
-    { kVK_Help, QT_MAC_MAP_ENUM(Qt::Key_Help) },
-    { kVK_UpArrow, QT_MAC_MAP_ENUM(Qt::Key_Up) },
-    { kVK_DownArrow, QT_MAC_MAP_ENUM(Qt::Key_Down) },
-    { kVK_LeftArrow, QT_MAC_MAP_ENUM(Qt::Key_Left) },
-    { kVK_RightArrow, QT_MAC_MAP_ENUM(Qt::Key_Right) },
-    { kVK_PageUp, QT_MAC_MAP_ENUM(Qt::Key_PageUp) },
-    { kVK_PageDown, QT_MAC_MAP_ENUM(Qt::Key_PageDown) },
-    {   0, QT_MAC_MAP_ENUM(0) }
-};
+    // Key mapping via [NSEvent charactersByApplyingModifiers:] only works for key down
+    // events, but we might (wrongly) get into this code path for other key events such
+    // as NSEventTypeFlagsChanged.
+    const bool canMapCocoaEvent = NSApp.currentEvent.type == NSEventTypeKeyDown;
 
-static qt_mac_enum_mapper qt_mac_private_unicode[] = {
-    { 0xF700, QT_MAC_MAP_ENUM(Qt::Key_Up) },            //NSUpArrowFunctionKey
-    { 0xF701, QT_MAC_MAP_ENUM(Qt::Key_Down) },          //NSDownArrowFunctionKey
-    { 0xF702, QT_MAC_MAP_ENUM(Qt::Key_Left) },          //NSLeftArrowFunctionKey
-    { 0xF703, QT_MAC_MAP_ENUM(Qt::Key_Right) },         //NSRightArrowFunctionKey
-    { 0xF727, QT_MAC_MAP_ENUM(Qt::Key_Insert) },        //NSInsertFunctionKey
-    { 0xF728, QT_MAC_MAP_ENUM(Qt::Key_Delete) },        //NSDeleteFunctionKey
-    { 0xF729, QT_MAC_MAP_ENUM(Qt::Key_Home) },          //NSHomeFunctionKey
-    { 0xF72B, QT_MAC_MAP_ENUM(Qt::Key_End) },           //NSEndFunctionKey
-    { 0xF72C, QT_MAC_MAP_ENUM(Qt::Key_PageUp) },        //NSPageUpFunctionKey
-    { 0xF72D, QT_MAC_MAP_ENUM(Qt::Key_PageDown) },      //NSPageDownFunctionKey
-    { 0xF72E, QT_MAC_MAP_ENUM(Qt::Key_Print) },         //NSPrintScreenFunctionKey
-    { 0xF72F, QT_MAC_MAP_ENUM(Qt::Key_ScrollLock) },    //NSScrollLockFunctionKey
-    { 0xF730, QT_MAC_MAP_ENUM(Qt::Key_Pause) },         //NSPauseFunctionKey
-    { 0xF731, QT_MAC_MAP_ENUM(Qt::Key_SysReq) },        //NSSysReqFunctionKey
-    { 0xF735, QT_MAC_MAP_ENUM(Qt::Key_Menu) },          //NSMenuFunctionKey
-    { 0xF738, QT_MAC_MAP_ENUM(Qt::Key_Printer) },       //NSPrintFunctionKey
-    { 0xF73A, QT_MAC_MAP_ENUM(Qt::Key_Clear) },         //NSClearDisplayFunctionKey
-    { 0xF73D, QT_MAC_MAP_ENUM(Qt::Key_Insert) },        //NSInsertCharFunctionKey
-    { 0xF73E, QT_MAC_MAP_ENUM(Qt::Key_Delete) },        //NSDeleteCharFunctionKey
-    { 0xF741, QT_MAC_MAP_ENUM(Qt::Key_Select) },        //NSSelectFunctionKey
-    { 0xF742, QT_MAC_MAP_ENUM(Qt::Key_Execute) },       //NSExecuteFunctionKey
-    { 0xF743, QT_MAC_MAP_ENUM(Qt::Key_Undo) },          //NSUndoFunctionKey
-    { 0xF744, QT_MAC_MAP_ENUM(Qt::Key_Redo) },          //NSRedoFunctionKey
-    { 0xF745, QT_MAC_MAP_ENUM(Qt::Key_Find) },          //NSFindFunctionKey
-    { 0xF746, QT_MAC_MAP_ENUM(Qt::Key_Help) },          //NSHelpFunctionKey
-    { 0xF747, QT_MAC_MAP_ENUM(Qt::Key_Mode_switch) },   //NSModeSwitchFunctionKey
-    {   0,    QT_MAC_MAP_ENUM(0) }
-};
+    if (!canMapCocoaEvent)
+        qCWarning(lcQpaKeyMapper) << "Could not map key to character for event" << NSApp.currentEvent;
 
-static int qt_mac_get_key(int modif, const QChar &key, int virtualKey)
-{
-#ifdef DEBUG_KEY_BINDINGS
-    qDebug("**Mapping key: %d (0x%04x) - %d (0x%04x)", key.unicode(), key.unicode(), virtualKey, virtualKey);
-#endif
+    for (int i = 0; i < kNumModifierCombinations; ++i) {
+        Q_ASSERT(!i || keyMap[i] == 0);
 
-    if (key == kClearCharCode && virtualKey == 0x47)
-        return Qt::Key_Clear;
+        auto qtModifiers = modifierCombinations[i];
+        auto carbonModifiers = toCarbonModifiers(qtModifiers);
+        const UInt32 modifierKeyState = (carbonModifiers >> 8) & 0xFF;
 
-    if (key.isDigit()) {
-#ifdef DEBUG_KEY_BINDINGS
-            qDebug("%d: got key: %d", __LINE__, key.digitValue());
-#endif
-        return key.digitValue() + Qt::Key_0;
-    }
+        static const UniCharCount maxStringLength = 10;
+        static UniChar unicodeString[maxStringLength];
+        UniCharCount actualStringLength = 0;
+        OSStatus err = UCKeyTranslate(m_keyboardLayoutFormat, virtualKey,
+            kUCKeyActionDown, modifierKeyState, m_keyboardKind, OptionBits(0),
+            &m_deadKeyState, maxStringLength, &actualStringLength, unicodeString);
 
-    if (key.isLetter()) {
-#ifdef DEBUG_KEY_BINDINGS
-        qDebug("%d: got key: %d", __LINE__, (key.toUpper().unicode() - 'A'));
-#endif
-        return (key.toUpper().unicode() - 'A') + Qt::Key_A;
-    }
-    if (key.isSymbol()) {
-#ifdef DEBUG_KEY_BINDINGS
-        qDebug("%d: got key: %d", __LINE__, (key.unicode()));
-#endif
-        return key.unicode();
-    }
+        // Use translated unicode key if valid
+        if (err == noErr && actualStringLength)
+            unicodeKey = QChar(unicodeString[0]);
 
-    for (int i = 0; qt_mac_keyboard_symbols[i].qt_code; i++) {
-        if (qt_mac_keyboard_symbols[i].mac_code == key) {
-            /* To work like Qt for X11 we issue Backtab when Shift + Tab are pressed */
-            if (qt_mac_keyboard_symbols[i].qt_code == Qt::Key_Tab && (modif & Qt::ShiftModifier)) {
-#ifdef DEBUG_KEY_BINDINGS
-                qDebug("%d: got key: Qt::Key_Backtab", __LINE__);
-#endif
-                return Qt::Key_Backtab;
-            }
-
-#ifdef DEBUG_KEY_BINDINGS
-            qDebug("%d: got key: %s", __LINE__, qt_mac_keyboard_symbols[i].desc);
-#endif
-            return qt_mac_keyboard_symbols[i].qt_code;
-        }
-    }
-
-    //last ditch try to match the scan code
-    for (int i = 0; qt_mac_keyvkey_symbols[i].qt_code; i++) {
-        if (qt_mac_keyvkey_symbols[i].mac_code == virtualKey) {
-#ifdef DEBUG_KEY_BINDINGS
-            qDebug("%d: got key: %s", __LINE__, qt_mac_keyvkey_symbols[i].desc);
-#endif
-            return qt_mac_keyvkey_symbols[i].qt_code;
-        }
-    }
-
-    // check if they belong to key codes in private unicode range
-    if (key >= 0xf700 && key <= 0xf747) {
-        if (key >= 0xf704 && key <= 0xf726) {
-            return Qt::Key_F1 + (key.unicode() - 0xf704) ;
-        }
-        for (int i = 0; qt_mac_private_unicode[i].qt_code; i++) {
-            if (qt_mac_private_unicode[i].mac_code == key) {
-                return qt_mac_private_unicode[i].qt_code;
+        if (@available(macOS 10.15, *)) {
+            if (canMapCocoaEvent) {
+                // Until we've verified that the Cocoa API works as expected
+                // we first run the event through the Carbon APIs and then
+                // compare the results to Cocoa.
+                auto cocoaModifiers = toCocoaModifiers(qtModifiers);
+                auto *charactersWithModifiers = [NSApp.currentEvent charactersByApplyingModifiers:cocoaModifiers];
+                Q_ASSERT(charactersWithModifiers && charactersWithModifiers.length > 0);
+                auto cocoaUnicodeKey = QChar([charactersWithModifiers characterAtIndex:0]);
+                if (cocoaUnicodeKey != unicodeKey) {
+                    qCWarning(lcQpaKeyMapper) << "Mismatch between Cocoa" << cocoaUnicodeKey
+                        << "and Carbon" << unicodeKey << "for virtual key" << virtualKey
+                        << "with" << qtModifiers;
+                }
             }
         }
 
+        int qtkey = toKeyCode(unicodeKey, virtualKey, qtModifiers);
+        if (qtkey == Qt::Key_unknown)
+            qtkey = unicodeKey.unicode();
+
+        keyMap[i] = qtkey;
+
+        qCDebug(lcQpaKeyMapper, "    [%d] (%d,0x%02x,'%c')", i, qtkey, qtkey, qtkey);
     }
 
-    //oh well
-#ifdef DEBUG_KEY_BINDINGS
-    qDebug("Unknown case.. %s:%d %d[%d] %d", __FILE__, __LINE__, key.unicode(), key.toLatin1(), virtualKey);
-#endif
-    return Qt::Key_unknown;
-}
-
-QCocoaKeyMapper::QCocoaKeyMapper()
-{
-    memset(keyLayout, 0, sizeof(keyLayout));
-}
-
-QCocoaKeyMapper::~QCocoaKeyMapper()
-{
-    deleteLayouts();
-}
-
-Qt::KeyboardModifiers QCocoaKeyMapper::queryKeyboardModifiers()
-{
-    return qt_mac_get_modifiers(GetCurrentKeyModifiers());
-}
-
-bool QCocoaKeyMapper::updateKeyboard()
-{
-    const UCKeyboardLayout *uchrData = nullptr;
-    QCFType<TISInputSourceRef> source = TISCopyInputMethodKeyboardLayoutOverride();
-    if (!source)
-        source = TISCopyCurrentKeyboardInputSource();
-    if (keyboard_mode != NullMode && source == currentInputSource) {
-        return false;
-    }
-    Q_ASSERT(source);
-    CFDataRef data = static_cast<CFDataRef>(TISGetInputSourceProperty(source,
-                                                                 kTISPropertyUnicodeKeyLayoutData));
-    uchrData = data ? reinterpret_cast<const UCKeyboardLayout *>(CFDataGetBytePtr(data)) : nullptr;
-
-    keyboard_kind = LMGetKbdType();
-    if (uchrData) {
-        keyboard_layout_format = uchrData;
-        keyboard_mode = UnicodeMode;
-    } else {
-        keyboard_layout_format = nullptr;
-        keyboard_mode = NullMode;
-    }
-    currentInputSource = source;
-    keyboard_dead = 0;
-
-    const auto newMode = keyboard_mode;
-    deleteLayouts();
-    keyboard_mode = newMode;
-
-    return true;
-}
-
-void QCocoaKeyMapper::deleteLayouts()
-{
-    keyboard_mode = NullMode;
-    for (int i = 0; i < 255; ++i) {
-        if (keyLayout[i]) {
-            delete keyLayout[i];
-            keyLayout[i] = nullptr;
-        }
-    }
-}
-
-void QCocoaKeyMapper::clearMappings()
-{
-    deleteLayouts();
-    updateKeyboard();
-}
-
-void QCocoaKeyMapper::updateKeyMap(unsigned short macVirtualKey, QChar unicodeKey)
-{
-    updateKeyboard();
-
-    if (keyLayout[macVirtualKey])
-        return;
-
-    UniCharCount buffer_size = 10;
-    UniChar buffer[buffer_size];
-    keyLayout[macVirtualKey] = new KeyboardLayoutItem;
-    for (int i = 0; i < 16; ++i) {
-        UniCharCount out_buffer_size = 0;
-        keyLayout[macVirtualKey]->qtKey[i] = 0;
-
-        const UInt32 keyModifier = ((qt_mac_get_mac_modifiers(ModsTbl[i]) >> 8) & 0xFF);
-        OSStatus err = UCKeyTranslate(keyboard_layout_format, macVirtualKey, kUCKeyActionDown, keyModifier,
-                                      keyboard_kind, 0, &keyboard_dead, buffer_size, &out_buffer_size, buffer);
-        if (err == noErr && out_buffer_size) {
-            const QChar unicode(buffer[0]);
-            int qtkey = qt_mac_get_key(keyModifier, unicode, macVirtualKey);
-            if (qtkey == Qt::Key_unknown)
-                qtkey = unicode.unicode();
-            keyLayout[macVirtualKey]->qtKey[i] = qtkey;
-        } else {
-            int qtkey = qt_mac_get_key(keyModifier, unicodeKey, macVirtualKey);
-            if (qtkey == Qt::Key_unknown)
-                qtkey = unicodeKey.unicode();
-            keyLayout[macVirtualKey]->qtKey[i] = qtkey;
-        }
-    }
-#ifdef DEBUG_KEY_MAPS
-    qDebug("updateKeyMap for virtual key = 0x%02x!", (uint)macVirtualKey);
-    for (int i = 0; i < 16; ++i) {
-        qDebug("    [%d] (%d,0x%02x,'%c')", i,
-               keyLayout[macVirtualKey]->qtKey[i],
-               keyLayout[macVirtualKey]->qtKey[i],
-               keyLayout[macVirtualKey]->qtKey[i]);
-    }
-#endif
+    return keyMap;
 }
 
 QList<int> QCocoaKeyMapper::possibleKeys(const QKeyEvent *event) const
 {
     QList<int> ret;
-    const_cast<QCocoaKeyMapper *>(this)->updateKeyMap(event->nativeVirtualKey(), QChar(event->key()));
 
-    KeyboardLayoutItem *kbItem = keyLayout[event->nativeVirtualKey()];
-
-    if (!kbItem) // Key is not in any keyboard layout (e.g. eisu-key on Japanese keyboard)
+    const auto nativeVirtualKey = event->nativeVirtualKey();
+    if (!nativeVirtualKey)
         return ret;
 
-    int baseKey = kbItem->qtKey[0];
-    Qt::KeyboardModifiers keyMods = event->modifiers();
+    auto keyMap = keyMapForKey(nativeVirtualKey, QChar(event->key()));
 
-    ret << int(baseKey + keyMods); // The base key is _always_ valid, of course
+    auto unmodifiedKey = keyMap[Qt::NoModifier];
+    Q_ASSERT(unmodifiedKey != Qt::Key_unknown);
 
+    auto eventModifiers = event->modifiers();
+
+    // The base key, with the complete set of modifiers,
+    // is always valid, and the first priority.
+    ret << int(unmodifiedKey) + int(eventModifiers);
+
+    // FIXME: We only compute the first 8 combinations. Why?
     for (int i = 1; i < 8; ++i) {
-        Qt::KeyboardModifiers neededMods = ModsTbl[i];
-        int key = kbItem->qtKey[i];
-        if (key && key != baseKey && ((keyMods & neededMods) == neededMods)) {
-            ret << int(key + (keyMods & ~neededMods));
-        }
+        auto keyAfterApplyingModifiers = keyMap[i];
+        if (keyAfterApplyingModifiers == unmodifiedKey)
+            continue;
+
+        // Include key if event modifiers includes, or matches
+        // perfectly, the current candidate modifiers.
+        auto candidateModifiers = modifierCombinations[i];
+        if ((eventModifiers & candidateModifiers) == candidateModifiers)
+            ret << int(keyAfterApplyingModifiers) + int(eventModifiers & ~candidateModifiers);
     }
+
     return ret;
 }
 

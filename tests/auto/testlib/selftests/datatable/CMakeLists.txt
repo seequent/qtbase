@@ -4,7 +4,7 @@
 ## datatable Binary:
 #####################################################################
 
-add_qt_executable(datatable
+qt_internal_add_executable(datatable
     NO_INSTALL # special case
     OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} # special case
     SOURCES
@@ -17,5 +17,5 @@ add_qt_executable(datatable
 #####################################################################
 
 # special case begin
-qt_apply_testlib_coverage_options(datatable)
+qt_internal_apply_testlib_coverage_options(datatable)
 # special case end

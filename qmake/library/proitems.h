@@ -32,10 +32,10 @@
 #include "qmake_global.h"
 
 #include <qdebug.h>
-#include <qstring.h>
-#include <qvector.h>
 #include <qhash.h>
+#include <qlist.h>
 #include <qmap.h>
+#include <qstring.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -155,8 +155,8 @@ public:
     int toInt(bool *ok = nullptr, int base = 10) const { return toQStringView().toInt(ok, base); }
     short toShort(bool *ok = nullptr, int base = 10) const { return toQStringView().toShort(ok, base); }
 
-    uint hash() const { return m_hash; }
-    static uint hash(const QChar *p, int n);
+    size_t hash() const { return m_hash; }
+    static size_t hash(const QChar *p, int n);
 
     ALWAYS_INLINE QStringView toQStringView() const { return QStringView(m_string).mid(m_offset, m_length); }
 
@@ -184,14 +184,13 @@ private:
     QString m_string;
     int m_offset, m_length;
     int m_file;
-    mutable uint m_hash;
-    QChar *prepareExtend(int extraLen, int thisTarget, int extraTarget);
-    uint updatedHash() const;
+    mutable size_t m_hash;
+    size_t updatedHash() const;
     friend size_t qHash(const ProString &str);
     friend QString operator+(const ProString &one, const ProString &two);
     friend class ProKey;
 };
-Q_DECLARE_TYPEINFO(ProString, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(ProString, Q_RELOCATABLE_TYPE);
 
 
 class ProKey : public ProString {
@@ -223,7 +222,7 @@ public:
 private:
     ProKey(const ProString &other);
 };
-Q_DECLARE_TYPEINFO(ProKey, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(ProKey, Q_RELOCATABLE_TYPE);
 
 template <> struct QConcatenable<ProString> : private QAbstractConcatenable
 {
@@ -234,6 +233,8 @@ template <> struct QConcatenable<ProString> : private QAbstractConcatenable
     static inline void appendTo(const ProString &a, QChar *&out)
     {
         const auto n = a.size();
+        if (!n)
+            return;
         memcpy(out, a.toQStringView().data(), sizeof(QChar) * n);
         out += n;
     }
@@ -248,6 +249,8 @@ template <> struct QConcatenable<ProKey> : private QAbstractConcatenable
     static inline void appendTo(const ProKey &a, QChar *&out)
     {
         const auto n = a.size();
+        if (!n)
+            return;
         memcpy(out, a.toQStringView().data(), sizeof(QChar) * n);
         out += n;
     }
@@ -270,7 +273,6 @@ class ProStringRoUser
 public:
     ProStringRoUser(QString &rs)
     {
-        Q_ASSERT(rs.isDetached() || rs.isEmpty());
         m_rs = &rs;
     }
     ProStringRoUser(const ProString &ps, QString &rs)
@@ -312,7 +314,7 @@ private:
     const ProString *m_ps;
 };
 
-class ProStringList : public QVector<ProString> {
+class ProStringList : public QList<ProString> {
 public:
     ProStringList() {}
     ProStringList(const ProString &str) { *this << str; }
@@ -320,7 +322,7 @@ public:
     QStringList toQStringList() const;
 
     ProStringList &operator<<(const ProString &str)
-        { QVector<ProString>::operator<<(str); return *this; }
+        { QList<ProString>::operator<<(str); return *this; }
 
     int length() const { return size(); }
 
@@ -345,7 +347,7 @@ public:
         { return contains(ProString(str), cs); }
     bool contains(const char *str, Qt::CaseSensitivity cs = Qt::CaseSensitive) const;
 };
-Q_DECLARE_TYPEINFO(ProStringList, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(ProStringList, Q_RELOCATABLE_TYPE);
 
 inline ProStringList operator+(const ProStringList &one, const ProStringList &two)
     { ProStringList ret = one; ret += two; return ret; }
@@ -498,7 +500,7 @@ private:
     int m_offset;
 };
 
-Q_DECLARE_TYPEINFO(ProFunctionDef, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(ProFunctionDef, Q_RELOCATABLE_TYPE);
 
 struct ProFunctionDefs {
     QHash<ProKey, ProFunctionDef> testFunctions;

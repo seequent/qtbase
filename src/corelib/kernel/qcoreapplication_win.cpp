@@ -41,7 +41,6 @@
 #include "qcoreapplication.h"
 #include "qcoreapplication_p.h"
 #include "qstringlist.h"
-#include "qvector.h"
 #include "qfileinfo.h"
 #include "qcorecmdlineargs_p.h"
 #ifndef QT_NO_QOBJECT
@@ -120,28 +119,6 @@ QString QCoreApplicationPrivate::appVersion() const
 #endif
     return applicationVersion;
 }
-
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-Q_CORE_EXPORT HINSTANCE qWinAppInst()                // get Windows app handle
-{
-    return GetModuleHandle(0);
-}
-
-Q_CORE_EXPORT HINSTANCE qWinAppPrevInst()                // get Windows prev app handle
-{
-    return 0;
-}
-
-Q_CORE_EXPORT int qWinAppCmdShow()                        // get main window show command
-{
-    STARTUPINFO startupInfo;
-    GetStartupInfo(&startupInfo);
-
-    return (startupInfo.dwFlags & STARTF_USESHOWWINDOW)
-        ? startupInfo.wShowWindow
-        : SW_SHOWDEFAULT;
-}
-#endif
 
 #ifndef QT_NO_QOBJECT
 
@@ -888,7 +865,7 @@ void QCoreApplicationPrivate::removePostedTimerEvent(QObject *object, int timerI
                 && (pe.event->type() == QEvent::Timer || pe.event->type() == QEvent::ZeroTimerEvent)
                 && static_cast<QTimerEvent *>(pe.event)->timerId() == timerId) {
             --pe.receiver->d_func()->postedEvents;
-            pe.event->posted = false;
+            pe.event->m_posted = false;
             delete pe.event;
             const_cast<QPostEvent &>(pe).event = 0;
             return;

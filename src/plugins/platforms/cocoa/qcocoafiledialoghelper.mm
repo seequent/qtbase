@@ -68,13 +68,13 @@
 
 #include <CoreFoundation/CFNumber.h>
 
-QT_FORWARD_DECLARE_CLASS(QString)
-QT_FORWARD_DECLARE_CLASS(QStringList)
 QT_FORWARD_DECLARE_CLASS(QFileInfo)
 QT_FORWARD_DECLARE_CLASS(QWindow)
 QT_USE_NAMESPACE
 
 typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
+
+static const int kReturnCodeNotSet = -1;
 
 @implementation QNSOpenSavePanelDelegate {
     @public
@@ -112,7 +112,7 @@ typedef QSharedPointer<QFileDialogOptions> SharedPointerFileDialogOptions;
     if ([mSavePanel respondsToSelector:@selector(setLevel:)])
         [mSavePanel setLevel:NSModalPanelWindowLevel];
 
-    mReturnCode = -1;
+    mReturnCode = kReturnCodeNotSet;
     mHelper = helper;
     mNameFilterDropDownList = new QStringList(mOptions->nameFilters());
     QString selectedVisualNameFilter = mOptions->initiallySelectedNameFilter();
@@ -179,6 +179,10 @@ static QString strippedText(QString s)
 
 - (void)closePanel
 {
+    // An already closed/closing panel has its return code set
+    if (mReturnCode != kReturnCodeNotSet)
+        return;
+
     *mCurrentSelection = QString::fromNSString([[mSavePanel URL] path]).normalized(QString::NormalizationForm_C);
     if ([mSavePanel respondsToSelector:@selector(close)])
         [mSavePanel close];
@@ -435,7 +439,7 @@ static QString strippedText(QString s)
     Q_UNUSED(sender);
     if (mHelper && [mSavePanel isVisible]) {
         QString selection = QString::fromNSString([[mSavePanel URL] path]);
-        if (selection != mCurrentSelection) {
+        if (selection != *mCurrentSelection) {
             *mCurrentSelection = selection;
             mHelper->QNSOpenSavePanelDelegate_selectionChanged(selection);
         }

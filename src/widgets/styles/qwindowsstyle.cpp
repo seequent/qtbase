@@ -85,7 +85,7 @@
 #include <qpa/qplatformscreen.h>
 #include <private/qguiapplication_p.h>
 #include <private/qhighdpiscaling_p.h>
-#include <qpa/qplatformnativeinterface.h>
+#include <qpa/qplatformintegration.h>
 #include <private/qwidget_p.h>
 
 #include <private/qstylehelper_p.h>
@@ -133,13 +133,12 @@ bool QWindowsStylePrivate::isDarkMode()
 {
     bool result = false;
 #ifdef Q_OS_WIN
+    using QWindowsApplication = QNativeInterface::Private::QWindowsApplication;
     // Windows only: Return whether dark mode style support is desired and
     // dark mode is in effect.
-    if (auto ni = QGuiApplication::platformNativeInterface()) {
-        const QVariant darkModeStyleP = ni->property("darkModeStyle");
-        result = darkModeStyleP.type() == QVariant::Bool
-                 && darkModeStyleP.value<bool>()
-                 && ni->property("darkMode").value<bool>();
+    if (auto windowsApp = dynamic_cast<QWindowsApplication *>(QGuiApplicationPrivate::platformIntegration())) {
+        result = windowsApp->isDarkMode()
+            && windowsApp->darkModeHandling().testFlag(QWindowsApplication::DarkModeStyle);
     }
 #endif
     return result;
@@ -174,7 +173,7 @@ bool QWindowsStyle::eventFilter(QObject *o, QEvent *e)
                 return w->isWindow() || !w->isVisible()
                         || w->style()->styleHint(SH_UnderlineShortcut, nullptr, w);
             };
-            l.erase(std::remove_if(l.begin(), l.end(), ignorable), l.end());
+            l.removeIf(ignorable);
             // Update states before repainting
             d->seenAlt.append(widget);
             d->alt_down = true;
@@ -268,7 +267,7 @@ void QWindowsStyle::polish(QApplication *app)
     d->inactiveCaptionText = palette.window().color();
 
 #if defined(Q_OS_WIN) //fetch native title bar colors
-    if(app->desktopSettingsAware()){
+    if (app->desktopSettingsAware()){
         DWORD activeCaption = GetSysColor(COLOR_ACTIVECAPTION);
         DWORD gradientActiveCaption = GetSysColor(COLOR_GRADIENTACTIVECAPTION);
         DWORD inactiveCaption = GetSysColor(COLOR_INACTIVECAPTION);
@@ -631,7 +630,7 @@ int QWindowsStyle::styleHint(StyleHint hint, const QStyleOption *opt, const QWid
             ret = 0;
             if (rbOpt->shape == QRubberBand::Rectangle) {
                 ret = true;
-                if(QStyleHintReturnMask *mask = qstyleoption_cast<QStyleHintReturnMask*>(returnData)) {
+                if (QStyleHintReturnMask *mask = qstyleoption_cast<QStyleHintReturnMask*>(returnData)) {
                     mask->region = opt->rect;
                     int size = 1;
                     if (widget && widget->isWindow())
@@ -674,7 +673,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
             QRect rect = opt->rect;
             const int margin = 2;
             QPen oldPen = p->pen();
-            if(opt->state & State_Horizontal){
+            if (opt->state & State_Horizontal){
                 const int offset = rect.width()/2;
                 p->setPen(QPen(opt->palette.dark().color()));
                 p->drawLine(rect.bottomLeft().x() + offset,
@@ -759,7 +758,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
 
         if (opt->state & (State_Raised | State_Sunken | State_On)) {
             if (opt->state & State_AutoRaise) {
-                if(opt->state & (State_Enabled | State_Sunken | State_On)){
+                if (opt->state & (State_Enabled | State_Sunken | State_On)){
                     if (panel)
                         qDrawShadePanel(p, opt->rect, opt->palette,
                                         opt->state & (State_Sunken | State_On), 1, &fill);
@@ -857,7 +856,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
             QPointF  points[6];
             qreal scaleh = opt->rect.width() / 12.0;
             qreal scalev = opt->rect.height() / 12.0;
-            points[0] = { opt->rect.x() + 3.5 * scaleh, opt->rect.y() + 5.5 * scalev };
+            points[0] = { opt->rect.x() + qreal(3.5) * scaleh, opt->rect.y() + qreal(5.5) * scalev };
             points[1] = { points[0].x(),                points[0].y() + 2 * scalev };
             points[2] = { points[1].x() + 2 * scaleh,   points[1].y() + 2 * scalev };
             points[3] = { points[2].x() + 4 * scaleh,   points[2].y() - 4 * scalev };
@@ -1026,7 +1025,7 @@ void QWindowsStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, 
         {
             bool vertical = false, inverted = false;
             if (const QStyleOptionProgressBar *pb = qstyleoption_cast<const QStyleOptionProgressBar *>(opt)) {
-                vertical = pb->orientation == Qt::Vertical;
+                vertical = !(pb->state & QStyle::State_Horizontal);
                 inverted = pb->invertedAppearance;
             }
 
@@ -1111,7 +1110,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
         if (const QStyleOptionMenuItem *menuitem = qstyleoption_cast<const QStyleOptionMenuItem *>(opt)) {
             int x, y, w, h;
             menuitem->rect.getRect(&x, &y, &w, &h);
-            int tab = menuitem->tabWidth;
+            int tab = menuitem->reservedShortcutWidth;
             bool dis = !(menuitem->state & State_Enabled);
             bool checked = menuitem->checkType != QStyleOptionMenuItem::NotCheckable
                             ? menuitem->checked : false;
@@ -1190,7 +1189,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
             QRect textRect(xpos, y + QWindowsStylePrivate::windowsItemVMargin,
                            w - xm - QWindowsStylePrivate::windowsRightBorder - tab + 1, h - 2 * QWindowsStylePrivate::windowsItemVMargin);
             QRect vTextRect = visualRect(opt->direction, menuitem->rect, textRect);
-            QStringRef s(&menuitem->text);
+            QStringView s(menuitem->text);
             if (!s.isEmpty()) {                     // draw text
                 p->save();
                 int t = s.indexOf(QLatin1Char('\t'));
@@ -1619,7 +1618,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                 default:
                     break;
                 }
-                if(opt->direction == Qt::RightToLeft){ //reverse layout changes the order of Beginning/end
+                if (opt->direction == Qt::RightToLeft){ //reverse layout changes the order of Beginning/end
                     bool tmp = paintLeftBorder;
                     paintRightBorder=paintLeftBorder;
                     paintLeftBorder=tmp;
@@ -1692,7 +1691,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
             if (!rect.isValid())
                 return;
 
-            const bool vertical = pb->orientation == Qt::Vertical;
+            const bool vertical = !(pb->state & QStyle::State_Horizontal);
             const bool inverted = pb->invertedAppearance;
 
             QTransform m;
@@ -1734,7 +1733,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                 int myHeight = pbBits.rect.height();
                 int chunksToDraw = chunksInRow;
 
-                if(step > chunkCount - 5)chunksToDraw = (chunkCount - step);
+                if (step > chunkCount - 5)chunksToDraw = (chunkCount - step);
                 p->save();
                 p->setClipRect(m.mapRect(QRectF(rect)).toRect());
 
@@ -1748,7 +1747,7 @@ void QWindowsStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPai
                     x += reverse ? -unit_width : unit_width;
                 }
                 //Draw wrap-around chunks
-                if( step > chunkCount-5){
+                if ( step > chunkCount-5){
                     x0 = reverse ? rect.left() + rect.width() - unit_width : rect.left() ;
                     x = 0;
                     int chunksToDraw = step - (chunkCount - chunksInRow);
@@ -2035,10 +2034,8 @@ void QWindowsStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComp
                 }
 
                 QBrush oldBrush = p->brush();
-                bool oldQt4CompatiblePainting = p->testRenderHint(QPainter::Qt4CompatiblePainting);
                 p->setPen(Qt::NoPen);
                 p->setBrush(handleBrush);
-                p->setRenderHint(QPainter::Qt4CompatiblePainting);
                 Qt::BGMode oldMode = p->backgroundMode();
                 p->setBackgroundMode(Qt::OpaqueMode);
                 p->drawRect(x1, y1, x2-x1+1, y2-y1+1);
@@ -2121,7 +2118,6 @@ void QWindowsStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComp
                     p->drawLine(x2, y2-1, x2+d, y2-1-d);
                     break;
                 }
-                p->setRenderHint(QPainter::Qt4CompatiblePainting, oldQt4CompatiblePainting);
             }
         }
         break;

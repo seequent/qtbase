@@ -47,8 +47,8 @@
 #include "qurl.h"
 #include "private/qurltlds_p.h"
 #include "private/qtldurl_p.h"
+#include "QtCore/qlist.h"
 #include "QtCore/qstring.h"
-#include "QtCore/qvector.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -59,7 +59,7 @@ enum TLDMatchType {
 };
 
 // Scan the auto-generated table of TLDs for an entry. For more details
-// see comments in file:  util/corelib/qurl-generateTLDs/main.cpp
+// see comments in file: util/publicSuffix/main.cpp
 static bool containsTLDEntry(QStringView entry, TLDMatchType match)
 {
     const QStringView matchSymbols[] = {
@@ -84,7 +84,7 @@ static bool containsTLDEntry(QStringView entry, TLDMatchType match)
     Q_ASSERT(tldGroupOffset <= tldIndices[index + 1]);
     // The last extra entry in tldIndices
     // should be equal to the total of all chunks' lengths.
-    Q_STATIC_ASSERT(tldIndices[tldCount] == tldChunks[tldChunkCount - 1]);
+    static_assert(tldIndices[tldCount] == tldChunks[tldChunkCount - 1]);
 
     // Find which chunk contains the tldGroupOffset
     while (tldGroupOffset >= tldChunks[chunk]) {
@@ -102,7 +102,7 @@ static bool containsTLDEntry(QStringView entry, TLDMatchType match)
         const auto utf8 = tldData[chunk] + chunkIndex;
         if ((symbol.isEmpty() || QLatin1Char(*utf8) == symbol) && entry == QString::fromUtf8(utf8 + symbol.size()))
             return true;
-        chunkIndex += qstrlen(utf8) + 1; // +1 for the ending \0
+        chunkIndex += uint(qstrlen(utf8)) + 1; // +1 for the ending \0
     }
     return false;
 }

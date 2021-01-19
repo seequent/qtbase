@@ -425,7 +425,7 @@ bool QRfbPointerEvent::read(QTcpSocket *s)
     if (buttonMask & 1)
         buttons |= Qt::LeftButton;
     if (buttonMask & 2)
-        buttons |= Qt::MidButton;
+        buttons |= Qt::MiddleButton;
     if (buttonMask & 4)
         buttons |= Qt::RightButton;
 
@@ -514,8 +514,9 @@ void QRfbRawEncoder::write()
             // convert pixels
             char *b = buffer.data();
             const int bstep = rect.w * bytesPerPixel;
+            const int depth = screenImage.depth();
             for (int i = 0; i < rect.h; ++i) {
-                client->convertPixels(b, (const char*)screendata, rect.w);
+                client->convertPixels(b, (const char*)screendata, rect.w, depth);
                 screendata += linestep;
                 b += bstep;
             }
@@ -568,9 +569,10 @@ void QVncClientCursor::write(QVncClient *client) const
     Q_ASSERT(cursor.hasAlphaChannel());
     const QImage img = cursor.convertToFormat(client->server()->screen()->format());
     const int n = client->clientBytesPerPixel() * img.width();
+    const int depth = img.depth();
     char *buffer = new char[n];
     for (int i = 0; i < img.height(); ++i) {
-        client->convertPixels(buffer, (const char*)img.scanLine(i), img.width());
+        client->convertPixels(buffer, (const char*)img.scanLine(i), img.width(), depth);
         socket->write(buffer, n);
     }
     delete[] buffer;
@@ -606,8 +608,11 @@ void QVncClientCursor::changeCursor(QCursor *widgetCursor, QWindow *window)
 
 void QVncClientCursor::addClient(QVncClient *client)
 {
-    if (!clients.contains(client))
+    if (!clients.contains(client)) {
         clients.append(client);
+        // Force a cursor update when the client connects.
+        client->setDirtyCursor();
+    }
 }
 
 uint QVncClientCursor::removeClient(QVncClient *client)

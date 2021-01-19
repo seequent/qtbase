@@ -40,12 +40,15 @@
 # include <ws2tcpip.h>
 #endif
 
-#include <QtTest/QtTest>
-#include <qcoreapplication.h>
+#include <QTest>
+#include <QTestEventLoop>
+#include <QProcess>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QTcpSocket>
-#include <private/qthread_p.h>
 #include <QTcpServer>
+
+#include <private/qthread_p.h>
 
 #include <time.h>
 #if defined(Q_OS_WIN)
@@ -433,7 +436,7 @@ static QStringList reverseLookupHelper(const QString &ip)
             name = line.mid(line.lastIndexOf(" ")).trimmed();
         } else if (line.startsWith(addressMarkerWin)) {
             QByteArray address = line.mid(addressMarkerWin.length()).trimmed();
-            if (address == ip) {
+            if (address == ip.toUtf8()) {
                 results << name;
             }
         }
@@ -525,7 +528,7 @@ void tst_QHostInfo::raceCondition()
 class LookupThread : public QThread
 {
 protected:
-    inline void run()
+    inline void run() override
     {
          QHostInfo info = QHostInfo::fromName("a-single" TEST_DOMAIN);
          QCOMPARE(info.error(), QHostInfo::NoError);

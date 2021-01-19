@@ -4,7 +4,7 @@
 ## qexecstringlist Binary:
 #####################################################################
 
-add_qt_executable(qexecstringlist
+qt_internal_add_executable(qexecstringlist
     NO_INSTALL # special case
     OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} # special case
     SOURCES
@@ -17,5 +17,5 @@ add_qt_executable(qexecstringlist
 #####################################################################
 
 # special case begin
-qt_apply_testlib_coverage_options(qexecstringlist)
+qt_internal_apply_testlib_coverage_options(qexecstringlist)
 # special case end

@@ -80,7 +80,7 @@ struct QWindowCreationContext;
 struct QWindowsContextPrivate;
 class QPoint;
 class QKeyEvent;
-class QTouchDevice;
+class QPointingDevice;
 
 struct QWindowsUser32DLL
 {
@@ -173,7 +173,8 @@ public:
 
     bool initTouch();
     bool initTouch(unsigned integrationOptions); // For calls from QWindowsIntegration::QWindowsIntegration() only.
-    bool initTablet(unsigned integrationOptions);
+    void registerTouchWindows();
+    bool initTablet();
     bool initPointer(unsigned integrationOptions);
     bool disposeTablet();
 
@@ -223,7 +224,7 @@ public:
     QSharedPointer<QWindowCreationContext> setWindowCreationContext(const QSharedPointer<QWindowCreationContext> &ctx);
     QSharedPointer<QWindowCreationContext> windowCreationContext() const;
 
-    void setTabletAbsoluteRange(int a);
+    static void setTabletAbsoluteRange(int a);
     void setProcessDpiAwareness(QtWindows::ProcessDpiAwareness dpiAwareness);
     static int processDpiAwareness();
 
@@ -264,8 +265,6 @@ public:
                                           const QPlatformWindow *win = nullptr);
 
     static DWORD readAdvancedExplorerSettings(const wchar_t *subKey, DWORD defaultValue);
-
-    QTouchDevice *touchDevice() const;
 
     static bool filterNativeEvent(MSG *msg, LRESULT *result);
     static bool filterNativeEvent(QWindow *window, MSG *msg, LRESULT *result);

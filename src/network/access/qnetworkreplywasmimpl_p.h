@@ -135,6 +135,7 @@ public:
 
     QIODevice *outgoingData;
     QSharedPointer<QRingBuffer> outgoingDataBuffer;
+    QByteArray requestData;
 
     void doAbort() const;
 
@@ -146,6 +147,7 @@ public:
     static QNetworkReply::NetworkError statusCodeFromHttp(int httpStatusCode, const QUrl &url);
 
     emscripten_fetch_t *m_fetch;
+    void setReplyFinished();
 
     Q_DECLARE_PUBLIC(QNetworkReplyWasmImpl)
 };

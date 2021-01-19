@@ -15,7 +15,7 @@ add_subdirectory(qtextdocumentlayout)
 add_subdirectory(qtextformat)
 add_subdirectory(qtextlist)
 add_subdirectory(qtextobject)
-# add_subdirectory(qtextscriptengine) # disable until system_harfbuzz feature is available
+# add_subdirectory(qtextscriptengine) # disable until system_harfbuzz feature is available # special case
 add_subdirectory(qtexttable)
 add_subdirectory(qinputcontrol)
 if(QT_FEATURE_private_tests AND TARGET Qt::Xml)
@@ -27,7 +27,8 @@ if(QT_FEATURE_private_tests)
     add_subdirectory(qzip)
     add_subdirectory(qtextodfwriter)
 endif()
-if(TARGET Qt::Xml)
+# QTBUG-87671 # special case
+if(TARGET Qt::Xml AND NOT ANDROID)
     add_subdirectory(qtextdocument)
 endif()
 if(QT_FEATURE_private_tests AND UNIX)

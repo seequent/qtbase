@@ -1,9 +1,6 @@
 # Status
 
 Port is still on-going.
-Most of qtbase and qtsvg is ported.
-Other repositories are ported, but not under CI control yet.
-Some libraries, tests and examples are still missing.
 
 Note:
 You need CMake 3.16.0 or later for most platforms (due to new AUTOMOC json feature).
@@ -40,7 +37,7 @@ years.
 You may use brew to install dependencies needed to build QtBase.
 
   * Install homebrew:
-    ```/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"```
+    `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`
   * Build Qt dependencies:  ``brew install pcre2 harfbuzz freetype``
   * Install cmake:  ``brew install cmake``
   * When running cmake in qtbase, pass ``-DCMAKE_PREFIX_PATH=/usr/local``
@@ -55,6 +52,8 @@ The basic way of building with cmake is as follows:
     cmake --build .
     cmake --install .
 ```
+
+The mapping of configure options to CMake arguments is described [here](configure-cmake-mapping.md).
 
 You need one build directory per Qt module. The build directory can be a sub-directory inside the
 module ``qtbase/build`` or an independent directory ``qtbase_build``. The installation prefix is
@@ -108,7 +107,8 @@ the source directory next to them using the helper script
 ``path_to_qtbase_source/util/cmake/configurejson2cmake.py``. They are checked into the repository.
 If the feature in configure.json has the name "dlopen", you can specify whether to enable or disable that
 feature in CMake with a -D flag on the CMake command line. So for example -DFEATURE_dlopen=ON or
--DFEATURE_sql_mysql=OFF. At the moment, if you change a FEATURE flag's value, you have to remove the
+-DFEATURE_sql_mysql=OFF. Remember to convert all '-' to '_' in the feature name.
+At the moment, if you change a FEATURE flag's value, you have to remove the
 CMakeCache.txt file and reconfigure with CMake. And even then you might stumble on some issues when
 reusing an existing build, because of an automoc bug in upstream CMake.
 
@@ -128,7 +128,7 @@ machine you're building on, regardless of the architecure you are targeting.
 
 Build Qt regularly for your host system and install it into a directory of your choice using the
 ``CMAKE_INSTALL_PREFIX`` variable. You are free to disable the build of tests and examples by
-passing ``-DBUILD_EXAMPLES=OFF`` and ``-DBUILD_TESTING=OFF``.
+passing ``-DQT_BUILD_EXAMPLES=OFF`` and ``-DQT_BUILD_TESTS=OFF``.
 
 With this installation of Qt in place, which contains all tools needed, we can proceed to create a
 new build of Qt that is cross-compiled to the target architecture of choice. You may proceed by
@@ -154,21 +154,28 @@ The specified path needs to point to a directory that contains an installed host
 In order to cross-compile Qt to Android, you need a host build (see instructions above) and an
 Android build. In addition, it is necessary to install the Android NDK.
 
-The environment for Android can be set up using the following steps:
+The following CMake variables are required for an Android build:
+  * `ANDROID_SDK_ROOT` must point to where the Android SDK is installed
+  * `CMAKE_TOOLCHAIN_FILE` must point to the toolchain file that comes with the NDK
+  * `QT_HOST_PATH` must point to a host installation of Qt
 
-  * Set the ``ANDROID_NDK_HOME`` environment variable to the path where you have installed the Android NDK.
-  * Set the ``ANDROID_SDK_HOME`` environment variable to the path where you have installed the Android SDK.
+Call CMake with the following arguments:
+`-DCMAKE_TOOLCHAIN_FILE=<path/to/ndk>/build/cmake/android.toolchain.cmake -DQT_HOST_PATH=/path/to/your/host/build -DANDROID_SDK_ROOT=<path/to/sdk> -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH`
 
-When running cmake in qtbase, pass
-``-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DQT_HOST_PATH=/path/to/your/host/build -DANDROID_SDK_ROOT=$ANDROID_SDK_HOME -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH``
+The toolchain file is usually located below the NDK's root at "build/cmake/android.toolchain.cmake".
+Instead of specifying the toolchain file you may specify `ANDROID_NDK_ROOT` instead.
+This variable is exclusively used for auto-detecting the toolchain file.
+
+In a recent SDK installation, the NDK is located in a subdirectory "ndk_bundle" below the SDK's root
+directory. In that situation you may omit `ANDROID_NDK_ROOT` and `CMAKE_TOOLCHAIN_FILE`.
 
 If you don't supply the configuration argument ``-DANDROID_ABI=...``, it will default to
 ``armeabi-v7a``. To target other architectures, use one of the following values:
-  * arm64: ``-DANDROID_ABI=arm64-v8``
+  * arm64: ``-DANDROID_ABI=arm64-v8a``
   * x86: ``-DANDROID_ABI=x86``
   * x86_64: ``-DANDROID_ABI=x86_64``
 
-By default we set the android API level to 21. Should you need to change this supply the following
+By default we set the android API level to 23. Should you need to change this supply the following
 configuration argument to the above CMake call: ``-DANDROID_NATIVE_API_LEVEL=${API_LEVEL}``
 
 ### Cross compiling for iOS
@@ -178,11 +185,11 @@ In order to cross-compile Qt to iOS, you need a host macOS build.
 When running cmake in qtbase, pass
 ``-DCMAKE_SYSTEM_NAME=iOS -DQT_HOST_PATH=/path/to/your/host/build -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH``
 
-If you don't supply the configuration argument ``-DQT_UIKIT_SDK=...``, it will default to
-``iphonesimulator``. To target another SDK / device type, use one of the following values:
+If you don't supply the configuration argument ``-DQT_UIKIT_SDK=...``, CMake will build a
+multi-arch simulator_and_device iOS build.
+To target another SDK / device type, use one of the following values:
   * iphonesimulator: ``-DQT_UIKIT_SDK=iphonesimulator``
   * iphoneos: ``-DQT_UIKIT_SDK=iphoneos``
-  * simulator_and_device: ``-DQT_FORCE_SIMULATOR_AND_DEVICE=ON -DQT_UIKIT_SDK=``
 
 Depending on what value you pass to ``-DQT_UIKIT_SDK=`` a list of target architectures is chosen
 by default:
@@ -194,9 +201,6 @@ You can try choosing a different list of architectures by passing
 ``-DCMAKE_OSX_ARCHITECTURES=x86_64;i386``.
 Note that if you choose different architectures compared to the default ones, the build might fail.
 Only do it if you know what you are doing.
-
-####  simulator_and_device special considerations
-To do a simulator_and_device build, an unreleased version of CMake is required (3.17.0).
 
 # Debugging CMake files
 
@@ -252,3 +256,50 @@ While the supporting code for building with vcpkg is still there, it is not test
 | ``qtHaveModule(foo)`` | ``if(TARGET Qt::foo)``  |
 | ``qtConfig(foo)``     | ``if (QT_FEATURE_foo)`` |
 
+
+# Convenience Scripts
+
+A Qt installation's bin directory contains a number of convenience scripts.
+
+## qt-cmake
+
+This is a wrapper around the CMake executable which passes a Qt-internal `CMAKE_TOOLCHAIN_FILE`. Use
+this to build projects against the installed Qt.
+
+To use a custom toolchain file, use `-DQT_CHAINLOAD_TOOLCHAIN_FILE=<file path>`.
+
+## qt-cmake-private
+
+The same as `qt-cmake`, but in addition, sets the CMake generator to Ninja.
+
+Example:
+
+```
+$ cd some/empty/directory
+$ ~/Qt/6.0.0/bin/qt-cmake-private ~/source/of/qtdeclarative -DFEATURE_qml_network=OFF
+$ cmake --build . && cmake --install .
+```
+
+## qt-configure-module
+
+Call the configure script for a single Qt module, doing a CMake build.
+
+Example:
+
+```
+$ cd some/empty/directory
+$ ~/Qt/6.0.0/bin/qt-configure-module ~/source/of/qtdeclarative -no-feature-qml-network
+$ cmake --build . && cmake --install .
+```
+
+## qt-cmake-standalone-test
+
+Build a single standalone test outside the Qt build.
+
+Example:
+
+```
+$ cd some/empty/directory
+$ ~/Qt/6.0.0/bin/qt-cmake-standalone-test ~/source/of/qtbase/test/auto/corelib/io/qprocess
+$ cmake --build .
+```

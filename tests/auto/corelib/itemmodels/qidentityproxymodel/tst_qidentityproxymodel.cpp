@@ -43,14 +43,14 @@ Q_LOGGING_CATEGORY(lcItemModels, "qt.corelib.tests.itemmodels")
 class DataChangedModel : public QAbstractListModel
 {
 public:
-    int rowCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : 1; }
-    QVariant data(const QModelIndex&, int) const { return QVariant(); }
-    QModelIndex index(int row, int column, const QModelIndex &) const { return createIndex(row, column); }
+    int rowCount(const QModelIndex &parent) const override { return parent.isValid() ? 0 : 1; }
+    QVariant data(const QModelIndex&, int) const override { return QVariant(); }
+    QModelIndex index(int row, int column, const QModelIndex &) const override { return createIndex(row, column); }
 
     void changeData()
     {
         const QModelIndex idx = index(0, 0, QModelIndex());
-        Q_EMIT dataChanged(idx, idx, QVector<int>() << 1);
+        Q_EMIT dataChanged(idx, idx, QList<int>() << 1);
     }
 };
 
@@ -94,7 +94,7 @@ tst_QIdentityProxyModel::tst_QIdentityProxyModel()
 
 void tst_QIdentityProxyModel::initTestCase()
 {
-    qRegisterMetaType<QVector<int> >();
+    qRegisterMetaType<QList<int> >();
     m_model = new QStandardItemModel(0, 1);
     m_proxy = new QIdentityProxyModel();
     m_modelTest = new QAbstractItemModelTester(m_proxy, this);
@@ -389,7 +389,7 @@ void tst_QIdentityProxyModel::dataChanged()
 
     model.changeData();
 
-    QCOMPARE(modelSpy.first().at(2).value<QVector<int> >(), QVector<int>() << 1);
+    QCOMPARE(modelSpy.first().at(2).value<QList<int> >(), QList<int>() << 1);
     QCOMPARE(modelSpy.first().at(2), proxySpy.first().at(2));
 
     verifyIdentity(&model);
@@ -399,7 +399,7 @@ void tst_QIdentityProxyModel::dataChanged()
 class AppendStringProxy : public QIdentityProxyModel
 {
 public:
-    QVariant data(const QModelIndex &index, int role) const
+    QVariant data(const QModelIndex &index, int role) const override
     {
         const QVariant result = QIdentityProxyModel::data(index, role);
         if (role != Qt::DisplayRole)

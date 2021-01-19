@@ -84,6 +84,8 @@ public:
     int dataLength(int level = 0) const;
     void setDataLength(int length, int level = 0);
 
+    QByteArrayView getDataView(int level = 0) const;
+
     int numLevels() const;
     void setNumLevels(int num);
 
@@ -106,7 +108,7 @@ private:
     QSharedDataPointer<QTextureFileDataPrivate> d;
 };
 
-Q_DECLARE_TYPEINFO(QTextureFileData, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QTextureFileData, Q_RELOCATABLE_TYPE);
 
 Q_GUI_EXPORT QDebug operator<<(QDebug dbg, const QTextureFileData &d);
 

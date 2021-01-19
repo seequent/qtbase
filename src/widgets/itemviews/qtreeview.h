@@ -143,8 +143,8 @@ public:
     void doItemsLayout() override;
     void reset() override;
 
-
-    void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>()) override;
+    void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight,
+                     const QList<int> &roles = QList<int>()) override;
     void selectAll() override;
 
 Q_SIGNALS:
@@ -185,6 +185,7 @@ protected:
     QRegion visualRegionForSelection(const QItemSelection &selection) const override;
     QModelIndexList selectedIndexes() const override;
 
+    void changeEvent(QEvent *event) override;
     void timerEvent(QTimerEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 

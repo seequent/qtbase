@@ -51,7 +51,7 @@ QT_BEGIN_NAMESPACE
 namespace QtAndroidDialogHelpers {
 static jclass g_messageDialogHelperClass = 0;
 
-static const char QtMessageHandlerHelperClassName[] = "org/qtproject/qt5/android/QtMessageDialogHelper";
+static const char QtMessageHandlerHelperClassName[] = "org/qtproject/qt/android/QtMessageDialogHelper";
 
 QAndroidPlatformMessageDialogHelper::QAndroidPlatformMessageDialogHelper()
     :m_buttonId(-1)
@@ -79,9 +79,9 @@ bool QAndroidPlatformMessageDialogHelper::show(Qt::WindowFlags windowFlags
                                          , Qt::WindowModality windowModality
                                          , QWindow *parent)
 {
-    Q_UNUSED(windowFlags)
-    Q_UNUSED(windowModality)
-    Q_UNUSED(parent)
+    Q_UNUSED(windowFlags);
+    Q_UNUSED(windowModality);
+    Q_UNUSED(parent);
     QSharedPointer<QMessageDialogOptions> opt = options();
     if (!opt.data())
         return false;
@@ -190,7 +190,7 @@ bool registerNatives(JNIEnv *env)
         return false;
     }
     g_messageDialogHelperClass = static_cast<jclass>(env->NewGlobalRef(clazz));
-    FIND_AND_CHECK_CLASS("org/qtproject/qt5/android/QtNativeDialogHelper");
+    FIND_AND_CHECK_CLASS("org/qtproject/qt/android/QtNativeDialogHelper");
     jclass appClass = static_cast<jclass>(env->NewGlobalRef(clazz));
 
     if (env->RegisterNatives(appClass, methods, sizeof(methods) / sizeof(methods[0])) < 0) {

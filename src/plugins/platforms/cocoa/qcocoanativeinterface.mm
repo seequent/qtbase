@@ -64,8 +64,6 @@
 
 #include <QtGui/private/qcoregraphics_p.h>
 
-#include <QtPlatformHeaders/qcocoawindowfunctions.h>
-
 #if QT_CONFIG(vulkan)
 #include <MoltenVK/mvk_vulkan.h>
 #endif
@@ -75,20 +73,6 @@ QT_BEGIN_NAMESPACE
 QCocoaNativeInterface::QCocoaNativeInterface()
 {
 }
-
-#ifndef QT_NO_OPENGL
-void *QCocoaNativeInterface::nativeResourceForContext(const QByteArray &resourceString, QOpenGLContext *context)
-{
-    if (!context)
-        return nullptr;
-    if (resourceString.toLower() == "nsopenglcontext")
-        return nsOpenGLContextForContext(context);
-    if (resourceString.toLower() == "cglcontextobj")
-        return cglContextForContext(context);
-
-    return nullptr;
-}
-#endif
 
 void *QCocoaNativeInterface::nativeResourceForWindow(const QByteArray &resourceString, QWindow *window)
 {
@@ -116,12 +100,6 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QCocoaNativeInter
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::removeFromMimeList);
     if (resource.toLower() == "registerdraggedtypes")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::registerDraggedTypes);
-    if (resource.toLower() == "setdockmenu")
-        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::setDockMenu);
-    if (resource.toLower() == "qmenutonsmenu")
-        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::qMenuToNSMenu);
-    if (resource.toLower() == "qmenubartonsmenu")
-        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::qMenuBarToNSMenu);
     if (resource.toLower() == "registertouchwindow")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::registerTouchWindow);
     if (resource.toLower() == "setembeddedinforeignview")
@@ -132,8 +110,6 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QCocoaNativeInter
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::registerContentBorderArea);
     if (resource.toLower() == "setcontentborderareaenabled")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::setContentBorderAreaEnabled);
-    if (resource.toLower() == "setcontentborderenabled")
-        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::setContentBorderEnabled);
     if (resource.toLower() == "setnstoolbar")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::setNSToolbar);
     if (resource.toLower() == "testcontentborderposition")
@@ -182,33 +158,6 @@ void QCocoaNativeInterface::onAppFocusWindowChanged(QWindow *window)
     QCocoaMenuBar::updateMenuBarImmediately();
 }
 
-#ifndef QT_NO_OPENGL
-void *QCocoaNativeInterface::cglContextForContext(QOpenGLContext* context)
-{
-    NSOpenGLContext *nsOpenGLContext = static_cast<NSOpenGLContext*>(nsOpenGLContextForContext(context));
-    if (nsOpenGLContext)
-        return [nsOpenGLContext CGLContextObj];
-    return nullptr;
-}
-
-void *QCocoaNativeInterface::nsOpenGLContextForContext(QOpenGLContext* context)
-{
-    if (context) {
-        if (QCocoaGLContext *cocoaGLContext = static_cast<QCocoaGLContext *>(context->handle()))
-            return cocoaGLContext->nativeContext();
-    }
-    return nullptr;
-}
-#endif
-
-QFunctionPointer QCocoaNativeInterface::platformFunction(const QByteArray &function) const
-{
-    if (function == QCocoaWindowFunctions::bottomLeftClippedByNSWindowOffsetIdentifier())
-        return QFunctionPointer(QCocoaWindowFunctions::BottomLeftClippedByNSWindowOffset(QCocoaWindow::bottomLeftClippedByNSWindowOffsetStatic));
-
-    return nullptr;
-}
-
 void QCocoaNativeInterface::addToMimeList(void *macPasteboardMime)
 {
     qt_mac_addToGlobalMimeList(reinterpret_cast<QMacInternalPasteboardMime *>(macPasteboardMime));
@@ -222,28 +171,6 @@ void QCocoaNativeInterface::removeFromMimeList(void *macPasteboardMime)
 void QCocoaNativeInterface::registerDraggedTypes(const QStringList &types)
 {
     qt_mac_registerDraggedTypes(types);
-}
-
-void QCocoaNativeInterface::setDockMenu(QPlatformMenu *platformMenu)
-{
-    QMacAutoReleasePool pool;
-    QCocoaMenu *cocoaPlatformMenu = static_cast<QCocoaMenu *>(platformMenu);
-    NSMenu *menu = cocoaPlatformMenu->nsMenu();
-    [QCocoaApplicationDelegate sharedDelegate].dockMenu = menu;
-}
-
-void *QCocoaNativeInterface::qMenuToNSMenu(QPlatformMenu *platformMenu)
-{
-    QCocoaMenu *cocoaPlatformMenu = static_cast<QCocoaMenu *>(platformMenu);
-    NSMenu *menu = cocoaPlatformMenu->nsMenu();
-    return reinterpret_cast<void *>(menu);
-}
-
-void *QCocoaNativeInterface::qMenuBarToNSMenu(QPlatformMenuBar *platformMenuBar)
-{
-    QCocoaMenuBar *cocoaPlatformMenuBar = static_cast<QCocoaMenuBar *>(platformMenuBar);
-    NSMenu *menu = cocoaPlatformMenuBar->nsMenu();
-    return reinterpret_cast<void *>(menu);
 }
 
 void QCocoaNativeInterface::setEmbeddedInForeignView(QPlatformWindow *window, bool embedded)
@@ -291,16 +218,6 @@ void QCocoaNativeInterface::setContentBorderAreaEnabled(QWindow *window, quintpt
     QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window->handle());
     if (cocoaWindow)
         cocoaWindow->setContentBorderAreaEnabled(identifier, enable);
-}
-
-void QCocoaNativeInterface::setContentBorderEnabled(QWindow *window, bool enable)
-{
-    if (!window)
-        return;
-
-    QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window->handle());
-    if (cocoaWindow)
-        cocoaWindow->setContentBorderEnabled(enable);
 }
 
 void QCocoaNativeInterface::setNSToolbar(QWindow *window, void *nsToolbar)

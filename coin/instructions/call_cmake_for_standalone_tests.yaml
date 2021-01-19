@@ -1,7 +1,21 @@
 type: Group
 instructions:
+  - type: ChangeDirectory
+    directory: "{{.SourceDir}}"
   - type: ExecuteCommand
-    command: "{{.Env.ENV_PREFIX}} {{.InstallDir}}\\bin\\qt-cmake {{.Env.COIN_CMAKE_ARGS}}"
+    command: "{{.InstallDir}}/libexec/android_cmakelist_patcher.sh"
+    maxTimeInSeconds: 6000
+    maxTimeBetweenOutput: 1200
+    userMessageOnFailure: >
+      Failed to patch CMakeLists.txt.
+    enable_if:
+      condition: property
+      property: features
+      contains_value: AndroidTestRun
+  - type: ChangeDirectory
+    directory: "{{.BuildDir}}"
+  - type: ExecuteCommand
+    command: "{{.Env.TESTS_ENV_PREFIX}} {{.Env.INSTALL_DIR_FOR_CMAKE_TESTS}}\\bin\\qt-internal-configure-tests {{.Env.COIN_CMAKE_ARGS}}"
     executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 6000
     maxTimeBetweenOutput: 1200
@@ -12,7 +26,7 @@ instructions:
       property: host.os
       equals_value: Windows
   - type: ExecuteCommand
-    command: "{{.InstallDir}}/bin/qt-cmake {{.Env.COIN_CMAKE_ARGS}}"
+    command: "{{.Env.TESTS_ENV_PREFIX}} {{.Env.INSTALL_DIR_FOR_CMAKE_TESTS}}/bin/qt-internal-configure-tests {{.Env.COIN_CMAKE_ARGS}}"
     executeCommandArgumentSplitingBehavior: SplitAfterVariableSubstitution
     maxTimeInSeconds: 6000
     maxTimeBetweenOutput: 1200

@@ -55,7 +55,7 @@
 
 #if QT_CONFIG(harfbuzz)
 #  include "qharfbuzzng_p.h"
-#  include <harfbuzz/hb-ot.h>
+#  include <hb-ot.h>
 #endif
 
 #include <algorithm>
@@ -103,12 +103,12 @@ bool qt_useHarfbuzzNG()
 
 int QFontEngine::getPointInOutline(glyph_t glyph, int flags, quint32 point, QFixed *xpos, QFixed *ypos, quint32 *nPoints)
 {
-    Q_UNUSED(glyph)
-    Q_UNUSED(flags)
-    Q_UNUSED(point)
-    Q_UNUSED(xpos)
-    Q_UNUSED(ypos)
-    Q_UNUSED(nPoints)
+    Q_UNUSED(glyph);
+    Q_UNUSED(flags);
+    Q_UNUSED(point);
+    Q_UNUSED(xpos);
+    Q_UNUSED(ypos);
+    Q_UNUSED(nPoints);
     return Err_Not_Covered;
 }
 
@@ -229,8 +229,8 @@ bool QFontEngine::supportsScript(QChar::Script script) const
 #if QT_CONFIG(harfbuzz)
     if (qt_useHarfbuzzNG()) {
         // in AAT fonts, 'gsub' table is effectively replaced by 'mort'/'morx' table
-        uint len;
-        if (getSfntTableData(MAKE_TAG('m','o','r','t'), 0, &len) || getSfntTableData(MAKE_TAG('m','o','r','x'), 0, &len))
+        uint lenMort = 0, lenMorx = 0;
+        if (getSfntTableData(MAKE_TAG('m','o','r','t'), nullptr, &lenMort) || getSfntTableData(MAKE_TAG('m','o','r','x'), nullptr, &lenMorx))
             return true;
 
         if (hb_face_t *face = hb_qt_face_get_for_engine(const_cast<QFontEngine *>(this))) {
@@ -589,7 +589,8 @@ qreal QFontEngine::minRightBearing() const
         }
 
         if (m_minLeftBearing == kBearingNotInitialized || m_minRightBearing == kBearingNotInitialized)
-            qWarning() << "Failed to compute left/right minimum bearings for" << fontDef.family;
+            qWarning() << "Failed to compute left/right minimum bearings for"
+                       << fontDef.families.first();
     }
 
     return m_minRightBearing;
@@ -915,12 +916,9 @@ void QFontEngine::removeGlyphFromCache(glyph_t)
 QFontEngine::Properties QFontEngine::properties() const
 {
     Properties p;
-    p.postscriptName
-            = QFontEngine::convertToPostscriptFontFamilyName(fontDef.family.toUtf8())
-            + '-'
-            + QByteArray::number(fontDef.style)
-            + '-'
-            + QByteArray::number(fontDef.weight);
+    p.postscriptName =
+            QFontEngine::convertToPostscriptFontFamilyName(fontDef.families.first().toUtf8()) + '-'
+            + QByteArray::number(fontDef.style) + '-' + QByteArray::number(fontDef.weight);
     p.ascent = ascent();
     p.descent = descent();
     p.leading = leading();
@@ -954,9 +952,9 @@ void QFontEngine::getUnscaledGlyph(glyph_t glyph, QPainterPath *path, glyph_metr
 */
 bool QFontEngine::getSfntTableData(uint tag, uchar *buffer, uint *length) const
 {
-    Q_UNUSED(tag)
-    Q_UNUSED(buffer)
-    Q_UNUSED(length)
+    Q_UNUSED(tag);
+    Q_UNUSED(buffer);
+    Q_UNUSED(length);
     return false;
 }
 
@@ -1027,7 +1025,7 @@ static inline QFixed kerning(int left, int right, const QFontEngine::KernPair *p
     while (left <= right) {
         int middle = left + ( ( right - left ) >> 1 );
 
-        if(pairs[middle].left_right == left_right)
+        if (pairs[middle].left_right == left_right)
             return pairs[middle].adjust;
 
         if (pairs[middle].left_right < left_right)
@@ -1041,7 +1039,7 @@ static inline QFixed kerning(int left, int right, const QFontEngine::KernPair *p
 void QFontEngine::doKerning(QGlyphLayout *glyphs, QFontEngine::ShaperFlags flags) const
 {
     int numPairs = kerning_pairs.size();
-    if(!numPairs)
+    if (!numPairs)
         return;
 
     const KernPair *pairs = kerning_pairs.constData();
@@ -1097,7 +1095,7 @@ void QFontEngine::loadKerningPairs(QFixed scalingFactor)
                 goto end;
 
 //            qDebug("subtable: version=%d, coverage=%x",version, coverage);
-            if(version == 0 && coverage == 0x0001) {
+            if (version == 0 && coverage == 0x0001) {
                 if (offset + length > tab.size()) {
 //                    qDebug("length ouf ot bounds");
                     goto end;
@@ -1108,7 +1106,7 @@ void QFontEngine::loadKerningPairs(QFixed scalingFactor)
                 if (!qSafeFromBigEndian(data, end, &nPairs))
                     goto end;
 
-                if(nPairs * 6 + 8 > length - 6) {
+                if (nPairs * 6 + 8 > length - 6) {
 //                    qDebug("corrupt table!");
                     // corrupt table
                     goto end;
@@ -1250,7 +1248,7 @@ const uchar *QFontEngine::getCMap(const uchar *table, uint tableSize, bool *isSy
             break;
         }
     }
-    if(tableToUse < 0)
+    if (tableToUse < 0)
         return nullptr;
 
 resolveTable:
@@ -1339,7 +1337,7 @@ quint32 QFontEngine::getTrueTypeGlyphIndex(const uchar *cmap, int cmapSize, uint
            Since 0xffff is never a valid Unicode char anyway, we just get rid of the issue
            by returning 0 for 0xffff
         */
-        if(unicode >= 0xffff)
+        if (unicode >= 0xffff)
             return 0;
 
         quint16 segCountX2;
@@ -1433,7 +1431,7 @@ quint32 QFontEngine::getTrueTypeGlyphIndex(const uchar *cmap, int cmapSize, uint
             if (!qSafeFromBigEndian(cmap + 12 * middle, end, &startCharCode))
                 return 0;
 
-            if(unicode < startCharCode)
+            if (unicode < startCharCode)
                 right = middle - 1;
             else {
                 quint32 endCharCode;
@@ -1538,8 +1536,8 @@ QFontEngineBox::~QFontEngineBox()
 
 glyph_t QFontEngineBox::glyphIndex(uint ucs4) const
 {
-    Q_UNUSED(ucs4)
-    return 0;
+    Q_UNUSED(ucs4);
+    return 1;
 }
 
 bool QFontEngineBox::stringToCMap(const QChar *str, int len, QGlyphLayout *glyphs, int *nglyphs, QFontEngine::ShaperFlags flags) const
@@ -1554,7 +1552,7 @@ bool QFontEngineBox::stringToCMap(const QChar *str, int len, QGlyphLayout *glyph
     QStringIterator it(str, str + len);
     while (it.hasNext()) {
         it.advance();
-        glyphs->glyphs[ucs4Length++] = 0;
+        glyphs->glyphs[ucs4Length++] = 1;
     }
 
     *nglyphs = ucs4Length;
@@ -1670,12 +1668,12 @@ QImage QFontEngineBox::alphaMapForGlyph(glyph_t)
     QImage image(_size, _size, QImage::Format_Alpha8);
     image.fill(0);
 
-    // FIXME: use qpainter
+    uchar *bits = image.bits();
     for (int i=2; i <= _size-3; ++i) {
-        image.setPixel(i, 2, 255);
-        image.setPixel(i, _size-3, 255);
-        image.setPixel(2, i, 255);
-        image.setPixel(_size-3, i, 255);
+        bits[i + 2 * image.bytesPerLine()] = 255;
+        bits[i + (_size - 3) * image.bytesPerLine()] = 255;
+        bits[2 + i * image.bytesPerLine()] = 255;
+        bits[_size - 3 + i * image.bytesPerLine()] = 255;
     }
     return image;
 }
@@ -1730,7 +1728,9 @@ void QFontEngineMulti::ensureFallbackFamiliesQueried()
     if (styleHint == QFont::AnyStyle && fontDef.fixedPitch)
         styleHint = QFont::TypeWriter;
 
-    setFallbackFamiliesList(qt_fallbacksForFamily(fontDef.family, QFont::Style(fontDef.style), styleHint, QChar::Script(m_script)));
+    setFallbackFamiliesList(qt_fallbacksForFamily(fontDef.families.first(),
+                                                  QFont::Style(fontDef.style), styleHint,
+                                                  QChar::Script(m_script)));
 }
 
 void QFontEngineMulti::setFallbackFamiliesList(const QStringList &fallbackFamilies)
@@ -1744,7 +1744,7 @@ void QFontEngineMulti::setFallbackFamiliesList(const QStringList &fallbackFamili
         QFontEngine *engine = m_engines.at(0);
         engine->ref.ref();
         m_engines[1] = engine;
-        m_fallbackFamilies << fontDef.family;
+        m_fallbackFamilies << fontDef.families.first();
     } else {
         m_engines.resize(m_fallbackFamilies.size() + 1);
     }
@@ -1754,7 +1754,7 @@ void QFontEngineMulti::setFallbackFamiliesList(const QStringList &fallbackFamili
 
 void QFontEngineMulti::ensureEngineAt(int at)
 {
-    if (!m_fallbackFamiliesQueried)
+    if (!m_fallbackFamiliesQueried && at > 0)
         ensureFallbackFamiliesQueried();
     Q_ASSERT(at < m_engines.size());
     if (!m_engines.at(at)) {
@@ -1771,15 +1771,14 @@ QFontEngine *QFontEngineMulti::loadEngine(int at)
 {
     QFontDef request(fontDef);
     request.styleStrategy |= QFont::NoFontMerging;
-    request.family = fallbackFamilyAt(at - 1);
-    request.families = QStringList(request.family);
+    request.families = QStringList(fallbackFamilyAt(at - 1));
 
     // At this point, the main script of the text has already been considered
     // when fetching the list of fallback families from the database, and the
     // info about the actual script of the characters may have been discarded,
     // so we do not check for writing system support, but instead just load
     // the family indiscriminately.
-    if (QFontEngine *engine = QFontDatabase::findFont(request, QChar::Script_Common)) {
+    if (QFontEngine *engine = QFontDatabasePrivate::findFont(request, QChar::Script_Common)) {
         engine->fontDef.weight = request.weight;
         if (request.style > QFont::StyleNormal)
             engine->fontDef.style = request.style;

@@ -843,7 +843,7 @@ bool QGraphicsProxyWidget::event(QEvent *event)
     case QEvent::FontChange: {
         // Propagate to widget.
         QWidgetPrivate *wd = d->widget->d_func();
-        int mask = d->font.resolve() | d->inheritedFontResolveMask;
+        int mask = d->font.resolveMask() | d->inheritedFontResolveMask;
         wd->inheritedFontResolveMask = mask;
         wd->resolveFont();
         break;
@@ -851,7 +851,7 @@ bool QGraphicsProxyWidget::event(QEvent *event)
     case QEvent::PaletteChange: {
         // Propagate to widget.
         QWidgetPrivate *wd = d->widget->d_func();
-        int mask = d->palette.resolve() | d->inheritedPaletteResolveMask;
+        int mask = d->palette.resolveMask() | d->inheritedPaletteResolveMask;
         wd->inheritedPaletteResolveMask = mask;
         wd->resolvePalette();
         break;
@@ -1301,7 +1301,9 @@ void QGraphicsProxyWidget::wheelEvent(QGraphicsSceneWheelEvent *event)
     // pixelDelta, inverted, scrollPhase and source from the original QWheelEvent
     // were not preserved in the QGraphicsSceneWheelEvent unfortunately
     QWheelEvent wheelEvent(pos, event->screenPos(), QPoint(), angleDelta,
-                    event->buttons(), event->modifiers(), Qt::NoScrollPhase, false);
+                           event->buttons(), event->modifiers(), Qt::NoScrollPhase,
+                           false, Qt::MouseEventNotSynthesized,
+                           QPointingDevice::primaryPointingDevice());
     QPointer<QWidget> focusWidget = d->widget->focusWidget();
     extern bool qt_sendSpontaneousEvent(QObject *, QEvent *);
     qt_sendSpontaneousEvent(receiver, &wheelEvent);
@@ -1389,6 +1391,11 @@ void QGraphicsProxyWidget::focusInEvent(QFocusEvent *event)
         break;
     }
 
+    // QTBUG-88016
+    if (d->widget && d->widget->focusWidget()
+        && d->widget->focusWidget()->testAttribute(Qt::WA_InputMethodEnabled))
+        QApplication::inputMethod()->reset();
+
     d->proxyIsGivingFocus = false;
 }
 
@@ -1404,8 +1411,14 @@ void QGraphicsProxyWidget::focusOutEvent(QFocusEvent *event)
     if (d->widget) {
         // We need to explicitly remove subfocus from the embedded widget's
         // focus widget.
-        if (QWidget *focusWidget = d->widget->focusWidget())
+        if (QWidget *focusWidget = d->widget->focusWidget()) {
+            // QTBUG-88016 proxyWidget set QTextEdit(QLineEdit etc.) when input preview text,
+            // inputMethod should be reset when proxyWidget lost focus
+            if (focusWidget && focusWidget->testAttribute(Qt::WA_InputMethodEnabled))
+                QApplication::inputMethod()->reset();
+
             d->removeSubFocusHelper(focusWidget, event->reason());
+        }
     }
 }
 

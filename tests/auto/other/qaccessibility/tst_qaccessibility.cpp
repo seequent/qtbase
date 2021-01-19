@@ -35,7 +35,7 @@
 # include <servprov.h>
 # include <winuser.h>
 #endif
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtGui>
 #include <QtWidgets>
 #include <math.h>
@@ -292,7 +292,7 @@ void tst_QAccessibility::cleanup()
 {
     const EventList list = QTestAccessibility::events();
     if (!list.isEmpty()) {
-        qWarning("%d accessibility event(s) were not handled in testfunction '%s':", list.count(),
+        qWarning("%zd accessibility event(s) were not handled in testfunction '%s':", size_t(list.count()),
                  QString(QTest::currentTestFunction()).toLatin1().constData());
         for (int i = 0; i < list.count(); ++i)
             qWarning(" %d: Object: %p Event: '%s' Child: %d", i + 1, list.at(i)->object(),
@@ -2499,7 +2499,8 @@ void tst_QAccessibility::groupBoxTest()
     QCOMPARE(iface->role(), QAccessible::Grouping);
     QCOMPARE(iface->text(QAccessible::Name), QLatin1String("Test QGroupBox"));
     QCOMPARE(iface->text(QAccessible::Description), QLatin1String("This group box will be used to test accessibility"));
-    QVector<QPair<QAccessibleInterface*, QAccessible::Relation> > relations = rButtonIface->relations();
+    QList<QPair<QAccessibleInterface *, QAccessible::Relation>> relations =
+            rButtonIface->relations();
     QCOMPARE(relations.size(), 1);
     QPair<QAccessibleInterface*, QAccessible::Relation> relation = relations.first();
     QCOMPARE(relation.first->object(), groupBox);
@@ -2572,7 +2573,7 @@ void tst_QAccessibility::dialogButtonBoxTest()
     child = iface->child(0);
     QCOMPARE(child->role(), QAccessible::PushButton);
 
-    QVector<QAccessibleInterface *> buttons;
+    QList<QAccessibleInterface *> buttons;
     for (int i = 0; i < iface->childCount(); ++i)
         buttons <<  iface->child(i);
 
@@ -2624,7 +2625,7 @@ void tst_QAccessibility::dialogButtonBoxTest()
     QApplication::processEvents();
     QStringList actualOrder;
 
-    QVector<QAccessibleInterface *> buttons;
+    QList<QAccessibleInterface *> buttons;
     for (int i = 0; i < iface->childCount(); ++i)
         buttons <<  iface->child(i);
 
@@ -2881,8 +2882,8 @@ void tst_QAccessibility::listTest()
     QCOMPARE(cellInterface->columnIndex(), 0);
     QCOMPARE(cellInterface->rowExtent(), 1);
     QCOMPARE(cellInterface->columnExtent(), 1);
-    QCOMPARE(cellInterface->rowHeaderCells(), QList<QAccessibleInterface*>());
-    QCOMPARE(cellInterface->columnHeaderCells(), QList<QAccessibleInterface*>());
+    QVERIFY(cellInterface->rowHeaderCells().isEmpty());
+    QVERIFY(cellInterface->columnHeaderCells().isEmpty());
 
     QCOMPARE(cellInterface->table()->object(), listView);
 
@@ -3672,7 +3673,7 @@ void tst_QAccessibility::labelTest()
     QCOMPARE(acc_label->state().focusable, false);
     QCOMPARE(acc_label->state().readOnly, true);
 
-    QVector<QPair<QAccessibleInterface *, QAccessible::Relation> > rels =  acc_label->relations();
+    QList<QPair<QAccessibleInterface *, QAccessible::Relation>> rels = acc_label->relations();
     QCOMPARE(rels.count(), 1);
     QAccessibleInterface *iface = rels.first().first;
     QAccessible::Relation rel = rels.first().second;
@@ -4014,7 +4015,7 @@ public:
     }
 
 private:
-    QVector<QAccessibleInterface *> m_children;
+    QList<QAccessibleInterface *> m_children;
 };
 
 void tst_QAccessibility::focusChild()

@@ -40,10 +40,8 @@
 #include "qbezier_p.h"
 #include <qdebug.h>
 #include <qline.h>
-#include <qpolygon.h>
-#include <qvector.h>
-#include <qlist.h>
 #include <qmath.h>
+#include <qpolygon.h>
 
 #include <private/qnumeric_p.h>
 
@@ -238,6 +236,8 @@ static ShiftResult good_offset(const QBezier *b1, const QBezier *b2, qreal offse
     return Ok;
 }
 
+QT_WARNING_DISABLE_FLOAT_COMPARE
+
 static ShiftResult shift(const QBezier *orig, QBezier *shifted, qreal offset, qreal threshold)
 {
     int map[4];
@@ -285,6 +285,8 @@ static ShiftResult shift(const QBezier *orig, QBezier *shifted, qreal offset, qr
     QPointF points_shifted[4];
 
     QLineF prev = QLineF(QPointF(), points[1] - points[0]);
+    if (!prev.length())
+        return Discard;
     QPointF prev_normal = prev.normalVector().unitVector().p2();
 
     points_shifted[0] = points[0] + offset * prev_normal;
@@ -471,7 +473,7 @@ void QBezier::addIfClose(qreal *length, qreal error) const
 
     chord = QLineF(QPointF(x1, y1),QPointF(x4, y4)).length();
 
-    if((len-chord) > error) {
+    if ((len-chord) > error) {
         const auto halves = split();                  /* split in two */
         halves.first.addIfClose(length, error);       /* try left side */
         halves.second.addIfClose(length, error);      /* try right side */

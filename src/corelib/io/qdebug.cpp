@@ -304,7 +304,7 @@ static inline void putEscapedString(QTextStreamPrivate *d, const Char *begin, in
 */
 void QDebug::putString(const QChar *begin, size_t length)
 {
-    if (stream->testFlag(Stream::NoQuotes)) {
+    if (stream->noQuotes) {
         // no quotes, write the string directly too (no pretty-printing)
         // this respects the QTextStream state, though
         stream->ts.d_ptr->putString(begin, int(length));
@@ -322,7 +322,7 @@ void QDebug::putString(const QChar *begin, size_t length)
 */
 void QDebug::putByteArray(const char *begin, size_t length, Latin1Content content)
 {
-    if (stream->testFlag(Stream::NoQuotes)) {
+    if (stream->noQuotes) {
         // no quotes, write the string directly too (no pretty-printing)
         // this respects the QTextStream state, though
         QString string = content == ContainsLatin1 ? QString::fromLatin1(begin, int(length)) : QString::fromUtf8(begin, int(length));
@@ -354,9 +354,8 @@ QDebug &QDebug::resetFormat()
 {
     stream->ts.reset();
     stream->space = true;
-    if (stream->context.version > 1)
-        stream->flags = 0;
-    stream->setVerbosity(DefaultVerbosity);
+    stream->noQuotes = false;
+    stream->verbosity = DefaultVerbosity;
     return *this;
 }
 
@@ -597,9 +596,24 @@ QDebug &QDebug::resetFormat()
 /*!
     \fn QDebug &QDebug::operator<<(const char *t)
 
-    Writes the '\\0'-terminated string, \a t, to the stream and returns a
-    reference to the stream. The string is never quoted nor transformed to the
-    output, but note that some QDebug backends might not be 8-bit clean.
+    Writes the '\\0'-terminated UTF-8 string, \a t, to the stream and returns a
+    reference to the stream. The string is never quoted or escaped for the
+    output. Note that QDebug buffers internally as UTF-16 and may need to
+    transform to 8-bit using the locale's codec in order to use some backends,
+    which may cause garbled output (mojibake). Restricting to US-ASCII strings
+    is recommended.
+*/
+
+/*!
+    \fn QDebug &QDebug::operator<<(const char16_t *t)
+    \since 6.0
+
+    Writes the u'\\0'-terminated UTF-16 string, \a t, to the stream and returns
+    a reference to the stream. The string is never quoted or escaped for the
+    output. Note that QDebug buffers internally as UTF-16 and may need to
+    transform to 8-bit using the locale's codec in order to use some backends,
+    which may cause garbled output (mojibake). Restricting to US-ASCII strings
+    is recommended.
 */
 
 /*!
@@ -634,20 +648,6 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \fn QDebug &QDebug::operator<<(const QStringRef &t)
-
-    Writes the string, \a t, to the stream and returns a reference to the
-    stream. Normally, QDebug prints the string inside quotes and transforms
-    non-printable characters to their Unicode values (\\u1234).
-
-    To print non-printable characters without transformation, enable the
-    noquote() functionality. Note that some QDebug backends might not be 8-bit
-    clean.
-
-    See the QString overload for examples.
-*/
-
-/*!
     \since 5.10
     \fn QDebug &QDebug::operator<<(QStringView s)
 
@@ -660,6 +660,23 @@ QDebug &QDebug::resetFormat()
     clean.
 
     See the QString overload for examples.
+*/
+
+/*!
+    \since 6.0
+    \fn QDebug &QDebug::operator<<(QUtf8StringView s)
+
+    Writes the string view, \a s, to the stream and returns a reference to the
+    stream.
+
+    Normally, QDebug prints the data inside quotes and transforms control or
+    non-US-ASCII characters to their C escape sequences (\\xAB). This way, the
+    output is always 7-bit clean and the string can be copied from the output
+    and pasted back into C++ sources, if necessary.
+
+    To print non-printable characters without transformation, enable the
+    noquote() functionality. Note that some QDebug backends might not be 8-bit
+    clean.
 */
 
 /*!
@@ -698,6 +715,25 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
+    \since 6.0
+    \fn QDebug &QDebug::operator<<(QByteArrayView t)
+
+    Writes the data of the observed byte array, \a t, to the stream and returns
+    a reference to the stream.
+
+    Normally, QDebug prints the data inside quotes and transforms control or
+    non-US-ASCII characters to their C escape sequences (\\xAB). This way, the
+    output is always 7-bit clean and the string can be copied from the output
+    and pasted back into C++ sources, if necessary.
+
+    To print non-printable characters without transformation, enable the
+    noquote() functionality. Note that some QDebug backends might not be 8-bit
+    clean.
+
+    See the QByteArray overload for examples.
+*/
+
+/*!
     \fn QDebug &QDebug::operator<<(const void *t)
 
     Writes a pointer, \a t, to the stream and returns a reference to the stream.
@@ -714,14 +750,7 @@ QDebug &QDebug::resetFormat()
 */
 
 /*!
-    \fn template <class T> QString QDebug::toString(const T &object)
-    \since 6.0
-
-    \include qdebug-toString.qdocinc
-*/
-
-/*!
-    \fn template <class T> QString QDebug::toString(const T *object)
+    \fn template <class T> QString QDebug::toString(T &&object)
     \since 6.0
 
     \include qdebug-toString.qdocinc
@@ -741,14 +770,6 @@ QDebug &QDebug::resetFormat()
     \since 5.7
 
     Writes the contents of list \a vec to \a debug. \c T needs to
-    support streaming into QDebug.
-*/
-
-/*!
-    \fn template <typename T> QDebug operator<<(QDebug debug, const QVector<T> &vec)
-    \relates QDebug
-
-    Writes the contents of vector \a vec to \a debug. \c T needs to
     support streaming into QDebug.
 */
 
@@ -860,7 +881,8 @@ public:
     QDebugStateSaverPrivate(QDebug::Stream *stream)
         : m_stream(stream),
           m_spaces(stream->space),
-          m_flags(stream->context.version > 1 ? stream->flags : 0),
+          m_noQuotes(stream->noQuotes),
+          m_verbosity(stream->verbosity),
           m_streamParams(stream->ts.d_ptr->params)
     {
     }
@@ -872,9 +894,9 @@ public:
                 m_stream->buffer.chop(1);
 
         m_stream->space = m_spaces;
+        m_stream->noQuotes = m_noQuotes;
         m_stream->ts.d_ptr->params = m_streamParams;
-        if (m_stream->context.version > 1)
-            m_stream->flags = m_flags;
+        m_stream->verbosity = m_verbosity;
 
         if (!currentSpaces && m_spaces)
             m_stream->ts << ' ';
@@ -884,7 +906,8 @@ public:
 
     // QDebug state
     const bool m_spaces;
-    const int m_flags;
+    const bool m_noQuotes;
+    const int m_verbosity;
 
     // QTextStream state
     const QTextStreamPrivate::Params m_streamParams;
@@ -963,7 +986,7 @@ void qt_QMetaEnum_flagDebugOperator(QDebug &debug, size_t sizeofT, int value)
          MyNamespace::MyClass::MyScopedEnum::Enum3
          MyNamespace::MyClass::MyScopedEnum(456)
  */
-QDebug qt_QMetaEnum_debugOperator(QDebug &dbg, int value, const QMetaObject *meta, const char *name)
+QDebug qt_QMetaEnum_debugOperator(QDebug &dbg, qint64 value, const QMetaObject *meta, const char *name)
 {
     QDebugStateSaver saver(dbg);
     dbg.nospace();
@@ -972,18 +995,18 @@ QDebug qt_QMetaEnum_debugOperator(QDebug &dbg, int value, const QMetaObject *met
     const int verbosity = dbg.verbosity();
     if (verbosity >= QDebug::DefaultVerbosity) {
         if (const char *scope = me.scope())
-            dbg << scope << "::";
+            dbg << scope << u"::";
     }
 
     const char *key = me.valueToKey(value);
     const bool scoped = me.isScoped() || verbosity & 1;
     if (scoped || !key)
-        dbg << me.enumName() << (!key ? "(" : "::");
+        dbg << me.enumName() << (!key ? u"(" : u"::");
 
     if (key)
         dbg << key;
     else
-        dbg << value << ")";
+        dbg << value << ')';
 
     return dbg;
 }
@@ -1030,18 +1053,18 @@ QDebug qt_QMetaEnum_flagDebugOperator(QDebug &debug, quint64 value, const QMetaO
 
     const bool classScope = verbosity >= QDebug::DefaultVerbosity;
     if (classScope) {
-        debug << "QFlags<";
+        debug << u"QFlags<";
 
         if (const char *scope = me.scope())
-            debug << scope << "::";
+            debug << scope << u"::";
     }
 
     const bool enumScope = me.isScoped() || verbosity > QDebug::MinimumVerbosity;
     if (enumScope) {
         debug << me.enumName();
         if (classScope)
-            debug << ">";
-        debug << "(";
+            debug << '>';
+        debug << '(';
     }
 
     debug << me.valueToKeys(value);

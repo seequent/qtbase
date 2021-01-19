@@ -4,7 +4,7 @@
 ## tst_qobject Test:
 #####################################################################
 
-add_qt_test(tst_qobject
+qt_internal_add_test(tst_qobject
     SOURCES
         tst_qobject.cpp
     DEFINES
@@ -17,3 +17,4 @@ add_qt_test(tst_qobject
 ## Scopes:
 #####################################################################
 add_subdirectory(signalbug)
+add_dependencies(tst_qobject signalbug_helper) # special case

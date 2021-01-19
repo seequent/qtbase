@@ -40,11 +40,11 @@
 #ifndef QLISTWIDGET_H
 #define QLISTWIDGET_H
 
-#include <QtWidgets/qtwidgetsglobal.h>
 #include <QtWidgets/qlistview.h>
-#include <QtCore/qvariant.h>
-#include <QtCore/qvector.h>
+#include <QtWidgets/qtwidgetsglobal.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qitemselectionmodel.h>
+#include <QtCore/qvariant.h>
 
 QT_REQUIRE_CONFIG(listwidget);
 
@@ -258,7 +258,6 @@ Q_SIGNALS:
     void itemDoubleClicked(QListWidgetItem *item);
     void itemActivated(QListWidgetItem *item);
     void itemEntered(QListWidgetItem *item);
-    // ### Qt 6: add changed roles
     void itemChanged(QListWidgetItem *item);
 
     void currentItemChanged(QListWidgetItem *current, QListWidgetItem *previous);

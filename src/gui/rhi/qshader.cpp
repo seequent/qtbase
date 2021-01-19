@@ -1,34 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Gui module
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -304,7 +307,7 @@ void QShader::setDescription(const QShaderDescription &desc)
 /*!
     \return the list of available shader versions
  */
-QVector<QShaderKey> QShader::availableShaders() const
+QList<QShaderKey> QShader::availableShaders() const
 {
     return d->shaders.keys().toVector();
 }
@@ -442,21 +445,11 @@ QShader QShader::fromSerialized(const QByteArray &data)
     if (d->qsbVersion > QShaderPrivate::QSB_VERSION_WITH_CBOR) {
         d->desc = QShaderDescription::deserialize(&ds, d->qsbVersion);
     } else if (d->qsbVersion > QShaderPrivate::QSB_VERSION_WITH_BINARY_JSON) {
-        QByteArray descBin;
-        ds >> descBin;
-        d->desc = QShaderDescription::fromCbor(descBin);
-    } else {
-#if QT_CONFIG(binaryjson) && QT_DEPRECATED_SINCE(5, 15)
-        QT_WARNING_PUSH
-        QT_WARNING_DISABLE_DEPRECATED
-        QByteArray descBin;
-        ds >> descBin;
-        d->desc = QShaderDescription::fromBinaryJson(descBin);
-        QT_WARNING_POP
-#else
-        qWarning("Cannot load QShaderDescription from binary JSON due to disabled binaryjson feature");
+        qWarning("Can no longer load QShaderDescription from CBOR.");
         d->desc = QShaderDescription();
-#endif
+    } else {
+        qWarning("Can no longer load QShaderDescription from binary JSON.");
+        d->desc = QShaderDescription();
     }
     int count;
     ds >> count;
@@ -522,7 +515,7 @@ QShaderKey::QShaderKey(QShader::Source s,
 
     \relates QShader
  */
-bool operator==(const QShader &lhs, const QShader &rhs) Q_DECL_NOTHROW
+bool operator==(const QShader &lhs, const QShader &rhs) noexcept
 {
     return lhs.d->stage == rhs.d->stage
             && lhs.d->shaders == rhs.d->shaders;
@@ -530,6 +523,7 @@ bool operator==(const QShader &lhs, const QShader &rhs) Q_DECL_NOTHROW
 }
 
 /*!
+    \internal
     \fn bool operator!=(const QShader &lhs, const QShader &rhs)
 
     Returns \c false if the values in the two QShader objects \a a and \a b
@@ -543,7 +537,7 @@ bool operator==(const QShader &lhs, const QShader &rhs) Q_DECL_NOTHROW
 
     \relates QShader
  */
-size_t qHash(const QShader &s, size_t seed) Q_DECL_NOTHROW
+size_t qHash(const QShader &s, size_t seed) noexcept
 {
     QtPrivate::QHashCombine hash;
     seed = hash(seed, s.stage());
@@ -559,12 +553,13 @@ size_t qHash(const QShader &s, size_t seed) Q_DECL_NOTHROW
 
     \relates QShaderVersion
  */
-bool operator==(const QShaderVersion &lhs, const QShaderVersion &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderVersion &lhs, const QShaderVersion &rhs) noexcept
 {
     return lhs.version() == rhs.version() && lhs.flags() == rhs.flags();
 }
 
 /*!
+    \internal
     \fn bool operator!=(const QShaderVersion &lhs, const QShaderVersion &rhs)
 
     Returns \c false if the values in the two QShaderVersion objects \a a
@@ -578,13 +573,14 @@ bool operator==(const QShaderVersion &lhs, const QShaderVersion &rhs) Q_DECL_NOT
 
     \relates QShaderKey
  */
-bool operator==(const QShaderKey &lhs, const QShaderKey &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderKey &lhs, const QShaderKey &rhs) noexcept
 {
     return lhs.source() == rhs.source() && lhs.sourceVersion() == rhs.sourceVersion()
             && lhs.sourceVariant() == rhs.sourceVariant();
 }
 
 /*!
+    \internal
     \fn bool operator!=(const QShaderKey &lhs, const QShaderKey &rhs)
 
     Returns \c false if the values in the two QShaderKey objects \a a
@@ -598,7 +594,7 @@ bool operator==(const QShaderKey &lhs, const QShaderKey &rhs) Q_DECL_NOTHROW
 
     \relates QShaderKey
  */
-size_t qHash(const QShaderKey &k, size_t seed) Q_DECL_NOTHROW
+size_t qHash(const QShaderKey &k, size_t seed) noexcept
 {
     return qHashMulti(seed,
                       k.source(),
@@ -612,12 +608,13 @@ size_t qHash(const QShaderKey &k, size_t seed) Q_DECL_NOTHROW
 
     \relates QShaderCode
  */
-bool operator==(const QShaderCode &lhs, const QShaderCode &rhs) Q_DECL_NOTHROW
+bool operator==(const QShaderCode &lhs, const QShaderCode &rhs) noexcept
 {
     return lhs.shader() == rhs.shader() && lhs.entryPoint() == rhs.entryPoint();
 }
 
 /*!
+    \internal
     \fn bool operator!=(const QShaderCode &lhs, const QShaderCode &rhs)
 
     Returns \c false if the values in the two QShaderCode objects \a a

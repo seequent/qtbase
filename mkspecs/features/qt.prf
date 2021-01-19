@@ -13,7 +13,6 @@ win32 {
    }
 }
 CONFIG(release, debug|release):DEFINES += QT_NO_DEBUG
-qtConfig(force_asserts): DEFINES += QT_FORCE_ASSERTS
 no_keywords:DEFINES += QT_NO_KEYWORDS
 plugin { #Qt plugins
    static:DEFINES += QT_STATICPLUGIN
@@ -170,7 +169,7 @@ defineTest(qtProcessModuleFlags) {
     export($$1)
 }
 
-unset(using_privates)
+unset(using_private_headers)
 var_sfx =
 for(ever) {
     # Topological resolution of modules based on their QT.<module>.depends variable
@@ -181,6 +180,7 @@ for(ever) {
         MODULE_NAME = $$eval(QT.$${QTLIB}.name)
         MODULE_MODULE = $$eval(QT.$${QTLIB}.module)
         MODULE_INCLUDES = $$eval(QT.$${QTLIB}.includes)
+        MODULE_LDFLAGS = $$eval(QT.$${QTLIB}.ldflags)
         MODULE_LIBS = $$eval(QT.$${QTLIB}.libs)
         MODULE_FRAMEWORKS = $$eval(QT.$${QTLIB}.frameworks)
         MODULE_USES = $$eval(QT.$${QTLIB}.uses)
@@ -191,8 +191,8 @@ for(ever) {
             next()
         }
 
-        contains(MODULE_CONFIG, internal_module): \
-            using_privates = true
+        contains(MODULE_CONFIG, internal_module):!isEmpty(MODULE_INCLUDES): \
+            using_private_headers = true
         contains(MODULE_CONFIG, ltcg): \
             CONFIG += link_ltcg
 
@@ -200,6 +200,9 @@ for(ever) {
         qtProcessModuleFlags(DEFINES, QT.$${QTLIB}.DEFINES)
 
         MODULE_INCLUDES -= $$QMAKE_DEFAULT_INCDIRS
+
+        # Add linker flags before lib
+        LIBS$$var_sfx += $$MODULE_LDFLAGS
 
         # Frameworks shouldn't need include paths, but much code does not use
         # module-qualified #includes, so by default we add paths which point
@@ -217,7 +220,22 @@ for(ever) {
             } else {
                 lib = $$MODULE_MODULE$$qtPlatformTargetSuffix()
                 win32|contains(MODULE_CONFIG, staticlib) {
-                    lib = $$MODULE_LIBS/$$QMAKE_PREFIX_STATICLIB$${lib}.$$QMAKE_EXTENSION_STATICLIB
+                    lib_missing = true
+                    lib_extensions = $$QMAKE_EXTENSION_STATICLIB
+                    lib_extensions *= $$QMAKE_LIB_EXTENSIONS
+                    candidates =
+                    for(ext, lib_extensions) {
+                        candidate = $$MODULE_LIBS/$$QMAKE_PREFIX_STATICLIB$${lib}.$$ext
+                        candidates += $$candidate
+                        exists($$candidate) {
+                            lib = $$candidate
+                            lib_missing = false
+                            break()
+                        }
+                    }
+                    $$lib_missing {
+                        lib = $$first(candidates)
+                    }
                     PRE_TARGETDEPS += $$lib
                 } else {
                     lib = $$MODULE_LIBS/$$QMAKE_PREFIX_SHLIB$${lib}.$$QMAKE_EXTENSION_SHLIB
@@ -232,7 +250,7 @@ for(ever) {
     !isEmpty(var_sfx): break()
     var_sfx = _PRIVATE
 }
-!isEmpty(using_privates):!no_private_qt_headers_warning:!build_pass {
+!isEmpty(using_private_headers):!no_private_qt_headers_warning:!build_pass {
     message("This project is using private headers and will therefore be tied to this specific Qt module build version.")
     message("Running this project against other versions of the Qt modules may crash at any arbitrary point.")
     message("This is not a bug, but a result of using Qt internals. You have been warned!")

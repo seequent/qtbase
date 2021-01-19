@@ -84,6 +84,7 @@
 #include <QtCore/qurl.h>
 #include <QtCore/qvarlengtharray.h>
 #include <QtCore/qscopedvaluerollback.h>
+#include <QtCore/qscopeguard.h>
 #include <QtCore/qlibrary.h>
 #include <QtCore/qoperatingsystemversion.h>
 
@@ -100,21 +101,23 @@ QT_BEGIN_NAMESPACE
 
 namespace {
 
-QAlertLevel tlsAlertLevel(int value)
+QSsl::AlertLevel tlsAlertLevel(int value)
 {
+    using QSsl::AlertLevel;
+
     if (const char *typeString = q_SSL_alert_type_string(value)) {
         // Documented to return 'W' for warning, 'F' for fatal,
         // 'U' for unknown.
         switch (typeString[0]) {
         case 'W':
-            return QAlertLevel::Warning;
+            return AlertLevel::Warning;
         case 'F':
-            return QAlertLevel::Fatal;
+            return AlertLevel::Fatal;
         default:;
         }
     }
 
-    return QAlertLevel::Unknown;
+    return AlertLevel::Unknown;
 }
 
 QString tlsAlertDescription(int value)
@@ -125,18 +128,18 @@ QString tlsAlertDescription(int value)
     return description;
 }
 
-QAlertType tlsAlertType(int value)
+QSsl::AlertType tlsAlertType(int value)
 {
     // In case for some reason openssl gives us a value,
     // which is not in our enum actually, we leave it to
     // an application to handle (supposedly they have
     // if or switch-statements).
-    return QAlertType(value & 0xff);
+    return QSsl::AlertType(value & 0xff);
 }
 
 #ifdef Q_OS_WIN
 
-QSslCertificate findCertificateToFetch(const QVector<QSslError> &tlsErrors, bool checkAIA)
+QSslCertificate findCertificateToFetch(const QList<QSslError> &tlsErrors, bool checkAIA)
 {
     QSslCertificate certToFetch;
 
@@ -374,7 +377,7 @@ int q_ssl_sess_set_new_cb(SSL *ssl, SSL_SESSION *session)
 
 int qt_OCSP_status_server_callback(SSL *ssl, void *ocspRequest)
 {
-    Q_UNUSED(ocspRequest)
+    Q_UNUSED(ocspRequest);
     if (!ssl)
         return SSL_TLSEXT_ERR_ALERT_FATAL;
 
@@ -424,7 +427,7 @@ QSslCipher QSslSocketBackendPrivate::QSslCipher_from_SSL_CIPHER(const SSL_CIPHER
     char buf [256];
     QString descriptionOneLine = QString::fromLatin1(q_SSL_CIPHER_description(cipher, buf, sizeof(buf)));
 
-    const auto descriptionList = descriptionOneLine.splitRef(QLatin1Char(' '), Qt::SkipEmptyParts);
+    const auto descriptionList = QStringView{descriptionOneLine}.split(QLatin1Char(' '), Qt::SkipEmptyParts);
     if (descriptionList.size() > 5) {
         // ### crude code.
         ciph.d->isNull = false;
@@ -465,7 +468,7 @@ QSslErrorEntry QSslErrorEntry::fromStoreContext(X509_STORE_CTX *ctx)
 
 #if QT_CONFIG(ocsp)
 
-QSslError qt_OCSP_response_status_to_QSslError(long code)
+QSslError::SslError qt_OCSP_response_status_to_SslError(long code)
 {
     switch (code) {
     case OCSP_RESPONSE_STATUS_MALFORMEDREQUEST:
@@ -577,7 +580,7 @@ int q_X509Callback(int ok, X509_STORE_CTX *ctx)
     if (!ok) {
         // Store the error and at which depth the error was detected.
 
-        using ErrorListPtr = QVector<QSslErrorEntry>*;
+        using ErrorListPtr = QList<QSslErrorEntry> *;
         ErrorListPtr errors = nullptr;
 
         // Error list is attached to either 'SSL' or 'X509_STORE'.
@@ -744,6 +747,10 @@ bool QSslSocketBackendPrivate::initSslContext()
     if (!readBio || !writeBio) {
         setErrorAndEmit(QAbstractSocket::SslInternalError,
                         QSslSocket::tr("Error creating SSL session: %1").arg(getErrorsFromOpenSsl()));
+        if (readBio)
+            q_BIO_free(readBio);
+        if (writeBio)
+            q_BIO_free(writeBio);
         return false;
     }
 
@@ -962,7 +969,7 @@ void QSslSocketPrivate::resetDefaultCiphers()
 
 void QSslSocketPrivate::resetDefaultEllipticCurves()
 {
-    QVector<QSslEllipticCurve> curves;
+    QList<QSslEllipticCurve> curves;
 
 #ifndef OPENSSL_NO_EC
     const size_t curveCount = q_EC_get_builtin_curves(nullptr, 0);
@@ -1391,7 +1398,7 @@ bool QSslSocketBackendPrivate::startHandshake()
 
     pendingFatalAlert = false;
     errorsReportedFromCallback = false;
-    QVector<QSslErrorEntry> lastErrors;
+    QList<QSslErrorEntry> lastErrors;
     q_SSL_set_ex_data(ssl, s_indexForSSLExtraData + errorOffsetInExData, &lastErrors);
 
     // SSL_set_ex_data can fail, but see the callback's code - we handle this there.
@@ -1733,8 +1740,13 @@ void QSslSocketBackendPrivate::fetchCaRootForCert(const QSslCertificate &cert)
     if (fetchAuthorityInformation)
         customRoots = configuration.caCertificates;
 
+    //Remember we are fetching and what we are fetching:
+    caToFetch = cert;
+
     QWindowsCaRootFetcher *fetcher = new QWindowsCaRootFetcher(cert, mode, customRoots, q->peerVerifyName());
-    QObject::connect(fetcher, SIGNAL(finished(QSslCertificate,QSslCertificate)), q, SLOT(_q_caRootLoaded(QSslCertificate,QSslCertificate)), Qt::QueuedConnection);
+    QObjectPrivate::connect(fetcher,  &QWindowsCaRootFetcher::finished,
+                            this, &QSslSocketBackendPrivate::_q_caRootLoaded,
+                            Qt::QueuedConnection);
     QMetaObject::invokeMethod(fetcher, "start", Qt::QueuedConnection);
     pauseSocketNotifiers(q);
     paused = true;
@@ -1743,6 +1755,14 @@ void QSslSocketBackendPrivate::fetchCaRootForCert(const QSslCertificate &cert)
 //This is the callback from QWindowsCaRootFetcher, trustedRoot will be invalid (default constructed) if it failed.
 void QSslSocketBackendPrivate::_q_caRootLoaded(QSslCertificate cert, QSslCertificate trustedRoot)
 {
+    if (caToFetch != cert) {
+        //Ooops, something from the previous connection attempt, ignore!
+        return;
+    }
+
+    //Done, fetched already:
+    caToFetch = QSslCertificate{};
+
     if (fetchAuthorityInformation) {
         if (!configuration.caCertificates.contains(trustedRoot))
             trustedRoot = QSslCertificate{};
@@ -1752,7 +1772,9 @@ void QSslSocketBackendPrivate::_q_caRootLoaded(QSslCertificate cert, QSslCertifi
     if (!trustedRoot.isNull() && !trustedRoot.isBlacklisted()) {
         if (s_loadRootCertsOnDemand) {
             //Add the new root cert to default cert list for use by future sockets
-            QSslSocket::addDefaultCaCertificate(trustedRoot);
+            auto defaultConfig = QSslConfiguration::defaultConfiguration();
+            defaultConfig.addCaCertificate(trustedRoot);
+            QSslConfiguration::setDefaultConfiguration(defaultConfig);
         }
         //Add the new root cert to this socket for future connections
         if (!configuration.caCertificates.contains(trustedRoot))
@@ -1798,6 +1820,10 @@ bool QSslSocketBackendPrivate::checkOcspStatus()
     Q_ASSERT(mode == QSslSocket::SslClientMode); // See initSslContext() for SslServerMode
     Q_ASSERT(configuration.peerVerifyMode != QSslSocket::VerifyNone);
 
+    const auto clearErrorQueue = qScopeGuard([] {
+        logAndClearErrorQueue();
+    });
+
     ocspResponses.clear();
     ocspErrorDescription.clear();
     ocspErrors.clear();
@@ -1805,7 +1831,7 @@ bool QSslSocketBackendPrivate::checkOcspStatus()
     const unsigned char *responseData = nullptr;
     const long responseLength = q_SSL_get_tlsext_status_ocsp_resp(ssl, &responseData);
     if (responseLength <= 0 || !responseData) {
-        ocspErrors.push_back(QSslError::OcspNoResponseFound);
+        ocspErrors.push_back(QSslError(QSslError::OcspNoResponseFound));
         return false;
     }
 
@@ -1820,7 +1846,7 @@ bool QSslSocketBackendPrivate::checkOcspStatus()
     const int ocspStatus = q_OCSP_response_status(response);
     if (ocspStatus != OCSP_RESPONSE_STATUS_SUCCESSFUL) {
         // It's not a definitive response, it's an error message (not signed by the responder).
-        ocspErrors.push_back(qt_OCSP_response_status_to_QSslError(ocspStatus));
+        ocspErrors.push_back(QSslError(qt_OCSP_response_status_to_SslError(ocspStatus)));
         return false;
     }
 
@@ -1862,10 +1888,10 @@ bool QSslSocketBackendPrivate::checkOcspStatus()
     const unsigned long verificationFlags = 0;
     const int success = q_OCSP_basic_verify(basicResponse, peerChain, store, verificationFlags);
     if (success <= 0)
-        ocspErrors.push_back(QSslError::OcspResponseCannotBeTrusted);
+        ocspErrors.push_back(QSslError(QSslError::OcspResponseCannotBeTrusted));
 
     if (q_OCSP_resp_count(basicResponse) != 1) {
-        ocspErrors.push_back(QSslError::OcspMalformedResponse);
+        ocspErrors.push_back(QSslError(QSslError::OcspMalformedResponse));
         return false;
     }
 
@@ -1968,7 +1994,7 @@ void QSslSocketBackendPrivate::alertMessageSent(int value)
     Q_Q(QSslSocket);
 
     const auto level = tlsAlertLevel(value);
-    if (level == QAlertLevel::Fatal && !connectionEncrypted) {
+    if (level == QSsl::AlertLevel::Fatal && !connectionEncrypted) {
         // Note, this logic is handshake-time only:
         pendingFatalAlert = true;
     }
@@ -2016,7 +2042,7 @@ int QSslSocketBackendPrivate::emitErrorFromCallback(X509_STORE_CTX *ctx)
     // wants to check errors (ignored or not):
     const auto offset = QSslSocketBackendPrivate::s_indexForSSLExtraData
                         + QSslSocketBackendPrivate::errorOffsetInExData;
-    if (auto errorList = static_cast<QVector<QSslErrorEntry>*>(q_SSL_get_ex_data(ssl, offset)))
+    if (auto errorList = static_cast<QList<QSslErrorEntry> *>(q_SSL_get_ex_data(ssl, offset)))
         errorList->append(errorAndDepth);
 
     // An application is expected to ignore this error (by calling ignoreSslErrors)
@@ -2207,7 +2233,7 @@ bool QSslSocketPrivate::ensureLibraryLoaded()
     if (!q_resolveOpenSslSymbols())
         return false;
 
-    const QMutexLocker locker(qt_opensslInitMutex);
+    const QMutexLocker locker(qt_opensslInitMutex());
 
     if (!s_libraryLoaded) {
         // Initialize OpenSSL.
@@ -2239,7 +2265,7 @@ bool QSslSocketPrivate::ensureLibraryLoaded()
 
 void QSslSocketPrivate::ensureCiphersAndCertsLoaded()
 {
-    const QMutexLocker locker(qt_opensslInitMutex);
+    const QMutexLocker locker(qt_opensslInitMutex());
 
     if (s_loadedCiphersAndCerts)
         return;
@@ -2293,10 +2319,16 @@ QList<QSslCertificate> QSslSocketBackendPrivate::STACKOFX509_to_QSslCertificates
 QList<QSslError> QSslSocketBackendPrivate::verify(const QList<QSslCertificate> &certificateChain,
                                                   const QString &hostName)
 {
+    auto roots = QSslConfiguration::defaultConfiguration().caCertificates();
+#ifndef Q_OS_WIN
+    // On Windows, system CA certificates are already set as default ones.
+    // No need to add them again (and again) and also, if the default configuration
+    // has its own set of CAs, this probably should not be amended by the ones
+    // from the 'ROOT' store, since it's not what an application chose to trust.
     if (s_loadRootCertsOnDemand)
-        setDefaultCaCertificates(defaultCaCertificates() + systemCaCertificates());
-
-    return verify(QSslConfiguration::defaultConfiguration().caCertificates(), certificateChain, hostName);
+        roots.append(systemCaCertificates());
+#endif // Q_OS_WIN
+    return verify(roots, certificateChain, hostName);
 }
 
 QList<QSslError> QSslSocketBackendPrivate::verify(const QList<QSslCertificate> &caCertificates,
@@ -2334,7 +2366,7 @@ QList<QSslError> QSslSocketBackendPrivate::verify(const QList<QSslCertificate> &
         }
     }
 
-    QVector<QSslErrorEntry> lastErrors;
+    QList<QSslErrorEntry> lastErrors;
     if (!q_X509_STORE_set_ex_data(certStore, 0, &lastErrors)) {
         qCWarning(lcSsl) << "Unable to attach external data (error list) to a store";
         errors << QSslError(QSslError::UnspecifiedError);

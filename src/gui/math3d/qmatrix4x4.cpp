@@ -145,30 +145,6 @@ QMatrix4x4::QMatrix4x4(const float *values)
 */
 
 /*!
-    \fn template <int N, int M> QMatrix4x4 qGenericMatrixToMatrix4x4(const QGenericMatrix<N, M, float>& matrix)
-    \relates QMatrix4x4
-    \obsolete
-
-    Returns a 4x4 matrix constructed from the left-most 4 columns and
-    top-most 4 rows of \a matrix.  If \a matrix has less than 4 columns
-    or rows, the remaining elements are filled with elements from the
-    identity matrix.
-*/
-
-/*!
-    \fn QGenericMatrix<N, M, float> qGenericMatrixFromMatrix4x4(const QMatrix4x4& matrix)
-    \relates QMatrix4x4
-    \obsolete
-
-    Returns a NxM generic matrix constructed from the left-most N columns
-    and top-most M rows of \a matrix.  If N or M is greater than 4,
-    then the remaining elements are filled with elements from the
-    identity matrix.
-
-    \sa QMatrix4x4::toGenericMatrix()
-*/
-
-/*!
     \internal
 */
 QMatrix4x4::QMatrix4x4(const float *values, int cols, int rows)
@@ -413,7 +389,7 @@ QMatrix4x4 QMatrix4x4::inverted(bool *invertible) const
             *invertible = true;
         return orthonormalInverse();
     } else if (flagBits < Perspective) {
-        QMatrix4x4 inv(1); // The "1" says to not load the identity.
+        QMatrix4x4 inv(Qt::Uninitialized);
 
         double mm[4][4];
         copyToDoubles(m, mm);
@@ -449,7 +425,7 @@ QMatrix4x4 QMatrix4x4::inverted(bool *invertible) const
         return inv;
     }
 
-    QMatrix4x4 inv(1); // The "1" says to not load the identity.
+    QMatrix4x4 inv(Qt::Uninitialized);
 
     double mm[4][4];
     copyToDoubles(m, mm);
@@ -551,7 +527,7 @@ QMatrix3x3 QMatrix4x4::normalMatrix() const
 */
 QMatrix4x4 QMatrix4x4::transposed() const
 {
-    QMatrix4x4 result(1); // The "1" says to not load the identity.
+    QMatrix4x4 result(Qt::Uninitialized);
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
             result.m[col][row] = m[row][col];
@@ -750,7 +726,7 @@ QMatrix4x4& QMatrix4x4::operator/=(float divisor)
 */
 QMatrix4x4 operator/(const QMatrix4x4& matrix, float divisor)
 {
-    QMatrix4x4 m(1); // The "1" says to not load the identity.
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = matrix.m[0][0] / divisor;
     m.m[0][1] = matrix.m[0][1] / divisor;
     m.m[0][2] = matrix.m[0][2] / divisor;
@@ -778,6 +754,26 @@ QMatrix4x4 operator/(const QMatrix4x4& matrix, float divisor)
     Returns \c true if \a m1 and \a m2 are equal, allowing for a small
     fuzziness factor for floating-point comparisons; false otherwise.
 */
+bool qFuzzyCompare(const QMatrix4x4& m1, const QMatrix4x4& m2)
+{
+    return qFuzzyCompare(m1.m[0][0], m2.m[0][0]) &&
+            qFuzzyCompare(m1.m[0][1], m2.m[0][1]) &&
+            qFuzzyCompare(m1.m[0][2], m2.m[0][2]) &&
+            qFuzzyCompare(m1.m[0][3], m2.m[0][3]) &&
+            qFuzzyCompare(m1.m[1][0], m2.m[1][0]) &&
+            qFuzzyCompare(m1.m[1][1], m2.m[1][1]) &&
+            qFuzzyCompare(m1.m[1][2], m2.m[1][2]) &&
+            qFuzzyCompare(m1.m[1][3], m2.m[1][3]) &&
+            qFuzzyCompare(m1.m[2][0], m2.m[2][0]) &&
+            qFuzzyCompare(m1.m[2][1], m2.m[2][1]) &&
+            qFuzzyCompare(m1.m[2][2], m2.m[2][2]) &&
+            qFuzzyCompare(m1.m[2][3], m2.m[2][3]) &&
+            qFuzzyCompare(m1.m[3][0], m2.m[3][0]) &&
+            qFuzzyCompare(m1.m[3][1], m2.m[3][1]) &&
+            qFuzzyCompare(m1.m[3][2], m2.m[3][2]) &&
+            qFuzzyCompare(m1.m[3][3], m2.m[3][3]);
+}
+
 
 #ifndef QT_NO_VECTOR3D
 
@@ -1163,7 +1159,7 @@ void QMatrix4x4::rotate(float angle, float x, float y, float z)
         z = float(double(z) / len);
     }
     float ic = 1.0f - c;
-    QMatrix4x4 rot(1); // The "1" says to not load the identity.
+    QMatrix4x4 rot(Qt::Uninitialized);
     rot.m[0][0] = x * x * ic + c;
     rot.m[1][0] = x * y * ic - z * s;
     rot.m[2][0] = x * z * ic + y * s;
@@ -1258,8 +1254,8 @@ void QMatrix4x4::projectedRotate(float angle, float x, float y, float z)
         y = float(double(y) / len);
         z = float(double(z) / len);
     }
-    float ic = 1.0f - c;
-    QMatrix4x4 rot(1); // The "1" says to not load the identity.
+    const float ic = 1.0f - c;
+    QMatrix4x4 rot(Qt::Uninitialized);
     rot.m[0][0] = x * x * ic + c;
     rot.m[1][0] = x * y * ic - z * s;
     rot.m[2][0] = 0.0f;
@@ -1395,10 +1391,10 @@ void QMatrix4x4::ortho(float left, float right, float bottom, float top, float n
         return;
 
     // Construct the projection.
-    float width = right - left;
-    float invheight = top - bottom;
-    float clip = farPlane - nearPlane;
-    QMatrix4x4 m(1);
+    const float width = right - left;
+    const float invheight = top - bottom;
+    const float clip = farPlane - nearPlane;
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = 2.0f / width;
     m.m[1][0] = 0.0f;
     m.m[2][0] = 0.0f;
@@ -1436,10 +1432,10 @@ void QMatrix4x4::frustum(float left, float right, float bottom, float top, float
         return;
 
     // Construct the projection.
-    QMatrix4x4 m(1);
-    float width = right - left;
-    float invheight = top - bottom;
-    float clip = farPlane - nearPlane;
+    QMatrix4x4 m(Qt::Uninitialized);
+    const float width = right - left;
+    const float invheight = top - bottom;
+    const float clip = farPlane - nearPlane;
     m.m[0][0] = 2.0f * nearPlane / width;
     m.m[1][0] = 0.0f;
     m.m[2][0] = (left + right) / width;
@@ -1479,9 +1475,9 @@ void QMatrix4x4::perspective(float verticalAngle, float aspectRatio, float nearP
         return;
 
     // Construct the projection.
-    QMatrix4x4 m(1);
-    float radians = qDegreesToRadians(verticalAngle / 2.0f);
-    float sine = std::sin(radians);
+    QMatrix4x4 m(Qt::Uninitialized);
+    const float radians = qDegreesToRadians(verticalAngle / 2.0f);
+    const float sine = std::sin(radians);
     if (sine == 0.0f)
         return;
     float cotan = std::cos(radians) / sine;
@@ -1529,7 +1525,7 @@ void QMatrix4x4::lookAt(const QVector3D& eye, const QVector3D& center, const QVe
     QVector3D side = QVector3D::crossProduct(forward, up).normalized();
     QVector3D upVector = QVector3D::crossProduct(side, forward);
 
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = side.x();
     m.m[1][0] = side.y();
     m.m[2][0] = side.z();
@@ -1578,7 +1574,7 @@ void QMatrix4x4::viewport(float left, float bottom, float width, float height, f
     const float w2 = width / 2.0f;
     const float h2 = height / 2.0f;
 
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = w2;
     m.m[1][0] = 0.0f;
     m.m[2][0] = 0.0f;
@@ -1651,8 +1647,6 @@ void QMatrix4x4::copyDataTo(float *values) const
     third row and third column of the QMatrix4x4.  This is suitable
     for implementing orthographic projections where the z co-ordinate
     should be dropped rather than projected.
-
-    \sa toAffine()
 */
 QTransform QMatrix4x4::toTransform() const
 {
@@ -1675,8 +1669,6 @@ QTransform QMatrix4x4::toTransform() const
     of the QMatrix4x4.  This is suitable for implementing
     orthographic projections where the z co-ordinate should
     be dropped rather than projected.
-
-    \sa toAffine()
 */
 QTransform QMatrix4x4::toTransform(float distanceToPlane) const
 {
@@ -1872,7 +1864,7 @@ QRectF QMatrix4x4::mapRect(const QRectF& rect) const
 // of just rotations and translations.
 QMatrix4x4 QMatrix4x4::orthonormalInverse() const
 {
-    QMatrix4x4 result(1);  // The '1' says not to load identity
+    QMatrix4x4 result(Qt::Uninitialized);
 
     result.m[0][0] = m[0][0];
     result.m[1][0] = m[0][1];
@@ -1910,15 +1902,15 @@ QMatrix4x4 QMatrix4x4::orthonormalInverse() const
 
     Normally the QMatrix4x4 class keeps track of this special type internally
     as operations are performed.  However, if the matrix is modified
-    directly with {QLoggingCategory::operator()}{operator()()} or data(), then QMatrix4x4 will lose track of
-    the special type and will revert to the safest but least efficient
-    operations thereafter.
+    directly with \l {QMatrix4x4::}{operator()()} or data(), then
+    QMatrix4x4 will lose track of the special type and will revert to the
+    safest but least efficient operations thereafter.
 
     By calling optimize() after directly modifying the matrix,
     the programmer can force QMatrix4x4 to recover the special type if
     the elements appear to conform to one of the known optimized types.
 
-    \sa {QLoggingCategory::operator()}{operator()()}, data(), translate()
+    \sa {QMatrix4x4::}{operator()()}, data(), translate()
 */
 void QMatrix4x4::optimize()
 {
@@ -1977,7 +1969,7 @@ void QMatrix4x4::optimize()
 */
 QMatrix4x4::operator QVariant() const
 {
-    return QVariant(QMetaType::QMatrix4x4, this);
+    return QVariant::fromValue(*this);
 }
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -2002,8 +1994,7 @@ QDebug operator<<(QDebug dbg, const QMatrix4x4 &m)
             bits += "Rotation,";
         if ((m.flagBits & QMatrix4x4::Perspective) != 0)
             bits += "Perspective,";
-        if (bits.size() > 0)
-            bits = bits.left(bits.size() - 1);
+        bits.chop(1);
     }
 
     // Output in row-major order because it is more human-readable.

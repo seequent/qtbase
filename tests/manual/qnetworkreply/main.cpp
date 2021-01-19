@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2014 BlackBerry Limited. All rights reserved.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -30,13 +30,14 @@
 
 #include <QDebug>
 #include <qtest.h>
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkrequest.h>
 #include <QtNetwork/qnetworkaccessmanager.h>
 #include <QtNetwork/qsslconfiguration.h>
 #include <QtNetwork/qhttpmultipart.h>
 #include <QtNetwork/qauthenticator.h>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QJsonDocument>
 #include "../../auto/network-settings.h"
 
@@ -99,7 +100,7 @@ class HttpReceiver : public QObject
     }
 protected:
     QTimer *timer;
-    QTime stopwatch;
+    QElapsedTimer stopwatch;
 };
 
 void tst_qnetworkreply::initTestCase()
@@ -175,7 +176,7 @@ void tst_qnetworkreply::setSslConfiguration()
 #elif defined(Q_OS_MAC)
     QCOMPARE(rootCertLoadingAllowed, false);
 #else
-    Q_UNUSED(rootCertLoadingAllowed)
+    Q_UNUSED(rootCertLoadingAllowed);
 #endif // other platforms: undecided (Windows: depends on the version)
     if (works) {
         QCOMPARE(reply->error(), QNetworkReply::NoError);
@@ -385,7 +386,6 @@ void tst_qnetworkreply::npnWithEmptyList() // QTBUG-40714
 
     QUrl url(QStringLiteral("https://www.ossifrage.net/"));
     QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, QVariant(true));
     QNetworkReply *reply = m_manager.get(request);
     QObject::connect(reply, SIGNAL(finished()), &QTestEventLoop::instance(), SLOT(exitLoop()));
 

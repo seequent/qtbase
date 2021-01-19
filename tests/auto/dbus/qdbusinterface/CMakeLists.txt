@@ -1,13 +1,13 @@
 # Generated from qdbusinterface.pro.
 
-# special case begin
 add_subdirectory(qmyserver)
+# special case begin
 
 #####################################################################
 ## ../tst_qdbusinterface Test:
 #####################################################################
 
-add_qt_test(tst_qdbusinterface
+qt_internal_add_test(tst_qdbusinterface
     SOURCES
         myobject.h
         tst_qdbusinterface.cpp
@@ -26,14 +26,14 @@ add_qt_test(tst_qdbusinterface
 ## Scopes:
 #####################################################################
 
-extend_target(tst_qdbusinterface CONDITION QT_FEATURE_dbus_linked
+qt_internal_extend_target(tst_qdbusinterface CONDITION QT_FEATURE_dbus_linked
     DEFINES
         QT_LINKED_LIBDBUS
     PUBLIC_LIBRARIES
         dbus-1
 )
 
-extend_target(tst_qdbusinterface CONDITION NOT QT_FEATURE_dbus_linked
+qt_internal_extend_target(tst_qdbusinterface CONDITION NOT QT_FEATURE_dbus_linked
     SOURCES
         ../../../../src/dbus/qdbus_symbols.cpp
 )

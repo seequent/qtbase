@@ -29,12 +29,12 @@
     \module QtTest
     \title Qt Test C++ Classes
     \ingroup modules
+    \qtcmakepackage Test
     \qtvariable testlib
 
     \keyword QtTest
 
     \brief Provides classes for unit testing Qt applications and libraries.
 
-    See the \l{Qt Test} page and the \l{Qt Test Overview} guide for further
-    information about using this module in your application.
+    The \l{Qt Test} page contains information about how to use the module.
 */

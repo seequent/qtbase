@@ -113,6 +113,11 @@
 */
 
 /*!
+    \externalpage https://conan.io/
+    \title Conan
+*/
+
+/*!
     \externalpage http://www.gnome.org/
     \title GNOME
 */
@@ -521,4 +526,9 @@
 /*!
     \externalpage https://login.qt.io/
     \title Qt Account Sign-up
+*/
+
+/*!
+   \externalpage http://facebook.github.io/zstd/
+   \title Zstandard Site
 */

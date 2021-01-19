@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtWidgets/qgraphicsanchorlayout.h>
 #include <QtWidgets/qgraphicslinearlayout.h>
 #include <QtWidgets/qgraphicswidget.h>
@@ -54,7 +54,7 @@ private slots:
 class RectWidget : public QGraphicsWidget
 {
 public:
-    RectWidget(QGraphicsItem *parent = 0) : QGraphicsWidget(parent){}
+    RectWidget(QGraphicsItem *parent = nullptr) : QGraphicsWidget(parent){}
 
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
     {

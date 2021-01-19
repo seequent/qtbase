@@ -228,74 +228,6 @@
 */
 
 /*!
-    \enum QAlertLevel
-    \brief Describes the level of an alert message
-    \relates QSslSocket
-    \since 6.0
-
-    \ingroup network
-    \ingroup ssl
-    \inmodule QtNetwork
-
-    This enum describes the level of an alert message that was sent
-    or received.
-
-    \value Warning Non-fatal alert message
-    \value Fatal Fatal alert message, the underlying backend will
-           handle such an alert properly and close the connection.
-    \value Unknown An alert of unknown level of severity.
-*/
-
-/*!
-    \enum QAlertType
-    \brief Enumerates possible codes that an alert message can have
-    \relates QSslSocket
-    \since 6.0
-
-    \ingroup network
-    \ingroup ssl
-    \inmodule QtNetwork
-
-    See \l{https://tools.ietf.org/html/rfc8446#page-85}{RFC 8446, section 6}
-    for the possible values and their meaning.
-
-    \value CloseNotify,
-    \value UnexpectedMessage
-    \value BadRecordMac
-    \value RecordOverflow
-    \value DecompressionFailure
-    \value HandshakeFailure
-    \value NoCertificate
-    \value BadCertificate
-    \value UnsupportedCertificate
-    \value CertificateRevoked
-    \value CertificateExpired
-    \value CertificateUnknown
-    \value IllegalParameter
-    \value UnknownCa
-    \value AccessDenied
-    \value DecodeError
-    \value DecryptError
-    \value ExportRestriction
-    \value ProtocolVersion
-    \value InsufficientSecurity
-    \value InternalError
-    \value InappropriateFallback
-    \value UserCancelled
-    \value NoRenegotiation
-    \value MissingExtension
-    \value UnsupportedExtension
-    \value CertificateUnobtainable
-    \value UnrecognizedName
-    \value BadCertificateStatusResponse
-    \value BadCertificateHashValue
-    \value UnknownPskIdentity
-    \value CertificateRequired
-    \value NoApplicationProtocol
-    \value UnknownAlertMessage
-*/
-
-/*!
     \fn void QSslSocket::encrypted()
 
     This signal is emitted when QSslSocket enters encrypted mode. After this
@@ -391,7 +323,7 @@
 */
 
 /*!
-    \fn void QSslSocket::alertSent(QAlertLevel level, QAlertType type, const QString &description)
+    \fn void QSslSocket::alertSent(QSsl::AlertLevel level, QSsl::AlertType type, const QString &description)
 
     QSslSocket emits this signal if an alert message was sent to a peer. \a level
     describes if it was a warning or a fatal error. \a type gives the code
@@ -402,11 +334,11 @@
     purposes, normally it does not require any actions from the application.
     \note Not all backends support this functionality.
 
-    \sa alertReceived(), QAlertLevel, QAlertType
+    \sa alertReceived(), QSsl::AlertLevel, QSsl::AlertType
 */
 
 /*!
-    \fn void QSslSocket::alertReceived(QAlertLevel level, QAlertType type, const QString &description)
+    \fn void QSslSocket::alertReceived(QSsl::AlertLevel level, QSsl::AlertType type, const QString &description)
 
     QSslSocket emits this signal if an alert message was received from a peer.
     \a level tells if the alert was fatal or it was a warning. \a type is the
@@ -418,7 +350,7 @@
     backend will handle it and close the connection.
     \note Not all backends support this functionality.
 
-    \sa alertSent(), QAlertLevel, QAlertType
+    \sa alertSent(), QSsl::AlertLevel, QSsl::AlertType
 */
 
 /*!
@@ -488,7 +420,7 @@ public:
 
     QMutex mutex;
     QList<QSslCipher> supportedCiphers;
-    QVector<QSslEllipticCurve> supportedEllipticCurves;
+    QList<QSslEllipticCurve> supportedEllipticCurves;
     QExplicitlySharedDataPointer<QSslConfigurationPrivate> config;
     QExplicitlySharedDataPointer<QSslConfigurationPrivate> dtlsConfig;
 };
@@ -966,10 +898,20 @@ void QSslSocket::close()
     qCDebug(lcSsl) << "QSslSocket::close()";
 #endif
     Q_D(QSslSocket);
-    if (encryptedBytesToWrite() || !d->writeBuffer.isEmpty())
+
+    // On Windows, CertGetCertificateChain is probably still doing its
+    // job, if the socket is re-used, we want to ignore its reported
+    // root CA.
+    d->caToFetch = QSslCertificate{};
+
+    if (!d->abortCalled && (encryptedBytesToWrite() || !d->writeBuffer.isEmpty()))
         flush();
-    if (d->plainSocket)
-        d->plainSocket->close();
+    if (d->plainSocket) {
+        if (d->abortCalled)
+            d->plainSocket->abort();
+        else
+            d->plainSocket->close();
+    }
     QTcpSocket::close();
 
     // must be cleared, reading/writing not possible on closed socket:
@@ -989,25 +931,6 @@ bool QSslSocket::atEnd() const
 }
 
 /*!
-    This function writes as much as possible from the internal write buffer to
-    the underlying network socket, without blocking. If any data was written,
-    this function returns \c true; otherwise false is returned.
-
-    Call this function if you need QSslSocket to start sending buffered data
-    immediately. The number of bytes successfully written depends on the
-    operating system. In most cases, you do not need to call this function,
-    because QAbstractSocket will start sending data automatically once control
-    goes back to the event loop. In the absence of an event loop, call
-    waitForBytesWritten() instead.
-
-    \sa write(), waitForBytesWritten()
-*/
-bool QSslSocket::flush()
-{
-    return d_func()->flush();
-}
-
-/*!
     \since 4.4
 
     Sets the size of QSslSocket's internal read buffer to be \a size bytes.
@@ -1019,24 +942,6 @@ void QSslSocket::setReadBufferSize(qint64 size)
 
     if (d->plainSocket)
         d->plainSocket->setReadBufferSize(size);
-}
-
-/*!
-    Aborts the current connection and resets the socket. Unlike
-    disconnectFromHost(), this function immediately closes the socket,
-    clearing any pending data in the write buffer.
-
-    \sa disconnectFromHost(), close()
-*/
-void QSslSocket::abort()
-{
-    Q_D(QSslSocket);
-#ifdef QSSLSOCKET_DEBUG
-    qCDebug(lcSsl) << "QSslSocket::abort()";
-#endif
-    if (d->plainSocket)
-        d->plainSocket->abort();
-    close();
 }
 
 /*!
@@ -1296,12 +1201,12 @@ QSsl::SslProtocol QSslSocket::sessionProtocol() const
     \since 5.13
 
     This function returns Online Certificate Status Protocol responses that
-    a server may send during a TLS handshake using OCSP stapling. The vector
+    a server may send during a TLS handshake using OCSP stapling. The list
     is empty if no definitive response or no response at all was received.
 
     \sa QSslConfiguration::setOcspStaplingEnabled()
 */
-QVector<QOcspResponse> QSslSocket::ocspResponses() const
+QList<QOcspResponse> QSslSocket::ocspResponses() const
 {
     Q_D(const QSslSocket);
     return d->ocspResponses;
@@ -1376,340 +1281,6 @@ QSslKey QSslSocket::privateKey() const
     Q_D(const QSslSocket);
     return d->configuration.privateKey;
 }
-
-#if QT_DEPRECATED_SINCE(5, 5)
-/*!
-    \deprecated
-
-    Use QSslConfiguration::ciphers() instead.
-
-    Returns this socket's current cryptographic cipher suite. This
-    list is used during the socket's handshake phase for choosing a
-    session cipher. The returned list of ciphers is ordered by
-    descending preference. (i.e., the first cipher in the list is the
-    most preferred cipher). The session cipher will be the first one
-    in the list that is also supported by the peer.
-
-    By default, the handshake phase can choose any of the ciphers
-    supported by this system's SSL libraries, which may vary from
-    system to system. The list of ciphers supported by this system's
-    SSL libraries is returned by supportedCiphers(). You can restrict
-    the list of ciphers used for choosing the session cipher for this
-    socket by calling setCiphers() with a subset of the supported
-    ciphers. You can revert to using the entire set by calling
-    setCiphers() with the list returned by supportedCiphers().
-
-    You can restrict the list of ciphers used for choosing the session
-    cipher for \e all sockets by calling setDefaultCiphers() with a
-    subset of the supported ciphers. You can revert to using the
-    entire set by calling setCiphers() with the list returned by
-    supportedCiphers().
-
-    \sa setCiphers(), defaultCiphers(), setDefaultCiphers(), supportedCiphers()
-*/
-QList<QSslCipher> QSslSocket::ciphers() const
-{
-    Q_D(const QSslSocket);
-    return d->configuration.ciphers;
-}
-
-/*!
-    \deprecated
-
-    USe QSslConfiguration::setCiphers() instead.
-
-    Sets the cryptographic cipher suite for this socket to \a ciphers,
-    which must contain a subset of the ciphers in the list returned by
-    supportedCiphers().
-
-    Restricting the cipher suite must be done before the handshake
-    phase, where the session cipher is chosen.
-
-    \sa ciphers(), setDefaultCiphers(), supportedCiphers()
-*/
-void QSslSocket::setCiphers(const QList<QSslCipher> &ciphers)
-{
-    Q_D(QSslSocket);
-    d->configuration.ciphers = ciphers;
-}
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::setCiphers() instead.
-
-    Sets the cryptographic cipher suite for this socket to \a ciphers, which
-    is a colon-separated list of cipher suite names. The ciphers are listed in
-    order of preference, starting with the most preferred cipher. For example:
-
-    \snippet code/src_network_ssl_qsslsocket.cpp 4
-
-    Each cipher name in \a ciphers must be the name of a cipher in the
-    list returned by supportedCiphers().  Restricting the cipher suite
-    must be done before the handshake phase, where the session cipher
-    is chosen.
-
-    \sa ciphers(), setDefaultCiphers(), supportedCiphers()
-*/
-void QSslSocket::setCiphers(const QString &ciphers)
-{
-    Q_D(QSslSocket);
-    d->configuration.ciphers.clear();
-    const auto cipherNames = ciphers.split(QLatin1Char(':'), Qt::SkipEmptyParts);
-    for (const QString &cipherName : cipherNames) {
-        QSslCipher cipher(cipherName);
-        if (!cipher.isNull())
-            d->configuration.ciphers << cipher;
-    }
-}
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::setCiphers() on the default QSslConfiguration instead.
-
-    Sets the default cryptographic cipher suite for all sockets in
-    this application to \a ciphers, which must contain a subset of the
-    ciphers in the list returned by supportedCiphers().
-
-    Restricting the default cipher suite only affects SSL sockets
-    that perform their handshake phase after the default cipher
-    suite has been changed.
-
-    \sa setCiphers(), defaultCiphers(), supportedCiphers()
-*/
-void QSslSocket::setDefaultCiphers(const QList<QSslCipher> &ciphers)
-{
-    QSslSocketPrivate::setDefaultCiphers(ciphers);
-}
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::ciphers() on the default QSslConfiguration instead.
-
-    Returns the default cryptographic cipher suite for all sockets in
-    this application. This list is used during the socket's handshake
-    phase when negotiating with the peer to choose a session cipher.
-    The list is ordered by preference (i.e., the first cipher in the
-    list is the most preferred cipher).
-
-    By default, the handshake phase can choose any of the ciphers
-    supported by this system's SSL libraries, which may vary from
-    system to system. The list of ciphers supported by this system's
-    SSL libraries is returned by supportedCiphers().
-
-    \sa supportedCiphers()
-*/
-QList<QSslCipher> QSslSocket::defaultCiphers()
-{
-    return QSslSocketPrivate::defaultCiphers();
-}
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::supportedCiphers() instead.
-
-    Returns the list of cryptographic ciphers supported by this
-    system. This list is set by the system's SSL libraries and may
-    vary from system to system.
-
-    \sa defaultCiphers(), ciphers(), setCiphers()
-*/
-QList<QSslCipher> QSslSocket::supportedCiphers()
-{
-    return QSslSocketPrivate::supportedCiphers();
-}
-#endif  // #if QT_DEPRECATED_SINCE(5, 5)
-
-/*!
-  \deprecated
-
-  Use QSslConfiguration::addCaCertificate() instead.
-
-  Adds the \a certificate to this socket's CA certificate database.
-  The CA certificate database is used by the socket during the
-  handshake phase to validate the peer's certificate.
-
-  To add multiple certificates, use addCaCertificates().
-
-  \sa QSslConfiguration::caCertificates(),
-      QSslConfiguration::setCaCertificates()
-*/
-void QSslSocket::addCaCertificate(const QSslCertificate &certificate)
-{
-    Q_D(QSslSocket);
-    d->configuration.caCertificates += certificate;
-}
-
-/*!
-  \deprecated
-
-  Use QSslConfiguration::addCaCertificates() instead.
-
-  Adds the \a certificates to this socket's CA certificate database.
-  The CA certificate database is used by the socket during the
-  handshake phase to validate the peer's certificate.
-
-  For more precise control, use addCaCertificate().
-
-  \sa QSslConfiguration::caCertificates(), addDefaultCaCertificate()
-*/
-void QSslSocket::addCaCertificates(const QList<QSslCertificate> &certificates)
-{
-    Q_D(QSslSocket);
-    d->configuration.caCertificates += certificates;
-}
-
-#if QT_DEPRECATED_SINCE(5, 5)
-/*!
-  \deprecated
-
-  Use QSslConfiguration::setCaCertificates() instead.
-
-  Sets this socket's CA certificate database to be \a certificates.
-  The certificate database must be set prior to the SSL handshake.
-  The CA certificate database is used by the socket during the
-  handshake phase to validate the peer's certificate.
-
-  The CA certificate database can be reset to the current default CA
-  certificate database by calling this function with the list of CA
-  certificates returned by defaultCaCertificates().
-
-  \sa defaultCaCertificates()
-*/
-void QSslSocket::setCaCertificates(const QList<QSslCertificate> &certificates)
-{
-    Q_D(QSslSocket);
-    d->configuration.caCertificates = certificates;
-    d->allowRootCertOnDemandLoading = false;
-}
-
-/*!
-  \deprecated
-
-  Use QSslConfiguration::caCertificates() instead.
-
-  Returns this socket's CA certificate database. The CA certificate
-  database is used by the socket during the handshake phase to
-  validate the peer's certificate. It can be moodified prior to the
-  handshake with addCaCertificate(), addCaCertificates(), and
-  setCaCertificates().
-
-  \note On Unix, this method may return an empty list if the root
-  certificates are loaded on demand.
-
-  \sa addCaCertificate(), addCaCertificates(), setCaCertificates()
-*/
-QList<QSslCertificate> QSslSocket::caCertificates() const
-{
-    Q_D(const QSslSocket);
-    return d->configuration.caCertificates;
-}
-#endif  // #if QT_DEPRECATED_SINCE(5, 5)
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::addCaCertificate() on the default QSslConfiguration instead.
-
-    Adds \a certificate to the default CA certificate database.  Each
-    SSL socket's CA certificate database is initialized to the default
-    CA certificate database.
-
-    \sa QSslConfiguration::addCaCertificates()
-*/
-void QSslSocket::addDefaultCaCertificate(const QSslCertificate &certificate)
-{
-    QSslSocketPrivate::addDefaultCaCertificate(certificate);
-}
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::addCaCertificates() on the default QSslConfiguration instead.
-
-    Adds \a certificates to the default CA certificate database.  Each
-    SSL socket's CA certificate database is initialized to the default
-    CA certificate database.
-
-    \sa QSslConfiguration::caCertificates(), QSslConfiguration::addCaCertificates()
-*/
-void QSslSocket::addDefaultCaCertificates(const QList<QSslCertificate> &certificates)
-{
-    QSslSocketPrivate::addDefaultCaCertificates(certificates);
-}
-
-#if QT_DEPRECATED_SINCE(5, 5)
-/*!
-    \deprecated
-
-    Use QSslConfiguration::setCaCertificates() on the default QSslConfiguration instead.
-
-    Sets the default CA certificate database to \a certificates. The
-    default CA certificate database is originally set to your system's
-    default CA certificate database. You can override the default CA
-    certificate database with your own CA certificate database using
-    this function.
-
-    Each SSL socket's CA certificate database is initialized to the
-    default CA certificate database.
-
-    \sa addDefaultCaCertificate()
-*/
-void QSslSocket::setDefaultCaCertificates(const QList<QSslCertificate> &certificates)
-{
-    QSslSocketPrivate::setDefaultCaCertificates(certificates);
-}
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::caCertificates() on the default QSslConfiguration instead.
-
-    Returns the current default CA certificate database. This database
-    is originally set to your system's default CA certificate database.
-    If no system default database is found, an empty database will be
-    returned. You can override the default CA certificate database
-    with your own CA certificate database using setDefaultCaCertificates().
-
-    Each SSL socket's CA certificate database is initialized to the
-    default CA certificate database.
-
-    \note On Unix, this method may return an empty list if the root
-    certificates are loaded on demand.
-
-    \sa caCertificates()
-*/
-QList<QSslCertificate> QSslSocket::defaultCaCertificates()
-{
-    return QSslSocketPrivate::defaultCaCertificates();
-}
-
-/*!
-    \deprecated
-
-    Use QSslConfiguration::systemDefaultCaCertificates instead.
-
-    This function provides the CA certificate database
-    provided by the operating system. The CA certificate database
-    returned by this function is used to initialize the database
-    returned by defaultCaCertificates(). You can replace that database
-    with your own with setDefaultCaCertificates().
-
-    \note: On OS X, only certificates that are either trusted for all
-    purposes or trusted for the purpose of SSL in the keychain will be
-    returned.
-
-    \sa caCertificates(), defaultCaCertificates(), setDefaultCaCertificates()
-*/
-QList<QSslCertificate> QSslSocket::systemCaCertificates()
-{
-    // we are calling ensureInitialized() in the method below
-    return QSslSocketPrivate::systemCaCertificates();
-}
-#endif  // #if QT_DEPRECATED_SINCE(5, 5)
 
 /*!
     Waits until the socket is connected, or \a msecs milliseconds,
@@ -2189,6 +1760,9 @@ void QSslSocket::disconnectFromHost()
         d->pendingClose = true;
         return;
     }
+    // Make sure we don't process any signal from the CA fetcher
+    // (Windows):
+    d->caToFetch = QSslCertificate{};
 
     // Perhaps emit closing()
     if (d->state != ClosingState) {
@@ -2245,7 +1819,7 @@ qint64 QSslSocket::writeData(const char *data, qint64 len)
     if (d->mode == UnencryptedMode && !d->autoStartHandshake)
         return d->plainSocket->write(data, len);
 
-    d->writeBuffer.append(data, len);
+    d->write(data, len);
 
     // make sure we flush to the plain socket's buffer
     if (!d->flushTriggered) {
@@ -2292,6 +1866,7 @@ void QSslSocketPrivate::init()
     connectionEncrypted = false;
     ignoreAllSslErrors = false;
     shutdown = false;
+    abortCalled = false;
     pendingClose = false;
     flushTriggered = false;
     ocspResponses.clear();
@@ -2305,6 +1880,7 @@ void QSslSocketPrivate::init()
     configuration.peerCertificate.clear();
     configuration.peerCertificateChain.clear();
     fetchAuthorityInformation = false;
+    caToFetch = QSslCertificate{};
 }
 
 /*!
@@ -2395,7 +1971,7 @@ QList<QSslCipher> q_getDefaultDtlsCiphers()
 /*!
     \internal
 */
-QVector<QSslEllipticCurve> QSslSocketPrivate::supportedEllipticCurves()
+QList<QSslEllipticCurve> QSslSocketPrivate::supportedEllipticCurves()
 {
     QSslSocketPrivate::ensureInitialized();
     const QMutexLocker locker(&globalData()->mutex);
@@ -2405,7 +1981,7 @@ QVector<QSslEllipticCurve> QSslSocketPrivate::supportedEllipticCurves()
 /*!
     \internal
 */
-void QSslSocketPrivate::setDefaultSupportedEllipticCurves(const QVector<QSslEllipticCurve> &curves)
+void QSslSocketPrivate::setDefaultSupportedEllipticCurves(const QList<QSslEllipticCurve> &curves)
 {
     const QMutexLocker locker(&globalData()->mutex);
     globalData()->config.detach();
@@ -2742,7 +2318,7 @@ void QSslSocketPrivate::_q_stateChangedSlot(QAbstractSocket::SocketState state)
 */
 void QSslSocketPrivate::_q_errorSlot(QAbstractSocket::SocketError error)
 {
-    Q_UNUSED(error)
+    Q_UNUSED(error);
 #ifdef QSSLSOCKET_DEBUG
     Q_Q(QSslSocket);
     qCDebug(lcSsl) << "QSslSocket::_q_errorSlot(" << error << ')';
@@ -2750,7 +2326,7 @@ void QSslSocketPrivate::_q_errorSlot(QAbstractSocket::SocketError error)
     qCDebug(lcSsl) << "\terrorString =" << q->errorString();
 #endif
     // this moves encrypted bytes from plain socket into our buffer
-    if (plainSocket->bytesAvailable()) {
+    if (plainSocket->bytesAvailable() && mode != QSslSocket::UnencryptedMode) {
         qint64 tmpReadBufferMaxSize = readBufferMaxSize;
         readBufferMaxSize = 0; // reset temporarily so the plain sockets completely drained drained
         transmit();
@@ -2949,17 +2525,19 @@ QByteArray QSslSocketPrivate::peek(qint64 maxSize)
 }
 
 /*!
-    \internal
+    \reimp
 */
-qint64 QSslSocketPrivate::skip(qint64 maxSize)
+qint64 QSslSocket::skipData(qint64 maxSize)
 {
-    if (mode == QSslSocket::UnencryptedMode && !autoStartHandshake)
-        return plainSocket->skip(maxSize);
+    Q_D(QSslSocket);
+
+    if (d->mode == QSslSocket::UnencryptedMode && !d->autoStartHandshake)
+        return d->plainSocket->skip(maxSize);
 
     // In encrypted mode, the SSL backend writes decrypted data directly into the
     // QIODevice's read buffer. As this buffer is always emptied by the caller,
     // we need to wait for more incoming data.
-    return (state == QAbstractSocket::ConnectedState) ? Q_INT64_C(0) : Q_INT64_C(-1);
+    return (d->state == QAbstractSocket::ConnectedState) ? Q_INT64_C(0) : Q_INT64_C(-1);
 }
 
 /*!
@@ -3083,13 +2661,13 @@ bool QSslSocketPrivate::isMatchingHostname(const QString &cn, const QString &hos
         return false;
 
     // Check characters preceding * (if any) match
-    if (wildcard && hostname.leftRef(wildcard).compare(cn.leftRef(wildcard), Qt::CaseInsensitive) != 0)
+    if (wildcard && QStringView{hostname}.left(wildcard).compare(QStringView{cn}.left(wildcard), Qt::CaseInsensitive) != 0)
         return false;
 
     // Check characters following first . match
     int hnDot = hostname.indexOf(QLatin1Char('.'));
-    if (hostname.midRef(hnDot + 1) != cn.midRef(firstCnDot + 1)
-        && hostname.midRef(hnDot + 1) != QLatin1String(QUrl::toAce(cn.mid(firstCnDot + 1)))) {
+    if (QStringView{hostname}.mid(hnDot + 1) != QStringView{cn}.mid(firstCnDot + 1)
+        && QStringView{hostname}.mid(hnDot + 1) != QLatin1String(QUrl::toAce(cn.mid(firstCnDot + 1)))) {
         return false;
     }
 

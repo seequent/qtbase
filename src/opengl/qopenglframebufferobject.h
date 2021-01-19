@@ -100,16 +100,15 @@ public:
     int height() const { return size().height(); }
 
     GLuint texture() const;
-    QVector<GLuint> textures() const;
+    QList<GLuint> textures() const;
 
     GLuint takeTexture();
     GLuint takeTexture(int colorAttachmentIndex);
 
     QSize size() const;
-    QVector<QSize> sizes() const;
+    QList<QSize> sizes() const;
 
-    QImage toImage() const;
-    QImage toImage(bool flipped) const;
+    QImage toImage(bool flipped = true) const;
     QImage toImage(bool flipped, int colorAttachmentIndex) const;
 
     Attachment attachment() const;

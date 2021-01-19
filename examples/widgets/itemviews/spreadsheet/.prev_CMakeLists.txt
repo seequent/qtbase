@@ -9,18 +9,26 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/widgets/itemviews/spreadsheet")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/widgets/itemviews/spreadsheet")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS Gui)
 find_package(Qt6 COMPONENTS Widgets)
 
-add_qt_gui_executable(spreadsheet
+qt_add_executable(spreadsheet
     main.cpp
     printview.cpp printview.h
     spreadsheet.cpp spreadsheet.h
     spreadsheetdelegate.cpp spreadsheetdelegate.h
     spreadsheetitem.cpp spreadsheetitem.h
+)
+set_target_properties(spreadsheet PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
 )
 target_link_libraries(spreadsheet PUBLIC
     Qt::Core

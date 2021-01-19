@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 by Southwest Research Institute (R)
 ** Contact: http://www.qt-project.org/legal
 **
@@ -43,6 +43,7 @@
 
 #include <QtCore/qglobal.h>
 #include <QtCore/qmetatype.h>
+#include <QtCore/qnamespace.h>
 #include <string.h>
 
 #if defined(QT_COMPILER_SUPPORTS_F16C) && defined(__AVX2__) && !defined(__F16C__)
@@ -72,17 +73,18 @@ class qfloat16
         // To let our private constructor work, without other code seeing
         // ambiguity when constructing from int, double &c.
         quint16 b16;
-        constexpr inline explicit Wrap(int value) : b16(value) {}
+        constexpr inline explicit Wrap(int value) : b16(quint16(value)) {}
     };
 public:
     constexpr inline qfloat16() noexcept : b16(0) {}
+    explicit qfloat16(Qt::Initialization) noexcept { }
     inline qfloat16(float f) noexcept;
     inline operator float() const noexcept;
 
     // Support for qIs{Inf,NaN,Finite}:
-    bool isInf() const noexcept { return ((b16 >> 8) & 0x7e) == 0x7c; }
-    bool isNaN() const noexcept { return ((b16 >> 8) & 0x7e) == 0x7e; }
-    bool isFinite() const noexcept { return ((b16 >> 8) & 0x7c) != 0x7c; }
+    bool isInf() const noexcept { return (b16 & 0x7fff) == 0x7c00; }
+    bool isNaN() const noexcept { return (b16 & 0x7fff) > 0x7c00; }
+    bool isFinite() const noexcept { return (b16 & 0x7fff) < 0x7c00; }
     Q_CORE_EXPORT int fpClassify() const noexcept;
     // Can't specialize std::copysign() for qfloat16
     qfloat16 copySign(qfloat16 sign) const noexcept
@@ -96,10 +98,10 @@ public:
     static constexpr qfloat16 _limit_infinity()   noexcept { return qfloat16(Wrap(0x7c00)); }
     static constexpr qfloat16 _limit_quiet_NaN()  noexcept { return qfloat16(Wrap(0x7e00)); }
 #if QT_CONFIG(signaling_nan)
-    static constexpr qfloat16 _limit_signaling_NaN() noexcept { return qfloat16(Wrap(0x7f00)); }
+    static constexpr qfloat16 _limit_signaling_NaN() noexcept { return qfloat16(Wrap(0x7d00)); }
 #endif
     inline constexpr bool isNormal() const noexcept
-    { return (b16 & 0x7fff) == 0 || ((b16 & 0x7c00) && (b16 & 0x7c00) != 0x7c00); }
+    { return (b16 & 0x7c00) && (b16 & 0x7c00) != 0x7c00; }
 private:
     quint16 b16;
     constexpr inline explicit qfloat16(Wrap nibble) noexcept : b16(nibble.b16) {}
@@ -107,13 +109,96 @@ private:
     Q_CORE_EXPORT static const quint32 mantissatable[];
     Q_CORE_EXPORT static const quint32 exponenttable[];
     Q_CORE_EXPORT static const quint32 offsettable[];
-    Q_CORE_EXPORT static const quint32 basetable[];
-    Q_CORE_EXPORT static const quint32 shifttable[];
+    Q_CORE_EXPORT static const quint16 basetable[];
+    Q_CORE_EXPORT static const quint16 shifttable[];
+    Q_CORE_EXPORT static const quint32 roundtable[];
 
     friend bool qIsNull(qfloat16 f) noexcept;
-#if !defined(QT_NO_FLOAT16_OPERATORS)
-    friend qfloat16 operator-(qfloat16 a) noexcept;
-#endif
+
+    friend inline qfloat16 operator-(qfloat16 a) noexcept
+    {
+        qfloat16 f;
+        f.b16 = a.b16 ^ quint16(0x8000);
+        return f;
+    }
+
+    friend inline qfloat16 operator+(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) + static_cast<float>(b)); }
+    friend inline qfloat16 operator-(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) - static_cast<float>(b)); }
+    friend inline qfloat16 operator*(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) * static_cast<float>(b)); }
+    friend inline qfloat16 operator/(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) / static_cast<float>(b)); }
+
+#define QF16_MAKE_ARITH_OP_FP(FP, OP) \
+    friend inline FP operator OP(qfloat16 lhs, FP rhs) noexcept { return static_cast<FP>(lhs) OP rhs; } \
+    friend inline FP operator OP(FP lhs, qfloat16 rhs) noexcept { return lhs OP static_cast<FP>(rhs); }
+#define QF16_MAKE_ARITH_OP_EQ_FP(FP, OP_EQ, OP) \
+    friend inline qfloat16& operator OP_EQ(qfloat16& lhs, FP rhs) noexcept \
+    { lhs = qfloat16(float(static_cast<FP>(lhs) OP rhs)); return lhs; }
+#define QF16_MAKE_ARITH_OP(FP) \
+    QF16_MAKE_ARITH_OP_FP(FP, +) \
+    QF16_MAKE_ARITH_OP_FP(FP, -) \
+    QF16_MAKE_ARITH_OP_FP(FP, *) \
+    QF16_MAKE_ARITH_OP_FP(FP, /) \
+    QF16_MAKE_ARITH_OP_EQ_FP(FP, +=, +) \
+    QF16_MAKE_ARITH_OP_EQ_FP(FP, -=, -) \
+    QF16_MAKE_ARITH_OP_EQ_FP(FP, *=, *) \
+    QF16_MAKE_ARITH_OP_EQ_FP(FP, /=, /)
+
+    QF16_MAKE_ARITH_OP(long double)
+    QF16_MAKE_ARITH_OP(double)
+    QF16_MAKE_ARITH_OP(float)
+#undef QF16_MAKE_ARITH_OP
+#undef QF16_MAKE_ARITH_OP_FP
+
+#define QF16_MAKE_ARITH_OP_INT(OP) \
+    friend inline double operator OP(qfloat16 lhs, int rhs) noexcept { return static_cast<double>(lhs) OP rhs; } \
+    friend inline double operator OP(int lhs, qfloat16 rhs) noexcept { return lhs OP static_cast<double>(rhs); }
+
+    QF16_MAKE_ARITH_OP_INT(+)
+    QF16_MAKE_ARITH_OP_INT(-)
+    QF16_MAKE_ARITH_OP_INT(*)
+    QF16_MAKE_ARITH_OP_INT(/)
+#undef QF16_MAKE_ARITH_OP_INT
+
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_FLOAT_COMPARE
+
+    friend inline bool operator>(qfloat16 a, qfloat16 b)  noexcept { return static_cast<float>(a) >  static_cast<float>(b); }
+    friend inline bool operator<(qfloat16 a, qfloat16 b)  noexcept { return static_cast<float>(a) <  static_cast<float>(b); }
+    friend inline bool operator>=(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) >= static_cast<float>(b); }
+    friend inline bool operator<=(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) <= static_cast<float>(b); }
+    friend inline bool operator==(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) == static_cast<float>(b); }
+    friend inline bool operator!=(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) != static_cast<float>(b); }
+
+#define QF16_MAKE_BOOL_OP_FP(FP, OP) \
+    friend inline bool operator OP(qfloat16 lhs, FP rhs) noexcept { return static_cast<FP>(lhs) OP rhs; } \
+    friend inline bool operator OP(FP lhs, qfloat16 rhs) noexcept { return lhs OP static_cast<FP>(rhs); }
+#define QF16_MAKE_BOOL_OP(FP) \
+    QF16_MAKE_BOOL_OP_FP(FP, <) \
+    QF16_MAKE_BOOL_OP_FP(FP, >) \
+    QF16_MAKE_BOOL_OP_FP(FP, >=) \
+    QF16_MAKE_BOOL_OP_FP(FP, <=) \
+    QF16_MAKE_BOOL_OP_FP(FP, ==) \
+    QF16_MAKE_BOOL_OP_FP(FP, !=)
+
+    QF16_MAKE_BOOL_OP(long double)
+    QF16_MAKE_BOOL_OP(double)
+    QF16_MAKE_BOOL_OP(float)
+#undef QF16_MAKE_BOOL_OP
+#undef QF16_MAKE_BOOL_OP_FP
+
+#define QF16_MAKE_BOOL_OP_INT(OP) \
+    friend inline bool operator OP(qfloat16 a, int b) noexcept { return static_cast<float>(a) OP static_cast<float>(b); } \
+    friend inline bool operator OP(int a, qfloat16 b) noexcept { return static_cast<float>(a) OP static_cast<float>(b); }
+
+    QF16_MAKE_BOOL_OP_INT(>)
+    QF16_MAKE_BOOL_OP_INT(<)
+    QF16_MAKE_BOOL_OP_INT(>=)
+    QF16_MAKE_BOOL_OP_INT(<=)
+    QF16_MAKE_BOOL_OP_INT(==)
+    QF16_MAKE_BOOL_OP_INT(!=)
+#undef QF16_MAKE_BOOL_OP_INT
+
+QT_WARNING_POP
 };
 
 Q_DECLARE_TYPEINFO(qfloat16, Q_PRIMITIVE_TYPE);
@@ -122,20 +207,20 @@ Q_CORE_EXPORT void qFloatToFloat16(qfloat16 *, const float *, qsizetype length) 
 Q_CORE_EXPORT void qFloatFromFloat16(float *, const qfloat16 *, qsizetype length) noexcept;
 
 // Complement qnumeric.h:
-Q_REQUIRED_RESULT inline bool qIsInf(qfloat16 f) noexcept { return f.isInf(); }
-Q_REQUIRED_RESULT inline bool qIsNaN(qfloat16 f) noexcept { return f.isNaN(); }
-Q_REQUIRED_RESULT inline bool qIsFinite(qfloat16 f) noexcept { return f.isFinite(); }
-Q_REQUIRED_RESULT inline int qFpClassify(qfloat16 f) noexcept { return f.fpClassify(); }
-// Q_REQUIRED_RESULT quint32 qFloatDistance(qfloat16 a, qfloat16 b);
+[[nodiscard]] inline bool qIsInf(qfloat16 f) noexcept { return f.isInf(); }
+[[nodiscard]] inline bool qIsNaN(qfloat16 f) noexcept { return f.isNaN(); }
+[[nodiscard]] inline bool qIsFinite(qfloat16 f) noexcept { return f.isFinite(); }
+[[nodiscard]] inline int qFpClassify(qfloat16 f) noexcept { return f.fpClassify(); }
+// [[nodiscard]] quint32 qFloatDistance(qfloat16 a, qfloat16 b);
 
 // The remainder of these utility functions complement qglobal.h
-Q_REQUIRED_RESULT inline int qRound(qfloat16 d) noexcept
+[[nodiscard]] inline int qRound(qfloat16 d) noexcept
 { return qRound(static_cast<float>(d)); }
 
-Q_REQUIRED_RESULT inline qint64 qRound64(qfloat16 d) noexcept
+[[nodiscard]] inline qint64 qRound64(qfloat16 d) noexcept
 { return qRound64(static_cast<float>(d)); }
 
-Q_REQUIRED_RESULT inline bool qFuzzyCompare(qfloat16 p1, qfloat16 p2) noexcept
+[[nodiscard]] inline bool qFuzzyCompare(qfloat16 p1, qfloat16 p2) noexcept
 {
     float f1 = static_cast<float>(p1);
     float f2 = static_cast<float>(p2);
@@ -148,7 +233,7 @@ Q_REQUIRED_RESULT inline bool qFuzzyCompare(qfloat16 p1, qfloat16 p2) noexcept
     return (qAbs(f1 - f2) * 102.5f <= qMin(qAbs(f1), qAbs(f2)));
 }
 
-Q_REQUIRED_RESULT inline bool qIsNull(qfloat16 f) noexcept
+[[nodiscard]] inline bool qIsNull(qfloat16 f) noexcept
 {
     return (f.b16 & static_cast<quint16>(0x7fff)) == 0;
 }
@@ -172,8 +257,24 @@ inline qfloat16::qfloat16(float f) noexcept
 #else
     quint32 u;
     memcpy(&u, &f, sizeof(quint32));
-    b16 = basetable[(u >> 23) & 0x1ff]
-          + ((u & 0x007fffff) >> shifttable[(u >> 23) & 0x1ff]);
+    const quint32 signAndExp = u >> 23;
+    const quint16 base = basetable[signAndExp];
+    const quint16 shift = shifttable[signAndExp];
+    const quint32 round = roundtable[signAndExp];
+    quint32 mantissa = (u & 0x007fffff);
+    if ((signAndExp & 0xff) == 0xff) {
+        if (mantissa) // keep nan from truncating to inf
+            mantissa = qMax(1U << shift, mantissa);
+    } else {
+        // round half to even
+        mantissa += round;
+        if (mantissa & (1 << shift))
+            --mantissa;
+    }
+
+    // We use add as the mantissa may overflow causing
+    // the exp part to shift exactly one value.
+    b16 = quint16(base + (mantissa >> shift));
 #endif
 }
 QT_WARNING_POP
@@ -198,95 +299,10 @@ inline qfloat16::operator float() const noexcept
 }
 #endif
 
-#if !defined(QT_NO_FLOAT16_OPERATORS)
-inline qfloat16 operator-(qfloat16 a) noexcept
-{
-    qfloat16 f;
-    f.b16 = a.b16 ^ quint16(0x8000);
-    return f;
-}
-
-inline qfloat16 operator+(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) + static_cast<float>(b)); }
-inline qfloat16 operator-(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) - static_cast<float>(b)); }
-inline qfloat16 operator*(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) * static_cast<float>(b)); }
-inline qfloat16 operator/(qfloat16 a, qfloat16 b) noexcept { return qfloat16(static_cast<float>(a) / static_cast<float>(b)); }
-
-#define QF16_MAKE_ARITH_OP_FP(FP, OP) \
-    inline FP operator OP(qfloat16 lhs, FP rhs) noexcept { return static_cast<FP>(lhs) OP rhs; } \
-    inline FP operator OP(FP lhs, qfloat16 rhs) noexcept { return lhs OP static_cast<FP>(rhs); }
-#define QF16_MAKE_ARITH_OP_EQ_FP(FP, OP_EQ, OP) \
-    inline qfloat16& operator OP_EQ(qfloat16& lhs, FP rhs) noexcept \
-    { lhs = qfloat16(float(static_cast<FP>(lhs) OP rhs)); return lhs; }
-#define QF16_MAKE_ARITH_OP(FP) \
-    QF16_MAKE_ARITH_OP_FP(FP, +) \
-    QF16_MAKE_ARITH_OP_FP(FP, -) \
-    QF16_MAKE_ARITH_OP_FP(FP, *) \
-    QF16_MAKE_ARITH_OP_FP(FP, /) \
-    QF16_MAKE_ARITH_OP_EQ_FP(FP, +=, +) \
-    QF16_MAKE_ARITH_OP_EQ_FP(FP, -=, -) \
-    QF16_MAKE_ARITH_OP_EQ_FP(FP, *=, *) \
-    QF16_MAKE_ARITH_OP_EQ_FP(FP, /=, /)
-QF16_MAKE_ARITH_OP(long double)
-QF16_MAKE_ARITH_OP(double)
-QF16_MAKE_ARITH_OP(float)
-#undef QF16_MAKE_ARITH_OP
-#undef QF16_MAKE_ARITH_OP_FP
-
-#define QF16_MAKE_ARITH_OP_INT(OP) \
-    inline double operator OP(qfloat16 lhs, int rhs) noexcept { return static_cast<double>(lhs) OP rhs; } \
-    inline double operator OP(int lhs, qfloat16 rhs) noexcept { return lhs OP static_cast<double>(rhs); }
-QF16_MAKE_ARITH_OP_INT(+)
-QF16_MAKE_ARITH_OP_INT(-)
-QF16_MAKE_ARITH_OP_INT(*)
-QF16_MAKE_ARITH_OP_INT(/)
-#undef QF16_MAKE_ARITH_OP_INT
-
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_CLANG("-Wfloat-equal")
-QT_WARNING_DISABLE_GCC("-Wfloat-equal")
-QT_WARNING_DISABLE_INTEL(1572)
-
-inline bool operator>(qfloat16 a, qfloat16 b)  noexcept { return static_cast<float>(a) >  static_cast<float>(b); }
-inline bool operator<(qfloat16 a, qfloat16 b)  noexcept { return static_cast<float>(a) <  static_cast<float>(b); }
-inline bool operator>=(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) >= static_cast<float>(b); }
-inline bool operator<=(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) <= static_cast<float>(b); }
-inline bool operator==(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) == static_cast<float>(b); }
-inline bool operator!=(qfloat16 a, qfloat16 b) noexcept { return static_cast<float>(a) != static_cast<float>(b); }
-
-#define QF16_MAKE_BOOL_OP_FP(FP, OP) \
-    inline bool operator OP(qfloat16 lhs, FP rhs) noexcept { return static_cast<FP>(lhs) OP rhs; } \
-    inline bool operator OP(FP lhs, qfloat16 rhs) noexcept { return lhs OP static_cast<FP>(rhs); }
-#define QF16_MAKE_BOOL_OP(FP) \
-    QF16_MAKE_BOOL_OP_FP(FP, <) \
-    QF16_MAKE_BOOL_OP_FP(FP, >) \
-    QF16_MAKE_BOOL_OP_FP(FP, >=) \
-    QF16_MAKE_BOOL_OP_FP(FP, <=) \
-    QF16_MAKE_BOOL_OP_FP(FP, ==) \
-    QF16_MAKE_BOOL_OP_FP(FP, !=)
-QF16_MAKE_BOOL_OP(long double)
-QF16_MAKE_BOOL_OP(double)
-QF16_MAKE_BOOL_OP(float)
-#undef QF16_MAKE_BOOL_OP
-#undef QF16_MAKE_BOOL_OP_FP
-
-#define QF16_MAKE_BOOL_OP_INT(OP) \
-    inline bool operator OP(qfloat16 a, int b) noexcept { return static_cast<float>(a) OP b; } \
-    inline bool operator OP(int a, qfloat16 b) noexcept { return a OP static_cast<float>(b); }
-QF16_MAKE_BOOL_OP_INT(>)
-QF16_MAKE_BOOL_OP_INT(<)
-QF16_MAKE_BOOL_OP_INT(>=)
-QF16_MAKE_BOOL_OP_INT(<=)
-QF16_MAKE_BOOL_OP_INT(==)
-QF16_MAKE_BOOL_OP_INT(!=)
-#undef QF16_MAKE_BOOL_OP_INT
-
-QT_WARNING_POP
-#endif // QT_NO_FLOAT16_OPERATORS
-
 /*!
   \internal
 */
-Q_REQUIRED_RESULT inline bool qFuzzyIsNull(qfloat16 f) noexcept
+[[nodiscard]] inline bool qFuzzyIsNull(qfloat16 f) noexcept
 {
     return qAbs(static_cast<float>(f)) <= 0.001f;
 }

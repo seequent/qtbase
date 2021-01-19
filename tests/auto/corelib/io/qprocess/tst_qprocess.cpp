@@ -29,7 +29,10 @@
 
 #include <emulationdetector.h>
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QTestEventLoop>
+#include <QSignalSpy>
+
 #include <QtCore/QProcess>
 #include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
@@ -63,7 +66,8 @@ private slots:
     void getSetCheck();
     void constructing();
     void simpleStart();
-    void setupChildProcess();
+    void setChildProcessModifier();
+    void startCommand();
     void startWithOpen();
     void startWithOldOpen();
     void execute();
@@ -215,7 +219,7 @@ void tst_QProcess::constructing()
     QCOMPARE(process.environment(), QStringList());
     QCOMPARE(process.error(), QProcess::UnknownError);
     QCOMPARE(process.state(), QProcess::NotRunning);
-    QCOMPARE(process.pid(), Q_PID(0));
+    QCOMPARE(process.processId(), 0);
     QCOMPARE(process.readAllStandardOutput(), QByteArray());
     QCOMPARE(process.readAllStandardError(), QByteArray());
     QCOMPARE(process.canReadLine(), false);
@@ -267,49 +271,56 @@ void tst_QProcess::simpleStart()
     QCOMPARE(qvariant_cast<QProcess::ProcessState>(spy.at(2).at(0)), QProcess::NotRunning);
 }
 
-void tst_QProcess::setupChildProcess()
-{
-    /* This test exists because in Qt 5.15, the Unix version of QProcess has
-     * some code that depends on whether it's an actual QProcess or a
-     * derived class */
-    static const char setupChildMessage[] = "Called from setupChildProcess()";
-    class DerivedProcessClass : public QProcess {
-    public:
-        int fd;
-        DerivedProcessClass(int fd) : fd(fd)
-        {
-        }
-
-    protected:
-        void setupChildProcess() override
-        {
-            QT_WRITE(fd, setupChildMessage, sizeof(setupChildMessage) - 1);
-            QT_CLOSE(fd);
-        }
-    };
-
-    int pipes[2] = { -1 , -1 };
 #ifdef Q_OS_UNIX
-    QVERIFY(qt_safe_pipe(pipes) == 0);
+static const char messageFromChildProcess[] = "Message from the child process";
+static void childProcessModifier(int fd)
+{
+    QT_WRITE(fd, messageFromChildProcess, sizeof(messageFromChildProcess) - 1);
+    QT_CLOSE(fd);
+}
 #endif
 
-    DerivedProcessClass process(pipes[1]);
+void tst_QProcess::setChildProcessModifier()
+{
+#ifdef Q_OS_UNIX
+    int pipes[2] = { -1 , -1 };
+    QVERIFY(qt_safe_pipe(pipes) == 0);
+
+    QProcess process;
+    process.setChildProcessModifier([pipes]() {
+        ::childProcessModifier(pipes[1]);
+    });
     process.start("testProcessNormal/testProcessNormal");
     if (process.state() != QProcess::Starting)
         QCOMPARE(process.state(), QProcess::Running);
     QVERIFY2(process.waitForStarted(5000), qPrintable(process.errorString()));
 
-#ifdef Q_OS_UNIX
-    char buf[sizeof setupChildMessage] = {};
+    char buf[sizeof messageFromChildProcess] = {};
     qt_safe_close(pipes[1]);
-    QCOMPARE(qt_safe_read(pipes[0], buf, sizeof(buf)), qint64(sizeof(setupChildMessage) - 1));
-    QCOMPARE(buf, setupChildMessage);
+    QCOMPARE(qt_safe_read(pipes[0], buf, sizeof(buf)), qint64(sizeof(messageFromChildProcess)) - 1);
+    QCOMPARE(buf, messageFromChildProcess);
     qt_safe_close(pipes[0]);
-#endif
 
     QVERIFY2(process.waitForFinished(5000), qPrintable(process.errorString()));
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
     QCOMPARE(process.exitCode(), 0);
+#else
+    QSKIP("Unix-only test");
+#endif
+}
+
+void tst_QProcess::startCommand()
+{
+    QProcess process;
+    process.startCommand("testProcessSpacesArgs/nospace foo \"b a r\" baz");
+    QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
+    QVERIFY2(process.waitForFinished(), qPrintable(process.errorString()));
+    QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(process.exitCode(), 0);
+    QByteArray actual = process.readAll();
+    actual.remove(0, actual.indexOf('|') + 1);
+    QByteArray expected = "foo|b a r|baz";
+    QCOMPARE(actual, expected);
 }
 
 void tst_QProcess::startWithOpen()
@@ -1114,6 +1125,10 @@ void tst_QProcess::forwardedChannels_data()
             << true
             << int(QProcess::SeparateChannels) << int(QProcess::ManagedInputChannel)
             << QByteArray("out data") << QByteArray("err data");
+    QTest::newRow("detached-merged-forwarding")
+            << true
+            << int(QProcess::MergedChannels) << int(QProcess::ManagedInputChannel)
+            << QByteArray("out data" "err data") << QByteArray();
 }
 
 void tst_QProcess::forwardedChannels()
@@ -1186,7 +1201,7 @@ public:
     }
 
 protected:
-    inline void run()
+    inline void run() override
     {
         exitCode = 90210;
 
@@ -1231,7 +1246,7 @@ void tst_QProcess::processesInMultipleThreads()
         if (i > 7)
             threadCount = qMax(threadCount, QThread::idealThreadCount() + 2);
 
-        QVector<TestThread *> threads(threadCount);
+        QList<TestThread *> threads(threadCount);
         for (int j = 0; j < threadCount; ++j)
             threads[j] = new TestThread;
         for (int j = 0; j < threadCount; ++j)
@@ -2015,14 +2030,18 @@ void tst_QProcess::setStandardOutputProcess_data()
 void tst_QProcess::setStandardOutputProcess()
 {
     QProcess source;
+    QProcess intermediate;
     QProcess sink;
 
     QFETCH(bool, merged);
     QFETCH(bool, waitForBytesWritten);
     source.setProcessChannelMode(merged ? QProcess::MergedChannels : QProcess::SeparateChannels);
-    source.setStandardOutputProcess(&sink);
+    source.setStandardOutputProcess(&intermediate);
+    intermediate.setStandardOutputProcess(&sink);
 
     source.start("testProcessEcho2/testProcessEcho2");
+    intermediate.setProgram("testProcessEcho/testProcessEcho");
+    QVERIFY(intermediate.startDetached());
     sink.start("testProcessEcho2/testProcessEcho2");
 
     QByteArray data("Hello, World");

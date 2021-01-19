@@ -95,12 +95,12 @@ public:
     QVulkanInstance *inst = nullptr;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     int physDevIndex = 0;
-    QVector<VkPhysicalDevice> physDevs;
-    QVector<VkPhysicalDeviceProperties> physDevProps;
+    QList<VkPhysicalDevice> physDevs;
+    QList<VkPhysicalDeviceProperties> physDevProps;
     QVulkanWindow::Flags flags;
     QByteArrayList requestedDevExtensions;
     QHash<VkPhysicalDevice, QVulkanInfoVector<QVulkanExtension> > supportedDevExtensions;
-    QVector<VkFormat> requestedColorFormats;
+    QList<VkFormat> requestedColorFormats;
     VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
     QVulkanWindow::QueueCreateInfoModifier queueCreateInfoModifier;
 
@@ -132,7 +132,7 @@ public:
     // rendering thread will get throttled to the presentation rate (vsync).
     // This is in effect Example 5 from the VK_KHR_swapchain spec.
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    int swapChainBufferCount = 2;
+    int swapChainBufferCount = 0;
     int frameLag = 2;
 
     QSize swapChainImageSize;

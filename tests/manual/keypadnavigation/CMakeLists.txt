@@ -4,7 +4,7 @@
 ## keypadnavigation Binary:
 #####################################################################
 
-add_qt_manual_test(keypadnavigation
+qt_internal_add_manual_test(keypadnavigation
     GUI
     SOURCES
         keypadnavigation.ui

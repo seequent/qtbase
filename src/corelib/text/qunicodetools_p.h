@@ -74,7 +74,7 @@ namespace QUnicodeTools {
 
 struct ScriptItem
 {
-    int position;
+    qsizetype position;
     QChar::Script script;
 };
 
@@ -91,19 +91,18 @@ enum CharAttributeOption {
     LineBreaks = 0x08,
     WhiteSpaces = 0x10,
     HangulLineBreakTailoring = 0x20,
-    DefaultOptionsCompat = GraphemeBreaks | LineBreaks | WhiteSpaces, // ### remove
 
     DontClearAttributes = 0x1000
 };
 Q_DECLARE_FLAGS(CharAttributeOptions, CharAttributeOption)
 
 // attributes buffer has to have a length of string length + 1
-Q_CORE_EXPORT void initCharAttributes(const ushort *string, int length,
-                                      const ScriptItem *items, int numItems,
-                                      QCharAttributes *attributes, CharAttributeOptions options = DefaultOptionsCompat);
+Q_CORE_EXPORT void initCharAttributes(QStringView str,
+                                      const ScriptItem *items, qsizetype numItems,
+                                      QCharAttributes *attributes, CharAttributeOptions options);
 
 
-Q_CORE_EXPORT void initScripts(const ushort *string, int length, ScriptItemArray *scripts);
+Q_CORE_EXPORT void initScripts(QStringView str, ScriptItemArray *scripts);
 
 } // namespace QUnicodeTools
 

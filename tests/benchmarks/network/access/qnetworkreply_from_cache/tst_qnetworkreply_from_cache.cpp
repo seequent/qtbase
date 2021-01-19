@@ -26,7 +26,9 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QBuffer>
+#include <QTestEventLoop>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkDiskCache>
 #include <QtNetwork/QNetworkReply>
@@ -38,7 +40,7 @@
 class NetworkDiskCache : public QNetworkDiskCache
 {
 public:
-    NetworkDiskCache(QObject *parent = 0)
+    NetworkDiskCache(QObject *parent = nullptr)
         : QNetworkDiskCache(parent)
     {
     }
@@ -148,7 +150,7 @@ tst_qnetworkreply_from_cache::tst_qnetworkreply_from_cache()
 void tst_qnetworkreply_from_cache::timeReadAll(const QString &headers, const QByteArray &data)
 {
     QByteArray reply;
-    reply.append(headers);
+    reply.append(headers.toUtf8());
     reply.append(data);
 
     m_replyData.reserve(data.size());

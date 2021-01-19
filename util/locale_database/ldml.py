@@ -265,13 +265,7 @@ class LocaleScanner (object):
         if isoCode:
             stem = 'numbers/currencies/currency[{}]/'.format(isoCode)
             symbol = self.find(stem + 'symbol', '')
-            displays = tuple(self.find(stem + 'displayName' + tail, '')
-                for tail in ('',) + tuple(
-                    '[count={}]'.format(x) for x in ('zero', 'one', 'two',
-                                                     'few', 'many', 'other')))
-            while displays and not displays[-1]:
-                displays = displays[:-1]
-            name = ';'.join(displays)
+            name = self.__currencyDisplayName(stem)
         else:
             symbol = name = ''
         yield 'currencySymbol', symbol
@@ -294,12 +288,15 @@ class LocaleScanner (object):
         yield 'percent', self.find(stem + 'percentSign')
         yield 'list', self.find(stem + 'list')
         yield 'exp', self.find(stem + 'exponential')
+        yield 'groupSizes', self.__numberGrouping(system)
 
         digits = lookup(system)['digits']
         assert len(digits) == 10
         zero = digits[0]
-        # Qt's number-formatting code assumes digits are consecutive:
-        assert all(ord(c) == i for i, c in enumerate(digits, ord(zero)))
+        # Qt's number-formatting code assumes digits are consecutive
+        # (except Suzhou, CLDR's hanidec - see QTBUG-85409):
+        assert all(ord(c) == i + (0x3020 if ord(zero) == 0x3007 else ord(zero))
+                   for i, c in enumerate(digits[1:], 1))
         yield 'zero', zero
 
         plus = self.find(stem + 'plusSign')
@@ -460,6 +457,18 @@ class LocaleScanner (object):
             sought += ' (for {})'.format(xpath)
         raise Error('No {} in {}'.format(sought, self.name))
 
+    def __currencyDisplayName(self, stem):
+        try:
+            return self.find(stem + 'displayName')
+        except Error:
+            pass
+        for x in  ('zero', 'one', 'two', 'few', 'many', 'other'):
+            try:
+                return self.find(stem + 'displayName[count={}]'.format(x))
+            except Error:
+                pass
+        return ''
+
     def __findUnit(self, keySuffix, quantify, fallback=''):
         # The displayName for a quantified unit in en.xml is kByte
         # (even for unitLength[narrow]) instead of kB (etc.), so
@@ -526,6 +535,36 @@ class LocaleScanner (object):
                     tail = rest if all(rest == k for k in cache) else suffix
                     cache.append(rest)
                 yield it
+
+    def __numberGrouping(self, system):
+        """Sizes of groups of digits within a number.
+
+        Returns a triple (least, higher, top) for which:
+          * least is the number of digits after the last grouping
+            separator;
+          * higher is the number of digits between grouping
+            separators;
+          * top is the fewest digits that can appear before the first
+            grouping separator.
+
+        Thus (4, 3, 2) would want 1e7 as 1000,0000 but 1e8 as 10,000,0000.
+
+        Note: CLDR does countenance the possibility of grouping also
+        in the fractional part.  This is not presently attempted.  Nor
+        is placement of the sign character anywhere but at the start
+        of the number (some formats may place it at the end, possibly
+        elsewhere)."""
+        top = int(self.find('numbers/minimumGroupingDigits'))
+        assert top < 4, top # We store it in a 2-bit field
+        grouping = self.find('numbers/decimalFormats[numberSystem='
+                             + system + ']/decimalFormatLength/decimalFormat/pattern')
+        groups = grouping.split('.')[0].split(',')[-3:]
+        assert all(len(x) < 8 for x in groups[-2:]), grouping # we store them in 3-bit fields
+        if len(groups) > 2:
+            return len(groups[-1]), len(groups[-2]), top
+
+        size = len(groups[-1]) if len(groups) == 2 else 3
+        return size, size, top
 
     @staticmethod
     def __currencyFormats(patterns, plus, minus):

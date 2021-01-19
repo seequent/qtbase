@@ -26,9 +26,9 @@
 **
 ****************************************************************************/
 
-
-#include <QtTest/QtTest>
 #include <QtNetwork/QtNetwork>
+#include <QTest>
+#include <QTestEventLoop>
 #include <qnetworkdiskcache.h>
 #include <qrandom.h>
 
@@ -129,7 +129,7 @@ public slots:
             if (doClose) {
                 client->disconnectFromHost();
                 disconnect(client, 0, this, 0);
-                client = 0;
+                client = nullptr;
             }
         }
     }
@@ -155,7 +155,7 @@ public:
     {
         setCacheDirectory(path);
 
-        QIODevice *d = 0;
+        QIODevice *d = nullptr;
         if (metaData.isValid()) {
             d = prepare(metaData);
         } else {
@@ -402,18 +402,23 @@ void tst_QNetworkDiskCache::setCookieHeader() // QTBUG-41514
     headers.append(QNetworkCacheMetaData::RawHeader("Set-Cookie", "aaa=bbb"));
     metaData.setRawHeaders(headers);
     metaData.setSaveToDisk(true);
+    QDateTime expirationDate = QDateTime::currentDateTime().addSecs(500);
+    metaData.setExpirationDate(expirationDate);
     cache->setupWithOne(tempDir.path(), url, metaData);
 
     manager = new QNetworkAccessManager();
     manager->setCache(cache);
 
     QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache);
     QNetworkReply  *reply = manager->get(request);
     connect(reply, SIGNAL(metaDataChanged()), this, SLOT(setCookieHeaderMetaDataChangedSlot()));
     connect(reply, SIGNAL(finished()), &QTestEventLoop::instance(), SLOT(exitLoop()));
 
     QTestEventLoop::instance().enterLoop(5);
     QVERIFY(!QTestEventLoop::instance().timeout());
+
+    QCOMPARE(reply->error(), QNetworkReply::NoError);
 
     reply->deleteLater();
     manager->deleteLater();
@@ -663,7 +668,7 @@ public:
         , cachePath(cachePath)
     {}
 
-    void run()
+    void run() override
     {
         QByteArray longString = "Hello World, this is some long string, well not really that long";
         for (int j = 0; j < 10; ++j)

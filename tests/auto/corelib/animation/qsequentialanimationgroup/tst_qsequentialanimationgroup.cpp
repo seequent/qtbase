@@ -26,7 +26,12 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QVariantAnimation>
+#include <QPropertyAnimation>
+#include <QSignalSpy>
+#include <QParallelAnimationGroup>
+
 #include <QtCore/qanimationgroup.h>
 #include <QtCore/qsequentialanimationgroup.h>
 
@@ -96,19 +101,19 @@ class TestAnimation : public QVariantAnimation
 {
     Q_OBJECT
 public:
-    virtual void updateCurrentValue(const QVariant &value) { Q_UNUSED(value)};
+    virtual void updateCurrentValue(const QVariant &value) override { Q_UNUSED(value)};
     virtual void updateState(QAbstractAnimation::State newState,
-                             QAbstractAnimation::State oldState)
+                             QAbstractAnimation::State oldState) override
     {
-        Q_UNUSED(oldState)
-        Q_UNUSED(newState)
+        Q_UNUSED(oldState);
+        Q_UNUSED(newState);
     };
 };
 
 class DummyPropertyAnimation : public QPropertyAnimation
 {
 public:
-    DummyPropertyAnimation(QObject *parent = 0) : QPropertyAnimation(parent)
+    DummyPropertyAnimation(QObject *parent = nullptr) : QPropertyAnimation(parent)
     {
         setTargetObject(&o);
         this->setPropertyName("value");
@@ -122,17 +127,17 @@ class UncontrolledAnimation : public QPropertyAnimation
 {
     Q_OBJECT
 public:
-    UncontrolledAnimation(QObject *target, QObject *parent = 0)
+    UncontrolledAnimation(QObject *target, QObject *parent = nullptr)
         : QPropertyAnimation(target, "value", parent)
     {
         setDuration(250);
         setEndValue(0);
     }
 
-    int duration() const { return -1; /* not time driven */ }
+    int duration() const override { return -1; /* not time driven */ }
 
 protected:
-    void updateCurrentTime(int currentTime)
+    void updateCurrentTime(int currentTime) override
     {
         QPropertyAnimation::updateCurrentTime(currentTime);
         if (currentTime >= QPropertyAnimation::duration())
@@ -563,7 +568,7 @@ void tst_QSequentialAnimationGroup::seekingBackwards()
     QCOMPARE(a1_s_o3->state(), QAnimationGroup::Stopped);
 }
 
-typedef QVector<QAbstractAnimation::State> StateList;
+using StateList = QList<QAbstractAnimation::State>;
 
 static bool compareStates(const QSignalSpy& spy, const StateList &expectedStates)
 {
@@ -605,8 +610,8 @@ static bool compareStates(const QSignalSpy& spy, const StateList &expectedStates
 
         }
         qDebug("\n"
-               "expected (count == %d): %s\n"
-               "actual   (count == %d): %s\n", expectedStates.count(), qPrintable(e), spy.count(), qPrintable(a));
+               "expected (count == %zd): %s\n"
+               "actual   (count == %zd): %s\n", size_t(expectedStates.count()), qPrintable(e), size_t(spy.count()), qPrintable(a));
     }
     return equals;
 }

@@ -37,7 +37,6 @@ import os
 import datetime
 
 from qlocalexml import QLocaleXmlReader
-from xml.dom import minidom
 from localetools import unicode2hex, wrap_list, Error, Transcriber, SourceFileEditor
 
 def compareLocaleKeys(key1, key2):
@@ -164,11 +163,26 @@ class LocaleSourceEditor (SourceFileEditor):
 
 class LocaleDataWriter (LocaleSourceEditor):
     def likelySubtags(self, likely):
+        # First sort likely, so that we can use binary search in C++
+        # code. Although the entries are (lang, script, region), sort
+        # as (lang, region, script) and sort 0 after all non-zero
+        # values. This ensures that, when several mappings partially
+        # match a requested locale, the one we should prefer to use
+        # appears first.
+        huge = 0x10000 # > any ushort; all tag values are ushort
+        def keyLikely(entry):
+            have = entry[1] # Numeric id triple
+            return have[0] or huge, have[2] or huge, have[1] or huge # language, region, script
+        likely = list(likely) # Turn generator into list so we can sort it
+        likely.sort(key=keyLikely)
+
+        i = 0
         self.writer.write('static const QLocaleId likely_subtags[] = {\n')
-        for had, have, got, give, last in likely:
+        for had, have, got, give in likely:
+            i += 1
             self.writer.write('    {{ {:3d}, {:3d}, {:3d} }}'.format(*have))
             self.writer.write(', {{ {:3d}, {:3d}, {:3d} }}'.format(*give))
-            self.writer.write(' ' if last else ',')
+            self.writer.write(' ' if i == len(likely) else ',')
             self.writer.write(' // {} -> {}\n'.format(had, got))
         self.writer.write('};\n\n')
 
@@ -254,7 +268,10 @@ class LocaleDataWriter (LocaleSourceEditor):
                           'curRnd ' # Currencty rounding (unused: QTBUG-81343)
                           'dow1st ' # First day of week
                           ' wknd+ ' # Week-end start/end days
-                          ' wknd-'
+                          ' wknd- '
+                          'grpTop '
+                          'grpMid '
+                          'grpEnd'
                           # No trailing space on last entry (be sure to
                           # pad before adding anything after it).
                           '\n')
@@ -276,6 +293,8 @@ class LocaleDataWriter (LocaleSourceEditor):
             # Currency formatting
             '{:6d},{:6d}',
             # Day of week and week-end
+            ',{:6d}' * 3,
+            # Number group sizes
             ',{:6d}' * 3,
             ' }}')).format
         for key in names:
@@ -319,16 +338,14 @@ class LocaleDataWriter (LocaleSourceEditor):
                         (currencyIsoCodeData(locale.currencyIsoCode),
                          locale.currencyDigits,
                          locale.currencyRounding, # unused (QTBUG-81343)
-                         locale.firstDayOfWeek,
-                         locale.weekendStart,
-                         locale.weekendEnd) ))
+                         locale.firstDayOfWeek, locale.weekendStart, locale.weekendEnd,
+                         locale.groupTop, locale.groupHigher, locale.groupLeast) ))
                               + ', // {}/{}/{}\n'.format(
                     locale.language, locale.script, locale.country))
         self.writer.write(formatLine(*( # All zeros, matching the format:
                     (0,) * 3 + (0,) * 37 * 2
                     + (currencyIsoCodeData(0),)
-                    + (0,) * 2
-                    + (0,) * 3 ))
+                    + (0,) * 8 ))
                           + ' // trailing zeros\n')
         self.writer.write('};\n')
 
@@ -466,9 +483,9 @@ class LocaleHeaderWriter (SourceFileEditor):
     def __enum(self, name, book, alias):
         assert book
         out, dupes = self.writer.write, self.__dupes
-        out('    enum {} {{\n'.format(name))
+        out('    enum {} : ushort {{\n'.format(name))
         for key, value in book.items():
-            member = value[0]
+            member = value[0].replace('-', ' ')
             if name == 'Script':
                 # Don't .capitalize() as some names are already camel-case (see enumdata.py):
                 member = ''.join(word[0].upper() + word[1:] for word in member.split())

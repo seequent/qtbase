@@ -42,23 +42,23 @@
 #include <QtTest/qtestassert.h>
 
 #include <QtCore/qbytearray.h>
+#include <QtCore/qcoreapplication.h>
+#include <QtCore/qdebug.h>
+#include <QtCore/qdir.h>
+#include <QtCore/qdiriterator.h>
+#include <QtCore/qfile.h>
+#include <QtCore/qfileinfo.h>
+#include <QtCore/qfloat16.h>
+#include <QtCore/qlibraryinfo.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qmetaobject.h>
 #include <QtCore/qobject.h>
 #include <QtCore/qstringlist.h>
-#include <QtCore/qvector.h>
-#include <QtCore/qvarlengtharray.h>
-#include <QtCore/qcoreapplication.h>
-#include <QtCore/qfile.h>
-#include <QtCore/qfileinfo.h>
-#include <QtCore/qdir.h>
-#include <QtCore/qdebug.h>
-#include <QtCore/qfloat16.h>
-#include <QtCore/qlibraryinfo.h>
-#include <QtCore/private/qtools_p.h>
-#include <QtCore/qdiriterator.h>
 #include <QtCore/qtemporarydir.h>
 #include <QtCore/qthread.h>
+#include <QtCore/qvarlengtharray.h>
 #include <QtCore/private/qlocking_p.h>
+#include <QtCore/private/qtools_p.h>
 #include <QtCore/private/qwaitcondition_p.h>
 
 #include <QtCore/qtestsupport_core.h>
@@ -114,7 +114,7 @@
 # endif
 #endif
 
-#if defined(Q_OS_MACX)
+#if defined(Q_OS_MACOS)
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
@@ -190,7 +190,7 @@ static void disableCoreDump()
 {
     bool ok = false;
     const int disableCoreDump = qEnvironmentVariableIntValue("QTEST_DISABLE_CORE_DUMP", &ok);
-    if (ok && disableCoreDump == 1) {
+    if (ok && disableCoreDump) {
 #if defined(Q_OS_UNIX) && !defined(Q_OS_INTEGRITY)
         struct rlimit limit;
         limit.rlim_cur = 0;
@@ -206,7 +206,7 @@ static void stackTrace()
 {
     bool ok = false;
     const int disableStackDump = qEnvironmentVariableIntValue("QTEST_DISABLE_STACK_DUMP", &ok);
-    if (ok && disableStackDump == 1)
+    if (ok && disableStackDump)
         return;
 
     if (debuggerPresent() || hasSystemCrashReporter())
@@ -220,7 +220,7 @@ static void stackTrace()
 #endif
 #ifdef Q_OS_LINUX
     char cmd[512];
-    qsnprintf(cmd, 512, "gdb --pid %d 2>/dev/null <<EOF\n"
+    qsnprintf(cmd, 512, "gdb --pid %d 1>&2 2>/dev/null <<EOF\n"
                          "set prompt\n"
                          "set height 0\n"
                          "thread apply all where full\n"
@@ -233,7 +233,7 @@ static void stackTrace()
     fprintf(stderr, "=== End of stack trace ===\n");
 #elif defined(Q_OS_MACOS)
     char cmd[512];
-    qsnprintf(cmd, 512, "lldb -p %d 2>/dev/null <<EOF\n"
+    qsnprintf(cmd, 512, "lldb -p %d 1>&2 2>/dev/null <<EOF\n"
                          "bt all\n"
                          "quit\n"
                          "EOF\n",
@@ -643,7 +643,7 @@ Q_TESTLIB_EXPORT void qtest_qParseArgs(int argc, const char *const argv[], bool 
         } else if (strcmp(argv[i], "-v2") == 0) {
             QTestLog::setVerboseLevel(2);
         } else if (strcmp(argv[i], "-vs") == 0) {
-            QSignalDumper::startDump();
+            QSignalDumper::setEnabled(true);
         } else if (strcmp(argv[i], "-o") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "-o needs an extra parameter specifying the filename and optional format\n");
@@ -864,7 +864,7 @@ Q_TESTLIB_EXPORT void qtest_qParseArgs(int argc, char *argv[], bool qml) {
     qtest_qParseArgs(argc, const_cast<const char *const *>(argv), qml);
 }
 
-QBenchmarkResult qMedian(const QVector<QBenchmarkResult> &container)
+QBenchmarkResult qMedian(const QList<QBenchmarkResult> &container)
 {
     const int count = container.count();
     if (count == 0)
@@ -873,7 +873,7 @@ QBenchmarkResult qMedian(const QVector<QBenchmarkResult> &container)
     if (count == 1)
         return container.front();
 
-    QVector<QBenchmarkResult> containerCopy = container;
+    QList<QBenchmarkResult> containerCopy = container;
     std::sort(containerCopy.begin(), containerCopy.end());
 
     const int middle = count / 2;
@@ -910,7 +910,7 @@ void TestMethods::invokeTestOnData(int index) const
     bool isBenchmark = false;
     int i = (QBenchmarkGlobalData::current->measurer->needsWarmupIteration()) ? -1 : 0;
 
-    QVector<QBenchmarkResult> results;
+    QList<QBenchmarkResult> results;
     bool minimumTotalReached = false;
     do {
         QBenchmarkTestMethodData::current->beginDataRun();
@@ -1026,6 +1026,7 @@ class WatchDog : public QThread
 public:
     WatchDog()
     {
+        setObjectName(QLatin1String("QtTest Watchdog"));
         auto locker = qt_unique_lock(mutex);
         expecting = ThreadStart;
         start();
@@ -1204,8 +1205,8 @@ void *fetchData(QTestData *data, const char *tagName, int typeId)
 
     if (Q_UNLIKELY(typeId != data->parent()->elementTypeId(idx))) {
         qFatal("Requested type '%s' does not match available type '%s'.",
-               QMetaType::typeName(typeId),
-               QMetaType::typeName(data->parent()->elementTypeId(idx)));
+               QMetaType(typeId).name(),
+               QMetaType(data->parent()->elementTypeId(idx)).name());
     }
 
     return data->data(idx);
@@ -1485,6 +1486,8 @@ void TestMethods::invokeTests(QObject *testObject) const
         watchDog.reset(new WatchDog);
     }
 
+    QSignalDumper::startDump();
+
     if (!QTestResult::skipCurrentTest() && !QTest::currentTestFailed()) {
         if (m_initTestCaseMethod.isValid())
             m_initTestCaseMethod.invoke(testObject, Qt::DirectConnection);
@@ -1517,6 +1520,8 @@ void TestMethods::invokeTests(QObject *testObject) const
     }
     QTestResult::finishedCurrentTestFunction();
     QTestResult::setCurrentTestFunction(nullptr);
+
+    QSignalDumper::endDump();
 }
 
 #if defined(Q_OS_WIN)
@@ -1965,8 +1970,6 @@ void QTest::qCleanup()
     delete QBenchmarkGlobalData::current;
     QBenchmarkGlobalData::current = nullptr;
 
-    QSignalDumper::endDump();
-
 #if defined(Q_OS_MACOS)
     IOPMAssertionRelease(macPowerSavingDisabled);
 #endif
@@ -1984,7 +1987,7 @@ int QTest::qExec(QObject *testObject, const QStringList &arguments)
     const int argc = arguments.count();
     QVarLengthArray<char *> argv(argc);
 
-    QVector<QByteArray> args;
+    QList<QByteArray> args;
     args.reserve(argc);
 
     for (int i = 0; i < argc; ++i)
@@ -2133,7 +2136,7 @@ QSharedPointer<QTemporaryDir> QTest::qExtractTestData(const QString &dirName)
           QFileInfo fileInfo = it.fileInfo();
 
           if (!fileInfo.isDir()) {
-              const QString destination = dataPath + QLatin1Char('/') + fileInfo.filePath().midRef(resourcePath.length());
+              const QString destination = dataPath + QLatin1Char('/') + QStringView{fileInfo.filePath()}.mid(resourcePath.length());
               QFileInfo destinationFileInfo(destination);
               QDir().mkpath(destinationFileInfo.path());
               if (!QFile::copy(fileInfo.filePath(), destination)) {
@@ -2190,7 +2193,7 @@ QString QTest::qFindTestData(const QString& base, const char *file, int line, co
     if (found.isEmpty()) {
         const char *testObjectName = QTestResult::currentTestObjectName();
         if (testObjectName) {
-            const QString testsPath = QLibraryInfo::location(QLibraryInfo::TestsPath);
+            const QString testsPath = QLibraryInfo::path(QLibraryInfo::TestsPath);
             const QString candidate = QString::fromLatin1("%1/%2/%3")
                 .arg(testsPath, QFile::decodeName(testObjectName).toLower(), base);
             if (QFileInfo::exists(candidate)) {
@@ -2208,7 +2211,7 @@ QString QTest::qFindTestData(const QString& base, const char *file, int line, co
     //  3. relative to test source.
     if (found.isEmpty() && qstrncmp(file, ":/", 2) != 0) {
         // srcdir is the directory containing the calling source file.
-        QFileInfo srcdir = QFileInfo(QFile::decodeName(file)).path();
+        QFileInfo srcdir(QFileInfo(QFile::decodeName(file)).path());
 
         // If the srcdir is relative, that means it is relative to the current working
         // directory of the compiler at compile time, which should be passed in as `builddir'.
@@ -2469,30 +2472,6 @@ const char *QTest::currentDataTag()
 bool QTest::currentTestFailed()
 {
     return QTestResult::currentTestFailed();
-}
-
-/*!
-    Sleeps for \a ms milliseconds, blocking execution of the
-    test. qSleep() will not do any event processing and leave your test
-    unresponsive. Network communication might time out while
-    sleeping. Use \l {QTest::qWait()} to do non-blocking sleeping.
-
-    \a ms must be greater than 0.
-
-    \b {Note:} The qSleep() function calls either \c nanosleep() on
-    unix or \c Sleep() on windows, so the accuracy of time spent in
-    qSleep() depends on the operating system.
-
-    Example:
-    \snippet code/src_qtestlib_qtestcase.cpp 23
-
-    \sa {QTest::qWait()}
-*/
-void QTest::qSleep(int ms)
-{
-    // ### Qt 6, move to QtCore or remove altogether
-    QTEST_ASSERT(ms > 0);
-    QTestPrivate::qSleep(ms);
 }
 
 /*! \internal

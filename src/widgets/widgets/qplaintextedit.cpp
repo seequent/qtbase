@@ -755,20 +755,11 @@ void QPlainTextEditPrivate::updateViewport()
 }
 
 QPlainTextEditPrivate::QPlainTextEditPrivate()
-    : control(nullptr),
-      tabChangesFocus(false),
-      lineWrap(QPlainTextEdit::WidgetWidth),
-      wordWrap(QTextOption::WrapAtWordBoundaryOrAnywhere),
-      clickCausedFocus(0), placeholderVisible(1),
-      topLine(0), topLineFracture(0),
+    : tabChangesFocus(false), showCursorOnInitialShow(false), backgroundVisible(false),
+      centerOnScroll(false), inDrag(false), clickCausedFocus(false), placeholderVisible(true),
       pageUpDownLastCursorYIsValid(false)
 {
-    showCursorOnInitialShow = true;
-    backgroundVisible = false;
-    centerOnScroll = false;
-    inDrag = false;
 }
-
 
 void QPlainTextEditPrivate::init(const QString &txt)
 {
@@ -824,7 +815,6 @@ void QPlainTextEditPrivate::init(const QString &txt)
 #ifndef QT_NO_CURSOR
     viewport->setCursor(Qt::IBeamCursor);
 #endif
-    originalOffsetY = 0;
 }
 
 void QPlainTextEditPrivate::_q_textChanged()
@@ -1227,7 +1217,7 @@ void QPlainTextEditPrivate::ensureViewportLayouted()
    fast log viewer (see setMaximumBlockCount()).
 
 
-    \sa QTextDocument, QTextCursor, {Application Example},
+    \sa QTextDocument, QTextCursor, {Qt Widgets - Application Example},
         {Code Editor Example}, {Syntax Highlighter Example},
         {Rich Text Processing}
 
@@ -1621,7 +1611,7 @@ void QPlainTextEdit::timerEvent(QTimerEvent *e)
             const QPoint globalPos = QCursor::pos();
             pos = d->viewport->mapFromGlobal(globalPos);
             QMouseEvent ev(QEvent::MouseMove, pos, d->viewport->mapTo(d->viewport->topLevelWidget(), pos), globalPos,
-                           Qt::LeftButton, Qt::LeftButton, QGuiApplication::keyboardModifiers());
+                           Qt::LeftButton, Qt::LeftButton, d->keyboardModifiers);
             mouseMoveEvent(&ev);
         }
         int deltaY = qMax(pos.y() - visible.top(), visible.bottom() - pos.y()) - visible.height();
@@ -1686,6 +1676,7 @@ void QPlainTextEdit::setPlainText(const QString &text)
 void QPlainTextEdit::keyPressEvent(QKeyEvent *e)
 {
     Q_D(QPlainTextEdit);
+    d->keyboardModifiers = e->modifiers();
 
 #ifdef QT_KEYPAD_NAVIGATION
     switch (e->key()) {
@@ -1833,6 +1824,9 @@ void QPlainTextEdit::keyPressEvent(QKeyEvent *e)
 */
 void QPlainTextEdit::keyReleaseEvent(QKeyEvent *e)
 {
+    Q_D(QPlainTextEdit);
+    d->keyboardModifiers = e->modifiers();
+
 #ifdef QT_KEYPAD_NAVIGATION
     Q_D(QPlainTextEdit);
     if (QApplicationPrivate::keypadNavigationEnabled()) {
@@ -1980,8 +1974,7 @@ void QPlainTextEdit::paintEvent(QPaintEvent *e)
                 fillBackground(&painter, contentsRect, bg);
             }
 
-
-            QVector<QTextLayout::FormatRange> selections;
+            QList<QTextLayout::FormatRange> selections;
             int blpos = block.position();
             int bllen = block.length();
             for (int i = 0; i < context.selections.size(); ++i) {
@@ -2324,7 +2317,7 @@ void QPlainTextEdit::changeEvent(QEvent *e)
     if (e->type() == QEvent::ApplicationFontChange
         || e->type() == QEvent::FontChange) {
         d->control->document()->setDefaultFont(font());
-    }  else if(e->type() == QEvent::ActivationChange) {
+    }  else if (e->type() == QEvent::ActivationChange) {
         if (!isActiveWindow())
             d->autoScrollTimer.stop();
     } else if (e->type() == QEvent::EnabledChange) {

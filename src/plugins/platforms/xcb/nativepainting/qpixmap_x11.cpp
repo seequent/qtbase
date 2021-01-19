@@ -282,9 +282,9 @@ static uint n_bits(uint v)
     return i;
 }
 
-static uint *red_scale_table   = 0;
-static uint *green_scale_table = 0;
-static uint *blue_scale_table  = 0;
+static uint *red_scale_table   = nullptr;
+static uint *green_scale_table = nullptr;
+static uint *blue_scale_table  = nullptr;
 
 static void cleanup_scale_tables()
 {
@@ -546,10 +546,10 @@ void QX11PlatformPixmap::fromImage(const QImage &img, Qt::ImageConversionFlags f
 
     Display *dpy   = xinfo.display();
     Visual *visual = (Visual *)xinfo.visual();
-    XImage *xi = 0;
+    XImage *xi = nullptr;
     bool    trucol = (visual->c_class >= TrueColor);
     size_t  nbytes = image.sizeInBytes();
-    uchar  *newbits= 0;
+    uchar  *newbits= nullptr;
 
 #if QT_CONFIG(xrender)
     if (alphaCheck.hasXRenderAndAlpha()) {
@@ -573,7 +573,7 @@ void QX11PlatformPixmap::fromImage(const QImage &img, Qt::ImageConversionFlags f
 
         switch (cimage.format()) {
         case QImage::Format_Indexed8: {
-            QVector<QRgb> colorTable = cimage.colorTable();
+            QList<QRgb> colorTable = cimage.colorTable();
             uint *xidata = (uint *)xi->data;
             for (int y = 0; y < h; ++y) {
                 const uchar *p = cimage.scanLine(y);
@@ -676,7 +676,7 @@ void QX11PlatformPixmap::fromImage(const QImage &img, Qt::ImageConversionFlags f
         const uint  bbits = highest_bit(blue_mask) - lowest_bit(blue_mask) + 1;
 
         if (d8) {                                // setup pixel translation
-            QVector<QRgb> ctable = cimage.colorTable();
+            QList<QRgb> ctable = cimage.colorTable();
             for (int i=0; i < cimage.colorCount(); i++) {
                 int r = qRed  (ctable[i]);
                 int g = qGreen(ctable[i]);
@@ -1061,7 +1061,7 @@ void QX11PlatformPixmap::fromImage(const QImage &img, Qt::ImageConversionFlags f
         int  maxpop = 0;
         int  maxpix = 0;
         uint j = 0;
-        QVector<QRgb> ctable = cimage.colorTable();
+        QList<QRgb> ctable = cimage.colorTable();
         for (int i = 0; i < 256; i++) {                // init pixel array
             if (pop[i] > 0) {
                 px->r = qRed  (ctable[i]);
@@ -2114,7 +2114,7 @@ QImage QX11PlatformPixmap::toImage(const QXImageWrapper &xiWrapper, const QRect 
         } else {
             image.setColorCount(ncols);        // create color table
         }
-        QVector<QColor> colors = QXcbColormap::instance(xinfo.screen()).colormap();
+        QList<QColor> colors = QXcbColormap::instance(xinfo.screen()).colormap();
         int j = 0;
         for (int i=0; i<colors.size(); i++) {                // translate pixels
             if (use[i])

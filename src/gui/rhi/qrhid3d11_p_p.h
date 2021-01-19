@@ -1,34 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Gui module
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -65,11 +68,13 @@ struct QD3D11Buffer : public QRhiBuffer
     void destroy() override;
     bool create() override;
     QRhiBuffer::NativeBuffer nativeBuffer() override;
+    char *beginFullDynamicBufferUpdateForCurrentFrame() override;
+    void endFullDynamicBufferUpdateForCurrentFrame() override;
 
     ID3D11UnorderedAccessView *unorderedAccessView();
 
     ID3D11Buffer *buffer = nullptr;
-    QByteArray dynBuf;
+    char *dynBuf = nullptr;
     bool hasPendingDynamicUpdates = false;
     ID3D11UnorderedAccessView *uav = nullptr;
     uint generation = 0;
@@ -201,6 +206,7 @@ struct QD3D11ShaderResourceBindings : public QRhiShaderResourceBindings
     void destroy() override;
     bool create() override;
 
+    bool hasDynamicOffset = false;
     QVarLengthArray<QRhiShaderResourceBinding, 8> sortedBindings;
     uint generation = 0;
 
@@ -237,15 +243,26 @@ struct QD3D11ShaderResourceBindings : public QRhiShaderResourceBindings
     };
     QVarLengthArray<BoundResourceData, 8> boundResourceData;
 
+    bool vsubufsPresent = false;
+    bool fsubufsPresent = false;
+    bool csubufsPresent = false;
+    bool vssamplersPresent = false;
+    bool fssamplersPresent = false;
+    bool cssamplersPresent = false;
+    bool csUAVsPresent = false;
+
     QRhiBatchedBindings<ID3D11Buffer *> vsubufs;
+    QRhiBatchedBindings<UINT> vsubuforigbindings;
     QRhiBatchedBindings<UINT> vsubufoffsets;
     QRhiBatchedBindings<UINT> vsubufsizes;
 
     QRhiBatchedBindings<ID3D11Buffer *> fsubufs;
+    QRhiBatchedBindings<UINT> fsubuforigbindings;
     QRhiBatchedBindings<UINT> fsubufoffsets;
     QRhiBatchedBindings<UINT> fsubufsizes;
 
     QRhiBatchedBindings<ID3D11Buffer *> csubufs;
+    QRhiBatchedBindings<UINT> csubuforigbindings;
     QRhiBatchedBindings<UINT> csubufoffsets;
     QRhiBatchedBindings<UINT> csubufsizes;
 
@@ -263,7 +280,7 @@ struct QD3D11ShaderResourceBindings : public QRhiShaderResourceBindings
     friend class QRhiD3D11;
 };
 
-Q_DECLARE_TYPEINFO(QD3D11ShaderResourceBindings::BoundResourceData, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QD3D11ShaderResourceBindings::BoundResourceData, Q_RELOCATABLE_TYPE);
 
 struct QD3D11GraphicsPipeline : public QRhiGraphicsPipeline
 {
@@ -312,6 +329,10 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
     ~QD3D11CommandBuffer();
     void destroy() override;
 
+    // these must be kept at a reasonably low value otherwise sizeof Command explodes
+    static const int MAX_DYNAMIC_OFFSET_COUNT = 8;
+    static const int MAX_VERTEX_BUFFER_BINDING_COUNT = 8;
+
     struct Command {
         enum Cmd {
             ResetShaderResources,
@@ -340,11 +361,9 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
         enum ClearFlag { Color = 1, Depth = 2, Stencil = 4 };
         Cmd cmd;
 
-        static const int MAX_UBUF_BINDINGS = 32; // should be D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT but 128 is a waste of space for our purposes
-
         // QRhi*/QD3D11* references should be kept at minimum (so no
         // QRhiTexture/Buffer/etc. pointers).
-        union {
+        union Args {
             struct {
                 QRhiRenderTarget *rt;
             } setRenderTarget;
@@ -365,9 +384,9 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
             struct {
                 int startSlot;
                 int slotCount;
-                ID3D11Buffer *buffers[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-                UINT offsets[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-                UINT strides[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
+                ID3D11Buffer *buffers[MAX_VERTEX_BUFFER_BINDING_COUNT];
+                UINT offsets[MAX_VERTEX_BUFFER_BINDING_COUNT];
+                UINT strides[MAX_VERTEX_BUFFER_BINDING_COUNT];
             } bindVertexBuffers;
             struct {
                 ID3D11Buffer *buffer;
@@ -381,7 +400,7 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
                 QD3D11ShaderResourceBindings *srb;
                 bool offsetOnlyChange;
                 int dynamicOffsetCount;
-                uint dynamicOffsetPairs[MAX_UBUF_BINDINGS * 2]; // binding, offsetInConstants
+                uint dynamicOffsetPairs[MAX_DYNAMIC_OFFSET_COUNT * 2]; // binding, offsetInConstants
             } bindShaderResources;
             struct {
                 QD3D11GraphicsPipeline *ps;
@@ -454,7 +473,7 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
         ComputePass
     };
 
-    QVector<Command> commands;
+    QRhiBackendCommandList<Command> commands;
     PassType recordingPass;
     QRhiRenderTarget *currentTarget;
     QRhiGraphicsPipeline *currentGraphicsPipeline;
@@ -469,21 +488,27 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
     ID3D11Buffer *currentVertexBuffers[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
     quint32 currentVertexOffsets[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
 
-    QVector<QByteArray> dataRetainPool;
-    QVector<QImage> imageRetainPool;
+    QVarLengthArray<QByteArray, 4> dataRetainPool;
+    QVarLengthArray<QRhiBufferData, 4> bufferDataRetainPool;
+    QVarLengthArray<QImage, 4> imageRetainPool;
 
     // relies heavily on implicit sharing (no copies of the actual data will be made)
     const uchar *retainData(const QByteArray &data) {
         dataRetainPool.append(data);
-        return reinterpret_cast<const uchar *>(dataRetainPool.constLast().constData());
+        return reinterpret_cast<const uchar *>(dataRetainPool.last().constData());
+    }
+    const uchar *retainBufferData(const QRhiBufferData &data) {
+        bufferDataRetainPool.append(data);
+        return reinterpret_cast<const uchar *>(bufferDataRetainPool.last().constData());
     }
     const uchar *retainImage(const QImage &image) {
         imageRetainPool.append(image);
-        return imageRetainPool.constLast().constBits();
+        return imageRetainPool.last().constBits();
     }
     void resetCommands() {
-        commands.clear();
+        commands.reset();
         dataRetainPool.clear();
+        bufferDataRetainPool.clear();
         imageRetainPool.clear();
     }
     void resetState() {
@@ -509,8 +534,6 @@ struct QD3D11CommandBuffer : public QRhiCommandBuffer
         memset(currentVertexOffsets, 0, sizeof(currentVertexOffsets));
     }
 };
-
-Q_DECLARE_TYPEINFO(QD3D11CommandBuffer::Command, Q_MOVABLE_TYPE);
 
 struct QD3D11SwapChain : public QRhiSwapChain
 {
@@ -597,7 +620,8 @@ public:
                    QRhiRenderTarget *rt,
                    const QColor &colorClearValue,
                    const QRhiDepthStencilClearValue &depthStencilClearValue,
-                   QRhiResourceUpdateBatch *resourceUpdates) override;
+                   QRhiResourceUpdateBatch *resourceUpdates,
+                   QRhiCommandBuffer::BeginPassFlags flags) override;
     void endPass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resourceUpdates) override;
 
     void setGraphicsPipeline(QRhiCommandBuffer *cb,
@@ -629,7 +653,9 @@ public:
     void debugMarkEnd(QRhiCommandBuffer *cb) override;
     void debugMarkMsg(QRhiCommandBuffer *cb, const QByteArray &msg) override;
 
-    void beginComputePass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resourceUpdates) override;
+    void beginComputePass(QRhiCommandBuffer *cb,
+                          QRhiResourceUpdateBatch *resourceUpdates,
+                          QRhiCommandBuffer::BeginPassFlags flags) override;
     void endComputePass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resourceUpdates) override;
     void setComputePipeline(QRhiCommandBuffer *cb, QRhiComputePipeline *ps) override;
     void dispatch(QRhiCommandBuffer *cb, int x, int y, int z) override;
@@ -638,7 +664,7 @@ public:
     void beginExternal(QRhiCommandBuffer *cb) override;
     void endExternal(QRhiCommandBuffer *cb) override;
 
-    QVector<int> supportedSampleCounts() const override;
+    QList<int> supportedSampleCounts() const override;
     int ubufAlignment() const override;
     bool isYUpInFramebuffer() const override;
     bool isYUpInNDC() const override;
@@ -648,6 +674,7 @@ public:
     bool isFeatureSupported(QRhi::Feature feature) const override;
     int resourceLimit(QRhi::ResourceLimit limit) const override;
     const QRhiNativeHandles *nativeHandles() override;
+    QRhiDriverInfo driverInfo() const override;
     void sendVMemStatsToProfiler() override;
     bool makeThreadLocalNativeContextCurrent() override;
     void releaseCachedResources() override;
@@ -670,16 +697,18 @@ public:
     void clearShaderCache();
 
     bool debugLayer = false;
-    bool importedDevice = false;
+    bool importedDeviceAndContext = false;
     ID3D11Device *dev = nullptr;
     ID3D11DeviceContext1 *context = nullptr;
-    D3D_FEATURE_LEVEL featureLevel;
+    D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL(0);
+    LUID adapterLuid = {};
     ID3DUserDefinedAnnotation *annotations = nullptr;
     IDXGIFactory1 *dxgiFactory = nullptr;
     bool hasDxgi2 = false;
     bool supportsFlipDiscardSwapchain = false;
     bool deviceLost = false;
     QRhiD3D11NativeHandles nativeHandlesStruct;
+    QRhiDriverInfo driverInfoStruct;
 
     struct {
         int vsHighestActiveVertexBufferBinding = -1;
@@ -706,13 +735,13 @@ public:
         QSize pixelSize;
         QRhiTexture::Format format;
     };
-    QVector<TextureReadback> activeTextureReadbacks;
+    QVarLengthArray<TextureReadback, 2> activeTextureReadbacks;
     struct BufferReadback {
         QRhiBufferReadbackResult *result;
         quint32 byteSize;
         ID3D11Buffer *stagingBuf;
     };
-    QVector<BufferReadback> activeBufferReadbacks;
+    QVarLengthArray<BufferReadback, 2> activeBufferReadbacks;
 
     struct Shader {
         Shader() = default;
@@ -738,8 +767,8 @@ public:
     } deviceCurse;
 };
 
-Q_DECLARE_TYPEINFO(QRhiD3D11::TextureReadback, Q_MOVABLE_TYPE);
-Q_DECLARE_TYPEINFO(QRhiD3D11::BufferReadback, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QRhiD3D11::TextureReadback, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(QRhiD3D11::BufferReadback, Q_RELOCATABLE_TYPE);
 
 QT_END_NAMESPACE
 

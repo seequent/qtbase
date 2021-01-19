@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
@@ -62,6 +62,7 @@ Q_WIDGETS_EXPORT QWidget *qt_button_down = nullptr; // widget got last button-do
 // popup control
 QWidget *qt_popup_down = nullptr; // popup that contains the pressed widget
 extern int openPopupCount;
+bool qt_popup_down_closed = false; // qt_popup_down has been closed
 bool qt_replay_popup_mouse_event = false;
 extern bool qt_try_modal(QWidget *widget, QEvent::Type type);
 
@@ -114,7 +115,6 @@ public:
         if (QWidget *widget = q->widget())
             QWidgetPrivate::get(widget)->updateContentsRect();
     }
-    bool allowClickThrough(const QPoint &) const override;
 };
 
 QRectF QWidgetWindowPrivate::closestAcceptableGeometry(const QRectF &rect) const
@@ -224,15 +224,11 @@ static inline bool shouldBePropagatedToWidget(QEvent *event)
     case QEvent::DynamicPropertyChange:
     case QEvent::ChildAdded:
     case QEvent::ChildRemoved:
+    case QEvent::Paint:
         return false;
     default:
         return true;
     }
-}
-
-bool QWidgetWindowPrivate::allowClickThrough(const QPoint &) const
-{
-    return true;
 }
 
 bool QWidgetWindow::event(QEvent *event)
@@ -526,6 +522,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
         case QEvent::MouseButtonDblClick:
             qt_button_down = popupChild;
             qt_popup_down = activePopupWidget;
+            qt_popup_down_closed = false;
             break;
         case QEvent::MouseButtonRelease:
             releaseAfter = true;
@@ -567,13 +564,13 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
                 }
             }
 #endif
-            if ((event->type() != QEvent::MouseButtonPress)
-                    || !(event->flags().testFlag(Qt::MouseEventCreatedDoubleClick))) {
+            if ((event->type() != QEvent::MouseButtonPress) || !(QMutableSinglePointEvent::from(event)->isDoubleClick())) {
                 // if the widget that was pressed is gone, then deliver move events without buttons
-                const auto buttons = event->type() == QEvent::MouseMove && qt_button_down == nullptr
+                const auto buttons = event->type() == QEvent::MouseMove && qt_popup_down_closed
                                    ? Qt::NoButton : event->buttons();
                 QMouseEvent e(event->type(), widgetPos, event->scenePosition(), event->globalPosition(),
-                              event->button(), buttons, event->modifiers(), event->source());
+                              event->button(), buttons, event->modifiers(),
+                              event->source(), event->pointingDevice());
                 e.setTimestamp(event->timestamp());
                 QApplicationPrivate::sendMouseEvent(receiver, &e, receiver, receiver->window(), &qt_button_down, qt_last_mouse_receiver);
                 qt_last_mouse_receiver = receiver;
@@ -630,24 +627,26 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
             QWidget *receiver = activePopupWidget;
             if (qt_button_down)
                 receiver = qt_button_down;
-            else if(popupChild)
+            else if (popupChild)
                 receiver = popupChild;
             QContextMenuEvent e(QContextMenuEvent::Mouse, mapped, event->globalPosition().toPoint(), event->modifiers());
             QApplication::forwardEvent(receiver, &e, event);
         }
 #else
-            Q_UNUSED(contextMenuTrigger)
-            Q_UNUSED(oldOpenPopupCount)
+            Q_UNUSED(contextMenuTrigger);
+            Q_UNUSED(oldOpenPopupCount);
         }
 #endif
 
         if (releaseAfter) {
             qt_button_down = nullptr;
+            qt_popup_down_closed = false;
             qt_popup_down = nullptr;
         }
         return;
     }
 
+    qt_popup_down_closed = false;
     // modal event handling
     if (QApplicationPrivate::instance()->modalState() && !qt_try_modal(m_widget, event->type()))
         return;
@@ -668,13 +667,13 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
     if (!receiver)
         return;
 
-    if ((event->type() != QEvent::MouseButtonPress)
-        || !(event->flags().testFlag(Qt::MouseEventCreatedDoubleClick))) {
+    if ((event->type() != QEvent::MouseButtonPress) || !QMutableSinglePointEvent::from(event)->isDoubleClick()) {
 
         // The preceding statement excludes MouseButtonPress events which caused
         // creation of a MouseButtonDblClick event. QTBUG-25831
         QMouseEvent translated(event->type(), mapped, event->scenePosition(), event->globalPosition(),
-                               event->button(), event->buttons(), event->modifiers(), event->source());
+                               event->button(), event->buttons(), event->modifiers(),
+                               event->source(), event->pointingDevice());
         translated.setTimestamp(event->timestamp());
         QApplicationPrivate::sendMouseEvent(receiver, &translated, widget, m_widget,
                                             &qt_button_down, qt_last_mouse_receiver);
@@ -692,14 +691,16 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
 void QWidgetWindow::handleTouchEvent(QTouchEvent *event)
 {
     if (event->type() == QEvent::TouchCancel) {
-        QApplicationPrivate::translateTouchCancel(event->device(), event->timestamp());
+        QApplicationPrivate::translateTouchCancel(event->pointingDevice(), event->timestamp());
         event->accept();
     } else if (QApplicationPrivate::inPopupMode()) {
         // Ignore touch events for popups. This will cause QGuiApplication to synthesise mouse
         // events instead, which QWidgetWindow::handleMouseEvent will forward correctly:
         event->ignore();
     } else {
-        event->setAccepted(QApplicationPrivate::translateRawTouchEvent(m_widget, event->device(), event->touchPoints(), event->timestamp()));
+        event->setAccepted(QApplicationPrivate::translateRawTouchEvent(m_widget, event->pointingDevice(),
+                                                                       const_cast<QList<QEventPoint> &>(event->points()),
+                                                                       event->timestamp()));
     }
 }
 
@@ -735,8 +736,12 @@ bool QWidgetWindow::updateSize()
 
 void QWidgetWindow::updateMargins()
 {
-    const QMargins margins = frameMargins();
+    // QTBUG-79147 (Windows): Bail out on resize events after closing a dialog
+    // and destroying the platform window which would clear the margins.
     QTLWExtra *te = m_widget->d_func()->topData();
+    if (te->window == nullptr || te->window->handle() == nullptr)
+        return;
+    const QMargins margins = frameMargins();
     te->posIncludesFrame= false;
     te->frameStrut.setCoords(margins.left(), margins.top(), margins.right(), margins.bottom());
     m_widget->data->fstrut_dirty = false;
@@ -799,7 +804,7 @@ void QWidgetWindow::handleMoveEvent(QMoveEvent *event)
     auto oldPosition = m_widget->data->crect.topLeft();
     auto newPosition = geometry().topLeft();
 
-    if (!m_widget->isTopLevel()) {
+    if (!m_widget->isWindow()) {
         if (auto *nativeParent = m_widget->nativeParentWidget())
             newPosition = m_widget->parentWidget()->mapFrom(nativeParent, newPosition);
     }
@@ -849,26 +854,27 @@ void QWidgetWindow::handleWheelEvent(QWheelEvent *event)
         return;
 
     QWidget *rootWidget = m_widget;
-    QPoint pos = event->position().toPoint();
+    QPointF pos = event->position();
 
     // Use proper popup window for wheel event. Some QPA sends the wheel
     // event to the root menu, so redirect it to the proper popup window.
     QWidget *activePopupWidget = QApplication::activePopupWidget();
     if (activePopupWidget && activePopupWidget != m_widget) {
         rootWidget = activePopupWidget;
-        pos = rootWidget->mapFromGlobal(event->globalPosition().toPoint());
+        pos = rootWidget->mapFromGlobal(event->globalPosition());
     }
 
     // which child should have it?
-    QWidget *widget = rootWidget->childAt(pos);
+    QWidget *widget = rootWidget->childAt(pos.toPoint());
 
     if (!widget)
         widget = rootWidget;
 
-    QPoint mapped = widget->mapFrom(rootWidget, pos);
+    QPointF mapped = widget->mapFrom(rootWidget, pos);
 
-    QWheelEvent translated(QPointF(mapped), event->globalPosition(), event->pixelDelta(), event->angleDelta(),
-                           event->buttons(), event->modifiers(), event->phase(), event->inverted(), event->source());
+    QWheelEvent translated(mapped, event->globalPosition(), event->pixelDelta(), event->angleDelta(),
+                           event->buttons(), event->modifiers(), event->phase(), event->inverted(),
+                           event->source(), event->pointingDevice());
     translated.setTimestamp(event->timestamp());
     QGuiApplication::forwardEvent(widget, &translated, event);
 }
@@ -1012,8 +1018,11 @@ void QWidgetWindow::handleExposeEvent(QExposeEvent *event)
         m_widget->setAttribute(Qt::WA_Mapped);
         for (QWidget *p = m_widget->parentWidget(); p && !p->testAttribute(Qt::WA_Mapped); p = p->parentWidget())
             p->setAttribute(Qt::WA_Mapped);
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
         if (!event->region().isNull())
             wPriv->syncBackingStore(event->region());
+QT_WARNING_POP
     } else {
         m_widget->setAttribute(Qt::WA_Mapped, false);
     }
@@ -1071,9 +1080,9 @@ void QWidgetWindow::handleTabletEvent(QTabletEvent *event)
     if (widget) {
         QPointF delta = event->globalPosition() - event->globalPosition().toPoint();
         QPointF mapped = widget->mapFromGlobal(event->globalPosition().toPoint()) + delta;
-        QTabletEvent ev(event->type(), mapped, event->globalPosition(), event->deviceType(), event->pointerType(),
+        QTabletEvent ev(event->type(), event->pointingDevice(), mapped, event->globalPosition(),
                         event->pressure(), event->xTilt(), event->yTilt(), event->tangentialPressure(),
-                        event->rotation(), event->z(), event->modifiers(), event->uniqueId(), event->button(), event->buttons());
+                        event->rotation(), event->z(), event->modifiers(), event->button(), event->buttons());
         ev.setTimestamp(event->timestamp());
         ev.setAccepted(false);
         QGuiApplication::forwardEvent(widget, &ev, event);

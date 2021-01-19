@@ -27,11 +27,12 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qsslcertificate.h>
 #include <qsslkey.h>
 #include <qsslsocket.h>
 #include <qsslcertificateextension.h>
+#include <qscopeguard.h>
 
 #ifndef QT_NO_OPENSSL
 #include <openssl/obj_mac.h>
@@ -79,6 +80,9 @@ private slots:
     void subjectAlternativeNames_data();
     void utf8SubjectNames();
     void subjectAlternativeNames();
+    void subjectInfoToString();
+    void subjectIssuerDisplayName_data();
+    void subjectIssuerDisplayName();
     void publicKey_data();
     void publicKey();
     void toPemOrDer_data();
@@ -105,6 +109,8 @@ private slots:
     void version_data();
     void version();
     void pkcs12();
+    void invalidDateTime_data();
+    void invalidDateTime();
 
     // helper for verbose test failure messages
     QString toString(const QList<QSslError>&);
@@ -434,6 +440,63 @@ void tst_QSslCertificate::subjectAlternativeNames()
     }
 }
 
+void tst_QSslCertificate::subjectInfoToString()
+{
+    QFile certFile(testDataDir + "more-certificates/aspiriniks.ca.crt");
+    const bool ok = certFile.open(QIODevice::ReadOnly);
+    QVERIFY(ok);
+    const auto chain = QSslCertificate::fromDevice(&certFile, QSsl::Pem);
+    QCOMPARE(chain.size(), 1);
+    const auto cert = chain.at(0);
+    QVERIFY(!cert.isNull());
+
+    const auto testInfo = [&cert](QSslCertificate::SubjectInfo info, const QString &expected) {
+        const auto infoAsList = cert.subjectInfo(info);
+        if (infoAsList.size())
+            return expected == infoAsList.at(0);
+        return expected == QString();
+    };
+
+    QVERIFY(testInfo(QSslCertificate::Organization, QStringLiteral("TT ASA")));
+    QVERIFY(testInfo(QSslCertificate::CommonName, QStringLiteral("aspiriniks.troll.no")));
+    QVERIFY(testInfo(QSslCertificate::LocalityName, QStringLiteral("Oslo")));
+    QVERIFY(testInfo(QSslCertificate::OrganizationalUnitName, QStringLiteral("QT SW")));
+    QVERIFY(testInfo(QSslCertificate::CountryName, QStringLiteral("NO")));
+    QVERIFY(testInfo(QSslCertificate::StateOrProvinceName, QStringLiteral("Oslo")));
+    QVERIFY(testInfo(QSslCertificate::DistinguishedNameQualifier, QString()));
+    QVERIFY(testInfo(QSslCertificate::SerialNumber, QString()));
+#ifndef QT_NO_OPENSSL
+    // TODO: check why generic code does not handle this!
+    QVERIFY(testInfo(QSslCertificate::EmailAddress, QStringLiteral("ababic@trolltech.com")));
+#endif
+}
+
+void tst_QSslCertificate::subjectIssuerDisplayName_data()
+{
+    QTest::addColumn<QString>("certName");
+    QTest::addColumn<QString>("expectedName");
+
+    QTest::addRow("CommonName") << QStringLiteral("more-certificates/cert-cn.pem") << QStringLiteral("YOUR name");
+    QTest::addRow("OrganizationName") << QStringLiteral("more-certificates/cert-on.pem") << QStringLiteral("R&D");
+    QTest::addRow("OrganizationUnitName") << QStringLiteral("more-certificates/cert-oun.pem") << QStringLiteral("Foundations");
+#ifndef QT_NO_OPENSSL
+    QTest::addRow("NoSubjectName") << QStringLiteral("more-certificates/cert-noname.pem") << QString();
+#endif
+}
+
+void tst_QSslCertificate::subjectIssuerDisplayName()
+{
+    QFETCH(const QString, certName);
+    QFETCH(const QString, expectedName);
+
+    const auto chain = QSslCertificate::fromPath(testDataDir + certName);
+    QCOMPARE(chain.size(), 1);
+    const auto cert = chain.at(0);
+    QVERIFY(!cert.isNull());
+    QCOMPARE(cert.subjectDisplayName(), expectedName);
+    QCOMPARE(cert.issuerDisplayName(), expectedName);
+}
+
 void tst_QSslCertificate::utf8SubjectNames()
 {
     QSslCertificate cert = QSslCertificate::fromPath(testDataDir + "certificates/cert-ss-san-utf8.pem", QSsl::Pem,
@@ -542,8 +605,15 @@ void tst_QSslCertificate::toPemOrDer()
 void tst_QSslCertificate::fromDevice()
 {
     QTest::ignoreMessage(QtWarningMsg, "QSslCertificate::fromDevice: cannot read from a null device");
-    QList<QSslCertificate> certs = QSslCertificate::fromDevice(0); // don't crash
+    QList<QSslCertificate> certs = QSslCertificate::fromDevice(nullptr); // don't crash
     QVERIFY(certs.isEmpty());
+
+    QFile certFile(testDataDir + "certificates/cert.der");
+    const bool ok = certFile.open(QIODevice::ReadOnly);
+    QVERIFY(ok);
+    const auto chain = QSslCertificate::fromDevice(&certFile, QSsl::Der);
+    QCOMPARE(chain.size(), 1);
+    QVERIFY(!chain.at(0).isNull());
 }
 
 void tst_QSslCertificate::fromPath_qregularexpression_data()
@@ -1000,7 +1070,15 @@ void tst_QSslCertificate::verify()
 
     // Verify a valid cert signed by a CA
     QList<QSslCertificate> caCerts = QSslCertificate::fromPath(testDataDir + "verify-certs/cacert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
-    QSslSocket::addDefaultCaCertificate(caCerts.first());
+    // For the purpose of this test only, add (and then remove) the
+    // specific CA certificate.
+    const auto defaultConfig = QSslConfiguration::defaultConfiguration();
+    auto temporaryDefault = defaultConfig;
+    temporaryDefault.addCaCertificate(caCerts.first());
+    QSslConfiguration::setDefaultConfiguration(temporaryDefault);
+    const auto confGuard = qScopeGuard([&defaultConfig](){
+        QSslConfiguration::setDefaultConfiguration(defaultConfig);
+    });
 
     toVerify = QSslCertificate::fromPath(testDataDir + "verify-certs/test-ocsp-good-cert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
 
@@ -1210,7 +1288,7 @@ void tst_QSslCertificate::extensionsCritical()
 class TestThread : public QThread
 {
 public:
-    void run()
+    void run() override
     {
         effectiveDate = cert.effectiveDate();
         expiryDate = cert.expiryDate();
@@ -1359,6 +1437,45 @@ void tst_QSslCertificate::pkcs12()
     ok = QSslCertificate::importPkcs12(&nocert, &key, &cert, &caCerts);
     QVERIFY(!ok);
     nocert.close();
+}
+
+void tst_QSslCertificate::invalidDateTime_data()
+{
+    QTest::addColumn<QString>("path");
+    QTest::addColumn<bool>("effectiveDateIsValid");
+    QTest::addColumn<bool>("expiryDateIsValid");
+
+    QTest::addRow("invalid-begin-end") << testDataDir + "more-certificates/malformed-begin-end-dates.pem"
+                                       << false
+                                       << false;
+}
+
+void tst_QSslCertificate::invalidDateTime()
+{
+    QFETCH(QString, path);
+    QFETCH(bool, effectiveDateIsValid);
+    QFETCH(bool, expiryDateIsValid);
+
+    QList<QSslCertificate> certList = QSslCertificate::fromPath(path);
+
+    // QTBUG-84676: on OpenSSL we get a valid certificate with null dates,
+    // on other backends we don't get a certificate at all.
+    switch (certList.size()) {
+    case 0:
+        break;
+
+    case 1: {
+        const QSslCertificate &cert = certList.at(0);
+        QVERIFY(!cert.isNull());
+        QCOMPARE(cert.effectiveDate().isValid(), effectiveDateIsValid);
+        QCOMPARE(cert.expiryDate().isValid(), expiryDateIsValid);
+        break;
+    }
+
+    default:
+        QFAIL("Only one certificate should have been loaded");
+        break;
+    }
 }
 
 #endif // QT_NO_SSL

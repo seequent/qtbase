@@ -123,7 +123,7 @@ public:
     friend QMatrix4x4 operator*(const QMatrix4x4& matrix, float factor);
     friend Q_GUI_EXPORT QMatrix4x4 operator/(const QMatrix4x4& matrix, float divisor);
 
-    friend inline bool qFuzzyCompare(const QMatrix4x4& m1, const QMatrix4x4& m2);
+    friend Q_GUI_EXPORT bool qFuzzyCompare(const QMatrix4x4& m1, const QMatrix4x4& m2);
 
 #ifndef QT_NO_VECTOR3D
     void scale(const QVector3D& vector);
@@ -205,19 +205,15 @@ private:
     float m[4][4];          // Column-major order to match OpenGL.
     Flags flagBits;
 
-    // Construct without initializing identity matrix.
-    explicit QMatrix4x4(int) { }
-
     QMatrix4x4 orthonormalInverse() const;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QMatrix4x4::Flags)
 
 QT_WARNING_PUSH
-QT_WARNING_DISABLE_CLANG("-Wfloat-equal")
-QT_WARNING_DISABLE_GCC("-Wfloat-equal")
-QT_WARNING_DISABLE_INTEL(1572)
-Q_DECLARE_TYPEINFO(QMatrix4x4, Q_MOVABLE_TYPE);
+QT_WARNING_DISABLE_FLOAT_COMPARE
+
+Q_DECLARE_TYPEINFO(QMatrix4x4, Q_PRIMITIVE_TYPE);
 
 inline QMatrix4x4::QMatrix4x4
         (float m11, float m12, float m13, float m14,
@@ -588,7 +584,7 @@ inline bool QMatrix4x4::operator!=(const QMatrix4x4& other) const
 
 inline QMatrix4x4 operator+(const QMatrix4x4& m1, const QMatrix4x4& m2)
 {
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = m1.m[0][0] + m2.m[0][0];
     m.m[0][1] = m1.m[0][1] + m2.m[0][1];
     m.m[0][2] = m1.m[0][2] + m2.m[0][2];
@@ -605,13 +601,12 @@ inline QMatrix4x4 operator+(const QMatrix4x4& m1, const QMatrix4x4& m2)
     m.m[3][1] = m1.m[3][1] + m2.m[3][1];
     m.m[3][2] = m1.m[3][2] + m2.m[3][2];
     m.m[3][3] = m1.m[3][3] + m2.m[3][3];
-    m.flagBits = QMatrix4x4::General;
     return m;
 }
 
 inline QMatrix4x4 operator-(const QMatrix4x4& m1, const QMatrix4x4& m2)
 {
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = m1.m[0][0] - m2.m[0][0];
     m.m[0][1] = m1.m[0][1] - m2.m[0][1];
     m.m[0][2] = m1.m[0][2] - m2.m[0][2];
@@ -628,7 +623,6 @@ inline QMatrix4x4 operator-(const QMatrix4x4& m1, const QMatrix4x4& m2)
     m.m[3][1] = m1.m[3][1] - m2.m[3][1];
     m.m[3][2] = m1.m[3][2] - m2.m[3][2];
     m.m[3][3] = m1.m[3][3] - m2.m[3][3];
-    m.flagBits = QMatrix4x4::General;
     return m;
 }
 
@@ -648,7 +642,7 @@ inline QMatrix4x4 operator*(const QMatrix4x4& m1, const QMatrix4x4& m2)
         return m;
     }
 
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = m1.m[0][0] * m2.m[0][0]
               + m1.m[1][0] * m2.m[0][1]
               + m1.m[2][0] * m2.m[0][2]
@@ -948,7 +942,7 @@ inline QPointF operator*(const QMatrix4x4& matrix, const QPointF& point)
 
 inline QMatrix4x4 operator-(const QMatrix4x4& matrix)
 {
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = -matrix.m[0][0];
     m.m[0][1] = -matrix.m[0][1];
     m.m[0][2] = -matrix.m[0][2];
@@ -965,13 +959,12 @@ inline QMatrix4x4 operator-(const QMatrix4x4& matrix)
     m.m[3][1] = -matrix.m[3][1];
     m.m[3][2] = -matrix.m[3][2];
     m.m[3][3] = -matrix.m[3][3];
-    m.flagBits = QMatrix4x4::General;
     return m;
 }
 
 inline QMatrix4x4 operator*(float factor, const QMatrix4x4& matrix)
 {
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = matrix.m[0][0] * factor;
     m.m[0][1] = matrix.m[0][1] * factor;
     m.m[0][2] = matrix.m[0][2] * factor;
@@ -988,13 +981,12 @@ inline QMatrix4x4 operator*(float factor, const QMatrix4x4& matrix)
     m.m[3][1] = matrix.m[3][1] * factor;
     m.m[3][2] = matrix.m[3][2] * factor;
     m.m[3][3] = matrix.m[3][3] * factor;
-    m.flagBits = QMatrix4x4::General;
     return m;
 }
 
 inline QMatrix4x4 operator*(const QMatrix4x4& matrix, float factor)
 {
-    QMatrix4x4 m(1);
+    QMatrix4x4 m(Qt::Uninitialized);
     m.m[0][0] = matrix.m[0][0] * factor;
     m.m[0][1] = matrix.m[0][1] * factor;
     m.m[0][2] = matrix.m[0][2] * factor;
@@ -1011,28 +1003,7 @@ inline QMatrix4x4 operator*(const QMatrix4x4& matrix, float factor)
     m.m[3][1] = matrix.m[3][1] * factor;
     m.m[3][2] = matrix.m[3][2] * factor;
     m.m[3][3] = matrix.m[3][3] * factor;
-    m.flagBits = QMatrix4x4::General;
     return m;
-}
-
-inline bool qFuzzyCompare(const QMatrix4x4& m1, const QMatrix4x4& m2)
-{
-    return qFuzzyCompare(m1.m[0][0], m2.m[0][0]) &&
-           qFuzzyCompare(m1.m[0][1], m2.m[0][1]) &&
-           qFuzzyCompare(m1.m[0][2], m2.m[0][2]) &&
-           qFuzzyCompare(m1.m[0][3], m2.m[0][3]) &&
-           qFuzzyCompare(m1.m[1][0], m2.m[1][0]) &&
-           qFuzzyCompare(m1.m[1][1], m2.m[1][1]) &&
-           qFuzzyCompare(m1.m[1][2], m2.m[1][2]) &&
-           qFuzzyCompare(m1.m[1][3], m2.m[1][3]) &&
-           qFuzzyCompare(m1.m[2][0], m2.m[2][0]) &&
-           qFuzzyCompare(m1.m[2][1], m2.m[2][1]) &&
-           qFuzzyCompare(m1.m[2][2], m2.m[2][2]) &&
-           qFuzzyCompare(m1.m[2][3], m2.m[2][3]) &&
-           qFuzzyCompare(m1.m[3][0], m2.m[3][0]) &&
-           qFuzzyCompare(m1.m[3][1], m2.m[3][1]) &&
-           qFuzzyCompare(m1.m[3][2], m2.m[3][2]) &&
-           qFuzzyCompare(m1.m[3][3], m2.m[3][3]);
 }
 
 inline QPoint QMatrix4x4::map(const QPoint& point) const
@@ -1108,33 +1079,6 @@ Q_GUI_EXPORT QDebug operator<<(QDebug dbg, const QMatrix4x4 &m);
 #ifndef QT_NO_DATASTREAM
 Q_GUI_EXPORT QDataStream &operator<<(QDataStream &, const QMatrix4x4 &);
 Q_GUI_EXPORT QDataStream &operator>>(QDataStream &, QMatrix4x4 &);
-#endif
-
-#if QT_DEPRECATED_SINCE(5, 0)
-template <int N, int M>
-QT_DEPRECATED QMatrix4x4 qGenericMatrixToMatrix4x4(const QGenericMatrix<N, M, float>& matrix)
-{
-    return QMatrix4x4(matrix.constData(), N, M);
-}
-
-template <int N, int M>
-QT_DEPRECATED QGenericMatrix<N, M, float> qGenericMatrixFromMatrix4x4(const QMatrix4x4& matrix)
-{
-    QGenericMatrix<N, M, float> result;
-    const float *m = matrix.constData();
-    float *values = result.data();
-    for (int col = 0; col < N; ++col) {
-        for (int row = 0; row < M; ++row) {
-            if (col < 4 && row < 4)
-                values[col * M + row] = m[col * 4 + row];
-            else if (col == row)
-                values[col * M + row] = 1.0f;
-            else
-                values[col * M + row] = 0.0f;
-        }
-    }
-    return result;
-}
 #endif
 
 #endif

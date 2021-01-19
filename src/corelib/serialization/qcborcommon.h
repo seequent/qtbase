@@ -50,7 +50,6 @@
 
 /* X11 headers use these values too, but as defines */
 #if defined(False) && defined(True)
-#  define QT_X11_DEFINES_FOUND 1
 #  undef True
 #  undef False
 #endif
@@ -133,9 +132,9 @@ Q_CORE_EXPORT QDebug operator<<(QDebug, QCborKnownTags tg);
 Q_CORE_EXPORT QDebug operator<<(QDebug, QCborTag tg);
 #endif
 
-#if !defined(QT_NO_DEBUG_STREAM)
-QDataStream &operator<<(QDataStream &ds, QCborSimpleType st);
-QDataStream &operator>>(QDataStream &ds, QCborSimpleType &st);
+#if !defined(QT_NO_DATASTREAM)
+Q_CORE_EXPORT QDataStream &operator<<(QDataStream &ds, QCborSimpleType st);
+Q_CORE_EXPORT QDataStream &operator>>(QDataStream &ds, QCborSimpleType &st);
 #endif
 
 inline size_t qHash(QCborSimpleType tag, size_t seed = 0)

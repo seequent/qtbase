@@ -368,7 +368,7 @@ void QTextStreamPrivate::reset()
     deleteDevice = false;
     string = nullptr;
     stringOffset = 0;
-    stringOpenMode = QIODevice::NotOpen;
+    stringOpenMode = QTextStream::NotOpen;
 
     readBufferOffset = 0;
     readBufferStartDevicePos = 0;
@@ -434,7 +434,7 @@ bool QTextStreamPrivate::fillReadBuffer(qint64 maxBytes)
     if (autoDetectUnicode) {
         autoDetectUnicode = false;
 
-        auto e = QStringConverter::encodingForData(buf, bytesRead);
+        auto e = QStringConverter::encodingForData(QByteArrayView(buf, bytesRead));
         // QStringConverter::Locale implies unknown, so keep the current encoding
         if (e) {
             encoding = *e;
@@ -452,7 +452,7 @@ bool QTextStreamPrivate::fillReadBuffer(qint64 maxBytes)
 #endif
 
     int oldReadBufferSize = readBuffer.size();
-    readBuffer += toUtf16(buf, bytesRead);
+    readBuffer += toUtf16(QByteArrayView(buf, bytesRead));
 
     // remove all '\r\n' in the string.
     if (readBuffer.size() > oldReadBufferSize && textModeEnabled) {
@@ -945,6 +945,11 @@ void QTextStreamPrivate::putString(QLatin1String data, bool number)
     }
 }
 
+void QTextStreamPrivate::putString(QUtf8StringView data, bool number)
+{
+    putString(data.toString(), number);
+}
+
 /*!
     Constructs a QTextStream. Before you can use it for reading or
     writing, you must assign a device or a string.
@@ -983,7 +988,7 @@ QTextStream::QTextStream(QIODevice *device)
     Constructs a QTextStream that operates on \a string, using \a
     openMode to define the open mode.
 */
-QTextStream::QTextStream(QString *string, QIODevice::OpenMode openMode)
+QTextStream::QTextStream(QString *string, OpenMode openMode)
     : d_ptr(new QTextStreamPrivate(this))
 {
 #if defined (QTEXTSTREAM_DEBUG)
@@ -1001,7 +1006,7 @@ QTextStream::QTextStream(QString *string, QIODevice::OpenMode openMode)
     openMode to define the open mode. Internally, the array is wrapped
     by a QBuffer.
 */
-QTextStream::QTextStream(QByteArray *array, QIODevice::OpenMode openMode)
+QTextStream::QTextStream(QByteArray *array, OpenMode openMode)
     : d_ptr(new QTextStreamPrivate(this))
 {
 #if defined (QTEXTSTREAM_DEBUG)
@@ -1028,7 +1033,7 @@ QTextStream::QTextStream(QByteArray *array, QIODevice::OpenMode openMode)
 
     \snippet code/src_corelib_io_qtextstream.cpp 3
 */
-QTextStream::QTextStream(const QByteArray &array, QIODevice::OpenMode openMode)
+QTextStream::QTextStream(const QByteArray &array, OpenMode openMode)
     : d_ptr(new QTextStreamPrivate(this))
 {
 #if defined (QTEXTSTREAM_DEBUG)
@@ -1059,7 +1064,7 @@ QTextStream::QTextStream(const QByteArray &array, QIODevice::OpenMode openMode)
     \snippet code/src_corelib_io_qtextstream.cpp 4
 */
 
-QTextStream::QTextStream(FILE *fileHandle, QIODevice::OpenMode openMode)
+QTextStream::QTextStream(FILE *fileHandle, OpenMode openMode)
     : d_ptr(new QTextStreamPrivate(this))
 {
 #if defined (QTEXTSTREAM_DEBUG)
@@ -1272,7 +1277,7 @@ QIODevice *QTextStream::device() const
 
     \sa string(), setDevice()
 */
-void QTextStream::setString(QString *string, QIODevice::OpenMode openMode)
+void QTextStream::setString(QString *string, OpenMode openMode)
 {
     Q_D(QTextStream);
     flush();
@@ -2186,7 +2191,7 @@ QTextStream &QTextStream::operator>>(QString &str)
 /*!
     \overload
 
-    Converts the word to ISO-8859-1, then stores it in \a array.
+    Converts the word to UTF-8, then stores it in \a array.
 
     \sa QString::toLatin1()
 */
@@ -2195,7 +2200,6 @@ QTextStream &QTextStream::operator>>(QByteArray &array)
     Q_D(QTextStream);
     CHECK_VALID_STREAM(*this);
 
-    array.clear();
     d->scan(nullptr, nullptr, 0, QTextStreamPrivate::NotSpace);
     d->consumeLastToken();
 
@@ -2203,11 +2207,11 @@ QTextStream &QTextStream::operator>>(QByteArray &array)
     int length;
     if (!d->scan(&ptr, &length, 0, QTextStreamPrivate::Space)) {
         setStatus(ReadPastEnd);
+        array.clear();
         return *this;
     }
 
-    for (int i = 0; i < length; ++i)
-        array += ptr[i].toLatin1();
+    array = QStringView(ptr, length).toUtf8();
 
     d->consumeLastToken();
     return *this;
@@ -2216,13 +2220,14 @@ QTextStream &QTextStream::operator>>(QByteArray &array)
 /*!
     \overload
 
-    Stores the word in \a c, terminated by a '\\0' character. If no word is
-    available, only the '\\0' character is stored.
+    Converts the word to UTF-8 and stores it in \a c, terminated by a '\\0'
+    character. If no word is available, only the '\\0' character is stored.
 
     Warning: Although convenient, this operator is dangerous and must
     be used with care. QTextStream assumes that \a c points to a
     buffer with enough space to hold the word. If the buffer is too
-    small, your application may crash.
+    small, your application may crash. For a word consisting of \c{n} QChars,
+    the buffer needs to be at least \c{3*n+1} characters long.
 
     If possible, use the QByteArray operator instead.
 */
@@ -2241,9 +2246,9 @@ QTextStream &QTextStream::operator>>(char *c)
         return *this;
     }
 
-    for (int i = 0; i < length; ++i)
-        *c++ = ptr[i].toLatin1();
-    *c = '\0';
+    QStringEncoder encoder(QStringConverter::Utf8);
+    char *e = encoder.appendToBuffer(c, QStringView(ptr, length));
+    *e = '\0';
     d->consumeLastToken();
     return *this;
 }
@@ -2269,7 +2274,7 @@ void QTextStreamPrivate::putNumber(qulonglong number, bool negative)
     // add thousands group separators. For backward compatibility we
     // don't add a group separator for C locale.
     if (locale != QLocale::c() && !locale.numberOptions().testFlag(QLocale::OmitGroupSeparator))
-        flags |= QLocaleData::ThousandsGroup;
+        flags |= QLocaleData::GroupDigits;
 
     const QLocaleData *dd = locale.d->m_data;
     int base = params.integerBase ? params.integerBase : 10;
@@ -2485,7 +2490,7 @@ QTextStream &QTextStream::operator<<(double f)
         flags |= QLocaleData::AddTrailingZeroes | QLocaleData::ShowBase;
     }
     if (locale() != QLocale::c() && !(numberOptions & QLocale::OmitGroupSeparator))
-        flags |= QLocaleData::ThousandsGroup;
+        flags |= QLocaleData::GroupDigits;
     if (!(numberOptions & QLocale::OmitLeadingZeroInExponent))
         flags |= QLocaleData::ZeroPadExponent;
     if (numberOptions & QLocale::IncludeTrailingZeroesAfterDot)
@@ -2542,21 +2547,6 @@ QTextStream &QTextStream::operator<<(QLatin1String string)
 }
 
 /*!
-    \since 5.6
-    \overload
-
-    Writes \a string to the stream, and returns a reference to the
-    QTextStream.
-*/
-QTextStream &QTextStream::operator<<(const QStringRef &string)
-{
-    Q_D(QTextStream);
-    CHECK_VALID_STREAM(*this);
-    d->putString(string.data(), string.size());
-    return *this;
-}
-
-/*!
     \overload
 
     Writes \a array to the stream. The contents of \a array are
@@ -2574,7 +2564,7 @@ QTextStream &QTextStream::operator<<(const QByteArray &array)
     \overload
 
     Writes the constant string pointed to by \a string to the stream. \a
-    string is assumed to be in ISO-8859-1 encoding. This operator
+    string is assumed to be in UTF-8 encoding. This operator
     is convenient when working with constant string data. Example:
 
     \snippet code/src_corelib_io_qtextstream.cpp 8
@@ -2587,8 +2577,7 @@ QTextStream &QTextStream::operator<<(const char *string)
 {
     Q_D(QTextStream);
     CHECK_VALID_STREAM(*this);
-    // ### Qt6: consider changing to UTF-8
-    d->putString(QLatin1String(string));
+    d->putString(QUtf8StringView(string));
     return *this;
 }
 
@@ -2615,12 +2604,6 @@ QTextStream &QTextStream::operator<<(const void *ptr)
 namespace Qt {
 
 /*!
-    \fn QTextStream &bin(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::bin() instead.
-*/
-
-/*!
     Calls QTextStream::setIntegerBase(2) on \a stream and returns \a
     stream.
 
@@ -2633,12 +2616,6 @@ QTextStream &bin(QTextStream &stream)
     stream.setIntegerBase(2);
     return stream;
 }
-
-/*!
-    \fn QTextStream &oct(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::oct() instead.
-*/
 
 /*!
     Calls QTextStream::setIntegerBase(8) on \a stream and returns \a
@@ -2655,12 +2632,6 @@ QTextStream &oct(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &dec(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::dec() instead.
-*/
-
-/*!
     Calls QTextStream::setIntegerBase(10) on \a stream and returns \a
     stream.
 
@@ -2673,12 +2644,6 @@ QTextStream &dec(QTextStream &stream)
     stream.setIntegerBase(10);
     return stream;
 }
-
-/*!
-    \fn QTextStream &hex(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::hex() instead.
-*/
 
 /*!
     Calls QTextStream::setIntegerBase(16) on \a stream and returns \a
@@ -2696,12 +2661,6 @@ QTextStream &hex(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &showbase(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::showbase() instead.
-*/
-
-/*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::ShowBase) on \a stream and returns \a stream.
 
@@ -2714,12 +2673,6 @@ QTextStream &showbase(QTextStream &stream)
     stream.setNumberFlags(stream.numberFlags() | QTextStream::ShowBase);
     return stream;
 }
-
-/*!
-    \fn QTextStream &forcesign(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::forcesign() instead.
-*/
 
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
@@ -2736,12 +2689,6 @@ QTextStream &forcesign(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &forcepoint(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::forcepoint() instead.
-*/
-
-/*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::ForcePoint) on \a stream and returns \a stream.
 
@@ -2754,12 +2701,6 @@ QTextStream &forcepoint(QTextStream &stream)
     stream.setNumberFlags(stream.numberFlags() | QTextStream::ForcePoint);
     return stream;
 }
-
-/*!
-    \fn QTextStream &noshowbase(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::noshowbase() instead.
-*/
 
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
@@ -2776,12 +2717,6 @@ QTextStream &noshowbase(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &noforcesign(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::noforcesign() instead.
-*/
-
-/*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
     ~QTextStream::ForceSign) on \a stream and returns \a stream.
 
@@ -2794,12 +2729,6 @@ QTextStream &noforcesign(QTextStream &stream)
     stream.setNumberFlags(stream.numberFlags() &= ~QTextStream::ForceSign);
     return stream;
 }
-
-/*!
-    \fn QTextStream &noforcepoint(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::noforcepoint() instead.
-*/
 
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
@@ -2816,12 +2745,6 @@ QTextStream &noforcepoint(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &uppercasebase(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::uppercasebase() instead.
-*/
-
-/*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
     QTextStream::UppercaseBase) on \a stream and returns \a stream.
 
@@ -2834,12 +2757,6 @@ QTextStream &uppercasebase(QTextStream &stream)
     stream.setNumberFlags(stream.numberFlags() | QTextStream::UppercaseBase);
     return stream;
 }
-
-/*!
-    \fn QTextStream &uppercasedigits(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::uppercasedigits() instead.
-*/
 
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() |
@@ -2856,12 +2773,6 @@ QTextStream &uppercasedigits(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &lowercasebase(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::lowercasebase() instead.
-*/
-
-/*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
     ~QTextStream::UppercaseBase) on \a stream and returns \a stream.
 
@@ -2874,12 +2785,6 @@ QTextStream &lowercasebase(QTextStream &stream)
     stream.setNumberFlags(stream.numberFlags() & ~QTextStream::UppercaseBase);
     return stream;
 }
-
-/*!
-    \fn QTextStream &lowercasedigits(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::lowercasedigits() instead.
-*/
 
 /*!
     Calls QTextStream::setNumberFlags(QTextStream::numberFlags() &
@@ -2896,12 +2801,6 @@ QTextStream &lowercasedigits(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &fixed(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::fixed() instead.
-*/
-
-/*!
     Calls QTextStream::setRealNumberNotation(QTextStream::FixedNotation)
     on \a stream and returns \a stream.
 
@@ -2914,12 +2813,6 @@ QTextStream &fixed(QTextStream &stream)
     stream.setRealNumberNotation(QTextStream::FixedNotation);
     return stream;
 }
-
-/*!
-    \fn QTextStream &scientific(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::scientific() instead.
-*/
 
 /*!
     Calls QTextStream::setRealNumberNotation(QTextStream::ScientificNotation)
@@ -2936,18 +2829,12 @@ QTextStream &scientific(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &left(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::left() instead.
-*/
-
-/*!
     Calls QTextStream::setFieldAlignment(QTextStream::AlignLeft)
     on \a stream and returns \a stream.
 
     \since 5.14
 
-    \sa {QTextStream::}{right()}, {QTextStream::}{center()}, {QTextStream manipulators}
+    \sa right(), center(), {QTextStream manipulators}
 */
 QTextStream &left(QTextStream &stream)
 {
@@ -2956,18 +2843,12 @@ QTextStream &left(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &right(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::right() instead.
-*/
-
-/*!
     Calls QTextStream::setFieldAlignment(QTextStream::AlignRight)
     on \a stream and returns \a stream.
 
     \since 5.14
 
-    \sa {QTextStream::}{left()}, {QTextStream::}{center()}, {QTextStream manipulators}
+    \sa left(), center(), {QTextStream manipulators}
 */
 QTextStream &right(QTextStream &stream)
 {
@@ -2976,30 +2857,18 @@ QTextStream &right(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &center(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::center() instead.
-*/
-
-/*!
     Calls QTextStream::setFieldAlignment(QTextStream::AlignCenter)
     on \a stream and returns \a stream.
 
     \since 5.14
 
-    \sa {QTextStream::}{left()}, {QTextStream::}{right()}, {QTextStream manipulators}
+    \sa left(), right(), {QTextStream manipulators}
 */
 QTextStream &center(QTextStream &stream)
 {
     stream.setFieldAlignment(QTextStream::AlignCenter);
     return stream;
 }
-
-/*!
-    \fn QTextStream &endl(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::endl() instead.
-*/
 
 /*!
     Writes '\\n' to the \a stream and flushes the stream.
@@ -3021,12 +2890,6 @@ QTextStream &endl(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &flush(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::flush() instead.
-*/
-
-/*!
     Calls QTextStream::flush() on \a stream and returns \a stream.
 
     \since 5.14
@@ -3040,12 +2903,6 @@ QTextStream &flush(QTextStream &stream)
 }
 
 /*!
-    \fn QTextStream &reset(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::reset() instead.
-*/
-
-/*!
     Calls QTextStream::reset() on \a stream and returns \a stream.
 
     \since 5.14
@@ -3057,12 +2914,6 @@ QTextStream &reset(QTextStream &stream)
     stream.reset();
     return stream;
 }
-
-/*!
-    \fn QTextStream &ws(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::ws() instead.
-*/
 
 /*!
     Calls \l {QTextStream::}{skipWhiteSpace()} on \a stream and returns \a stream.
@@ -3102,12 +2953,6 @@ QTextStream &ws(QTextStream &stream)
 
 
 namespace Qt {
-/*!
-    \fn QTextStream &bom(QTextStream &stream)
-    \relates QTextStream
-    \obsolete Use Qt::bom() instead.
-*/
-
 /*!
     Toggles insertion of the Byte Order Mark on \a stream when QTextStream is
     used with a UTF encoding.
@@ -3209,7 +3054,7 @@ bool QTextStream::autoDetectUnicode() const
     device. If \a generate is false, no BOM will be inserted. This function
     must be called before any data is written. Otherwise, it does nothing.
 
-    \sa generateByteOrderMark(), bom()
+    \sa generateByteOrderMark(), {Qt::}{bom()}
 */
 void QTextStream::setGenerateByteOrderMark(bool generate)
 {
@@ -3263,78 +3108,6 @@ QLocale QTextStream::locale() const
     Q_D(const QTextStream);
     return d->locale;
 }
-
-#if QT_DEPRECATED_SINCE(5, 15) && !defined(Q_QDOC)
-// Deprecated source compatible migration versions:
-namespace QTextStreamFunctions {
-QTextStream &bin(QTextStream &s) { return Qt::bin(s); }
-QTextStream &oct(QTextStream &s) { return Qt::oct(s); }
-QTextStream &dec(QTextStream &s) { return Qt::dec(s); }
-QTextStream &hex(QTextStream &s) { return Qt::hex(s); }
-
-QTextStream &showbase(QTextStream &s) { return Qt::showbase(s); }
-QTextStream &forcesign(QTextStream &s) { return Qt::forcesign(s); }
-QTextStream &forcepoint(QTextStream &s) { return Qt::forcepoint(s); }
-QTextStream &noshowbase(QTextStream &s) { return Qt::noshowbase(s); }
-QTextStream &noforcesign(QTextStream &s) { return Qt::noforcesign(s); }
-QTextStream &noforcepoint(QTextStream &s) { return Qt::noforcepoint(s); }
-
-QTextStream &uppercasebase(QTextStream &s) { return Qt::uppercasebase(s); }
-QTextStream &uppercasedigits(QTextStream &s) { return Qt::uppercasedigits(s); }
-QTextStream &lowercasebase(QTextStream &s) { return Qt::lowercasebase(s); }
-QTextStream &lowercasedigits(QTextStream &s) { return Qt::lowercasedigits(s); }
-
-QTextStream &fixed(QTextStream &s) { return Qt::fixed(s); }
-QTextStream &scientific(QTextStream &s) { return Qt::scientific(s); }
-
-QTextStream &left(QTextStream &s) { return Qt::left(s); }
-QTextStream &right(QTextStream &s) { return Qt::right(s); }
-QTextStream &center(QTextStream &s) { return Qt::center(s); }
-
-QTextStream &endl(QTextStream &s) { return Qt::endl(s); }
-QTextStream &flush(QTextStream &s) { return Qt::flush(s); }
-QTextStream &reset(QTextStream &s) { return Qt::reset(s); }
-
-QTextStream &ws(QTextStream &s) { return Qt::ws(s); }
-
-QTextStream &bom(QTextStream &s) { return Qt::bom(s); }
-} // namespace QTextStreamFunctions
-#endif
-
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0) && !defined(Q_QDOC)
-// Binary compatible definitions for Qt<5.14
-Q_CORE_EXPORT QTextStream &bin(QTextStream &s) { return Qt::bin(s); }
-Q_CORE_EXPORT QTextStream &oct(QTextStream &s) { return Qt::oct(s); }
-Q_CORE_EXPORT QTextStream &dec(QTextStream &s) { return Qt::dec(s); }
-Q_CORE_EXPORT QTextStream &hex(QTextStream &s) { return Qt::hex(s); }
-
-Q_CORE_EXPORT QTextStream &showbase(QTextStream &s) { return Qt::showbase(s); }
-Q_CORE_EXPORT QTextStream &forcesign(QTextStream &s) { return Qt::forcesign(s); }
-Q_CORE_EXPORT QTextStream &forcepoint(QTextStream &s) { return Qt::forcepoint(s); }
-Q_CORE_EXPORT QTextStream &noshowbase(QTextStream &s) { return Qt::noshowbase(s); }
-Q_CORE_EXPORT QTextStream &noforcesign(QTextStream &s) { return Qt::noforcesign(s); }
-Q_CORE_EXPORT QTextStream &noforcepoint(QTextStream &s) { return Qt::noforcepoint(s); }
-
-Q_CORE_EXPORT QTextStream &uppercasebase(QTextStream &s) { return Qt::uppercasebase(s); }
-Q_CORE_EXPORT QTextStream &uppercasedigits(QTextStream &s) { return Qt::uppercasedigits(s); }
-Q_CORE_EXPORT QTextStream &lowercasebase(QTextStream &s) { return Qt::lowercasebase(s); }
-Q_CORE_EXPORT QTextStream &lowercasedigits(QTextStream &s) { return Qt::lowercasedigits(s); }
-
-Q_CORE_EXPORT QTextStream &fixed(QTextStream &s) { return Qt::fixed(s); }
-Q_CORE_EXPORT QTextStream &scientific(QTextStream &s) { return Qt::scientific(s); }
-
-Q_CORE_EXPORT QTextStream &left(QTextStream &s) { return Qt::left(s); }
-Q_CORE_EXPORT QTextStream &right(QTextStream &s) { return Qt::right(s); }
-Q_CORE_EXPORT QTextStream &center(QTextStream &s) { return Qt::center(s); }
-
-Q_CORE_EXPORT QTextStream &endl(QTextStream &s) { return Qt::endl(s); }
-Q_CORE_EXPORT QTextStream &flush(QTextStream &s) { return Qt::flush(s); }
-Q_CORE_EXPORT QTextStream &reset(QTextStream &s) { return Qt::reset(s); }
-
-Q_CORE_EXPORT QTextStream &ws(QTextStream &s) { return Qt::ws(s); }
-
-Q_CORE_EXPORT QTextStream &bom(QTextStream &s) { return Qt::bom(s); }
-#endif
 
 QT_END_NAMESPACE
 

@@ -40,18 +40,17 @@
 #ifndef QANDROIDPLATFORMINTERATION_H
 #define QANDROIDPLATFORMINTERATION_H
 
-#include <QtGui/qtguiglobal.h>
+#include "qandroidinputcontext.h"
+#include "qandroidplatformscreen.h"
 
+#include <QtGui/qtguiglobal.h>
 #include <qpa/qplatformintegration.h>
 #include <qpa/qplatformmenu.h>
 #include <qpa/qplatformnativeinterface.h>
+#include <qpa/qplatformopenglcontext.h>
+#include <qpa/qplatformoffscreensurface.h>
 
 #include <EGL/egl.h>
-#include <jni.h>
-#include "qandroidinputcontext.h"
-
-#include "qandroidplatformscreen.h"
-
 #include <memory>
 
 QT_BEGIN_NAMESPACE
@@ -73,6 +72,8 @@ protected:
 };
 
 class QAndroidPlatformIntegration : public QPlatformIntegration
+                                  , QNativeInterface::Private::QEGLIntegration
+                                  , QNativeInterface::Private::QAndroidOffScreenIntegration
 {
     friend class QAndroidPlatformScreen;
 
@@ -88,9 +89,11 @@ public:
     QPlatformWindow *createForeignWindow(QWindow *window, WId nativeHandle) const override;
     QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
     QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const override;
+    QOpenGLContext *createOpenGLContext(EGLContext context, EGLDisplay display, QOpenGLContext *shareContext) const override;
     QAbstractEventDispatcher *createEventDispatcher() const override;
     QAndroidPlatformScreen *screen() { return m_primaryScreen; }
     QPlatformOffscreenSurface *createPlatformOffscreenSurface(QOffscreenSurface *surface) const override;
+    QOffscreenSurface *createOffscreenSurface(ANativeWindow *nativeSurface) const override;
 
     void setAvailableGeometry(const QRect &availableGeometry);
     void setPhysicalSize(int width, int height);
@@ -128,8 +131,8 @@ public:
     static void setScreenOrientation(Qt::ScreenOrientation currentOrientation,
                                      Qt::ScreenOrientation nativeOrientation);
 
-    QTouchDevice *touchDevice() const { return m_touchDevice; }
-    void setTouchDevice(QTouchDevice *touchDevice) { m_touchDevice = touchDevice; }
+    QPointingDevice *touchDevice() const { return m_touchDevice; }
+    void setTouchDevice(QPointingDevice *touchDevice) { m_touchDevice = touchDevice; }
 
     void flushPendingUpdates();
 
@@ -139,7 +142,7 @@ public:
 
 private:
     EGLDisplay m_eglDisplay;
-    QTouchDevice *m_touchDevice;
+    QPointingDevice *m_touchDevice;
 
     QAndroidPlatformScreen *m_primaryScreen;
 

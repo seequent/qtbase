@@ -47,6 +47,7 @@
 #include <QtCore/qvariant.h>
 #include <QtGui/qfont.h>
 #include <QtCore/qurl.h>
+#include <QtCore/qcontainerfwd.h>
 Q_MOC_INCLUDE(<QtGui/qtextcursor.h>)
 
 QT_BEGIN_NAMESPACE
@@ -67,8 +68,8 @@ class QVariant;
 class QRectF;
 class QTextOption;
 class QTextCursor;
+class QUrlResourceProvider;
 
-template<typename T> class QVector;
 
 namespace Qt
 {
@@ -151,7 +152,7 @@ public:
     enum MarkdownFeature {
         MarkdownNoHTML = 0x0020 | 0x0040,
         MarkdownDialectCommonMark = 0,
-        MarkdownDialectGitHub = 0x0004 | 0x0008 | 0x0400 | 0x0100 | 0x0200 | 0x0800
+        MarkdownDialectGitHub = 0x0004 | 0x0008 | 0x0400 | 0x0100 | 0x0200 | 0x0800 | 0x4000
     };
     Q_DECLARE_FLAGS(MarkdownFeatures, MarkdownFeature)
     Q_FLAG(MarkdownFeatures)
@@ -208,6 +209,15 @@ public:
     void setDefaultFont(const QFont &font);
     QFont defaultFont() const;
 
+    void setSuperScriptBaseline(qreal baseline);
+    qreal superScriptBaseline() const;
+
+    void setSubScriptBaseline(qreal baseline);
+    qreal subScriptBaseline() const;
+
+    void setBaselineOffset(qreal baseline);
+    qreal baselineOffset() const;
+
     int pageCount() const;
 
     bool isModified() const;
@@ -230,7 +240,10 @@ public:
     QVariant resource(int type, const QUrl &name) const;
     void addResource(int type, const QUrl &name, const QVariant &resource);
 
-    QVector<QTextFormat> allFormats() const;
+    QUrlResourceProvider *resourceProvider() const;
+    void setResourceProvider(QUrlResourceProvider *provider);
+
+    QList<QTextFormat> allFormats() const;
 
     void markContentsDirty(int from, int length);
 

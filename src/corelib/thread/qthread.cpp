@@ -97,7 +97,7 @@ QThreadData::~QThreadData()
         const QPostEvent &pe = postEventList.at(i);
         if (pe.event) {
             --pe.receiver->d_func()->postedEvents;
-            pe.event->posted = false;
+            pe.event->m_posted = false;
             delete pe.event;
         }
     }
@@ -125,7 +125,6 @@ QAbstractEventDispatcher *QThreadData::createEventDispatcher()
 {
     QAbstractEventDispatcher *ed = QThreadPrivate::createEventDispatcher(this);
     eventDispatcher.storeRelease(ed);
-    ed->startingUp();
     return ed;
 }
 
@@ -248,7 +247,9 @@ QThreadPrivate::~QThreadPrivate()
     different threads. Check that it is safe to do so.
 
     \note Care must be taken when interacting with objects across different
-    threads. See \l{Synchronizing Threads} for details.
+    threads. As a general rule, functions can only be called from the thread
+    that created the QThread object itself (e.g. setPriority()), unless the
+    documentation says otherwise. See \l{Synchronizing Threads} for details.
 
     \section1 Managing Threads
 
@@ -415,7 +416,7 @@ QThread::QThread(QObject *parent)
 {
     Q_D(QThread);
     // fprintf(stderr, "QThreadData %p created for thread %p\n", d->data, this);
-    d->data->thread = this;
+    d->data->thread.storeRelaxed(this);
 }
 
 /*!
@@ -426,7 +427,7 @@ QThread::QThread(QThreadPrivate &dd, QObject *parent)
 {
     Q_D(QThread);
     // fprintf(stderr, "QThreadData %p taken from private data for thread %p\n", d->data, this);
-    d->data->thread = this;
+    d->data->thread.storeRelaxed(this);
 }
 
 /*!
@@ -451,11 +452,12 @@ QThread::~QThread()
         if (d->running && !d->finished && !d->data->isAdopted)
             qFatal("QThread: Destroyed while thread is still running");
 
-        d->data->thread = nullptr;
+        d->data->thread.storeRelease(nullptr);
     }
 }
 
 /*!
+    \threadsafe
     Returns \c true if the thread is finished; otherwise returns \c false.
 
     \sa isRunning()
@@ -468,6 +470,7 @@ bool QThread::isFinished() const
 }
 
 /*!
+    \threadsafe
     Returns \c true if the thread is running; otherwise returns \c false.
 
     \sa isFinished()
@@ -521,6 +524,9 @@ uint QThread::stackSize() const
     This function is meant to be called from within run(). It is necessary to
     call this function to start event handling.
 
+    \note This can only be called within the thread itself, i.e. when
+    it is the current thread.
+
     \sa quit(), exit()
 */
 int QThread::exec()
@@ -544,6 +550,7 @@ int QThread::exec()
 }
 
 /*!
+    \threadsafe
     Tells the thread's event loop to exit with a return code.
 
     After calling this function, the thread leaves the event loop and
@@ -578,6 +585,7 @@ void QThread::exit(int returnCode)
 }
 
 /*!
+    \threadsafe
     Tells the thread's event loop to exit with return code 0 (success).
     Equivalent to calling QThread::exit(0).
 
@@ -706,6 +714,7 @@ QThread::Priority QThread::priority() const
 
 /*!
     \fn void QThread::terminate()
+    \threadsafe
 
     Terminates the execution of the thread. The thread may or may not
     be terminated immediately, depending on the operating system's
@@ -797,7 +806,7 @@ QThread::QThread(QObject *parent)
     : QObject(*(new QThreadPrivate), parent)
 {
     Q_D(QThread);
-    d->data->thread = this;
+    d->data->thread.storeRelaxed(this);
 }
 
 QThread::~QThread()
@@ -848,7 +857,7 @@ bool QThread::wait(QDeadlineTimer deadline)
     return false;
 }
 
-bool QThread::event(QEvent* event)
+bool QThread::event(QEvent *event)
 {
     return QObject::event(event);
 }
@@ -885,7 +894,7 @@ bool QThread::isRunning() const
 }
 
 // No threads: so we can just use static variables
-static QThreadData *data = 0;
+static QThreadData *data = nullptr;
 
 QThreadData *QThreadData::current(bool createIfNecessary)
 {
@@ -915,7 +924,7 @@ QThread::QThread(QThreadPrivate &dd, QObject *parent)
 {
     Q_D(QThread);
     // fprintf(stderr, "QThreadData %p taken from private data for thread %p\n", d->data, this);
-    d->data->thread = this;
+    d->data->thread.storeRelaxed(this);
 }
 
 QThreadPrivate::QThreadPrivate(QThreadData *d) : data(d ? d : new QThreadData)
@@ -924,7 +933,7 @@ QThreadPrivate::QThreadPrivate(QThreadData *d) : data(d ? d : new QThreadData)
 
 QThreadPrivate::~QThreadPrivate()
 {
-    data->thread = nullptr; // prevent QThreadData from deleting the QThreadPrivate (again).
+    data->thread.storeRelease(nullptr); // prevent QThreadData from deleting the QThreadPrivate (again).
     delete data;
 }
 
@@ -979,12 +988,6 @@ void QThread::setEventDispatcher(QAbstractEventDispatcher *eventDispatcher)
     \fn bool QThread::wait(unsigned long time)
     \overload
 */
-bool QThread::wait(unsigned long time)
-{
-    if (time == std::numeric_limits<unsigned long>::max())
-        return wait(QDeadlineTimer(QDeadlineTimer::Forever));
-    return wait(QDeadlineTimer(time));
-}
 
 #if QT_CONFIG(thread)
 
@@ -1003,6 +1006,7 @@ bool QThread::event(QEvent *event)
 
 /*!
     \since 5.2
+    \threadsafe
 
     Request the interruption of the thread.
     That request is advisory and it is up to code running on the thread to decide
@@ -1020,8 +1024,6 @@ void QThread::requestInterruption()
         return;
     }
     Q_D(QThread);
-    // ### Qt 6: use std::atomic_flag, and document that
-    // requestInterruption/isInterruptionRequested do not synchronize with each other
     QMutexLocker locker(&d->mutex);
     if (!d->running || d->finished || d->isInFinish)
         return;
@@ -1049,6 +1051,9 @@ void QThread::requestInterruption()
     }
     \endcode
 
+    \note This can only be called within the thread itself, i.e. when
+    it is the current thread.
+
     \sa currentThread() requestInterruption()
 */
 bool QThread::isInterruptionRequested() const
@@ -1068,29 +1073,6 @@ bool QThread::isInterruptionRequested() const
 
     Creates a new QThread object that will execute the function \a f with the
     arguments \a args.
-
-    The new thread is not started -- it must be started by an explicit call
-    to start(). This allows you to connect to its signals, move QObjects
-    to the thread, choose the new thread's priority and so on. The function
-    \a f will be called in the new thread.
-
-    Returns the newly created QThread instance.
-
-    \note the caller acquires ownership of the returned QThread instance.
-
-    \note this function is only available when using C++17.
-
-    \warning do not call start() on the returned QThread instance more than once;
-    doing so will result in undefined behavior.
-
-    \sa start()
-*/
-
-/*!
-    \fn template <typename Function> QThread *QThread::create(Function &&f)
-    \since 5.10
-
-    Creates a new QThread object that will execute the function \a f.
 
     The new thread is not started -- it must be started by an explicit call
     to start(). This allows you to connect to its signals, move QObjects

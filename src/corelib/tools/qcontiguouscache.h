@@ -73,6 +73,8 @@ struct QContiguousCacheTypedData : public QContiguousCacheData
 
 template<typename T>
 class QContiguousCache {
+    static_assert(std::is_nothrow_destructible_v<T>, "Types with throwing destructors are not supported in Qt containers.");
+
     typedef QContiguousCacheTypedData<T> Data;
     Data *d;
 public:
@@ -94,11 +96,27 @@ public:
     inline bool isDetached() const { return d->ref.loadRelaxed() == 1; }
 
     QContiguousCache<T> &operator=(const QContiguousCache<T> &other);
-    inline QContiguousCache<T> &operator=(QContiguousCache<T> &&other) noexcept
-    { qSwap(d, other.d); return *this; }
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(QContiguousCache)
     inline void swap(QContiguousCache<T> &other) noexcept { qSwap(d, other.d); }
-    bool operator==(const QContiguousCache<T> &other) const;
-    inline bool operator!=(const QContiguousCache<T> &other) const { return !(*this == other); }
+
+    template <typename U = T>
+    QTypeTraits::compare_eq_result<U> operator==(const QContiguousCache<T> &other) const
+    {
+        if (other.d == d)
+            return true;
+        if (other.d->start != d->start
+                || other.d->count != d->count
+                || other.d->offset != d->offset
+                || other.d->alloc != d->alloc)
+            return false;
+        for (qsizetype i = firstIndex(); i <= lastIndex(); ++i)
+            if (!(at(i) == other.at(i)))
+                return false;
+        return true;
+    }
+    template <typename U = T>
+    QTypeTraits::compare_eq_result<U> operator!=(const QContiguousCache<T> &other) const
+    { return !(*this == other); }
 
     inline qsizetype capacity() const {return d->alloc; }
     inline qsizetype count() const { return d->count; }
@@ -193,13 +211,13 @@ void QContiguousCache<T>::setCapacity(qsizetype asize)
     x->alloc = asize;
     x->count = qMin(d->count, asize);
     x->offset = d->offset + d->count - x->count;
-    if(asize)
+    if (asize)
         x->start = x->offset % x->alloc;
     else
         x->start = 0;
 
     qsizetype oldcount = x->count;
-    if(oldcount)
+    if (oldcount)
     {
         T *dest = x->array + (x->start + x->count-1) % x->alloc;
         T *src = d->array + (d->start + d->count-1) % d->alloc;
@@ -269,22 +287,6 @@ QContiguousCache<T> &QContiguousCache<T>::operator=(const QContiguousCache<T> &o
         freeData(d);
     d = other.d;
     return *this;
-}
-
-template <typename T>
-bool QContiguousCache<T>::operator==(const QContiguousCache<T> &other) const
-{
-    if (other.d == d)
-        return true;
-    if (other.d->start != d->start
-            || other.d->count != d->count
-            || other.d->offset != d->offset
-            || other.d->alloc != d->alloc)
-        return false;
-    for (qsizetype i = firstIndex(); i <= lastIndex(); ++i)
-        if (!(at(i) == other.at(i)))
-            return false;
-    return true;
 }
 
 template <typename T>

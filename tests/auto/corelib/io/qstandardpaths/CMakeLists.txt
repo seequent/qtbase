@@ -6,21 +6,17 @@
 
 # Collect test data
 list(APPEND test_data "tst_qstandardpaths.cpp")
-list(APPEND test_data "qstandardpaths.pro")
 
-add_qt_test(tst_qstandardpaths
+qt_internal_add_test(tst_qstandardpaths
     SOURCES
-        ../../../../shared/emulationdetector.h
         tst_qstandardpaths.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../shared
     TESTDATA ${test_data}
 )
 
 ## Scopes:
 #####################################################################
 
-extend_target(tst_qstandardpaths CONDITION boot2qt
+qt_internal_extend_target(tst_qstandardpaths CONDITION boot2qt
     DEFINES
         SKIP_FINDEXECUTABLE
 )

@@ -21,7 +21,6 @@ qt_internal_add_plugin(QXcbGlxIntegrationPlugin
     PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
-        Qt::GlxSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
         Qt::XcbQpaPrivate
@@ -30,12 +29,13 @@ qt_internal_add_plugin(QXcbGlxIntegrationPlugin
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QXcbGlxIntegrationPlugin CONDITION QT_FEATURE_xcb_glx
+qt_internal_extend_target(QXcbGlxIntegrationPlugin CONDITION QT_FEATURE_xcb_glx
     PUBLIC_LIBRARIES
         XCB::GLX
 )
 
-qt_extend_target(QXcbGlxIntegrationPlugin CONDITION QT_FEATURE_dlopen AND NOT static
+qt_internal_extend_target(QXcbGlxIntegrationPlugin
+    CONDITION QT_FEATURE_dlopen AND QT_BUILD_SHARED_LIBS
     PUBLIC_LIBRARIES
         ${CMAKE_DL_LIBS}
 )

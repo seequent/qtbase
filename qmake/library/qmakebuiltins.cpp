@@ -1508,7 +1508,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
                 auto isFrom = [pro](const ProString &s) {
                     return s.sourceFile() == pro;
                 };
-                vit->erase(std::remove_if(vit->begin(), vit->end(), isFrom), vit->end());
+                vit->removeIf(isFrom);
                 if (vit->isEmpty()) {
                     // When an initially non-empty variable becomes entirely empty,
                     // undefine it altogether.
@@ -1697,7 +1697,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
                           == args.at(1).toQStringView());
     case T_VERSION_AT_LEAST:
     case T_VERSION_AT_MOST: {
-        const QVersionNumber lvn = QVersionNumber::fromString(values(args.at(0).toKey()).join('.'));
+        const QVersionNumber lvn = QVersionNumber::fromString(values(args.at(0).toKey()).join(QLatin1Char('.')));
         const QVersionNumber rvn = QVersionNumber::fromString(args.at(1).toQStringView());
         if (func_t == T_VERSION_AT_LEAST)
             return returnBool(lvn >= rvn);

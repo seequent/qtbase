@@ -17,12 +17,9 @@ qt_internal_add_plugin(QLinuxFbIntegrationPlugin
     PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
-        Qt::EventDispatcherSupportPrivate
         Qt::FbSupportPrivate
-        Qt::FontDatabaseSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
-        Qt::ServiceSupportPrivate
 )
 
 #### Keys ignored in scope 1:.:.:linuxfb.pro:<TRUE>:
@@ -31,12 +28,12 @@ qt_internal_add_plugin(QLinuxFbIntegrationPlugin
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QLinuxFbIntegrationPlugin CONDITION TARGET Qt::InputSupportPrivate
+qt_internal_extend_target(QLinuxFbIntegrationPlugin CONDITION TARGET Qt::InputSupportPrivate
     PUBLIC_LIBRARIES
         Qt::InputSupportPrivate
 )
 
-qt_extend_target(QLinuxFbIntegrationPlugin CONDITION TARGET Qt::KmsSupportPrivate
+qt_internal_extend_target(QLinuxFbIntegrationPlugin CONDITION TARGET Qt::KmsSupportPrivate
     SOURCES
         qlinuxfbdrmscreen.cpp qlinuxfbdrmscreen.h
     PUBLIC_LIBRARIES

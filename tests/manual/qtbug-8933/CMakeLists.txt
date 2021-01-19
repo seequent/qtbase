@@ -4,7 +4,7 @@
 ## qtbug-8933 Binary:
 #####################################################################
 
-add_qt_manual_test(qtbug-8933
+qt_internal_add_manual_test(qtbug-8933
     GUI
     SOURCES
         main.cpp

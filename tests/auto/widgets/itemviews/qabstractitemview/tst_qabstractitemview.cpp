@@ -56,7 +56,7 @@
 Q_DECLARE_METATYPE(Qt::ItemFlags);
 
 using namespace QTestPrivate;
-using IntList = QVector<int>;
+using IntList = QList<int>;
 
 // Move cursor out of widget area to avoid undesired interaction on Mac.
 static inline void moveCursorAway(const QWidget *topLevel)
@@ -64,7 +64,7 @@ static inline void moveCursorAway(const QWidget *topLevel)
 #ifndef QT_NO_CURSOR
     QCursor::setPos(topLevel->geometry().topRight() + QPoint(100, 0));
 #else
-    Q_UNUSED(topLevel)
+    Q_UNUSED(topLevel);
 #endif
 }
 
@@ -154,6 +154,8 @@ private slots:
     void checkFocusAfterActivationChanges_data();
     void checkFocusAfterActivationChanges();
     void dragSelectAfterNewPress();
+    void selectionCommand_data();
+    void selectionCommand();
 private:
     static QAbstractItemView *viewFromString(const QByteArray &viewType, QWidget *parent = nullptr)
     {
@@ -196,16 +198,16 @@ class DialogItemDelegate : public QStyledItemDelegate
 {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
-    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &, const QModelIndex &) const
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &, const QModelIndex &) const override
     {
         openedEditor = new QDialog(parent);
         return openedEditor;
     }
 
-    void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const
+    void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override
     {
-        Q_UNUSED(model)
-        Q_UNUSED(index)
+        Q_UNUSED(model);
+        Q_UNUSED(index);
 
         QDialog *dialog = qobject_cast<QDialog *>(editor);
         result = static_cast<QDialog::DialogCode>(dialog->result());
@@ -305,7 +307,7 @@ void tst_QAbstractItemView::emptyModels_data()
 {
     QTest::addColumn<QByteArray>("viewType");
 
-    const QVector<QByteArray> widgets{ "QListView", "QTreeView", "QTableView", "QHeaderView" };
+    const QList<QByteArray> widgets { "QListView", "QTreeView", "QTableView", "QHeaderView" };
     for (const QByteArray &widget : widgets)
         QTest::newRow(widget) << widget;
 }
@@ -516,8 +518,8 @@ void tst_QAbstractItemView::basic_tests(QAbstractItemView *view)
 #if QT_CONFIG(draganddrop)
     if (!view->model())
         view->startDrag(Qt::CopyAction);
-
-    view->viewOptions();
+    QStyleOptionViewItem option;
+    view->initViewItemOption(&option);
 
     view->setState(QAbstractItemView::NoState);
     QCOMPARE(view->state(), QAbstractItemView::NoState);
@@ -1059,7 +1061,7 @@ void tst_QAbstractItemView::setCurrentIndex_data()
     QTest::addColumn<Qt::ItemFlags>("itemFlags");
     QTest::addColumn<bool>("result");
 
-    const QVector<QByteArray> widgets{ "QListView", "QTreeView", "QTableView", "QHeaderView" };
+    const QList<QByteArray> widgets { "QListView", "QTreeView", "QTableView", "QHeaderView" };
     for (const QByteArray &widget : widgets) {
         QTest::newRow(widget + ": no flags")
             << widget << Qt::ItemFlags(Qt::NoItemFlags) << false;
@@ -1110,56 +1112,52 @@ void tst_QAbstractItemView::checkIntersectedRect_data()
     {
         QStandardItemModel *model = new QStandardItemModel;
         for (int i = 0; i < rowCount; ++i) {
-            const QList<QStandardItem *> sil({new QStandardItem(QLatin1String("Row %1 Item").arg(i)),
-                                              new QStandardItem(QLatin1String("2nd column"))});
+            const QList<QStandardItem *> sil({new QStandardItem(QString("Row %1 Item").arg(i)),
+                                              new QStandardItem(QString("2nd column"))});
             model->appendRow(sil);
         }
         return model;
     };
     QTest::addColumn<QStandardItemModel *>("model");
-    QTest::addColumn<QVector<QModelIndex>>("changedIndexes");
+    QTest::addColumn<QList<QModelIndex>>("changedIndexes");
     QTest::addColumn<bool>("isEmpty");
     {
         auto model = createModel(5);
-        QTest::newRow("multiple columns") << model
-                                          << QVector<QModelIndex>({model->index(0, 0),
-                                                                   model->index(0, 1)})
-                                          << false;
+        QTest::newRow("multiple columns")
+                << model << QList<QModelIndex>({ model->index(0, 0), model->index(0, 1) }) << false;
     }
     {
         auto model = createModel(5);
-        QTest::newRow("multiple rows") << model
-                                       << QVector<QModelIndex>({model->index(0, 0),
-                                                                model->index(1, 0),
-                                                                model->index(2, 0)})
-                                       << false;
+        QTest::newRow("multiple rows")
+                << model
+                << QList<QModelIndex>(
+                           { model->index(0, 0), model->index(1, 0), model->index(2, 0) })
+                << false;
     }
     {
         auto model = createModel(5);
-        QTest::newRow("hidden rows") << model
-                                     << QVector<QModelIndex>({model->index(3, 0),
-                                                              model->index(4, 0)})
-                                     << true;
+        QTest::newRow("hidden rows")
+                << model << QList<QModelIndex>({ model->index(3, 0), model->index(4, 0) }) << true;
     }
     {
         auto model = createModel(500);
-        QTest::newRow("rows outside viewport") << model
-                                               << QVector<QModelIndex>({model->index(498, 0),
-                                                                        model->index(499, 0)})
-                                               << true;
+        QTest::newRow("rows outside viewport")
+                << model << QList<QModelIndex>({ model->index(498, 0), model->index(499, 0) })
+                << true;
     }
 }
 
 void tst_QAbstractItemView::checkIntersectedRect()
 {
     QFETCH(QStandardItemModel *, model);
-    QFETCH(const QVector<QModelIndex>, changedIndexes);
+    QFETCH(const QList<QModelIndex>, changedIndexes);
     QFETCH(bool, isEmpty);
 
     class TableView : public QTableView
     {
     public:
-        void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>()) override
+        void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight,
+                         const QList<int> &roles = QList<int>()) override
         {
             QTableView::dataChanged(topLeft, bottomRight, roles);
             // we want to check the base class implementation here!
@@ -2337,7 +2335,7 @@ void tst_QAbstractItemView::inputMethodEnabled_data()
     QTest::addColumn<Qt::ItemFlags>("itemFlags");
     QTest::addColumn<bool>("result");
 
-    const QVector<QByteArray> widgets{ "QListView", "QTreeView", "QTableView" };
+    const QList<QByteArray> widgets { "QListView", "QTreeView", "QTableView" };
     for (const QByteArray &widget : widgets) {
         QTest::newRow(widget + ": no flags")
             << widget << Qt::ItemFlags(Qt::NoItemFlags) << false;
@@ -2434,7 +2432,7 @@ void tst_QAbstractItemView::currentFollowsIndexWidget_data()
 {
     QTest::addColumn<QByteArray>("viewType");
 
-    const QVector<QByteArray> widgets{ "QListView", "QTreeView", "QTableView" };
+    const QList<QByteArray> widgets { "QListView", "QTreeView", "QTableView" };
     for (const QByteArray &widget : widgets)
         QTest::newRow(widget) << widget;
 }
@@ -2600,6 +2598,50 @@ void tst_QAbstractItemView::dragSelectAfterNewPress()
     QCOMPARE(selected.count(), 6);
     for (int i = 0; i < 5; ++i)
         QVERIFY(selected.contains(model.index(i, 0)));
+}
+
+void tst_QAbstractItemView::selectionCommand_data()
+{
+    QTest::addColumn<QAbstractItemView::SelectionMode>("selectionMode");
+    QTest::addColumn<Qt::KeyboardModifier>("keyboardModifier");
+    QTest::addColumn<QItemSelectionModel::SelectionFlag>("selectionFlag");
+
+    QTest::newRow("NoSelection - NoModifier") << QAbstractItemView::NoSelection << Qt::NoModifier << QItemSelectionModel::NoUpdate;
+    QTest::newRow("NoSelection - ShiftModifier") << QAbstractItemView::NoSelection << Qt::ShiftModifier << QItemSelectionModel::NoUpdate;
+    QTest::newRow("NoSelection - ControlModifier") << QAbstractItemView::NoSelection << Qt::ControlModifier << QItemSelectionModel::NoUpdate;
+    QTest::newRow("NoSelection - AltModifier") << QAbstractItemView::NoSelection << Qt::AltModifier << QItemSelectionModel::NoUpdate;
+
+    QTest::newRow("SingleSelection - NoModifier") << QAbstractItemView::SingleSelection << Qt::NoModifier << QItemSelectionModel::ClearAndSelect;
+    QTest::newRow("SingleSelection - ShiftModifier") << QAbstractItemView::SingleSelection << Qt::ShiftModifier << QItemSelectionModel::ClearAndSelect;
+    QTest::newRow("SingleSelection - ControlModifier") << QAbstractItemView::SingleSelection << Qt::ControlModifier << QItemSelectionModel::ClearAndSelect;
+    QTest::newRow("SingleSelection - AltModifier") << QAbstractItemView::SingleSelection << Qt::AltModifier << QItemSelectionModel::ClearAndSelect;
+
+    QTest::newRow("MultiSelection - NoModifier") << QAbstractItemView::MultiSelection << Qt::NoModifier << QItemSelectionModel::Toggle;
+    QTest::newRow("MultiSelection - ShiftModifier") << QAbstractItemView::MultiSelection << Qt::ShiftModifier << QItemSelectionModel::Toggle;
+    QTest::newRow("MultiSelection - ControlModifier") << QAbstractItemView::MultiSelection << Qt::ControlModifier << QItemSelectionModel::Toggle;
+    QTest::newRow("MultiSelection - AltModifier") << QAbstractItemView::MultiSelection << Qt::AltModifier << QItemSelectionModel::Toggle;
+
+    QTest::newRow("ExtendedSelection - NoModifier") << QAbstractItemView::ExtendedSelection << Qt::NoModifier << QItemSelectionModel::ClearAndSelect;
+    QTest::newRow("ExtendedSelection - ShiftModifier") << QAbstractItemView::ExtendedSelection << Qt::ShiftModifier << QItemSelectionModel::SelectCurrent;
+    QTest::newRow("ExtendedSelection - ControlModifier") << QAbstractItemView::ExtendedSelection << Qt::ControlModifier << QItemSelectionModel::Toggle;
+    QTest::newRow("ExtendedSelection - AltModifier") << QAbstractItemView::ExtendedSelection << Qt::AltModifier << QItemSelectionModel::ClearAndSelect;
+
+    QTest::newRow("ContiguousSelection - NoModifier") << QAbstractItemView::ContiguousSelection << Qt::NoModifier << QItemSelectionModel::ClearAndSelect;
+    QTest::newRow("ContiguousSelection - ShiftModifier") << QAbstractItemView::ContiguousSelection << Qt::ShiftModifier << QItemSelectionModel::SelectCurrent;
+    QTest::newRow("ContiguousSelection - ControlModifier") << QAbstractItemView::ContiguousSelection << Qt::ControlModifier << QItemSelectionModel::SelectCurrent;
+    QTest::newRow("ContiguousSelection - AltModifier") << QAbstractItemView::ContiguousSelection << Qt::AltModifier << QItemSelectionModel::ClearAndSelect;
+}
+
+void tst_QAbstractItemView::selectionCommand()
+{
+    QFETCH(QAbstractItemView::SelectionMode, selectionMode);
+    QFETCH(Qt::KeyboardModifier, keyboardModifier);
+    QFETCH(QItemSelectionModel::SelectionFlag, selectionFlag);
+
+    QTableView view;
+    view.setSelectionMode(selectionMode);
+    QTest::keyPress(&view, Qt::Key_A, keyboardModifier);
+    QCOMPARE(selectionFlag, view.selectionCommand(QModelIndex(), nullptr));
 }
 
 QTEST_MAIN(tst_QAbstractItemView)

@@ -51,10 +51,9 @@
 #include <QtCore/qurl.h>
 #include <QtCore/quuid.h>
 #include <QtCore/qvariant.h>
-#include <QtCore/qvector.h>
 
-// See qcborcommon.h for why we check
-#if defined(QT_X11_DEFINES_FOUND)
+/* X11 headers use these values too, but as defines */
+#if defined(False) && defined(True)
 #  undef True
 #  undef False
 #endif
@@ -180,18 +179,11 @@ public:
 
     QCborValue(const QCborValue &other);
     QCborValue(QCborValue &&other) noexcept
-        : n(other.n), container(other.container), t(other.t)
+        : n(other.n), container(qExchange(other.container, nullptr)), t(qExchange(other.t, Undefined))
     {
-        other.t = Undefined;
-        other.container = nullptr;
     }
     QCborValue &operator=(const QCborValue &other);
-    QCborValue &operator=(QCborValue &&other) noexcept
-    {
-        QCborValue tmp(std::move(other));
-        swap(tmp);
-        return *this;
-    }
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QCborValue)
 
     void swap(QCborValue &other) noexcept
     {
@@ -320,18 +312,18 @@ private:
 
     double fp_helper() const
     {
-        Q_STATIC_ASSERT(sizeof(double) == sizeof(n));
+        static_assert(sizeof(double) == sizeof(n));
         double d;
         memcpy(&d, &n, sizeof(d));
         return d;
     }
 
-    Q_DECL_CONSTEXPR static Type type_helper(QCborSimpleType st)
+    constexpr static Type type_helper(QCborSimpleType st)
     {
         return Type(quint8(st) | SimpleType);
     }
 
-    Q_DECL_CONSTEXPR static bool isTag_helper(Type tt)
+    constexpr static bool isTag_helper(Type tt)
     {
         return tt == Tag || tt >= 0x10000;
     }
@@ -471,7 +463,7 @@ private:
     QCborValue::Type concreteType() const noexcept { return concreteType(*this); }
 
     // this will actually be invalid...
-    Q_DECL_CONSTEXPR QCborValueRef() : d(nullptr), i(0) {}
+    constexpr QCborValueRef() : d(nullptr), i(0) {}
 
     QCborValueRef(QCborContainerPrivate *dd, qsizetype ii)
         : d(dd), i(ii)

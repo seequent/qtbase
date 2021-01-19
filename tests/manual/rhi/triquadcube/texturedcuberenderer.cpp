@@ -186,10 +186,10 @@ void TexturedCubeRenderer::queueResourceUpdates(QRhiResourceUpdateBatch *resourc
                 // the ghetto mipmap generator...
                 for (int i = 0, ie = m_r->mipLevelsForSize(m_image.size()); i != ie; ++i) {
                     QImage image = m_image.scaled(m_r->sizeForMipLevel(i, m_image.size()));
-                    descEntries.append({ 0, i, image });
+                    descEntries.append({ 0, i, QRhiTextureSubresourceUploadDescription(image) });
                 }
             } else {
-                descEntries.append({ 0, 0, m_image });
+                descEntries.append({ 0, 0, QRhiTextureSubresourceUploadDescription(m_image) });
             }
             QRhiTextureUploadDescription desc;
             desc.setEntries(descEntries.cbegin(), descEntries.cend());
@@ -217,7 +217,7 @@ void TexturedCubeRenderer::queueDraw(QRhiCommandBuffer *cb, const QSize &outputS
     cb->setShaderResources();
     const QRhiCommandBuffer::VertexInput vbufBindings[] = {
         { m_vbuf, 0 },
-        { m_vbuf, 36 * 3 * sizeof(float) }
+        { m_vbuf, quint32(36 * 3 * sizeof(float)) }
     };
     cb->setVertexInput(0, 2, vbufBindings);
     cb->draw(36);

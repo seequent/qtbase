@@ -50,6 +50,7 @@ class LibraryMapping:
         self.packageName = packageName
         self.resultVariable = resultVariable
         self.appendFoundSuffix = appendFoundSuffix
+        # Allows passing addiitonal arguments to the generated find_package call.
         self.extra = extra
         self.targetName = targetName
 
@@ -79,7 +80,21 @@ _qt_library_map = [
     LibraryMapping(
         "androidextras", "Qt6", "Qt::AndroidExtras", extra=["COMPONENTS", "AndroidExtras"]
     ),
-    LibraryMapping("animation", "Qt6", "Qt::3DAnimation", extra=["COMPONENTS", "3DAnimation"]),
+    LibraryMapping("3danimation", "Qt6", "Qt::3DAnimation", extra=["COMPONENTS", "3DAnimation"]),
+    LibraryMapping("3dcore", "Qt6", "Qt::3DCore", extra=["COMPONENTS", "3DCore"]),
+    LibraryMapping("3dcoretest", "Qt6", "Qt::3DCoreTest", extra=["COMPONENTS", "3DCoreTest"]),
+    LibraryMapping("3dextras", "Qt6", "Qt::3DExtras", extra=["COMPONENTS", "3DExtras"]),
+    LibraryMapping("3dinput", "Qt6", "Qt::3DInput", extra=["COMPONENTS", "3DInput"]),
+    LibraryMapping("3dlogic", "Qt6", "Qt::3DLogic", extra=["COMPONENTS", "3DLogic"]),
+    LibraryMapping("3dquick", "Qt6", "Qt::3DQuick", extra=["COMPONENTS", "3DQuick"]),
+    LibraryMapping(
+        "3dquickextras", "Qt6", "Qt::3DQuickExtras", extra=["COMPONENTS", "3DQuickExtras"]
+    ),
+    LibraryMapping("3dquickinput", "Qt6", "Qt::3DQuickInput", extra=["COMPONENTS", "3DQuickInput"]),
+    LibraryMapping(
+        "3dquickrender", "Qt6", "Qt::3DQuickRender", extra=["COMPONENTS", "3DQuickRender"]
+    ),
+    LibraryMapping("3drender", "Qt6", "Qt::3DRender", extra=["COMPONENTS", "3DRender"]),
     LibraryMapping(
         "application-lib", "Qt6", "Qt::AppManApplication", extra=["COMPONENTS", "AppManApplication"]
     ),
@@ -102,7 +117,6 @@ _qt_library_map = [
         "core_headers", "Qt6", "Qt::WebEngineCore", extra=["COMPONENTS", "WebEngineCore"]
     ),
     LibraryMapping("core", "Qt6", "Qt::Core", extra=["COMPONENTS", "Core"]),
-    LibraryMapping("coretest", "Qt6", "Qt::3DCoreTest", extra=["COMPONENTS", "3DCoreTest"]),
     LibraryMapping("crypto-lib", "Qt6", "Qt::AppManCrypto", extra=["COMPONENTS", "AppManCrypto"]),
     LibraryMapping("dbus", "Qt6", "Qt::DBus", extra=["COMPONENTS", "DBus"]),
     LibraryMapping("designer", "Qt6", "Qt::Designer", extra=["COMPONENTS", "Designer"]),
@@ -136,6 +150,12 @@ _qt_library_map = [
     LibraryMapping(
         "eglfs_kms_support", "Qt6", "Qt::EglFsKmsSupport", extra=["COMPONENTS", "EglFsKmsSupport"]
     ),
+    LibraryMapping(
+        "eglfs_kms_gbm_support",
+        "Qt6",
+        "Qt::EglFsKmsGbmSupport",
+        extra=["COMPONENTS", "EglFsKmsGbmSupport"],
+    ),
     LibraryMapping("egl_support", "Qt6", "Qt::EglSupport", extra=["COMPONENTS", "EglSupport"]),
     # enginio: Not needed in Qt6!
     LibraryMapping(
@@ -150,7 +170,6 @@ _qt_library_map = [
         "Qt::EventDispatcherSupport",
         extra=["COMPONENTS", "EventDispatcherSupport"],
     ),
-    LibraryMapping("extras", "Qt6", "Qt::3DExtras", extra=["COMPONENTS", "3DExtras"]),
     LibraryMapping("fbconvenience", "Qt6", "Qt::FbSupport", extra=["COMPONENTS", "FbSupport"]),
     LibraryMapping("fb_support", "Qt6", "Qt::FbSupport", extra=["COMPONENTS", "FbSupport"]),
     LibraryMapping(
@@ -196,7 +215,6 @@ _qt_library_map = [
         extra=["COMPONENTS", "LinuxAccessibilitySupport"],
     ),
     LibraryMapping("location", "Qt6", "Qt::Location", extra=["COMPONENTS", "Location"]),
-    LibraryMapping("logic", "Qt6", "Qt::3DLogic", extra=["COMPONENTS", "3DLogic"]),
     LibraryMapping("macextras", "Qt6", "Qt::MacExtras", extra=["COMPONENTS", "MacExtras"]),
     LibraryMapping("main-lib", "Qt6", "Qt::AppManMain", extra=["COMPONENTS", "AppManMain"]),
     LibraryMapping(
@@ -218,9 +236,8 @@ _qt_library_map = [
     LibraryMapping("nfc", "Qt6", "Qt::Nfc", extra=["COMPONENTS", "Nfc"]),
     LibraryMapping("oauth", "Qt6", "Qt::NetworkAuth", extra=["COMPONENTS", "NetworkAuth"]),
     LibraryMapping("opcua", "Qt6", "Qt::OpcUa", extra=["COMPONENTS", "OpcUa"]),
-    LibraryMapping("opcua_private", "Qt6", "Qt::OpcUaPrivate", extra=["COMPONENTS", "OpcUaPrivate"]),
     LibraryMapping(
-        "openglextensions", "Qt6", "Qt::OpenGLExtensions", extra=["COMPONENTS", "OpenGLExtensions"]
+        "opcua_private", "Qt6", "Qt::OpcUaPrivate", extra=["COMPONENTS", "OpcUaPrivate"]
     ),
     LibraryMapping("opengl", "Qt6", "Qt::OpenGL", extra=["COMPONENTS", "OpenGL"]),
     LibraryMapping(
@@ -249,7 +266,9 @@ _qt_library_map = [
     LibraryMapping("purchasing", "Qt6", "Qt::Purchasing", extra=["COMPONENTS", "Purchasing"]),
     LibraryMapping("qmldebug", "Qt6", "Qt::QmlDebug", extra=["COMPONENTS", "QmlDebug"]),
     LibraryMapping("qmldevtools", "Qt6", "Qt::QmlDevTools", extra=["COMPONENTS", "QmlDevTools"]),
+    LibraryMapping("qmlcompiler", "Qt6", "Qt::QmlCompiler", extra=["COMPONENTS", "QmlCompiler"]),
     LibraryMapping("qml", "Qt6", "Qt::Qml", extra=["COMPONENTS", "Qml"]),
+    LibraryMapping("qmldom", "Qt6", "Qt::QmlDom", extra=["COMPONENTS", "QmlDom"]),
     LibraryMapping("qmlmodels", "Qt6", "Qt::QmlModels", extra=["COMPONENTS", "QmlModels"]),
     LibraryMapping("qmltest", "Qt6", "Qt::QuickTest", extra=["COMPONENTS", "QuickTest"]),
     LibraryMapping(
@@ -279,13 +298,18 @@ _qt_library_map = [
     LibraryMapping(
         "quickcontrols2", "Qt6", "Qt::QuickControls2", extra=["COMPONENTS", "QuickControls2"]
     ),
+    LibraryMapping(
+        "quickcontrols2impl",
+        "Qt6",
+        "Qt::QuickControls2Impl",
+        extra=["COMPONENTS", "QuickControls2Impl"],
+    ),
     LibraryMapping("quick", "Qt6", "Qt::Quick", extra=["COMPONENTS", "Quick"]),
     LibraryMapping("quickshapes", "Qt6", "Qt::QuickShapes", extra=["COMPONENTS", "QuickShapes"]),
     LibraryMapping(
         "quicktemplates2", "Qt6", "Qt::QuickTemplates2", extra=["COMPONENTS", "QuickTemplates2"]
     ),
     LibraryMapping("quickwidgets", "Qt6", "Qt::QuickWidgets", extra=["COMPONENTS", "QuickWidgets"]),
-    LibraryMapping("render", "Qt6", "Qt::3DRender", extra=["COMPONENTS", "3DRender"]),
     LibraryMapping(
         "remoteobjects", "Qt6", "Qt::RemoteObjects", extra=["COMPONENTS", "RemoteObjects"]
     ),
@@ -303,6 +327,7 @@ _qt_library_map = [
     LibraryMapping("sql", "Qt6", "Qt::Sql", extra=["COMPONENTS", "Sql"]),
     LibraryMapping("svg", "Qt6", "Qt::Svg", extra=["COMPONENTS", "Svg"]),
     LibraryMapping("svgwidgets", "Qt6", "Qt::SvgWidgets", extra=["COMPONENTS", "SvgWidgets"]),
+    LibraryMapping("charts", "Qt6", "Qt::Charts", extra=["COMPONENTS", "Charts"]),
     LibraryMapping("testlib", "Qt6", "Qt::Test", extra=["COMPONENTS", "Test"]),
     LibraryMapping("texttospeech", "Qt6", "Qt::TextToSpeech", extra=["COMPONENTS", "TextToSpeech"]),
     LibraryMapping(
@@ -364,12 +389,8 @@ _qt_library_map = [
         "webkitwidgets", "Qt6", "Qt::WebKitWidgets", extra=["COMPONENTS", "WebKitWidgets"]
     ),
     LibraryMapping("zlib", "Qt6", "Qt::Zlib", extra=["COMPONENTS", "Zlib"]),
-    LibraryMapping(
-        "httpserver", "Qt6", "Qt::HttpServer", extra=["COMPONENTS", "HttpServer"]
-    ),
-    LibraryMapping(
-        "sslserver", "Qt6", "Qt::SslServer", extra=["COMPONENTS", "HttpServer"]
-    )
+    LibraryMapping("httpserver", "Qt6", "Qt::HttpServer", extra=["COMPONENTS", "HttpServer"]),
+    LibraryMapping("sslserver", "Qt6", "Qt::SslServer", extra=["COMPONENTS", "HttpServer"]),
 ]
 
 # Note that the library map is adjusted dynamically further down.
@@ -377,11 +398,12 @@ _library_map = [
     # 3rd party:
     LibraryMapping("atspi", "ATSPI2", "PkgConfig::ATSPI2"),
     LibraryMapping("bluez", "BlueZ", "PkgConfig::BlueZ"),
+    LibraryMapping("brotli", "WrapBrotli", "WrapBrotli::WrapBrotliDec"),
     LibraryMapping("corewlan", None, None),
     LibraryMapping("cups", "Cups", "Cups::Cups"),
     LibraryMapping("directfb", "DirectFB", "PkgConfig::DirectFB"),
     LibraryMapping("db2", "DB2", "DB2::DB2"),
-    LibraryMapping("dbus", "WrapDBus1", "dbus-1", resultVariable="DBus1"),
+    LibraryMapping("dbus", "WrapDBus1", "dbus-1", resultVariable="DBus1", extra=["1.2"]),
     LibraryMapping(
         "doubleconversion", "WrapDoubleConversion", "WrapDoubleConversion::WrapDoubleConversion"
     ),
@@ -396,16 +418,20 @@ _library_map = [
         "freetype",
         "WrapFreetype",
         "WrapFreetype::WrapFreetype",
-        extra=["REQUIRED"],
+        extra=["2.2.0", "REQUIRED"],
         is_bundled_with_qt=True,
     ),
     LibraryMapping("gbm", "gbm", "gbm::gbm"),
     LibraryMapping("glib", "GLIB2", "GLIB2::GLIB2"),
-    LibraryMapping("gnu_iconv", None, None),
-    LibraryMapping("gtk3", "GTK3", "PkgConfig::GTK3"),
+    LibraryMapping("iconv", "WrapIconv", "WrapIconv::WrapIconv"),
+    LibraryMapping("gtk3", "GTK3", "PkgConfig::GTK3", extra=["3.6"]),
     LibraryMapping("gssapi", "GSSAPI", "GSSAPI::GSSAPI"),
     LibraryMapping(
-        "harfbuzz", "WrapHarfbuzz", "WrapHarfbuzz::WrapHarfbuzz", is_bundled_with_qt=True
+        "harfbuzz",
+        "WrapHarfbuzz",
+        "WrapHarfbuzz::WrapHarfbuzz",
+        is_bundled_with_qt=True,
+        extra=["2.6.0"],
     ),
     LibraryMapping("host_dbus", None, None),
     LibraryMapping(
@@ -414,6 +440,7 @@ _library_map = [
     LibraryMapping("journald", "Libsystemd", "PkgConfig::Libsystemd"),
     LibraryMapping("jpeg", "JPEG", "JPEG::JPEG"),  # see also libjpeg
     LibraryMapping("libatomic", "WrapAtomic", "WrapAtomic::WrapAtomic"),
+    LibraryMapping("libb2", "Libb2", "Libb2::Libb2"),
     LibraryMapping("libclang", "WrapLibClang", "WrapLibClang::WrapLibClang"),
     LibraryMapping("libdl", None, "${CMAKE_DL_LIBS}"),
     LibraryMapping("libinput", "Libinput", "Libinput::Libinput"),
@@ -427,7 +454,7 @@ _library_map = [
     LibraryMapping("mysql", "MySQL", "MySQL::MySQL"),
     LibraryMapping("odbc", "ODBC", "ODBC::ODBC"),
     LibraryMapping("opengl_es2", "GLESv2", "GLESv2::GLESv2"),
-    LibraryMapping("opengl", "OpenGL", "OpenGL::GL", resultVariable="OpenGL"),
+    LibraryMapping("opengl", "WrapOpenGL", "WrapOpenGL::WrapOpenGL", resultVariable="WrapOpenGL"),
     LibraryMapping(
         "openssl_headers",
         "WrapOpenSSLHeaders",
@@ -448,9 +475,12 @@ _library_map = [
     ),
     LibraryMapping("oci", "Oracle", "Oracle::OCI"),
     LibraryMapping(
-        "pcre2", "WrapPCRE2", "WrapPCRE2::WrapPCRE2", extra=["REQUIRED"], is_bundled_with_qt=True
+        "pcre2",
+        "WrapPCRE2",
+        "WrapPCRE2::WrapPCRE2",
+        extra=["10.20", "REQUIRED"],
+        is_bundled_with_qt=True,
     ),
-    LibraryMapping("posix_iconv", None, None),
     LibraryMapping("pps", "PPS", "PPS::PPS"),
     LibraryMapping("psql", "PostgreSQL", "PostgreSQL::PostgreSQL"),
     LibraryMapping("slog2", "Slog2", "Slog2::Slog2"),
@@ -458,7 +488,6 @@ _library_map = [
     LibraryMapping("sqlite2", None, None),  # No more sqlite2 support in Qt6!
     LibraryMapping("sqlite3", "SQLite3", "SQLite::SQLite3"),
     LibraryMapping("sqlite", "SQLite3", "SQLite::SQLite3"),
-    LibraryMapping("sun_iconv", None, None),
     LibraryMapping("tslib", "Tslib", "PkgConfig::Tslib"),
     LibraryMapping("udev", "Libudev", "PkgConfig::Libudev"),
     LibraryMapping("udev", "Libudev", "PkgConfig::Libudev"),  # see also libudev!
@@ -477,7 +506,7 @@ _library_map = [
         "xcb",
         "XCB",
         "XCB::XCB",
-        extra=["1.9"],
+        extra=["1.11"],
         resultVariable="TARGET XCB::XCB",
         appendFoundSuffix=False,
     ),
@@ -485,16 +514,24 @@ _library_map = [
         "xcb_glx", "XCB", "XCB::GLX", extra=["COMPONENTS", "GLX"], resultVariable="XCB_GLX"
     ),
     LibraryMapping(
-        "xcb_icccm", "XCB", "XCB::ICCCM", extra=["COMPONENTS", "ICCCM"], resultVariable="XCB_ICCCM"
+        "xcb_icccm",
+        "XCB",
+        "XCB::ICCCM",
+        extra=["0.3.9", "COMPONENTS", "ICCCM"],
+        resultVariable="XCB_ICCCM",
     ),
     LibraryMapping(
-        "xcb_image", "XCB", "XCB::IMAGE", extra=["COMPONENTS", "IMAGE"], resultVariable="XCB_IMAGE"
+        "xcb_image",
+        "XCB",
+        "XCB::IMAGE",
+        extra=["0.3.9", "COMPONENTS", "IMAGE"],
+        resultVariable="XCB_IMAGE",
     ),
     LibraryMapping(
         "xcb_keysyms",
         "XCB",
         "XCB::KEYSYMS",
-        extra=["COMPONENTS", "KEYSYMS"],
+        extra=["0.3.9", "COMPONENTS", "KEYSYMS"],
         resultVariable="XCB_KEYSYMS",
     ),
     LibraryMapping(
@@ -511,7 +548,7 @@ _library_map = [
         "xcb_renderutil",
         "XCB",
         "XCB::RENDERUTIL",
-        extra=["COMPONENTS", "RENDERUTIL"],
+        extra=["0.3.9", "COMPONENTS", "RENDERUTIL"],
         resultVariable="XCB_RENDERUTIL",
     ),
     LibraryMapping(
@@ -538,17 +575,10 @@ _library_map = [
         resultVariable="XCB_XFIXES",
     ),
     LibraryMapping(
-        "xcb_xinerama",
-        "XCB",
-        "XCB::XINERAMA",
-        extra=["COMPONENTS", "XINERAMA"],
-        resultVariable="XCB_XINERAMA",
-    ),
-    LibraryMapping(
         "xcb_xinput",
         "XCB",
         "XCB::XINPUT",
-        extra=["COMPONENTS", "XINPUT"],
+        extra=["1.12", "COMPONENTS", "XINPUT"],
         resultVariable="XCB_XINPUT",
     ),
     LibraryMapping(
@@ -556,25 +586,34 @@ _library_map = [
     ),
     LibraryMapping("xcb_xlib", "X11_XCB", "X11::XCB"),
     LibraryMapping("xcomposite", "XComposite", "PkgConfig::XComposite"),
-    LibraryMapping("xkbcommon_evdev", "XKB", "XKB::XKB", extra=["0.4.1"]),  # see also xkbcommon
-    LibraryMapping("xkbcommon_x11", "XKB_COMMON_X11", "PkgConfig::XKB_COMMON_X11", extra=["0.4.1"]),
-    LibraryMapping("xkbcommon", "XKB", "XKB::XKB", extra=["0.4.1"]),
+    LibraryMapping("xkbcommon_evdev", "XKB", "XKB::XKB", extra=["0.5.0"]),  # see also xkbcommon
+    LibraryMapping("xkbcommon_x11", "XKB_COMMON_X11", "PkgConfig::XKB_COMMON_X11", extra=["0.5.0"]),
+    LibraryMapping("xkbcommon", "XKB", "XKB::XKB", extra=["0.5.0"]),
     LibraryMapping("xlib", "X11", "X11::X11"),
-    LibraryMapping("xrender", "XRender", "PkgConfig::XRender"),
-    LibraryMapping("zlib", "ZLIB", "ZLIB::ZLIB"),
-    LibraryMapping("zstd", "ZSTD", "ZSTD::ZSTD"),
+    LibraryMapping("xrender", "XRender", "PkgConfig::XRender", extra=["0.6"]),
+    LibraryMapping("zlib", "ZLIB", "ZLIB::ZLIB", extra=["1.0.8"]),
+    LibraryMapping("zstd", "ZSTD", "ZSTD::ZSTD", extra=["1.3"]),
     LibraryMapping("tiff", "TIFF", "TIFF::TIFF"),
     LibraryMapping("webp", "WrapWebP", "WrapWebP::WrapWebP"),
     LibraryMapping("jasper", "WrapJasper", "WrapJasper::WrapJasper"),
     LibraryMapping("sdl2", "WrapSDL2", "WrapSDL2::WrapSDL2"),
     LibraryMapping("hunspell", "Hunspell", "Hunspell::Hunspell"),
     LibraryMapping(
-        "assimp",
-        "WrapAssimp",
-        "WrapAssimp::WrapAssimp",
+        "qt3d-assimp",
+        "WrapQt3DAssimp",
+        "WrapQt3DAssimp::WrapQt3DAssimp",
         extra=["5"],
         run_library_test=True,
         resultVariable="TEST_assimp",
+        appendFoundSuffix=False,
+    ),
+    LibraryMapping(
+        "quick3d_assimp",
+        "WrapQuick3DAssimp",
+        "WrapQuick3DAssimp::WrapQuick3DAssimp",
+        extra=["5"],
+        run_library_test=True,
+        resultVariable="TEST_quick3d_assimp",
         appendFoundSuffix=False,
     ),
 ]
@@ -622,6 +661,15 @@ def find_library_info_for_target(targetName: str) -> typing.Optional[LibraryMapp
             return i
 
     return None
+
+
+# For a given qmake library (e.g. 'openssl_headers'), check whether this is a fake library used
+# for the /nolink annotation, and return the actual annotated qmake library ('openssl/nolink').
+def find_annotated_qmake_lib_name(lib : str) -> str:
+    for entry in _library_map:
+        if entry.no_link_so_name == lib:
+            return entry.soName + "/nolink"
+    return lib
 
 
 def featureName(name: str) -> str:
@@ -677,7 +725,6 @@ platform_mapping = {
     "mingw": "MINGW",
     "netbsd": "NETBSD",
     "haiku": "HAIKU",
-    "netbsd": "NETBSD",
     "mac": "APPLE",
     "macx": "MACOS",
     "macos": "MACOS",
@@ -765,19 +812,19 @@ def generate_find_package_info(
     if cmake_target_name.endswith("_nolink") or cmake_target_name.endswith("/nolink"):
         cmake_target_name = cmake_target_name[:-7]
 
-    initial_package_name = lib.packageName
-    package_name = initial_package_name
+    initial_package_name: str = lib.packageName if lib.packageName else ""
+    package_name: str = initial_package_name
     if use_system_package_name:
         replace_args = ["Wrap", "WrapSystem"]
-        package_name = package_name.replace(*replace_args)
-        cmake_target_name = cmake_target_name.replace(*replace_args)
+        package_name = package_name.replace(*replace_args)  # type: ignore
+        cmake_target_name = cmake_target_name.replace(*replace_args)  # type: ignore
 
     if use_qt_find_package:
         if cmake_target_name:
             extra += ["PROVIDED_TARGETS", cmake_target_name]
         if module:
             extra += ["MODULE_NAME", module]
-            extra += ["QMAKE_LIB", lib.soName]
+            extra += ["QMAKE_LIB", find_annotated_qmake_lib_name(lib.soName)]
 
     result = ""
     one_ind = "    "

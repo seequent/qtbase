@@ -41,14 +41,14 @@
 #define QBRUSH_H
 
 #include <QtGui/qtguiglobal.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qpair.h>
 #include <QtCore/qpoint.h>
-#include <QtCore/qvector.h>
 #include <QtCore/qscopedpointer.h>
 #include <QtGui/qcolor.h>
-#include <QtGui/qtransform.h>
 #include <QtGui/qimage.h>
 #include <QtGui/qpixmap.h>
+#include <QtGui/qtransform.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -78,8 +78,7 @@ public:
 
     ~QBrush();
     QBrush &operator=(const QBrush &brush);
-    inline QBrush &operator=(QBrush &&other) noexcept
-    { qSwap(d, other.d); return *this; }
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(QBrush)
     inline void swap(QBrush &other) noexcept
     { qSwap(d, other.d); }
 
@@ -163,7 +162,7 @@ inline bool QBrush::isDetached() const { return d->ref.loadRelaxed() == 1; }
 class QGradientPrivate;
 
 typedef QPair<qreal, QColor> QGradientStop;
-typedef QVector<QGradientStop> QGradientStops;
+typedef QList<QGradientStop> QGradientStops;
 
 class Q_GUI_EXPORT QGradient
 {
@@ -400,7 +399,7 @@ public:
             qreal x1, y1, x2, y2;
         } linear;
         struct {
-            qreal cx, cy, fx, fy, cradius;
+            qreal cx, cy, fx, fy, cradius, fradius;
         } radial;
         struct {
             qreal cx, cy, angle;
@@ -413,11 +412,12 @@ private:
     friend class QConicalGradient;
     friend class QBrush;
 
-    Type m_type;
-    Spread m_spread;
+    Type m_type = NoGradient;
+    Spread m_spread = PadSpread;
     QGradientStops m_stops;
     QGradientData m_data;
-    void *dummy; // ### Qt 6: replace with actual content (CoordinateMode, InterpolationMode, ...)
+    CoordinateMode m_coordinateMode = LogicalMode;
+    InterpolationMode m_interpolationMode = ColorInterpolation;
 };
 
 inline void QGradient::setSpread(Spread aspread)

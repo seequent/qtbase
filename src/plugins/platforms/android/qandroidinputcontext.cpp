@@ -91,9 +91,9 @@ private:
 
 } // namespace anonymous
 
-static QAndroidInputContext *m_androidInputContext = 0;
-static char const *const QtNativeInputConnectionClassName = "org/qtproject/qt5/android/QtNativeInputConnection";
-static char const *const QtExtractedTextClassName = "org/qtproject/qt5/android/QtExtractedText";
+static QAndroidInputContext *m_androidInputContext = nullptr;
+static char const *const QtNativeInputConnectionClassName = "org/qtproject/qt/android/QtNativeInputConnection";
+static char const *const QtExtractedTextClassName = "org/qtproject/qt/android/QtExtractedText";
 static jclass m_extractedTextClass = 0;
 static jmethodID m_classConstructorMethodID = 0;
 static jfieldID m_partialEndOffsetFieldID = 0;
@@ -392,7 +392,7 @@ static JNINativeMethod methods[] = {
     {"deleteSurroundingText", "(II)Z", (void *)deleteSurroundingText},
     {"finishComposingText", "()Z", (void *)finishComposingText},
     {"getCursorCapsMode", "(I)I", (void *)getCursorCapsMode},
-    {"getExtractedText", "(III)Lorg/qtproject/qt5/android/QtExtractedText;", (void *)getExtractedText},
+    {"getExtractedText", "(III)Lorg/qtproject/qt/android/QtExtractedText;", (void *)getExtractedText},
     {"getSelectedText", "(I)Ljava/lang/String;", (void *)getSelectedText},
     {"getTextAfterCursor", "(II)Ljava/lang/String;", (void *)getTextAfterCursor},
     {"getTextBeforeCursor", "(II)Ljava/lang/String;", (void *)getTextBeforeCursor},
@@ -897,8 +897,8 @@ void QAndroidInputContext::update(Qt::InputMethodQueries queries)
 void QAndroidInputContext::invokeAction(QInputMethod::Action action, int cursorPosition)
 {
 #warning TODO Handle at least QInputMethod::ContextMenu action
-    Q_UNUSED(action)
-    Q_UNUSED(cursorPosition)
+    Q_UNUSED(action);
+    Q_UNUSED(cursorPosition);
     //### click should be passed to the IM, but in the meantime it's better to ignore it than to do something wrong
     // if (action == QInputMethod::Click)
     //     commit();
@@ -1173,7 +1173,7 @@ void QAndroidInputContext::focusObjectStartComposing()
 
     QInputMethodEvent event(m_composingText, {
         { QInputMethodEvent::Cursor, absoluteCursorPos - m_composingTextStart, 1 },
-        { QInputMethodEvent::TextFormat, 0, m_composingText.length(), underlined }
+        { QInputMethodEvent::TextFormat, 0, int(m_composingText.length()), underlined }
     });
 
     event.setCommitString({}, m_composingTextStart - absoluteCursorPos, m_composingText.length());
@@ -1224,7 +1224,7 @@ jint QAndroidInputContext::getCursorCapsMode(jint /*reqModes*/)
         QString surroundingText = query->value(Qt::ImSurroundingText).toString();
         surroundingText.truncate(localPos);
         if (focusObjectIsComposing())
-            surroundingText += m_composingText.leftRef(m_composingCursor - m_composingTextStart);
+            surroundingText += QStringView{m_composingText}.left(m_composingCursor - m_composingTextStart);
         // Add a character to see if it is at the end of the sentence or not
         QTextBoundaryFinder finder(QTextBoundaryFinder::Sentence, surroundingText + QLatin1Char('A'));
         finder.setPosition(surroundingText.length());
@@ -1330,7 +1330,7 @@ QString QAndroidInputContext::getTextAfterCursor(jint length, jint /*flags*/)
     if (focusObjectIsComposing()) {
         // Controls do not report preedit text, so we have to add it
         const int cursorPosInsidePreedit = m_composingCursor - m_composingTextStart;
-        text = m_composingText.midRef(cursorPosInsidePreedit) + text;
+        text = QStringView{m_composingText}.mid(cursorPosInsidePreedit) + text;
     } else {
         // We must not return selected text if there is any
         QSharedPointer<QInputMethodQueryEvent> query =
@@ -1370,7 +1370,7 @@ QString QAndroidInputContext::getTextBeforeCursor(jint length, jint /*flags*/)
     if (focusObjectIsComposing()) {
         // Controls do not report preedit text, so we have to add it
         const int cursorPosInsidePreedit = m_composingCursor - m_composingTextStart;
-        text += m_composingText.leftRef(cursorPosInsidePreedit);
+        text += QStringView{m_composingText}.left(cursorPosInsidePreedit);
     } else {
         // We must not return selected text if there is any
         QSharedPointer<QInputMethodQueryEvent> query =
@@ -1409,14 +1409,23 @@ jboolean QAndroidInputContext::setComposingText(const QString &text, jint newCur
     const int absoluteCursorPos = getAbsoluteCursorPosition(query);
     int absoluteAnchorPos = getBlockPosition(query) + query->value(Qt::ImAnchorPosition).toInt();
 
+    auto setCursorPosition = [=]() {
+            const int cursorPos = query->value(Qt::ImCursorPosition).toInt();
+            QInputMethodEvent event({}, { { QInputMethodEvent::Selection, cursorPos, 0 } });
+            QGuiApplication::sendEvent(m_focusObject, &event);
+        };
+
     // If we have composing region and selection (and therefore focusObjectIsComposing() == false),
     // we must clear selection so that we won't delete it when we will be replacing composing text
     if (!m_composingText.isEmpty() && absoluteCursorPos != absoluteAnchorPos) {
-        const int cursorPos = query->value(Qt::ImCursorPosition).toInt();
-        QInputMethodEvent event({}, { { QInputMethodEvent::Selection, cursorPos, 0 } });
-        QGuiApplication::sendEvent(m_focusObject, &event);
-
+        setCursorPosition();
         absoluteAnchorPos = absoluteCursorPos;
+    }
+
+    // The value of Qt::ImCursorPosition is not updated at the start
+    // when the first character is added, so we must update it (QTBUG-85090)
+    if (absoluteCursorPos == 0 && text.length() == 1 && getTextAfterCursor(1,1).length() >= 0) {
+        setCursorPosition();
     }
 
     // If we had no composing region, pretend that we had a zero-length composing region at current
@@ -1444,13 +1453,12 @@ jboolean QAndroidInputContext::setComposingText(const QString &text, jint newCur
     else
         m_composingCursor = -1;
 
-    QInputMethodEvent event;
     if (focusObjectIsComposing()) {
         QTextCharFormat underlined;
         underlined.setFontUnderline(true);
 
-        event = QInputMethodEvent(m_composingText, {
-            { QInputMethodEvent::TextFormat, 0, m_composingText.length(), underlined },
+        QInputMethodEvent event(m_composingText, {
+            { QInputMethodEvent::TextFormat, 0, int(m_composingText.length()), underlined },
             { QInputMethodEvent::Cursor, m_composingCursor - m_composingTextStart, 1 }
         });
 
@@ -1458,8 +1466,12 @@ jboolean QAndroidInputContext::setComposingText(const QString &text, jint newCur
             event.setCommitString({}, m_composingTextStart - effectiveAbsoluteCursorPos,
                                   oldComposingTextLen);
         }
+        if (m_composingText.isEmpty())
+            clear();
+
+        QGuiApplication::sendEvent(m_focusObject, &event);
     } else {
-        event = QInputMethodEvent({}, {});
+        QInputMethodEvent event({}, {});
 
         if (focusObjectWasComposing) {
             event.setCommitString(m_composingText);
@@ -1468,12 +1480,11 @@ jboolean QAndroidInputContext::setComposingText(const QString &text, jint newCur
                                   m_composingTextStart - effectiveAbsoluteCursorPos,
                                   oldComposingTextLen);
         }
+        if (m_composingText.isEmpty())
+            clear();
+
+        QGuiApplication::sendEvent(m_focusObject, &event);
     }
-
-    if (m_composingText.isEmpty())
-        clear();
-
-    QGuiApplication::sendEvent(m_focusObject, &event);
 
     if (!focusObjectIsComposing() && newCursorPosition != 1) {
         // Move cursor using a separate event because if we have inserted or deleted a newline
@@ -1482,7 +1493,7 @@ jboolean QAndroidInputContext::setComposingText(const QString &text, jint newCur
         const int newBlockPos = getBlockPosition(
                 focusObjectInputMethodQuery(Qt::ImCursorPosition | Qt::ImAbsolutePosition));
 
-        event = QInputMethodEvent({}, {
+         QInputMethodEvent event({}, {
             { QInputMethodEvent::Selection, newAbsoluteCursorPos - newBlockPos, 0 }
         });
 
@@ -1529,7 +1540,7 @@ jboolean QAndroidInputContext::setComposingRegion(jint start, jint end)
             const int additionalSuffixLen = after.length() - (text.length() - cursorPos);
 
             if (additionalSuffixLen > 0)
-                text += after.rightRef(additionalSuffixLen);
+                text += QStringView{after}.right(additionalSuffixLen);
         }
 
         if (start < textOffset) {

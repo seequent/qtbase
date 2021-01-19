@@ -48,11 +48,12 @@ QT_BEGIN_NAMESPACE
 template <class Key, class T>
 class QCache
 {
-    struct Value {
+    struct Value
+    {
         T *t = nullptr;
-        int cost = 0;
+        qsizetype cost = 0;
         Value() noexcept = default;
-        Value(T *tt, int c) noexcept
+        Value(T *tt, qsizetype c) noexcept
             : t(tt), cost(c)
         {}
         Value(Value &&other) noexcept
@@ -68,19 +69,20 @@ class QCache
             return *this;
         }
         ~Value() { delete t; }
+
     private:
         Q_DISABLE_COPY(Value)
     };
 
-    struct Chain {
-        Chain() noexcept
-            : prev(this), next(this)
-        {}
+    struct Chain
+    {
+        Chain() noexcept : prev(this), next(this) { }
         Chain *prev;
         Chain *next;
     };
 
-    struct Node : public Chain {
+    struct Node : public Chain
+    {
         using KeyType = Key;
         using ValueType = Value;
 
@@ -99,11 +101,11 @@ class QCache
               value(std::move(t))
         {
         }
-        static void createInPlace(Node *n, const Key &k, T *o, int cost)
+        static void createInPlace(Node *n, const Key &k, T *o, qsizetype cost)
         {
             new (n) Node{ Key(k), Value(o, cost) };
         }
-        void emplace(T *o, int cost)
+        void emplace(T *o, qsizetype cost)
         {
             value = Value(o, cost);
         }
@@ -111,7 +113,7 @@ class QCache
         {
             return Node(k, std::move(t));
         }
-        void replace(const Value &t) noexcept(std::is_nothrow_assignable_v<T>)
+        void replace(const Value &t) noexcept(std::is_nothrow_assignable_v<T, T>)
         {
             value = t;
         }
@@ -143,8 +145,8 @@ class QCache
 
     mutable Chain chain;
     Data d;
-    int mx = 0;
-    int total = 0;
+    qsizetype mx = 0;
+    qsizetype total = 0;
 
     void unlink(Node *n) noexcept(std::is_nothrow_destructible_v<Node>)
     {
@@ -175,7 +177,7 @@ class QCache
         return n->value.t;
     }
 
-    void trim(int m) noexcept(std::is_nothrow_destructible_v<Node>)
+    void trim(qsizetype m) noexcept(std::is_nothrow_destructible_v<Node>)
     {
         Chain *n = chain.prev;
         while (n != &chain && total > m) {
@@ -189,31 +191,38 @@ class QCache
     Q_DISABLE_COPY(QCache)
 
 public:
-    inline explicit QCache(int maxCost = 100) noexcept
+    inline explicit QCache(qsizetype maxCost = 100) noexcept
         : mx(maxCost)
-    {}
-    inline ~QCache() { clear(); }
+    {
+    }
+    inline ~QCache()
+    {
+        static_assert(std::is_nothrow_destructible_v<Key>, "Types with throwing destructors are not supported in Qt containers.");
+        static_assert(std::is_nothrow_destructible_v<T>, "Types with throwing destructors are not supported in Qt containers.");
 
-    inline int maxCost() const noexcept { return mx; }
-    void setMaxCost(int m) noexcept(std::is_nothrow_destructible_v<Node>)
+        clear();
+    }
+
+    inline qsizetype maxCost() const noexcept { return mx; }
+    void setMaxCost(qsizetype m) noexcept(std::is_nothrow_destructible_v<Node>)
     {
         mx = m;
         trim(mx);
     }
-    inline int totalCost() const noexcept { return total; }
+    inline qsizetype totalCost() const noexcept { return total; }
 
-    inline qsizetype size() const noexcept { return d.size; }
-    inline qsizetype count() const noexcept { return d.size; }
+    inline qsizetype size() const noexcept { return qsizetype(d.size); }
+    inline qsizetype count() const noexcept { return qsizetype(d.size); }
     inline bool isEmpty() const noexcept { return !d.size; }
-    inline QVector<Key> keys() const
+    inline QList<Key> keys() const
     {
-        QVector<Key> k;
-        if (d.size) {
-            k.reserve(typename QVector<Key>::size_type(d.size));
+        QList<Key> k;
+        if (size()) {
+            k.reserve(size());
             for (auto it = d.begin(); it != d.end(); ++it)
                 k << it.node()->key;
         }
-        Q_ASSERT(k.size() == qsizetype(d.size));
+        Q_ASSERT(k.size() == size());
         return k;
     }
 
@@ -225,11 +234,10 @@ public:
         chain.prev = &chain;
     }
 
-    bool insert(const Key &key, T *object, int cost = 1)
+    bool insert(const Key &key, T *object, qsizetype cost = 1)
     {
-        remove(key);
-
         if (cost > mx) {
+            remove(key);
             delete object;
             return false;
         }
@@ -237,16 +245,18 @@ public:
         auto result = d.findOrInsert(key);
         Node *n = result.it.node();
         if (result.initialized) {
-            cost -= n->value.cost;
+            auto prevCost = n->value.cost;
             result.it.node()->emplace(object, cost);
+            cost -= prevCost;
+            relink(key);
         } else {
             Node::createInPlace(n, key, object, cost);
+            n->prev = &chain;
+            n->next = chain.next;
+            chain.next->prev = n;
+            chain.next = n;
         }
         total += cost;
-        n->prev = &chain;
-        n->next = chain.next;
-        chain.next->prev = n;
-        chain.next = n;
         return true;
     }
     T *object(const Key &key) const noexcept

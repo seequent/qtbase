@@ -576,7 +576,7 @@ void QBrush::cleanUp(QBrushData *x)
     QBrushDataPointerDeleter::deleteData(x);
 }
 
-static Q_DECL_CONSTEXPR inline bool use_same_brushdata(Qt::BrushStyle lhs, Qt::BrushStyle rhs)
+static constexpr inline bool use_same_brushdata(Qt::BrushStyle lhs, Qt::BrushStyle rhs)
 {
     return lhs == rhs // includes Qt::TexturePattern
         || (lhs >= Qt::NoBrush && lhs <= Qt::DiagCrossPattern && rhs >= Qt::NoBrush && rhs <= Qt::DiagCrossPattern)
@@ -672,7 +672,7 @@ QBrush &QBrush::operator=(const QBrush &b)
 */
 QBrush::operator QVariant() const
 {
-    return QVariant(QMetaType::QBrush, this);
+    return QVariant::fromValue(*this);
 }
 
 /*!
@@ -1071,7 +1071,7 @@ QDataStream &operator<<(QDataStream &s, const QBrush &b)
             // ensure that we write doubles here instead of streaming the stops
             // directly; otherwise, platforms that redefine qreal might generate
             // data that cannot be read on other platforms.
-            QVector<QGradientStop> stops = gradient->stops();
+            QList<QGradientStop> stops = gradient->stops();
             s << quint32(stops.size());
             for (int i = 0; i < stops.size(); ++i) {
                 const QGradientStop &stop = stops.at(i);
@@ -1086,6 +1086,8 @@ QDataStream &operator<<(QDataStream &s, const QBrush &b)
             s << static_cast<const QRadialGradient *>(gradient)->center();
             s << static_cast<const QRadialGradient *>(gradient)->focalPoint();
             s << (double) static_cast<const QRadialGradient *>(gradient)->radius();
+            if (s.version() >= QDataStream::Qt_6_0)
+                s << (double) static_cast<const QRadialGradient *>(gradient)->focalRadius();
         } else { // type == Conical
             s << static_cast<const QConicalGradient *>(gradient)->center();
             s << (double) static_cast<const QConicalGradient *>(gradient)->angle();
@@ -1176,6 +1178,7 @@ QDataStream &operator>>(QDataStream &s, QBrush &b)
         } else if (type == QGradient::RadialGradient) {
             QPointF center, focal;
             double radius;
+            double focalRadius = 0;
             s >> center;
             s >> focal;
             s >> radius;
@@ -1184,6 +1187,9 @@ QDataStream &operator>>(QDataStream &s, QBrush &b)
             rg.setSpread(spread);
             rg.setCoordinateMode(cmode);
             rg.setInterpolationMode(imode);
+            if (s.version() >= QDataStream::Qt_6_0)
+                s >> focalRadius;
+            rg.setFocalRadius(focalRadius);
             b = QBrush(rg);
         } else { // type == QGradient::ConicalGradient
             QPointF center;
@@ -1312,7 +1318,7 @@ QDataStream &operator>>(QDataStream &s, QBrush &b)
     \internal
 */
 QGradient::QGradient()
-    : m_type(NoGradient), dummy(nullptr)
+    : m_type(NoGradient)
 {
 }
 
@@ -1321,7 +1327,176 @@ QGradient::QGradient()
     \since 5.12
 
     This enum specifies a set of predefined presets for QGradient,
-    based on the gradients from https://webgradients.com/.
+    based on the gradients from \l {https://webgradients.com/}.
+
+    \value WarmFlame
+    \value NightFade
+    \value SpringWarmth
+    \value JuicyPeach
+    \value YoungPassion
+    \value LadyLips
+    \value SunnyMorning
+    \value RainyAshville
+    \value FrozenDreams
+    \value WinterNeva
+    \value DustyGrass
+    \value TemptingAzure
+    \value HeavyRain
+    \value AmyCrisp
+    \value MeanFruit
+    \value DeepBlue
+    \value RipeMalinka
+    \value CloudyKnoxville
+    \value MalibuBeach
+    \value NewLife
+    \value TrueSunset
+    \value MorpheusDen
+    \value RareWind
+    \value NearMoon
+    \value WildApple
+    \value SaintPetersburg
+    \value PlumPlate
+    \value EverlastingSky
+    \value HappyFisher
+    \value Blessing
+    \value SharpeyeEagle
+    \value LadogaBottom
+    \value LemonGate
+    \value ItmeoBranding
+    \value ZeusMiracle
+    \value OldHat
+    \value StarWine
+    \value HappyAcid
+    \value AwesomePine
+    \value NewYork
+    \value ShyRainbow
+    \value MixedHopes
+    \value FlyHigh
+    \value StrongBliss
+    \value FreshMilk
+    \value SnowAgain
+    \value FebruaryInk
+    \value KindSteel
+    \value SoftGrass
+    \value GrownEarly
+    \value SharpBlues
+    \value ShadyWater
+    \value DirtyBeauty
+    \value GreatWhale
+    \value TeenNotebook
+    \value PoliteRumors
+    \value SweetPeriod
+    \value WideMatrix
+    \value SoftCherish
+    \value RedSalvation
+    \value BurningSpring
+    \value NightParty
+    \value SkyGlider
+    \value HeavenPeach
+    \value PurpleDivision
+    \value AquaSplash
+    \value SpikyNaga
+    \value LoveKiss
+    \value CleanMirror
+    \value PremiumDark
+    \value ColdEvening
+    \value CochitiLake
+    \value SummerGames
+    \value PassionateBed
+    \value MountainRock
+    \value DesertHump
+    \value JungleDay
+    \value PhoenixStart
+    \value OctoberSilence
+    \value FarawayRiver
+    \value AlchemistLab
+    \value OverSun
+    \value PremiumWhite
+    \value MarsParty
+    \value EternalConstance
+    \value JapanBlush
+    \value SmilingRain
+    \value CloudyApple
+    \value BigMango
+    \value HealthyWater
+    \value AmourAmour
+    \value RiskyConcrete
+    \value StrongStick
+    \value ViciousStance
+    \value PaloAlto
+    \value HappyMemories
+    \value MidnightBloom
+    \value Crystalline
+    \value PartyBliss
+    \value ConfidentCloud
+    \value LeCocktail
+    \value RiverCity
+    \value FrozenBerry
+    \value ChildCare
+    \value FlyingLemon
+    \value NewRetrowave
+    \value HiddenJaguar
+    \value AboveTheSky
+    \value Nega
+    \value DenseWater
+    \value Seashore
+    \value MarbleWall
+    \value CheerfulCaramel
+    \value NightSky
+    \value MagicLake
+    \value YoungGrass
+    \value ColorfulPeach
+    \value GentleCare
+    \value PlumBath
+    \value HappyUnicorn
+    \value AfricanField
+    \value SolidStone
+    \value OrangeJuice
+    \value GlassWater
+    \value NorthMiracle
+    \value FruitBlend
+    \value MillenniumPine
+    \value HighFlight
+    \value MoleHall
+    \value SpaceShift
+    \value ForestInei
+    \value RoyalGarden
+    \value RichMetal
+    \value JuicyCake
+    \value SmartIndigo
+    \value SandStrike
+    \value NorseBeauty
+    \value AquaGuidance
+    \value SunVeggie
+    \value SeaLord
+    \value BlackSea
+    \value GrassShampoo
+    \value LandingAircraft
+    \value WitchDance
+    \value SleeplessNight
+    \value AngelCare
+    \value CrystalRiver
+    \value SoftLipstick
+    \value SaltMountain
+    \value PerfectWhite
+    \value FreshOasis
+    \value StrictNovember
+    \value MorningSalad
+    \value DeepRelief
+    \value SeaStrike
+    \value NightCall
+    \value SupremeSky
+    \value LightBlue
+    \value MindCrawl
+    \value LilyMeadow
+    \value SugarLollipop
+    \value SweetDessert
+    \value MagicRay
+    \value TeenParty
+    \value FrozenHeat
+    \value GagarinView
+    \value FabledSunset
+    \value PerfectBlue
 */
 
 #include "webgradients.cpp"
@@ -1338,10 +1513,9 @@ QGradient::QGradient()
 */
 QGradient::QGradient(Preset preset)
     : m_type(LinearGradient)
-    , m_spread(PadSpread)
     , m_stops(qt_preset_gradient_stops(preset))
     , m_data(qt_preset_gradient_data[preset - 1])
-    , dummy(qt_preset_gradient_dummy())
+    , m_coordinateMode(ObjectMode)
 {
 }
 
@@ -1470,7 +1644,6 @@ static inline bool ok(const QGradientStops &stops)
 */
 void QGradient::setStops(const QGradientStops &stops)
 {
-    // ## Qt 6: consider taking \a stops by value, so we can move into m_stops
     if (Q_LIKELY(ok(stops))) {
         // fast path for the common case: if everything is ok with the stops, just copy them
         m_stops = stops;
@@ -1501,8 +1674,6 @@ QGradientStops QGradient::stops() const
     }
     return m_stops;
 }
-
-#define Q_DUMMY_ACCESSOR union {void *p; uint i;}; p = dummy;
 
 /*!
     \enum QGradient::CoordinateMode
@@ -1536,8 +1707,7 @@ QGradientStops QGradient::stops() const
 */
 QGradient::CoordinateMode QGradient::coordinateMode() const
 {
-    Q_DUMMY_ACCESSOR
-    return CoordinateMode(i & 0x03);
+    return m_coordinateMode;
 }
 
 /*!
@@ -1548,10 +1718,7 @@ QGradient::CoordinateMode QGradient::coordinateMode() const
 */
 void QGradient::setCoordinateMode(CoordinateMode mode)
 {
-    Q_DUMMY_ACCESSOR
-    i &= ~0x03;
-    i |= uint(mode);
-    dummy = p;
+    m_coordinateMode = mode;
 }
 
 /*!
@@ -1574,8 +1741,7 @@ void QGradient::setCoordinateMode(CoordinateMode mode)
 */
 QGradient::InterpolationMode QGradient::interpolationMode() const
 {
-    Q_DUMMY_ACCESSOR
-    return InterpolationMode((i >> 2) & 0x01);
+    return m_interpolationMode;
 }
 
 /*!
@@ -1587,10 +1753,7 @@ QGradient::InterpolationMode QGradient::interpolationMode() const
 */
 void QGradient::setInterpolationMode(InterpolationMode mode)
 {
-    Q_DUMMY_ACCESSOR
-    i &= ~(1 << 2);
-    i |= (uint(mode) << 2);
-    dummy = p;
+    m_interpolationMode = mode;
 }
 
 /*!
@@ -1613,7 +1776,8 @@ bool QGradient::operator==(const QGradient &gradient) const
 {
     if (gradient.m_type != m_type
         || gradient.m_spread != m_spread
-        || gradient.dummy != dummy) return false;
+        || gradient.m_coordinateMode != m_coordinateMode
+        || gradient.m_interpolationMode != m_interpolationMode) return false;
 
     if (m_type == LinearGradient) {
         if (m_data.linear.x1 != gradient.m_data.linear.x1
@@ -1626,7 +1790,8 @@ bool QGradient::operator==(const QGradient &gradient) const
             || m_data.radial.cy != gradient.m_data.radial.cy
             || m_data.radial.fx != gradient.m_data.radial.fx
             || m_data.radial.fy != gradient.m_data.radial.fy
-            || m_data.radial.cradius != gradient.m_data.radial.cradius)
+            || m_data.radial.cradius != gradient.m_data.radial.cradius
+            || m_data.radial.fradius != gradient.m_data.radial.fradius)
             return false;
     } else { // m_type == ConicalGradient
         if (m_data.conical.cx != gradient.m_data.conical.cx
@@ -1900,6 +2065,7 @@ QRadialGradient::QRadialGradient(const QPointF &center, qreal radius, const QPoi
     m_data.radial.cx = center.x();
     m_data.radial.cy = center.y();
     m_data.radial.cradius = radius;
+    m_data.radial.fradius = 0;
 
     QPointF adapted_focal = qt_radial_gradient_adapt_focal_point(center, radius, focalPoint);
     m_data.radial.fx = adapted_focal.x();
@@ -1919,6 +2085,7 @@ QRadialGradient::QRadialGradient(const QPointF &center, qreal radius)
     m_data.radial.cx = center.x();
     m_data.radial.cy = center.y();
     m_data.radial.cradius = radius;
+    m_data.radial.fradius = 0;
     m_data.radial.fx = center.x();
     m_data.radial.fy = center.y();
 }
@@ -1964,6 +2131,7 @@ QRadialGradient::QRadialGradient()
     m_data.radial.cx = 0;
     m_data.radial.cy = 0;
     m_data.radial.cradius = 1;
+    m_data.radial.fradius = 0;
     m_data.radial.fx = 0;
     m_data.radial.fy = 0;
 }
@@ -1981,6 +2149,7 @@ QRadialGradient::QRadialGradient(const QPointF &center, qreal centerRadius, cons
     m_data.radial.cx = center.x();
     m_data.radial.cy = center.y();
     m_data.radial.cradius = centerRadius;
+    m_data.radial.fradius = 0;
 
     m_data.radial.fx = focalPoint.x();
     m_data.radial.fy = focalPoint.y();
@@ -2001,6 +2170,7 @@ QRadialGradient::QRadialGradient(qreal cx, qreal cy, qreal centerRadius, qreal f
     m_data.radial.cx = cx;
     m_data.radial.cy = cy;
     m_data.radial.cradius = centerRadius;
+    m_data.radial.fradius = 0;
 
     m_data.radial.fx = fx;
     m_data.radial.fy = fy;
@@ -2120,12 +2290,7 @@ void QRadialGradient::setCenterRadius(qreal radius)
 qreal QRadialGradient::focalRadius() const
 {
     Q_ASSERT(m_type == RadialGradient);
-    Q_DUMMY_ACCESSOR
-
-    // mask away low three bits
-    union { float f; quint32 i; } u;
-    u.i = i & ~0x07;
-    return u.f;
+    return m_data.radial.fradius;
 }
 
 /*!
@@ -2137,17 +2302,7 @@ qreal QRadialGradient::focalRadius() const
 void QRadialGradient::setFocalRadius(qreal radius)
 {
     Q_ASSERT(m_type == RadialGradient);
-    Q_DUMMY_ACCESSOR
-
-    // Since there's no QGradientData, we only have the dummy void * to
-    // store additional data in. The three lowest bits are already
-    // taken, thus we cut the three lowest bits from the significand
-    // and store the radius as a float.
-    union { float f; quint32 i; } u;
-    u.f = float(radius);
-    // add 0x04 to round up when we drop the three lowest bits
-    i |= (u.i + 0x04) & ~0x07;
-    dummy = p;
+    m_data.radial.fradius = radius;
 }
 
 /*!
@@ -2364,7 +2519,7 @@ void QConicalGradient::setAngle(qreal angle)
     \typedef QGradientStops
     \relates QGradient
 
-    Typedef for QVector<QGradientStop>.
+    Typedef for QList<QGradientStop>.
 */
 
 /*!
@@ -2391,7 +2546,5 @@ void QConicalGradient::setAngle(qreal angle)
 
     \sa setTransform()
 */
-
-#undef Q_DUMMY_ACCESSOR
 
 QT_END_NAMESPACE

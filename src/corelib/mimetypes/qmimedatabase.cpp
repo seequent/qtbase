@@ -97,23 +97,19 @@ bool QMimeDatabasePrivate::shouldCheck()
 void QMimeDatabasePrivate::loadProviders()
 {
     // We use QStandardPaths every time to check if new files appeared
-    QStringList mimeDirs = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, QLatin1String("mime"), QStandardPaths::LocateDirectory);
+    const QStringList mimeDirs = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, QLatin1String("mime"), QStandardPaths::LocateDirectory);
     const auto fdoIterator = std::find_if(mimeDirs.constBegin(), mimeDirs.constEnd(), [](const QString &mimeDir) -> bool {
         return QFileInfo::exists(mimeDir + QStringLiteral("/packages/freedesktop.org.xml")); }
     );
+    const bool needInternalDB = QMimeXMLProvider::InternalDatabaseAvailable && fdoIterator == mimeDirs.constEnd();
     //qDebug() << "mime dirs:" << mimeDirs;
 
     Providers currentProviders;
     std::swap(m_providers, currentProviders);
 
-    if (QMimeXMLProvider::InternalDatabaseAvailable && fdoIterator == mimeDirs.constEnd()) {
-        m_providers.reserve(mimeDirs.size() + 1);
-        m_providers.push_back(Providers::value_type(new QMimeXMLProvider(this, QMimeXMLProvider::InternalDatabase)));
-    } else {
-        m_providers.reserve(mimeDirs.size());
-    }
+    m_providers.reserve(mimeDirs.size() + (needInternalDB ? 1 : 0));
 
-    for (const QString &mimeDir : qAsConst(mimeDirs)) {
+    for (const QString &mimeDir : mimeDirs) {
         const QString cacheFile = mimeDir + QStringLiteral("/mime.cache");
         QFileInfo fileInfo(cacheFile);
         // Check if we already have a provider for this dir
@@ -146,6 +142,21 @@ void QMimeDatabasePrivate::loadProviders()
                 //qDebug() << "Created XML provider to replace binary provider for" << mimeDir;
             }
             m_providers.push_back(std::move(provider));
+        }
+    }
+    // mimeDirs is sorted "most local first, most global last"
+    // so the internal XML DB goes at the end
+    if (needInternalDB) {
+        // Check if we already have a provider for the InternalDatabase
+        const auto isInternal = [](const std::unique_ptr<QMimeProviderBase> &prov)
+        {
+            return prov && prov->isInternalDatabase();
+        };
+        const auto it = std::find_if(currentProviders.begin(), currentProviders.end(), isInternal);
+        if (it == currentProviders.end()) {
+            m_providers.push_back(Providers::value_type(new QMimeXMLProvider(this, QMimeXMLProvider::InternalDatabase)));
+        } else {
+            m_providers.push_back(std::move(*it));
         }
     }
 }
@@ -205,7 +216,6 @@ QStringList QMimeDatabasePrivate::mimeTypeForFileName(const QString &fileName)
 QMimeGlobMatchResult QMimeDatabasePrivate::findByFileName(const QString &fileName)
 {
     QMimeGlobMatchResult result;
-    // TODO this parses in the order (local, global). Check that it handles "NOGLOBS" correctly.
     for (const auto &provider : providers())
         provider->addFileNameMatches(fileName, result);
     return result;
@@ -250,7 +260,7 @@ void QMimeDatabasePrivate::loadIcon(QMimeTypePrivate &mimePrivate)
 
 static QString fallbackParent(const QString &mimeTypeName)
 {
-    const QStringRef myGroup = mimeTypeName.leftRef(mimeTypeName.indexOf(QLatin1Char('/')));
+    const QStringView myGroup = QStringView{mimeTypeName}.left(mimeTypeName.indexOf(QLatin1Char('/')));
     // All text/* types are subclasses of text/plain.
     if (myGroup == QLatin1String("text") && mimeTypeName != QLatin1String("text/plain"))
         return QLatin1String("text/plain");
@@ -378,20 +388,23 @@ QMimeType QMimeDatabasePrivate::mimeTypeForFileNameAndData(const QString &fileNa
         // Disambiguate conflicting extensions (if magic matching found something)
         if (candidateByData.isValid() && magicAccuracy > 0) {
             const QString sniffedMime = candidateByData.name();
-            // If the sniffedMime matches a glob match, use it
+            // If the sniffedMime matches a highest-weight glob match, use it
             if (candidatesByName.m_matchingMimeTypes.contains(sniffedMime)) {
                 *accuracyPtr = 100;
                 return candidateByData;
             }
-            for (const QString &m : qAsConst(candidatesByName.m_matchingMimeTypes)) {
+            for (const QString &m : qAsConst(candidatesByName.m_allMatchingMimeTypes)) {
                 if (inherits(m, sniffedMime)) {
                     // We have magic + pattern pointing to this, so it's a pretty good match
                     *accuracyPtr = 100;
                     return mimeTypeForName(m);
                 }
             }
-            *accuracyPtr = magicAccuracy;
-            return candidateByData;
+            if (candidatesByName.m_allMatchingMimeTypes.isEmpty()) {
+                // No glob, use magic
+                *accuracyPtr = magicAccuracy;
+                return candidateByData;
+            }
         }
     }
 

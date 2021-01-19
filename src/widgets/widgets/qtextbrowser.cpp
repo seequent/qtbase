@@ -154,7 +154,7 @@ public:
         emit q->highlighted(url);
     }
 };
-Q_DECLARE_TYPEINFO(QTextBrowserPrivate::HistoryEntry, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QTextBrowserPrivate::HistoryEntry, Q_RELOCATABLE_TYPE);
 
 QString QTextBrowserPrivate::findFile(const QUrl &name) const
 {
@@ -312,7 +312,7 @@ void QTextBrowserPrivate::setSource(const QUrl &url, QTextDocument::ResourceType
         } else if (data.userType() == QMetaType::QByteArray) {
             QByteArray ba = data.toByteArray();
             if (type == QTextDocument::HtmlResource) {
-                auto encoding = QStringConverter::encodingForHtml(ba.constData(), ba.size());
+                auto encoding = QStringConverter::encodingForHtml(ba);
                 if (!encoding)
                     // fall back to utf8
                     encoding = QStringDecoder::Utf8;
@@ -326,7 +326,7 @@ void QTextBrowserPrivate::setSource(const QUrl &url, QTextDocument::ResourceType
             qWarning("QTextBrowser: No document for %s", url.toString().toLatin1().constData());
 
         if (q->isVisible()) {
-            const QStringRef firstTag = txt.leftRef(txt.indexOf(QLatin1Char('>')) + 1);
+            const QStringView firstTag = QStringView{txt}.left(txt.indexOf(QLatin1Char('>')) + 1);
             if (firstTag.startsWith(QLatin1String("<qt")) && firstTag.contains(QLatin1String("type")) && firstTag.contains(QLatin1String("detail"))) {
 #ifndef QT_NO_CURSOR
                 QGuiApplication::restoreOverrideCursor();
@@ -502,7 +502,7 @@ void QTextBrowserPrivate::keypadMove(bool next)
         // up e.g. 110%
         // Obviously if a link is entirely visible, we still
         // focus it.
-        if(bothViewRects.contains(desiredRect)
+        if (bothViewRects.contains(desiredRect)
                 || bothViewRects.adjusted(0, visibleLinkAmount, 0, -visibleLinkAmount).intersects(desiredRect)) {
             focusIt = true;
 
@@ -531,7 +531,7 @@ void QTextBrowserPrivate::keypadMove(bool next)
     if (!focusIt && prevFocus.hasSelection()) {
         QRectF desiredRect = control->selectionRect(prevFocus);
         // XXX this may be better off also using the visibleLinkAmount value
-        if(newViewRect.intersects(desiredRect)) {
+        if (newViewRect.intersects(desiredRect)) {
             focusedPos = scrollYOffset;
             focusIt = true;
             anchorToFocus = prevFocus;
@@ -1144,7 +1144,7 @@ void QTextBrowser::paintEvent(QPaintEvent *e)
     depending on the resource type:
 
     \table
-    \header \li ResourceType  \li QVariant::Type
+    \header \li ResourceType  \li QMetaType::Type
     \row    \li QTextDocument::HtmlResource  \li QString or QByteArray
     \row    \li QTextDocument::ImageResource \li QImage, QPixmap or QByteArray
     \row    \li QTextDocument::StyleSheetResource \li QString or QByteArray

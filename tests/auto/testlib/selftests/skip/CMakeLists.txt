@@ -4,7 +4,7 @@
 ## skip Binary:
 #####################################################################
 
-add_qt_executable(skip
+qt_internal_add_executable(skip
     NO_INSTALL # special case
     OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} # special case
     SOURCES
@@ -17,5 +17,5 @@ add_qt_executable(skip
 #####################################################################
 
 # special case begin
-qt_apply_testlib_coverage_options(skip)
+qt_internal_apply_testlib_coverage_options(skip)
 # special case end

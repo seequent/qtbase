@@ -48,12 +48,14 @@
 #include "qwindowsscreen.h"
 #include "qwindowstheme.h"
 #include "qwindowsservices.h"
-#ifdef QT_USE_DIRECTWRITE3
-#include <QtFontDatabaseSupport/private/qwindowsdirectwritefontdatabase_p.h>
+#include <QtGui/private/qtgui-config_p.h>
+#if QT_CONFIG(directwrite3)
+#include <QtGui/private/qwindowsdirectwritefontdatabase_p.h>
 #endif
 #ifndef QT_NO_FREETYPE
-#  include <QtFontDatabaseSupport/private/qwindowsfontdatabase_ft_p.h>
+#  include <QtGui/private/qwindowsfontdatabase_ft_p.h>
 #endif
+#include <QtGui/private/qwindowsfontdatabase_p.h>
 #if QT_CONFIG(clipboard)
 #  include "qwindowsclipboard.h"
 #  if QT_CONFIG(draganddrop)
@@ -71,7 +73,7 @@
 #if QT_CONFIG(sessionmanager)
 #  include "qwindowssessionmanager.h"
 #endif
-#include <QtGui/qtouchdevice.h>
+#include <QtGui/qpointingdevice.h>
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qhighdpiscaling_p.h>
 #include <QtGui/qpa/qplatforminputcontextfactory_p.h>
@@ -133,11 +135,12 @@ QT_BEGIN_NAMESPACE
 struct QWindowsIntegrationPrivate
 {
     Q_DISABLE_COPY_MOVE(QWindowsIntegrationPrivate)
-    explicit QWindowsIntegrationPrivate(const QStringList &paramList);
+    explicit QWindowsIntegrationPrivate() = default;
     ~QWindowsIntegrationPrivate();
 
+    void parseOptions(QWindowsIntegration *q, const QStringList &paramList);
+
     unsigned m_options = 0;
-    int m_tabletAbsoluteRange = -1;
     QWindowsContext m_context;
     QPlatformFontDatabase *m_fontDatabase = nullptr;
 #if QT_CONFIG(clipboard)
@@ -165,7 +168,7 @@ bool parseIntOption(const QString &parameter,const QLatin1String &option,
     if (valueLength < 1 || !parameter.startsWith(option) || parameter.at(option.size()) != u'=')
         return false;
     bool ok;
-    const QStringRef valueRef = parameter.rightRef(valueLength);
+    const auto valueRef = QStringView{parameter}.right(valueLength);
     const int value = valueRef.toInt(&ok);
     if (ok) {
         if (value >= minimumValue && value <= maximumValue)
@@ -180,9 +183,13 @@ bool parseIntOption(const QString &parameter,const QLatin1String &option,
     return true;
 }
 
+using DarkModeHandlingFlag = QNativeInterface::Private::QWindowsApplication::DarkModeHandlingFlag;
+using DarkModeHandling = QNativeInterface::Private::QWindowsApplication::DarkModeHandling;
+
 static inline unsigned parseOptions(const QStringList &paramList,
                                     int *tabletAbsoluteRange,
-                                    QtWindows::ProcessDpiAwareness *dpiAwareness)
+                                    QtWindows::ProcessDpiAwareness *dpiAwareness,
+                                    DarkModeHandling *darkModeHandling)
 {
     unsigned options = 0;
     for (const QString &param : paramList) {
@@ -222,9 +229,10 @@ static inline unsigned parseOptions(const QStringList &paramList,
         } else if (param == u"reverse") {
             options |= QWindowsIntegration::RtlEnabled;
         } else if (param == u"darkmode=1") {
-            options |= QWindowsIntegration::DarkModeWindowFrames;
+            darkModeHandling->setFlag(DarkModeHandlingFlag::DarkModeWindowFrames);
         } else if (param == u"darkmode=2") {
-            options |= QWindowsIntegration::DarkModeWindowFrames | QWindowsIntegration::DarkModeStyle;
+            darkModeHandling->setFlag(DarkModeHandlingFlag::DarkModeWindowFrames);
+            darkModeHandling->setFlag(DarkModeHandlingFlag::DarkModeStyle);
         } else {
             qWarning() << "Unknown option" << param;
         }
@@ -232,7 +240,7 @@ static inline unsigned parseOptions(const QStringList &paramList,
     return options;
 }
 
-QWindowsIntegrationPrivate::QWindowsIntegrationPrivate(const QStringList &paramList)
+void QWindowsIntegrationPrivate::parseOptions(QWindowsIntegration *q, const QStringList &paramList)
 {
     initOpenGlBlacklistResources();
 
@@ -240,16 +248,18 @@ QWindowsIntegrationPrivate::QWindowsIntegrationPrivate(const QStringList &paramL
     // Default to per-monitor awareness to avoid being scaled when monitors with different DPI
     // are connected to Windows 8.1
     QtWindows::ProcessDpiAwareness dpiAwareness = QtWindows::ProcessPerMonitorDpiAware;
-    m_options = parseOptions(paramList, &m_tabletAbsoluteRange, &dpiAwareness);
+    int tabletAbsoluteRange = -1;
+    DarkModeHandling darkModeHandling;
+    m_options = ::parseOptions(paramList, &tabletAbsoluteRange, &dpiAwareness, &darkModeHandling);
+    q->setDarkModeHandling(darkModeHandling);
     QWindowsFontDatabase::setFontOptions(m_options);
+    if (tabletAbsoluteRange >= 0)
+        QWindowsContext::setTabletAbsoluteRange(tabletAbsoluteRange);
 
-    if (m_context.initPointer(m_options)) {
+    if (m_context.initPointer(m_options))
         QCoreApplication::setAttribute(Qt::AA_CompressHighFrequencyEvents);
-    } else {
-        m_context.initTablet(m_options);
-        if (m_tabletAbsoluteRange >= 0)
-            m_context.setTabletAbsoluteRange(m_tabletAbsoluteRange);
-    }
+    else
+        m_context.initTablet();
 
     if (!dpiAwarenessSet) { // Set only once in case of repeated instantiations of QGuiApplication.
         if (!QCoreApplication::testAttribute(Qt::AA_PluginApplication)) {
@@ -275,9 +285,10 @@ QWindowsIntegrationPrivate::~QWindowsIntegrationPrivate()
 QWindowsIntegration *QWindowsIntegration::m_instance = nullptr;
 
 QWindowsIntegration::QWindowsIntegration(const QStringList &paramList) :
-    d(new QWindowsIntegrationPrivate(paramList))
+    d(new QWindowsIntegrationPrivate)
 {
     m_instance = this;
+    d->parseOptions(this, paramList);
 #if QT_CONFIG(clipboard)
     d->m_clipboard.registerViewer();
 #endif
@@ -473,6 +484,33 @@ QOpenGLContext::OpenGLModuleType QWindowsIntegration::openGLModuleType()
 #endif
 }
 
+HMODULE QWindowsIntegration::openGLModuleHandle() const
+{
+    if (QWindowsStaticOpenGLContext *staticOpenGLContext = QWindowsIntegration::staticOpenGLContext())
+        return static_cast<HMODULE>(staticOpenGLContext->moduleHandle());
+
+    return nullptr;
+}
+
+QOpenGLContext *QWindowsIntegration::createOpenGLContext(HGLRC ctx, HWND window, QOpenGLContext *shareContext) const
+{
+    if (!ctx || !window)
+        return nullptr;
+
+    if (QWindowsStaticOpenGLContext *staticOpenGLContext = QWindowsIntegration::staticOpenGLContext()) {
+        QScopedPointer<QWindowsOpenGLContext> result(staticOpenGLContext->createContext(ctx, window));
+        if (result->isValid()) {
+            auto *context = new QOpenGLContext;
+            context->setShareContext(shareContext);
+            auto *contextPrivate = QOpenGLContextPrivate::get(context);
+            contextPrivate->adopt(result.take());
+            return context;
+        }
+    }
+
+    return nullptr;
+}
+
 QWindowsStaticOpenGLContext *QWindowsIntegration::staticOpenGLContext()
 {
     QWindowsIntegration *integration = QWindowsIntegration::instance();
@@ -489,7 +527,7 @@ QWindowsStaticOpenGLContext *QWindowsIntegration::staticOpenGLContext()
 QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
 {
     if (!d->m_fontDatabase) {
-#ifdef QT_USE_DIRECTWRITE3
+#if QT_CONFIG(directwrite3)
         if (d->m_options & QWindowsIntegration::FontDatabaseDirectWrite)
             d->m_fontDatabase = new QWindowsDirectWriteFontDatabase;
         else
@@ -619,28 +657,6 @@ QPlatformServices *QWindowsIntegration::services() const
 void QWindowsIntegration::beep() const
 {
     MessageBeep(MB_OK);  // For QApplication
-}
-
-bool QWindowsIntegration::setWinTabEnabled(bool enabled)
-{
-    bool ret = false;
-    if (QWindowsIntegration *p = QWindowsIntegration::instance()) {
-        if (enabled) {
-            if (p->d->m_context.tabletSupport()) {
-                ret = true;
-            } else {
-                ret = p->d->m_context.initTablet(p->d->m_options);
-                if (ret && p->d->m_tabletAbsoluteRange >= 0)
-                    p->d->m_context.setTabletAbsoluteRange(p->d->m_tabletAbsoluteRange);
-            }
-        } else {
-            if (p->d->m_context.tabletSupport())
-                ret = p->d->m_context.disposeTablet();
-            else
-                ret = true;
-        }
-    }
-    return ret;
 }
 
 #if QT_CONFIG(vulkan)

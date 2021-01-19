@@ -34,14 +34,20 @@ endif()
 if(QT_FEATURE_private_tests OR UNIX)
     add_subdirectory(qfilesystementry)
 endif()
-if(QT_FEATURE_filesystemwatcher)
+# QTBUG-88508 # special case
+if(QT_FEATURE_filesystemwatcher AND NOT ANDROID)
     add_subdirectory(qfilesystemwatcher)
 endif()
 if(TARGET Qt::Network)
     add_subdirectory(qiodevice)
 endif()
 if(QT_FEATURE_process AND TARGET Qt::Network AND NOT ANDROID)
-    add_subdirectory(qprocess)
+    # special case begin
+    # QTBUG-85287: Hangs on qemu armv7 config
+    if(NOT CMAKE_CROSSCOMPILING)
+        add_subdirectory(qprocess)
+    endif()
+    # special case end
 endif()
 if(QT_FEATURE_process)
     add_subdirectory(qprocess-noapplication)

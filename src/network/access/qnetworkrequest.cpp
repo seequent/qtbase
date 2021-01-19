@@ -168,13 +168,11 @@ QT_BEGIN_NAMESPACE
     \value RedirectionTargetAttribute
         Replies only, type: QMetaType::QUrl (no default)
         If present, it indicates that the server is redirecting the
-        request to a different URL. The Network Access API does not by
-        default follow redirections: the application can
-        determine if the requested redirection should be allowed,
-        according to its security policies, or it can set
-        QNetworkRequest::FollowRedirectsAttribute to true (in which case
-        the redirection will be followed and this attribute will not
-        be present in the reply).
+        request to a different URL. The Network Access API does follow
+        redirections by default, but if
+        QNetworkRequest::ManualRedirectPolicy is enabled and
+        the redirect was not handled in redirected() then this
+        attribute will be present.
         The returned URL might be relative. Use QUrl::resolved()
         to create an absolute URL out of it.
 
@@ -271,7 +269,7 @@ QT_BEGIN_NAMESPACE
         to different policies.
 
     \value Http2AllowedAttribute
-        Requests only, type: QMetaType::Bool (default: false)
+        Requests only, type: QMetaType::Bool (default: true)
         Indicates whether the QNetworkAccessManager code is
         allowed to use HTTP/2 with this request. This applies
         to SSL requests or 'cleartext' HTTP/2.
@@ -288,13 +286,6 @@ QT_BEGIN_NAMESPACE
         in 100 millisecond intervals.
         (This value was introduced in 5.5.)
 
-    \value FollowRedirectsAttribute
-        Requests only, type: QMetaType::Bool (default: false)
-        Indicates whether the Network Access API should automatically follow a
-        HTTP redirect response or not. Currently redirects that are insecure,
-        that is redirecting from "https" to "http" protocol, are not allowed.
-        (This value was introduced in 5.6.)
-
     \value OriginalContentLengthAttribute
         Replies only, type QMetaType::Int
         Holds the original content-length attribute before being invalidated and
@@ -304,8 +295,8 @@ QT_BEGIN_NAMESPACE
 
     \value RedirectPolicyAttribute
         Requests only, type: QMetaType::Int, should be one of the
-        QNetworkRequest::RedirectPolicy values (default: ManualRedirectPolicy).
-        This attribute obsoletes FollowRedirectsAttribute.
+        QNetworkRequest::RedirectPolicy values
+        (default: NoLessSafeRedirectPolicy).
         (This value was introduced in 5.9.)
 
     \value Http2DirectAttribute
@@ -382,12 +373,11 @@ QT_BEGIN_NAMESPACE
     Indicates whether the Network Access API should automatically follow a
     HTTP redirect response or not.
 
-    \value ManualRedirectPolicy        Default value: not following any redirects.
+    \value ManualRedirectPolicy        Not following any redirects.
 
-    \value NoLessSafeRedirectPolicy    Only "http"->"http", "http" -> "https"
-                                       or "https" -> "https" redirects are allowed.
-                                       Equivalent to setting the old FollowRedirectsAttribute
-                                       to true
+    \value NoLessSafeRedirectPolicy    Default value: Only "http"->"http",
+                                       "http" -> "https" or "https" -> "https" redirects
+                                       are allowed.
 
     \value SameOriginRedirectPolicy    Require the same protocol, host and port.
                                        Note, http://example.com and http://example.com:80
@@ -493,6 +483,7 @@ public:
 QNetworkRequest::QNetworkRequest()
     : d(new QNetworkRequestPrivate)
 {
+
 #if QT_CONFIG(http)
     // Initial values proposed by RFC 7540 are quite draconian,
     // so unless an application will set its own parameters, we
@@ -905,7 +896,8 @@ void QNetworkRequest::setHttp2Configuration(const QHttp2Configuration &configura
 {
     d->h2Configuration = configuration;
 }
-
+#endif // QT_CONFIG(http) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(http) || defined(Q_CLANG_QDOC) || defined (Q_OS_WASM)
 /*!
     \since 5.15
 
@@ -939,7 +931,7 @@ void QNetworkRequest::setTransferTimeout(int timeout)
 {
     d->transferTimeout = timeout;
 }
-#endif // QT_CONFIG(http) || defined(Q_CLANG_QDOC)
+#endif // QT_CONFIG(http) || defined(Q_CLANG_QDOC) || defined (Q_OS_WASM)
 
 static QByteArray headerName(QNetworkRequest::KnownHeaders header)
 {
@@ -1332,9 +1324,7 @@ void QNetworkHeadersPrivate::setRawHeaderInternal(const QByteArray &key, const Q
     auto firstEqualsKey = [&key](const RawHeaderPair &header) {
         return header.first.compare(key, Qt::CaseInsensitive) == 0;
     };
-    rawHeaders.erase(std::remove_if(rawHeaders.begin(), rawHeaders.end(),
-                                    firstEqualsKey),
-                     rawHeaders.end());
+    rawHeaders.removeIf(firstEqualsKey);
 
     if (value.isNull())
         return;                 // only wanted to erase key

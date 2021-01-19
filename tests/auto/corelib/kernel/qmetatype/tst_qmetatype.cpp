@@ -28,7 +28,7 @@
 
 
 #include <QtCore>
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtCore/private/qmetaobjectbuilder_p.h>
 
 #include "tst_qmetatype.h"
@@ -48,6 +48,112 @@
 
 Q_DECLARE_METATYPE(QMetaType::Type)
 
+namespace CheckTypeTraits
+{
+struct NoOperators
+{
+    int x;
+};
+using Nested = QVector<std::pair<int, QMap<QStringList, QVariant>>>;
+using Nested2 = QVector<std::pair<int, QVector<QPair<QStringList, QVariant>>>>;
+
+// basic types
+static_assert(QTypeTraits::has_operator_equal_v<bool>);
+static_assert(QTypeTraits::has_operator_less_than_v<bool>);
+static_assert(QTypeTraits::has_operator_equal_v<int>);
+static_assert(QTypeTraits::has_operator_less_than_v<int>);
+static_assert(QTypeTraits::has_operator_equal_v<double>);
+static_assert(QTypeTraits::has_operator_less_than_v<double>);
+
+// no comparison operators
+static_assert(!QTypeTraits::has_operator_equal_v<NoOperators>);
+static_assert(!QTypeTraits::has_operator_less_than_v<NoOperators>);
+
+// standard Qt types
+static_assert(QTypeTraits::has_operator_equal_v<QString>);
+static_assert(QTypeTraits::has_operator_less_than_v<QString>);
+static_assert(QTypeTraits::has_operator_equal_v<QVariant>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QVariant>);
+
+// QList
+static_assert(QTypeTraits::has_operator_equal_v<QStringList>);
+static_assert(QTypeTraits::has_operator_less_than_v<QStringList>);
+static_assert(!QTypeTraits::has_operator_equal_v<QList<NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QList<NoOperators>>);
+static_assert(QTypeTraits::has_operator_equal_v<QList<QVariant>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QList<QVariant>>);
+
+// QPair
+static_assert(QTypeTraits::has_operator_equal_v<QPair<int, QString>>);
+static_assert(QTypeTraits::has_operator_less_than_v<QPair<int, QString>>);
+static_assert(!QTypeTraits::has_operator_equal_v<QPair<int, NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QPair<int, NoOperators>>);
+
+// QMap
+static_assert(QTypeTraits::has_operator_equal_v<QMap<int, QString>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QMap<int, QString>>);
+static_assert(!QTypeTraits::has_operator_equal_v<QMap<int, NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QMap<int, NoOperators>>);
+
+// QHash
+static_assert(QTypeTraits::has_operator_equal_v<QHash<int, QString>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QHash<int, QString>>);
+static_assert(!QTypeTraits::has_operator_equal_v<QHash<int, NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<QHash<int, NoOperators>>);
+
+// QSharedPointer
+static_assert(QTypeTraits::has_operator_equal_v<QSharedPointer<QString>>);
+// smart pointer equality doesn't depend on T
+static_assert(QTypeTraits::has_operator_equal_v<QSharedPointer<NoOperators>>);
+
+// std::vector
+static_assert(QTypeTraits::has_operator_equal_v<std::vector<QString>>);
+static_assert(QTypeTraits::has_operator_less_than_v<std::vector<QString>>);
+static_assert(!QTypeTraits::has_operator_equal_v<std::vector<NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::vector<NoOperators>>);
+static_assert(QTypeTraits::has_operator_equal_v<std::vector<QVariant>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::vector<QVariant>>);
+
+// std::pair
+static_assert(QTypeTraits::has_operator_equal_v<std::pair<int, QString>>);
+static_assert(QTypeTraits::has_operator_less_than_v<std::pair<int, QString>>);
+static_assert(!QTypeTraits::has_operator_equal_v<std::pair<int, NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::pair<int, NoOperators>>);
+
+// std::tuple
+static_assert(QTypeTraits::has_operator_equal_v<std::tuple<int, QString, double>>);
+static_assert(QTypeTraits::has_operator_less_than_v<std::tuple<int, QString, double>>);
+static_assert(!QTypeTraits::has_operator_equal_v<std::tuple<int, QString, NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::tuple<int, QString, NoOperators>>);
+
+// std::map
+static_assert(QTypeTraits::has_operator_equal_v<std::map<int, QString>>);
+static_assert(QTypeTraits::has_operator_less_than_v<std::map<int, QString>>);
+static_assert(!QTypeTraits::has_operator_equal_v<std::map<int, NoOperators>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::map<int, NoOperators>>);
+
+// std::optional
+static_assert(QTypeTraits::has_operator_equal_v<std::optional<QString>>);
+static_assert(!QTypeTraits::has_operator_equal_v<std::optional<NoOperators>>);
+
+// nested types
+static_assert(QTypeTraits::has_operator_equal_v<Nested>);
+static_assert(!QTypeTraits::has_operator_less_than_v<Nested>);
+static_assert(QTypeTraits::has_operator_equal_v<std::tuple<int, Nested>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::tuple<int, Nested>>);
+static_assert(QTypeTraits::has_operator_equal_v<std::tuple<int, Nested>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::tuple<int, Nested>>);
+
+static_assert(QTypeTraits::has_operator_equal_v<Nested2>);
+static_assert(!QTypeTraits::has_operator_less_than_v<Nested2>);
+static_assert(QTypeTraits::has_operator_equal_v<std::tuple<int, Nested2>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::tuple<int, Nested2>>);
+static_assert(QTypeTraits::has_operator_equal_v<std::tuple<int, Nested2>>);
+static_assert(!QTypeTraits::has_operator_less_than_v<std::tuple<int, Nested2>>);
+
+}
+
+
 class tst_QMetaType: public QObject
 {
     Q_OBJECT
@@ -66,7 +172,7 @@ public:
     void setProp(const QList<QVariant> &list) { propList = list; }
 
 private:
-    void registerGadget(const char * name, const QVector<GadgetPropertyType> &gadgetProperties);
+    void registerGadget(const char * name, const QList<GadgetPropertyType> &gadgetProperties);
     QList<QVariant> propList;
 
 private slots:
@@ -91,12 +197,14 @@ private slots:
     void sizeOf();
     void sizeOfStaticLess_data();
     void sizeOfStaticLess();
+    void alignOf_data();
+    void alignOf();
     void flags_data();
     void flags();
     void flagsStaticLess_data();
     void flagsStaticLess();
-    void flagsBinaryCompatibility5_0_data();
-    void flagsBinaryCompatibility5_0();
+    void flagsBinaryCompatibility6_0_data();
+    void flagsBinaryCompatibility6_0();
     void construct_data();
     void construct();
     void typedConstruct();
@@ -109,7 +217,6 @@ private slots:
     void isRegisteredStaticLess_data();
     void isRegisteredStaticLess();
     void isEnum();
-    void registerStreamBuiltin();
     void automaticTemplateRegistration();
     void saveAndLoadBuiltin_data();
     void saveAndLoadBuiltin();
@@ -128,6 +235,7 @@ private slots:
     void operatorEq();
     void typesWithInaccessibleDTors();
     void voidIsNotUnknown();
+    void typeNameNormalization();
 };
 
 struct BaseGenericType
@@ -161,13 +269,13 @@ struct GenericGadgetType : BaseGenericType
         if (_c == QMetaObject::ReadProperty) {
             if (_id < properties.size()) {
                 const auto &prop = properties.at(_id);
-                QMetaType::destruct(int(prop.userType()), _a[0]);
-                QMetaType::construct(int(prop.userType()), _a[0], prop.constData());
+                prop.metaType().destruct(_a[0]);
+                prop.metaType().construct(_a[0], prop.constData());
             }
         } else if (_c == QMetaObject::WriteProperty) {
             if (_id < properties.size()) {
                 auto & prop = properties[_id];
-                prop = QVariant(prop.userType(), _a[0]);
+                prop = QVariant(prop.metaType(), _a[0]);
             }
         }
     }
@@ -183,7 +291,7 @@ struct GenericGadgetType : BaseGenericType
         for (auto &prop : properties)
             in >> prop;
     }
-    QVector<QVariant> properties;
+    QList<QVariant> properties;
 };
 
 struct GenericPODType : BaseGenericType
@@ -243,12 +351,12 @@ static void *GadgetTypedConstructor(int type, void *where, const void *copy)
     return it->first->constructor(type, where, copy);
 }
 
-static void GadgetSaveOperator(QDataStream & out, const void *data)
+static void GadgetSaveOperator(const QtPrivate::QMetaTypeInterface *, QDataStream & out, const void *data)
 {
     reinterpret_cast<const BaseGenericType *>(data)->saveOperator(out);
 }
 
-static void GadgetLoadOperator(QDataStream &in, void *data)
+static void GadgetLoadOperator(const QtPrivate::QMetaTypeInterface *, QDataStream &in, void *data)
 {
     reinterpret_cast<BaseGenericType *>(data)->loadOperator(in);
 }
@@ -260,7 +368,7 @@ class CustomQObject : public QObject
 {
     Q_OBJECT
 public:
-    CustomQObject(QObject *parent = 0)
+    CustomQObject(QObject *parent = nullptr)
       : QObject(parent)
     {
     }
@@ -287,16 +395,16 @@ class GadgetDerivedAndTyped : public CustomGadget {};
 Q_DECLARE_METATYPE(GadgetDerivedAndTyped<int>)
 Q_DECLARE_METATYPE(GadgetDerivedAndTyped<int>*)
 
-void tst_QMetaType::registerGadget(const char *name, const QVector<GadgetPropertyType> &gadgetProperties)
+void tst_QMetaType::registerGadget(const char *name, const QList<GadgetPropertyType> &gadgetProperties)
 {
     QMetaObjectBuilder gadgetBuilder;
     gadgetBuilder.setClassName(name);
-    QMetaObjectBuilder::MetaObjectFlags metaObjectflags = QMetaObjectBuilder::DynamicMetaObject | QMetaObjectBuilder::PropertyAccessInStaticMetaCall;
+    MetaObjectFlags metaObjectflags = DynamicMetaObject | PropertyAccessInStaticMetaCall;
     gadgetBuilder.setFlags(metaObjectflags);
     auto dynamicGadgetProperties = std::make_shared<GenericGadgetType>();
     for (const auto &prop : gadgetProperties) {
-        int propertyType = QMetaType::type(prop.type);
-        dynamicGadgetProperties->properties.push_back(QVariant(QVariant::Type(propertyType)));
+        int propertyType = QMetaType::fromName(prop.type).id();
+        dynamicGadgetProperties->properties.push_back(QVariant(QMetaType(propertyType)));
         auto dynamicPropery = gadgetBuilder.addProperty(prop.name, prop.type);
         dynamicPropery.setWritable(true);
         dynamicPropery.setReadable(true);
@@ -304,22 +412,36 @@ void tst_QMetaType::registerGadget(const char *name, const QVector<GadgetPropert
     auto meta = gadgetBuilder.toMetaObject();
     meta->d.static_metacall = &GadgetsStaticMetacallFunction;
     meta->d.superdata = nullptr;
-    const auto flags = QMetaType::WasDeclaredAsMetaType | QMetaType::IsGadget | QMetaType::NeedsConstruction | QMetaType::NeedsDestruction;
-    using TypeInfo = QtPrivate::QMetaTypeInterface;
+    const auto flags = QMetaType::IsGadget | QMetaType::NeedsConstruction | QMetaType::NeedsDestruction;
+    struct TypeInfo : public QtPrivate::QMetaTypeInterface
+    {
+        QMetaObject *mo;
+    };
+
     auto typeInfo = new TypeInfo {
-        0, sizeof(GenericGadgetType), alignof(GenericGadgetType), uint(flags), meta, name, 0,
-        QtPrivate::RefCount{ 0 },
-        [](TypeInfo *self) { delete self; },
-        [](const TypeInfo *self, void *where) { GadgetTypedConstructor(self->typeId, where, nullptr); },
-        [](const TypeInfo *self, void *where, const void *copy) { GadgetTypedConstructor(self->typeId, where, copy); },
-        [](const TypeInfo *self, void *where, void *copy) { GadgetTypedConstructor(self->typeId, where, copy); },
-        [](const TypeInfo *self, void *ptr) { GadgetTypedDestructor(self->typeId, ptr); },
-        nullptr };
+        {
+            0, alignof(GenericGadgetType), sizeof(GenericGadgetType), uint(flags), 0,
+            [](const QtPrivate::QMetaTypeInterface *self) -> const QMetaObject * {
+                return reinterpret_cast<const TypeInfo *>(self)->mo;
+            },
+            name,
+            [](const QtPrivate::QMetaTypeInterface *self, void *where) { GadgetTypedConstructor(self->typeId, where, nullptr); },
+            [](const QtPrivate::QMetaTypeInterface *self, void *where, const void *copy) { GadgetTypedConstructor(self->typeId, where, copy); },
+            [](const QtPrivate::QMetaTypeInterface *self, void *where, void *copy) { GadgetTypedConstructor(self->typeId, where, copy); },
+            [](const QtPrivate::QMetaTypeInterface *self, void *ptr) { GadgetTypedDestructor(self->typeId, ptr); },
+            nullptr,
+            nullptr,
+            nullptr,
+            GadgetSaveOperator,
+            GadgetLoadOperator,
+            nullptr
+        },
+        meta
+    };
     QMetaType gadgetMetaType(typeInfo);
     dynamicGadgetProperties->m_metatype = gadgetMetaType;
     int gadgetTypeId = QMetaType(typeInfo).id();
     QVERIFY(gadgetTypeId > 0);
-    QMetaType::registerStreamOperators(gadgetTypeId, &GadgetSaveOperator, &GadgetLoadOperator);
     s_managedTypes[gadgetTypeId] = qMakePair(dynamicGadgetProperties, std::shared_ptr<QMetaObject>{meta, [](QMetaObject *ptr){ ::free(ptr); }});
 }
 
@@ -367,7 +489,7 @@ class MetaTypeTorturer: public QThread
 {
     Q_OBJECT
 protected:
-    void run()
+    void run() override
     {
         Bar space[1];
         space[0].~Bar();
@@ -533,7 +655,7 @@ Q_DECLARE_METATYPE(Whity<double>)
 
 #if !defined(Q_CC_CLANG) && defined(Q_CC_GNU) && Q_CC_GNU < 501
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(Whity<double>, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(Whity<double>, Q_RELOCATABLE_TYPE);
 QT_END_NAMESPACE
 #endif
 
@@ -581,13 +703,13 @@ void tst_QMetaType::typeName_data()
     QTest::newRow("124125534") << 124125534 << QString();
 
     // automatic registration
-    QTest::newRow("QHash<int,int>") << ::qMetaTypeId<QHash<int, int> >() << QString::fromLatin1("QHash<int,int>");
-    QTest::newRow("QMap<int,int>") << ::qMetaTypeId<QMap<int, int> >() << QString::fromLatin1("QMap<int,int>");
-    QTest::newRow("QVector<QMap<int,int>>") << ::qMetaTypeId<QVector<QMap<int, int> > >() << QString::fromLatin1("QVector<QMap<int,int>>");
+    QTest::newRow("QHash<int,int>") << ::qMetaTypeId<QHash<int, int>>() << QString::fromLatin1("QHash<int,int>");
+    QTest::newRow("QMap<int,int>") << ::qMetaTypeId<QMap<int, int>>() << QString::fromLatin1("QMap<int,int>");
+    QTest::newRow("QList<QMap<int,int>>") << ::qMetaTypeId<QList<QMap<int, int>>>() << QString::fromLatin1("QList<QMap<int,int>>");
 
-    // automatic registration with automatic QList to QVector aliasing
-    QTest::newRow("QList<int>") << ::qMetaTypeId<QList<int> >() << QString::fromLatin1("QVector<int>");
-    QTest::newRow("QVector<QList<int>>") << ::qMetaTypeId<QVector<QList<int> > >() << QString::fromLatin1("QVector<QVector<int>>");
+    // automatic registration with automatic QList to QList aliasing
+    QTest::newRow("QList<int>") << ::qMetaTypeId<QList<int>>() << QString::fromLatin1("QList<int>");
+    QTest::newRow("QList<QList<int>>") << ::qMetaTypeId<QList<QList<int>>>() << QString::fromLatin1("QList<QList<int>>");
 
     QTest::newRow("CustomQObject*") << ::qMetaTypeId<CustomQObject*>() << QString::fromLatin1("CustomQObject*");
     QTest::newRow("CustomGadget") << ::qMetaTypeId<CustomGadget>() << QString::fromLatin1("CustomGadget");
@@ -604,6 +726,9 @@ void tst_QMetaType::typeName()
 {
     QFETCH(int, aType);
     QFETCH(QString, aTypeName);
+
+    if (aType >= QMetaType::FirstWidgetsType)
+        QSKIP("The test doesn't link against QtWidgets.");
 
     const char *rawname = QMetaType::typeName(aType);
     QString name = QString::fromLatin1(rawname);
@@ -643,6 +768,8 @@ void tst_QMetaType::type()
     QFETCH(int, aType);
     QFETCH(QByteArray, aTypeName);
 
+    if (aType >= QMetaType::FirstWidgetsType)
+        QSKIP("The test doesn't link against QtWidgets.");
     // QMetaType::type(QByteArray)
     QCOMPARE(QMetaType::type(aTypeName), aType);
     // QMetaType::type(const char *)
@@ -677,21 +804,21 @@ void tst_QMetaType::type_fromSubString()
 namespace {
     template <typename T>
     struct static_assert_trigger {
-        Q_STATIC_ASSERT(( QMetaTypeId2<T>::IsBuiltIn ));
+        static_assert(( QMetaTypeId2<T>::IsBuiltIn ));
         enum { value = true };
     };
 }
 
 #define CHECK_BUILTIN(MetaTypeName, MetaTypeId, RealType) static_assert_trigger< RealType >::value &&
-Q_STATIC_ASSERT(( FOR_EACH_CORE_METATYPE(CHECK_BUILTIN) true ));
+static_assert(( FOR_EACH_CORE_METATYPE(CHECK_BUILTIN) true ));
 #undef CHECK_BUILTIN
-Q_STATIC_ASSERT(( QMetaTypeId2<QList<QVariant> >::IsBuiltIn));
-Q_STATIC_ASSERT(( QMetaTypeId2<QMap<QString,QVariant> >::IsBuiltIn));
-Q_STATIC_ASSERT(( QMetaTypeId2<QObject*>::IsBuiltIn));
-Q_STATIC_ASSERT((!QMetaTypeId2<tst_QMetaType*>::IsBuiltIn)); // QObject subclass
-Q_STATIC_ASSERT((!QMetaTypeId2<QList<int> >::IsBuiltIn));
-Q_STATIC_ASSERT((!QMetaTypeId2<QMap<int,int> >::IsBuiltIn));
-Q_STATIC_ASSERT((!QMetaTypeId2<QMetaType::Type>::IsBuiltIn));
+static_assert(( QMetaTypeId2<QList<QVariant> >::IsBuiltIn));
+static_assert(( QMetaTypeId2<QMap<QString,QVariant> >::IsBuiltIn));
+static_assert(( QMetaTypeId2<QObject*>::IsBuiltIn));
+static_assert((!QMetaTypeId2<tst_QMetaType*>::IsBuiltIn)); // QObject subclass
+static_assert((!QMetaTypeId2<QList<int> >::IsBuiltIn));
+static_assert((!QMetaTypeId2<QMap<int,int> >::IsBuiltIn));
+static_assert((!QMetaTypeId2<QMetaType::Type>::IsBuiltIn));
 
 void tst_QMetaType::create_data()
 {
@@ -804,6 +931,11 @@ FOR_EACH_CORE_METATYPE(RETURN_CREATE_COPY_FUNCTION)
     TypeTestFunctionGetter::get(type)();
 }
 
+template<typename T>
+constexpr size_t getSize = sizeof(T);
+template<>
+constexpr size_t getSize<void> = 0;
+
 void tst_QMetaType::sizeOf_data()
 {
     QTest::addColumn<int>("type");
@@ -811,7 +943,7 @@ void tst_QMetaType::sizeOf_data()
 
     QTest::newRow("QMetaType::UnknownType") << int(QMetaType::UnknownType) << size_t(0);
 #define ADD_METATYPE_TEST_ROW(MetaTypeName, MetaTypeId, RealType) \
-    QTest::newRow(#RealType) << int(QMetaType::MetaTypeName) << size_t(QTypeInfo<RealType>::sizeOf);
+    QTest::newRow(#RealType) << int(QMetaType::MetaTypeName) << getSize<RealType>;
 FOR_EACH_CORE_METATYPE(ADD_METATYPE_TEST_ROW)
 #undef ADD_METATYPE_TEST_ROW
 
@@ -843,10 +975,51 @@ void tst_QMetaType::sizeOfStaticLess()
     QCOMPARE(size_t(QMetaType(type).sizeOf()), size);
 }
 
+template <typename T>
+auto getAlignOf()
+{
+    if constexpr (std::is_same_v<T, void>)
+        return 0;
+    else
+        return alignof(T);
+}
+
+void tst_QMetaType::alignOf_data()
+{
+    QTest::addColumn<int>("type");
+    QTest::addColumn<size_t>("size");
+
+    QTest::newRow("QMetaType::UnknownType") << int(QMetaType::UnknownType) << size_t(0);
+#define ADD_METATYPE_TEST_ROW(MetaTypeName, MetaTypeId, RealType) \
+    QTest::newRow(#RealType) << int(QMetaType::MetaTypeName) << size_t(getAlignOf<RealType>());
+FOR_EACH_CORE_METATYPE(ADD_METATYPE_TEST_ROW)
+#undef ADD_METATYPE_TEST_ROW
+
+    QTest::newRow("Whity<double>") << ::qMetaTypeId<Whity<double> >() << alignof(Whity<double>);
+    QTest::newRow("Whity<int>") << ::qMetaTypeId<Whity<int> >() << alignof(Whity<int>);
+    QTest::newRow("Testspace::Foo") << ::qMetaTypeId<TestSpace::Foo>() << alignof(TestSpace::Foo);
+
+    QTest::newRow("-1") << -1 << size_t(0);
+    QTest::newRow("-124125534") << -124125534 << size_t(0);
+    QTest::newRow("124125534") << 124125534 << size_t(0);
+}
+
+void tst_QMetaType::alignOf()
+{
+    QFETCH(int, type);
+    QFETCH(size_t, size);
+    QCOMPARE(size_t(QMetaType(type).alignOf()), size);
+}
+
 struct CustomMovable { CustomMovable() {} };
+
+// needed for QSet<CustomMovable>. We actually check that it makes sense.
+bool operator==(const CustomMovable &, const CustomMovable &) { return true; }
+qsizetype qHash(const CustomMovable &, qsizetype seed = 0) { return seed; }
+
 #if !defined(Q_CC_CLANG) && defined(Q_CC_GNU) && Q_CC_GNU < 501
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(CustomMovable, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(CustomMovable, Q_RELOCATABLE_TYPE);
 QT_END_NAMESPACE
 #endif
 
@@ -856,7 +1029,7 @@ class CustomObject : public QObject
 {
     Q_OBJECT
 public:
-    CustomObject(QObject *parent = 0)
+    CustomObject(QObject *parent = nullptr)
       : QObject(parent)
     {
 
@@ -870,7 +1043,7 @@ class CustomMultiInheritanceObject : public QObject, SecondBase
 {
     Q_OBJECT
 public:
-    CustomMultiInheritanceObject(QObject *parent = 0)
+    CustomMultiInheritanceObject(QObject *parent = nullptr)
       : QObject(parent)
     {
 
@@ -878,13 +1051,13 @@ public:
 };
 Q_DECLARE_METATYPE(CustomMultiInheritanceObject*);
 
-class C { char _[4]; public: C() = default; C(const C&) {} };
-class M { char _[4]; public: M() {} };
-class P { char _[4]; };
+class C { Q_DECL_UNUSED_MEMBER char _[4]; public: C() = default; C(const C&) {} };
+class M { Q_DECL_UNUSED_MEMBER char _[4]; public: M() {} };
+class P { Q_DECL_UNUSED_MEMBER char _[4]; };
 
 QT_BEGIN_NAMESPACE
 #if defined(Q_CC_GNU) && Q_CC_GNU < 501
-Q_DECLARE_TYPEINFO(M, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(M, Q_RELOCATABLE_TYPE);
 Q_DECLARE_TYPEINFO(P, Q_PRIMITIVE_TYPE);
 #endif
 QT_END_NAMESPACE
@@ -920,37 +1093,39 @@ void tst_QMetaType::flags_data()
     QTest::addColumn<bool>("isComplex");
     QTest::addColumn<bool>("isPointerToQObject");
     QTest::addColumn<bool>("isEnum");
+    QTest::addColumn<bool>("isQmlList");
 
 #define ADD_METATYPE_TEST_ROW(MetaTypeName, MetaTypeId, RealType) \
     QTest::newRow(#RealType) << MetaTypeId \
-        << bool(QTypeInfoQuery<RealType>::isRelocatable) \
-        << bool(QTypeInfoQuery<RealType>::isComplex) \
+        << bool(QTypeInfo<RealType>::isRelocatable) \
+        << bool(QTypeInfo<RealType>::isComplex) \
         << bool(QtPrivate::IsPointerToTypeDerivedFromQObject<RealType>::Value) \
-        << bool(std::is_enum<RealType>::value);
+        << bool(std::is_enum<RealType>::value) \
+        << false;
 QT_FOR_EACH_STATIC_CORE_CLASS(ADD_METATYPE_TEST_ROW)
 QT_FOR_EACH_STATIC_PRIMITIVE_POINTER(ADD_METATYPE_TEST_ROW)
 QT_FOR_EACH_STATIC_CORE_POINTER(ADD_METATYPE_TEST_ROW)
 #undef ADD_METATYPE_TEST_ROW
-    QTest::newRow("TestSpace::Foo") << ::qMetaTypeId<TestSpace::Foo>() << false << true << false << false;
-    QTest::newRow("Whity<double>") << ::qMetaTypeId<Whity<double> >() << true << true << false << false;
-    QTest::newRow("CustomMovable") << ::qMetaTypeId<CustomMovable>() << true << true << false << false;
-    QTest::newRow("CustomObject*") << ::qMetaTypeId<CustomObject*>() << true << false << true << false;
-    QTest::newRow("CustomMultiInheritanceObject*") << ::qMetaTypeId<CustomMultiInheritanceObject*>() << true << false << true << false;
-    QTest::newRow("QPair<C,C>") << ::qMetaTypeId<QPair<C,C> >() << false << true  << false << false;
-    QTest::newRow("QPair<C,M>") << ::qMetaTypeId<QPair<C,M> >() << false << true  << false << false;
-    QTest::newRow("QPair<C,P>") << ::qMetaTypeId<QPair<C,P> >() << false << true  << false << false;
-    QTest::newRow("QPair<M,C>") << ::qMetaTypeId<QPair<M,C> >() << false << true  << false << false;
-    QTest::newRow("QPair<M,M>") << ::qMetaTypeId<QPair<M,M> >() << true  << true  << false << false;
-    QTest::newRow("QPair<M,P>") << ::qMetaTypeId<QPair<M,P> >() << true  << true  << false << false;
-    QTest::newRow("QPair<P,C>") << ::qMetaTypeId<QPair<P,C> >() << false << true  << false << false;
-    QTest::newRow("QPair<P,M>") << ::qMetaTypeId<QPair<P,M> >() << true  << true  << false << false;
-    QTest::newRow("QPair<P,P>") << ::qMetaTypeId<QPair<P,P> >() << true  << false << false << false;
-    QTest::newRow("FlagsDataEnum") << ::qMetaTypeId<FlagsDataEnum>() << true << false << false << true;
+    QTest::newRow("TestSpace::Foo") << ::qMetaTypeId<TestSpace::Foo>() << false << true << false << false << false;
+    QTest::newRow("Whity<double>") << ::qMetaTypeId<Whity<double> >() << true << true << false << false << false;
+    QTest::newRow("CustomMovable") << ::qMetaTypeId<CustomMovable>() << true << true << false << false << false;
+    QTest::newRow("CustomObject*") << ::qMetaTypeId<CustomObject*>() << true << false << true << false << false;
+    QTest::newRow("CustomMultiInheritanceObject*") << ::qMetaTypeId<CustomMultiInheritanceObject*>() << true << false << true << false << false;
+    QTest::newRow("QPair<C,C>") << ::qMetaTypeId<QPair<C,C> >() << false << true  << false << false << false;
+    QTest::newRow("QPair<C,M>") << ::qMetaTypeId<QPair<C,M> >() << false << true  << false << false << false;
+    QTest::newRow("QPair<C,P>") << ::qMetaTypeId<QPair<C,P> >() << false << true  << false << false << false;
+    QTest::newRow("QPair<M,C>") << ::qMetaTypeId<QPair<M,C> >() << false << true  << false << false << false;
+    QTest::newRow("QPair<M,M>") << ::qMetaTypeId<QPair<M,M> >() << true  << true  << false << false << false;
+    QTest::newRow("QPair<M,P>") << ::qMetaTypeId<QPair<M,P> >() << true  << true  << false << false << false;
+    QTest::newRow("QPair<P,C>") << ::qMetaTypeId<QPair<P,C> >() << false << true  << false << false << false;
+    QTest::newRow("QPair<P,M>") << ::qMetaTypeId<QPair<P,M> >() << true  << true  << false << false << false;
+    QTest::newRow("QPair<P,P>") << ::qMetaTypeId<QPair<P,P> >() << true  << false << false << false << false;
+    QTest::newRow("FlagsDataEnum") << ::qMetaTypeId<FlagsDataEnum>() << true << false << false << true << false;
 
     // invalid ids.
-    QTest::newRow("-1") << -1 << false << false << false << false;
-    QTest::newRow("-124125534") << -124125534 << false << false << false << false;
-    QTest::newRow("124125534") << 124125534 << false << false << false << false;
+    QTest::newRow("-1") << -1 << false << false << false << false << false;
+    QTest::newRow("-124125534") << -124125534 << false << false << false << false << false;
+    QTest::newRow("124125534") << 124125534 << false << false << false << false << false;
 }
 
 void tst_QMetaType::flags()
@@ -960,12 +1135,14 @@ void tst_QMetaType::flags()
     QFETCH(bool, isComplex);
     QFETCH(bool, isPointerToQObject);
     QFETCH(bool, isEnum);
+    QFETCH(bool, isQmlList);
 
     QCOMPARE(bool(QMetaType::typeFlags(type) & QMetaType::NeedsConstruction), isComplex);
     QCOMPARE(bool(QMetaType::typeFlags(type) & QMetaType::NeedsDestruction), isComplex);
-    QCOMPARE(bool(QMetaType::typeFlags(type) & QMetaType::MovableType), isMovable);
+    QCOMPARE(bool(QMetaType::typeFlags(type) & QMetaType::RelocatableType), isMovable);
     QCOMPARE(bool(QMetaType::typeFlags(type) & QMetaType::PointerToQObject), isPointerToQObject);
     QCOMPARE(bool(QMetaType::typeFlags(type) & QMetaType::IsEnumeration), isEnum);
+    QCOMPARE(bool(QMetaType::typeFlags(type) & QMetaType::IsQmlList), isQmlList);
 }
 
 void tst_QMetaType::flagsStaticLess_data()
@@ -982,49 +1159,50 @@ void tst_QMetaType::flagsStaticLess()
     int flags = QMetaType(type).flags();
     QCOMPARE(bool(flags & QMetaType::NeedsConstruction), isComplex);
     QCOMPARE(bool(flags & QMetaType::NeedsDestruction), isComplex);
-    QCOMPARE(bool(flags & QMetaType::MovableType), isMovable);
+    QCOMPARE(bool(flags & QMetaType::RelocatableType), isMovable);
 }
 
-void tst_QMetaType::flagsBinaryCompatibility5_0_data()
+void tst_QMetaType::flagsBinaryCompatibility6_0_data()
 {
-    // Changing traits of a built-in type is illegal from BC point of view.
-    // Traits are saved in code of an application and in the Qt library which means
-    // that there may be a mismatch.
-    // The test is loading data generated by this code:
-    //
-    //        QByteArray buffer;
-    //        buffer.reserve(2 * QMetaType::User);
-    //        for (quint32 i = 0; i < QMetaType::User; ++i) {
-    //            if (QMetaType::isRegistered(i)) {
-    //                buffer.append(i);
-    //                buffer.append(quint32(QMetaType::typeFlags(i)));
-    //            }
-    //        }
-    //        QFile file("/tmp/typeFlags.bin");
-    //        file.open(QIODevice::WriteOnly);
-    //        file.write(buffer);
-    //        file.close();
+//     Changing traits of a built-in type is illegal from BC point of view.
+//     Traits are saved in code of an application and in the Qt library which means
+//     that there may be a mismatch.
+//     The test is loading data generated by this code:
+//
+//            QList<quint32> buffer;
+//            buffer.reserve(2 * QMetaType::User);
+//            for (quint32 i = 0; i < QMetaType::LastCoreType; ++i) {
+//                if (QMetaType::isRegistered(i)) {
+//                    buffer.append(i);
+//                    buffer.append(quint32(QMetaType::typeFlags(i)));
+//                }
+//            }
+//            QFile file("/tmp/typeFlags.bin");
+//            file.open(QIODevice::WriteOnly);
+//            QDataStream ds(&file);
+//            ds << buffer;
+//            file.close();
 
     QTest::addColumn<quint32>("id");
     QTest::addColumn<quint32>("flags");
 
     QFile file(QFINDTESTDATA("typeFlags.bin"));
     file.open(QIODevice::ReadOnly);
-    QByteArray buffer = file.readAll();
+    QList<quint32> buffer;
+    QDataStream ds(&file);
+    ds >> buffer;
 
     for (int i = 0; i < buffer.size(); i+=2) {
         const quint32 id = buffer.at(i);
         const quint32 flags = buffer.at(i + 1);
         if (id > QMetaType::LastCoreType)
             continue; // We do not link against QtGui, so we do longer consider such type as registered
-        if (id == QMetaType::Void)
-            continue; // The meaning of QMetaType::Void has changed in Qt6
         QVERIFY2(QMetaType::isRegistered(id), "A type could not be removed in BC way");
         QTest::newRow(QMetaType::typeName(id)) << id << flags;
     }
 }
 
-void tst_QMetaType::flagsBinaryCompatibility5_0()
+void tst_QMetaType::flagsBinaryCompatibility6_0()
 {
     QFETCH(quint32, id);
     QFETCH(quint32, flags);
@@ -1109,7 +1287,7 @@ FOR_EACH_CORE_METATYPE(RETURN_CONSTRUCT_FUNCTION)
 
 void tst_QMetaType::typedConstruct()
 {
-    auto testMetaObjectWriteOnGadget = [](QVariant &gadget, const QVector<GadgetPropertyType> &properties)
+    auto testMetaObjectWriteOnGadget = [](QVariant &gadget, const QList<GadgetPropertyType> &properties)
     {
         auto metaObject = QMetaType::metaObjectForType(gadget.userType());
         QVERIFY(metaObject != nullptr);
@@ -1123,7 +1301,7 @@ void tst_QMetaType::typedConstruct()
         }
     };
 
-    auto testMetaObjectReadOnGadget = [](QVariant gadget, const QVector<GadgetPropertyType> &properties)
+    auto testMetaObjectReadOnGadget = [](QVariant gadget, const QList<GadgetPropertyType> &properties)
     {
         auto metaObject = QMetaType::metaObjectForType(gadget.userType());
         QVERIFY(metaObject != nullptr);
@@ -1138,26 +1316,26 @@ void tst_QMetaType::typedConstruct()
         }
     };
 
-    QVector<GadgetPropertyType> dynamicGadget1 = {
+    QList<GadgetPropertyType> dynamicGadget1 = {
         {"int", "int_prop", 34526},
         {"float", "float_prop", 1.23f},
         {"QString", "string_prop", QString{"Test QString"}}
     };
     registerGadget("DynamicGadget1", dynamicGadget1);
 
-    QVariant testGadget1(QVariant::Type(QMetaType::type("DynamicGadget1")));
+    QVariant testGadget1(QMetaType(QMetaType::type("DynamicGadget1")));
     testMetaObjectWriteOnGadget(testGadget1, dynamicGadget1);
     testMetaObjectReadOnGadget(testGadget1, dynamicGadget1);
 
 
-    QVector<GadgetPropertyType> dynamicGadget2 = {
+    QList<GadgetPropertyType> dynamicGadget2 = {
         {"int", "int_prop", 512},
         {"double", "double_prop", 4.56},
         {"QString", "string_prop", QString{"Another String"}},
         {"DynamicGadget1", "dynamicGadget1_prop", testGadget1}
     };
     registerGadget("DynamicGadget2", dynamicGadget2);
-    QVariant testGadget2(QVariant::Type(QMetaType::type("DynamicGadget2")));
+    QVariant testGadget2(QMetaType(QMetaType::type("DynamicGadget2")));
     testMetaObjectWriteOnGadget(testGadget2, dynamicGadget2);
     testMetaObjectReadOnGadget(testGadget2, dynamicGadget2);
     auto g2mo = QMetaType::metaObjectForType(testGadget2.userType());
@@ -1173,24 +1351,27 @@ void tst_QMetaType::typedConstruct()
     const auto flags = QMetaType::NeedsConstruction | QMetaType::NeedsDestruction;
     using TypeInfo = QtPrivate::QMetaTypeInterface;
     auto typeInfo = new TypeInfo {
-        0, sizeof(GenericGadgetType), alignof(GenericGadgetType), uint(flags), nullptr, podTypeName,
-        0, QtPrivate::RefCount{0},
-        [](TypeInfo *self) { delete self; },
+        0, alignof(GenericGadgetType), sizeof(GenericGadgetType), uint(flags), 0, nullptr, podTypeName,
         [](const TypeInfo *self, void *where) { GadgetTypedConstructor(self->typeId, where, nullptr); },
         [](const TypeInfo *self, void *where, const void *copy) { GadgetTypedConstructor(self->typeId, where, copy); },
         [](const TypeInfo *self, void *where, void *copy) { GadgetTypedConstructor(self->typeId, where, copy); },
         [](const TypeInfo *self, void *ptr) { GadgetTypedDestructor(self->typeId, ptr); },
-        nullptr };
+        nullptr,
+        nullptr,
+        nullptr,
+        GadgetSaveOperator,
+        GadgetLoadOperator,
+        nullptr
+    };
     QMetaType metatype(typeInfo);
     dynamicGadgetProperties->m_metatype = metatype;
     int podTypeId = metatype.id();
     QVERIFY(podTypeId > 0);
-    QMetaType::registerStreamOperators(podTypeId, &GadgetSaveOperator, &GadgetLoadOperator);
     s_managedTypes[podTypeId] = qMakePair(dynamicGadgetProperties, std::shared_ptr<QMetaObject>{});
 
     // Test POD
     QCOMPARE(podTypeId, QMetaType::type(podTypeName));
-    QVariant podVariant{QVariant::Type(podTypeId)};
+    QVariant podVariant{QMetaType(podTypeId)};
     QCOMPARE(myPodTesData, static_cast<const GenericPODType *>(reinterpret_cast<const BaseGenericType *>(podVariant.constData()))->podData);
 
     QVariant podVariant1{podVariant};
@@ -1406,13 +1587,6 @@ void tst_QMetaType::isRegisteredStaticLess()
     QCOMPARE(QMetaType(typeId).isRegistered(), registered);
 }
 
-void tst_QMetaType::registerStreamBuiltin()
-{
-    //should not crash;
-    qRegisterMetaTypeStreamOperators<QString>("QString");
-    qRegisterMetaTypeStreamOperators<QVariant>("QVariant");
-}
-
 typedef QHash<int, uint> IntUIntHash;
 Q_DECLARE_METATYPE(IntUIntHash)
 typedef QMap<int, uint> IntUIntMap;
@@ -1447,7 +1621,7 @@ class AutoMetaTypeObject : public QObject
     Q_PROPERTY(IntIntHash someHash READ someHash CONSTANT)
     Q_PROPERTY(NaturalNumber someInt READ someInt CONSTANT)
 public:
-    AutoMetaTypeObject(QObject *parent = 0)
+    AutoMetaTypeObject(QObject *parent = nullptr)
       : QObject(parent), m_int(42)
     {
         m_hash.insert(4, 2);
@@ -1472,7 +1646,7 @@ class MyObject : public QObject
 {
   Q_OBJECT
 public:
-  MyObject(QObject *parent = 0)
+  MyObject(QObject *parent = nullptr)
     : QObject(parent)
   {
   }
@@ -1510,9 +1684,9 @@ void tst_QMetaType::automaticTemplateRegistration()
     CONTAINER<VALUE_TYPE> innerContainer; \
     innerContainer.push_back(42); \
     QVERIFY(*QVariant::fromValue(innerContainer).value<CONTAINER<VALUE_TYPE> >().begin() == 42); \
-    QVector<CONTAINER<VALUE_TYPE> > outerContainer; \
+    QList<CONTAINER<VALUE_TYPE> > outerContainer; \
     outerContainer << innerContainer; \
-    QVERIFY(*QVariant::fromValue(outerContainer).value<QVector<CONTAINER<VALUE_TYPE> > >().first().begin() == 42); \
+    QVERIFY(*QVariant::fromValue(outerContainer).value<QList<CONTAINER<VALUE_TYPE> > >().first().begin() == 42); \
   }
 
   TEST_SEQUENTIAL_CONTAINER(QList, int)
@@ -1524,19 +1698,19 @@ void tst_QMetaType::automaticTemplateRegistration()
     vecbool.push_back(true);
     vecbool.push_back(false);
     vecbool.push_back(true);
-    QVERIFY(QVariant::fromValue(vecbool).value<std::vector<bool> >().front() == true);
-    QVector<std::vector<bool> > vectorList;
+    QVERIFY(QVariant::fromValue(vecbool).value<std::vector<bool>>().front() == true);
+    QList<std::vector<bool>> vectorList;
     vectorList << vecbool;
-    QVERIFY(QVariant::fromValue(vectorList).value<QVector<std::vector<bool> > >().first().front() == true);
+    QVERIFY(QVariant::fromValue(vectorList).value<QList<std::vector<bool>>>().first().front() == true);
   }
 
   {
     QList<unsigned> unsignedList;
     unsignedList << 123;
-    QVERIFY(QVariant::fromValue(unsignedList).value<QList<unsigned> >().first() == 123);
-    QVector<QList<unsigned> > vectorList;
+    QVERIFY(QVariant::fromValue(unsignedList).value<QList<unsigned>>().first() == 123);
+    QList<QList<unsigned>> vectorList;
     vectorList << unsignedList;
-    QVERIFY(QVariant::fromValue(vectorList).value<QVector<QList<unsigned> > >().first().first() == 123);
+    QVERIFY(QVariant::fromValue(vectorList).value<QList<QList<unsigned>>>().first().first() == 123);
   }
 
   QCOMPARE(::qMetaTypeId<QVariantList>(), (int)QMetaType::QVariantList);
@@ -1550,10 +1724,10 @@ void tst_QMetaType::automaticTemplateRegistration()
     QList<QSharedPointer<QObject> > sharedPointerList;
     QObject *testObject = new QObject;
     sharedPointerList << QSharedPointer<QObject>(testObject);
-    QVERIFY(QVariant::fromValue(sharedPointerList).value<QList<QSharedPointer<QObject> > >().first() == testObject);
-    QVector<QList<QSharedPointer<QObject> > > vectorList;
+    QVERIFY(QVariant::fromValue(sharedPointerList).value<QList<QSharedPointer<QObject>>>().first() == testObject);
+    QList<QList<QSharedPointer<QObject>>> vectorList;
     vectorList << sharedPointerList;
-    QVERIFY(QVariant::fromValue(vectorList).value<QVector<QList<QSharedPointer<QObject> > > >().first().first() == testObject);
+    QVERIFY(QVariant::fromValue(vectorList).value<QList<QList<QSharedPointer<QObject>>>>().first().first() == testObject);
   }
   {
     IntIntHash intIntHash;
@@ -1623,7 +1797,7 @@ void tst_QMetaType::automaticTemplateRegistration()
   {
     typedef std::map<int, CustomObject*> StdMapIntCustomObject ;
     StdMapIntCustomObject intComparableMap;
-    CustomObject *o = 0;
+    CustomObject *o = nullptr;
     intComparableMap[4] = o;
     QCOMPARE(QVariant::fromValue(intComparableMap).value<StdMapIntCustomObject >()[4], o);
   }
@@ -1640,7 +1814,7 @@ void tst_QMetaType::automaticTemplateRegistration()
     QCOMPARE(QVariant::fromValue(intIntPair).value<IntIntPair>().second, 2);
   }
   {
-    IntUIntPair intUIntPair = qMakePair<int, uint>(4, 2);
+    IntUIntPair intUIntPair = qMakePair(4, 2u);
     QCOMPARE(QVariant::fromValue(intUIntPair).value<IntUIntPair>().first, 4);
     QCOMPARE(QVariant::fromValue(intUIntPair).value<IntUIntPair>().second, (uint)2);
   }
@@ -1664,7 +1838,7 @@ void tst_QMetaType::automaticTemplateRegistration()
   }
   {
     typedef std::pair<int, CustomQObject*> StdIntComparablePair;
-    CustomQObject* o = 0;
+    CustomQObject *o = nullptr;
     StdIntComparablePair intComparablePair = std::make_pair(4, o);
     QCOMPARE(QVariant::fromValue(intComparablePair).value<StdIntComparablePair>().first, 4);
     QCOMPARE(QVariant::fromValue(intComparablePair).value<StdIntComparablePair>().second, o);
@@ -1714,9 +1888,6 @@ void tst_QMetaType::automaticTemplateRegistration()
 
     #define FOR_EACH_1ARG_TEMPLATE_TYPE(F, TYPE) \
         F(QList, TYPE) \
-        F(QVector, TYPE) \
-        F(QVector, TYPE) \
-        F(QVector, TYPE) \
         F(QQueue, TYPE) \
         F(QStack, TYPE) \
         F(QSet, TYPE)
@@ -1727,7 +1898,7 @@ void tst_QMetaType::automaticTemplateRegistration()
     #define FOR_EACH_2ARG_TEMPLATE_TYPE(F, RealName1, RealName2) \
         F(QHash, RealName1, RealName2) \
         F(QMap, RealName1, RealName2) \
-        F(QPair, RealName1, RealName2)
+        F(std::pair, RealName1, RealName2)
 
     #define PRINT_2ARG_TEMPLATE_INTERNAL(RealName1, RealName2) \
         FOR_EACH_2ARG_TEMPLATE_TYPE(CREATE_AND_VERIFY_CONTAINER, RealName1, RealName2)
@@ -1736,7 +1907,7 @@ void tst_QMetaType::automaticTemplateRegistration()
         FOR_EACH_STATIC_PRIMITIVE_TYPE2(PRINT_2ARG_TEMPLATE_INTERNAL, RealName)
 
     #define REGISTER_TYPEDEF(TYPE, ARG1, ARG2) \
-      qRegisterMetaType<TYPE <ARG1, ARG2> >(#TYPE "<" #ARG1 "," #ARG2 ">");
+      qRegisterMetaType<TYPE <ARG1, ARG2>>(#TYPE "<" #ARG1 "," #ARG2 ">");
 
     REGISTER_TYPEDEF(QHash, int, uint)
     REGISTER_TYPEDEF(QMap, int, uint)
@@ -1749,11 +1920,11 @@ void tst_QMetaType::automaticTemplateRegistration()
       PRINT_2ARG_TEMPLATE
     )
 
-    CREATE_AND_VERIFY_CONTAINER(QList, QList<QMap<int, QHash<char, QList<QVariant> > > >)
-    CREATE_AND_VERIFY_CONTAINER(QVector, void*)
-    CREATE_AND_VERIFY_CONTAINER(QVector, const void*)
+    CREATE_AND_VERIFY_CONTAINER(QList, QList<QMap<int, QHash<char, QList<QVariant>>>>)
     CREATE_AND_VERIFY_CONTAINER(QList, void*)
-    CREATE_AND_VERIFY_CONTAINER(QPair, void*, void*)
+    CREATE_AND_VERIFY_CONTAINER(QList, const void*)
+    CREATE_AND_VERIFY_CONTAINER(QList, void*)
+    CREATE_AND_VERIFY_CONTAINER(std::pair, void*, void*)
     CREATE_AND_VERIFY_CONTAINER(QHash, void*, void*)
     CREATE_AND_VERIFY_CONTAINER(QHash, const void*, const void*)
 
@@ -1787,13 +1958,6 @@ void tst_QMetaType::automaticTemplateRegistration()
         SMARTPOINTER < QObject > extractedPtr = FROMVARIANTFUNCTION<QObject>(v); \
         QCOMPARE(extractedPtr.data()->objectName(), sp.data()->objectName()); \
     }
-
-#if QT_DEPRECATED_SINCE(5, 0)
-    TEST_NONOWNING_SMARTPOINTER(QWeakPointer, QObject, WeakPointerToQObject, qWeakPointerFromVariant)
-    TEST_NONOWNING_SMARTPOINTER(QWeakPointer, QFile, WeakPointerToQObject, qWeakPointerFromVariant)
-    TEST_NONOWNING_SMARTPOINTER(QWeakPointer, QTemporaryFile, WeakPointerToQObject, qWeakPointerFromVariant)
-    TEST_NONOWNING_SMARTPOINTER(QWeakPointer, MyObject, WeakPointerToQObject, qWeakPointerFromVariant)
-#endif
 
     TEST_NONOWNING_SMARTPOINTER(QPointer, QObject, TrackingPointerToQObject, qPointerFromVariant)
     TEST_NONOWNING_SMARTPOINTER(QPointer, QFile, TrackingPointerToQObject, qPointerFromVariant)
@@ -1838,11 +2002,6 @@ DECLARE_NONSTREAMABLE(QPersistentModelIndex)
 DECLARE_NONSTREAMABLE(QObject*)
 DECLARE_NONSTREAMABLE(QWidget*)
 
-#define DECLARE_GUI_CLASS_NONSTREAMABLE(MetaTypeName, MetaTypeId, RealType) \
-    DECLARE_NONSTREAMABLE(RealType)
-QT_FOR_EACH_STATIC_GUI_CLASS(DECLARE_GUI_CLASS_NONSTREAMABLE)
-#undef DECLARE_GUI_CLASS_NONSTREAMABLE
-
 #define DECLARE_WIDGETS_CLASS_NONSTREAMABLE(MetaTypeName, MetaTypeId, RealType) \
     DECLARE_NONSTREAMABLE(RealType)
 QT_FOR_EACH_STATIC_WIDGETS_CLASS(DECLARE_WIDGETS_CLASS_NONSTREAMABLE)
@@ -1874,11 +2033,14 @@ void tst_QMetaType::saveAndLoadBuiltin()
     QCOMPARE(stream.status(), QDataStream::Ok);
 
     if (isStreamable) {
+        QVERIFY(QMetaType(type).hasRegisteredDataStreamOperators());
         QVERIFY(QMetaType::load(stream, type, value)); // Hmmm, shouldn't it return false?
 
         // std::nullptr_t is nullary: it doesn't actually read anything
         if (type != QMetaType::Nullptr)
             QCOMPARE(stream.status(), QDataStream::ReadPastEnd);
+    } else {
+        QVERIFY(!QMetaType(type).hasRegisteredDataStreamOperators());
     }
 
     stream.device()->seek(0);
@@ -1901,7 +2063,6 @@ struct CustomStreamableType
 {
     int a;
 };
-Q_DECLARE_METATYPE(CustomStreamableType)
 
 QDataStream &operator<<(QDataStream &out, const CustomStreamableType &t)
 {
@@ -1916,6 +2077,7 @@ QDataStream &operator>>(QDataStream &in, CustomStreamableType &t)
         t.a = a;
     return in;
 }
+Q_DECLARE_METATYPE(CustomStreamableType)
 
 void tst_QMetaType::saveAndLoadCustom()
 {
@@ -1925,12 +2087,7 @@ void tst_QMetaType::saveAndLoadCustom()
     int id = ::qMetaTypeId<CustomStreamableType>();
     QByteArray ba;
     QDataStream stream(&ba, QIODevice::ReadWrite);
-    QVERIFY(!QMetaType::save(stream, id, &t));
-    QCOMPARE(stream.status(), QDataStream::Ok);
-    QVERIFY(!QMetaType::load(stream, id, &t));
-    QCOMPARE(stream.status(), QDataStream::Ok);
 
-    qRegisterMetaTypeStreamOperators<CustomStreamableType>("CustomStreamableType");
     QVERIFY(QMetaType::save(stream, id, &t));
     QCOMPARE(stream.status(), QDataStream::Ok);
 
@@ -1961,7 +2118,7 @@ class MyQObjectFromGadget : public QObject, public MyGadget
 {
     Q_OBJECT
 public:
-    MyQObjectFromGadget(QObject *parent = 0)
+    MyQObjectFromGadget(QObject *parent = nullptr)
         : QObject(parent)
     {}
 };
@@ -2043,7 +2200,6 @@ struct RegisterMetaTypeStruct<qRegisterMetaType< Name >()> \
     enum { Value = qRegisterMetaType< Name >() }; \
 };
 
-#if defined(Q_COMPILER_CONSTEXPR)
 QT_FOR_EACH_STATIC_TYPE(METATYPE_ID_STRUCT)
 QT_FOR_EACH_STATIC_TYPE(REGISTER_METATYPE_STRUCT)
 
@@ -2058,11 +2214,9 @@ struct RegisterMetaTypeStructDefaultTemplateValue
 {
   enum { Value };
 };
-#endif
 
 void tst_QMetaType::constexprMetaTypeIds()
 {
-#if defined(Q_COMPILER_CONSTEXPR)
     int id = 0;
     int metaType;
 
@@ -2078,9 +2232,6 @@ void tst_QMetaType::constexprMetaTypeIds()
     default:;
     }
     Q_UNUSED(metaType);
-#else
-    QSKIP("The test needs a compiler supporting constexpr");
-#endif
 }
 
 void tst_QMetaType::constRefs()
@@ -2089,9 +2240,7 @@ void tst_QMetaType::constRefs()
     QCOMPARE(::qMetaTypeId<const QString &>(), ::qMetaTypeId<QString>());
     QCOMPARE(::qMetaTypeId<const CustomMovable &>(), ::qMetaTypeId<CustomMovable>());
     QCOMPARE(::qMetaTypeId<const QList<CustomMovable> &>(), ::qMetaTypeId<QList<CustomMovable> >());
-#if defined(Q_COMPILER_CONSTEXPR)
-    Q_STATIC_ASSERT(::qMetaTypeId<const int &>() == ::qMetaTypeId<int>());
-#endif
+    static_assert(::qMetaTypeId<const int &>() == ::qMetaTypeId<int>());
 }
 
 struct CustomConvertibleType
@@ -2135,6 +2284,11 @@ struct CustomDebugStreamableType
     QString toString() const { return "test"; }
 };
 
+struct CustomDebugStreamableType2
+{
+    QString toString() const { return "test"; }
+};
+
 QDebug operator<<(QDebug dbg, const CustomDebugStreamableType&)
 {
     return dbg << "string-content";
@@ -2157,6 +2311,9 @@ bool operator==(const CustomEqualsOnlyType &lhs, const CustomEqualsOnlyType &rhs
 { return lhs.val == rhs.val;}
 bool operator!=(const CustomEqualsOnlyType &lhs, const CustomEqualsOnlyType &rhs)
 { return !operator==(lhs, rhs); }
+
+static_assert(QTypeTraits::has_operator_equal_v<CustomEqualsOnlyType>);
+static_assert(!QTypeTraits::has_operator_less_than_v<CustomEqualsOnlyType>);
 
 Q_DECLARE_METATYPE(CustomConvertibleType);
 Q_DECLARE_METATYPE(CustomConvertibleType2);
@@ -2188,14 +2345,14 @@ template<typename From, typename To>
 void testCustomTypeNotYetConvertible()
 {
     QVERIFY((!hasRegisteredConverterFunction<From, To>()));
-    QVERIFY((!QVariant::fromValue<From>(From()).canConvert(qMetaTypeId<To>())));
+    QVERIFY((!QVariant::fromValue<From>(From()).template canConvert<To>()));
 }
 
 template<typename From, typename To>
 void testCustomTypeConvertible()
 {
     QVERIFY((hasRegisteredConverterFunction<From, To>()));
-    QVERIFY((QVariant::fromValue<From>(From()).canConvert(qMetaTypeId<To>())));
+    QVERIFY((QVariant::fromValue<From>(From()).template canConvert<To>()));
 }
 
 void customTypeNotYetConvertible()
@@ -2403,9 +2560,7 @@ void tst_QMetaType::convertCustomType()
 
 void tst_QMetaType::compareCustomEqualOnlyType()
 {
-    int metaTypeId = qRegisterMetaType<CustomEqualsOnlyType>();
-    QMetaType::registerEqualsComparator<CustomEqualsOnlyType>();
-    int result;
+    QMetaType type = QMetaType::fromType<CustomEqualsOnlyType>();
 
     CustomEqualsOnlyType val50(50);
     CustomEqualsOnlyType val100(100);
@@ -2423,52 +2578,26 @@ void tst_QMetaType::compareCustomEqualOnlyType()
     QCOMPARE(variant100, variant100);
 
     // check QMetaType::compare works/doesn't crash for equals only comparators
-    bool wasSuccess = QMetaType::compare(variant50.constData(), variant50.constData(),
-                                          metaTypeId, &result);
-    QCOMPARE(result, 0);
-    QVERIFY(wasSuccess);
-    wasSuccess = QMetaType::compare(variant100.constData(), variant100x.constData(),
-                                          metaTypeId, &result);
-    QCOMPARE(result, 0);
-    QVERIFY(wasSuccess);
+    auto cmp = type.compare(variant50.constData(), variant50.constData());
+    QCOMPARE(cmp, QPartialOrdering::Unordered);
+    bool equals = type.equals(variant50.constData(), variant50.constData());
+    QVERIFY(equals);
 
-    wasSuccess = QMetaType::compare(variant50.constData(), variant100.constData(),
-                                          metaTypeId, &result);
-    QVERIFY(!wasSuccess);
+    cmp = type.compare(variant100.constData(), variant100x.constData());
+    QCOMPARE(cmp, QPartialOrdering::Unordered);
+    equals = type.equals(variant100.constData(), variant100x.constData());
+    QVERIFY(equals);
 
-    // check QMetaType::equals works for equals only comparator
-    wasSuccess = QMetaType::equals(variant50.constData(), variant50.constData(),
-                                   metaTypeId, &result);
-    QCOMPARE(result, 0);
-    QVERIFY(wasSuccess);
-    wasSuccess = QMetaType::equals(variant100.constData(), variant100.constData(),
-                                   metaTypeId, &result);
-    QCOMPARE(result, 0);
-    QVERIFY(wasSuccess);
-    wasSuccess = QMetaType::equals(variant100x.constData(), variant100x.constData(),
-                                   metaTypeId, &result);
-    QCOMPARE(result, 0);
-    QVERIFY(wasSuccess);
-    wasSuccess = QMetaType::equals(variant100.constData(), variant100x.constData(),
-                                   metaTypeId, &result);
-    QCOMPARE(result, 0);
-    QVERIFY(wasSuccess);
-    wasSuccess = QMetaType::equals(variant50.constData(), variant100.constData(),
-                                   metaTypeId, &result);
-    QCOMPARE(result, -1);
-    QVERIFY(wasSuccess);
-    wasSuccess = QMetaType::equals(variant50.constData(), variant100x.constData(),
-                                   metaTypeId, &result);
-    QCOMPARE(result, -1);
-    QVERIFY(wasSuccess);
+    cmp = type.compare(variant50.constData(), variant100.constData());
+    QCOMPARE(cmp, QPartialOrdering::Unordered);
+    equals = type.equals(variant50.constData(), variant100.constData());
+    QVERIFY(!equals);
 
     //check QMetaType::equals for type w/o equals comparator being registered
     CustomMovable movable1;
     CustomMovable movable2;
-    wasSuccess = QMetaType::equals(&movable1, &movable2,
-                                   qRegisterMetaType<CustomMovable>(), &result);
-    QVERIFY(!wasSuccess);
-
+    type = QMetaType::fromType<CustomMovable>();
+    equals = type.equals(&movable1, &movable2);
 }
 
 struct MessageHandlerCustom : public MessageHandler
@@ -2489,16 +2618,14 @@ void tst_QMetaType::customDebugStream()
 {
     MessageHandlerCustom handler(::qMetaTypeId<CustomDebugStreamableType>());
     QVariant v1 = QVariant::fromValue(CustomDebugStreamableType());
-    handler.expectedMessage = "QVariant(CustomDebugStreamableType, )";
-    qDebug() << v1;
-
-    QMetaType::registerConverter<CustomDebugStreamableType, QString>(&CustomDebugStreamableType::toString);
-    handler.expectedMessage = "QVariant(CustomDebugStreamableType, \"test\")";
-    qDebug() << v1;
-
-    QMetaType::registerDebugStreamOperator<CustomDebugStreamableType>();
     handler.expectedMessage = "QVariant(CustomDebugStreamableType, string-content)";
     qDebug() << v1;
+
+    MessageHandlerCustom handler2(::qMetaTypeId<CustomDebugStreamableType2>());
+    QMetaType::registerConverter<CustomDebugStreamableType2, QString>(&CustomDebugStreamableType2::toString);
+    handler2.expectedMessage = "QVariant(CustomDebugStreamableType2, \"test\")";
+    QVariant v2 = QVariant::fromValue(CustomDebugStreamableType2());
+    qDebug() << v2;
 }
 
 void tst_QMetaType::unknownType()
@@ -2548,16 +2675,16 @@ void tst_QMetaType::operatorEq_data()
 
     QTest::newRow("String") << QMetaType(QMetaType::QString)
                             << QMetaType::fromType<const QString &>() << true;
-    QTest::newRow("void1") << QMetaType(QMetaType::UnknownType) << QMetaType::fromType<void>()
-                           << false;
-    QTest::newRow("void2") << QMetaType::fromType<const void>() << QMetaType::fromType<void>()
-                           << true;
-    QTest::newRow("vec1") << QMetaType::fromType<QVector<const int *>>()
-                          << QMetaType::fromType<QVector<const int *>>() << true;
-    QTest::newRow("vec2") << QMetaType::fromType<QVector<const int *>>()
-                          << QMetaType::fromType<QVector<int *>>() << false;
-    QTest::newRow("char1") << QMetaType::fromType<CharTemplate<'>'>>()
-                           << QMetaType::fromType<CharTemplate<'>', void>>() << true;
+    QTest::newRow("void1")  << QMetaType(QMetaType::UnknownType) << QMetaType::fromType<void>()
+                            << false;
+    QTest::newRow("void2")  << QMetaType::fromType<const void>() << QMetaType::fromType<void>()
+                            << true;
+    QTest::newRow("list1")  << QMetaType::fromType<QList<const int *>>()
+                            << QMetaType::fromType<QList<const int *>>() << true;
+    QTest::newRow("list2")  << QMetaType::fromType<QList<const int *>>()
+                            << QMetaType::fromType<QList<int *>>() << false;
+    QTest::newRow("char1")  << QMetaType::fromType<CharTemplate<'>'>>()
+                            << QMetaType::fromType<CharTemplate<'>', void>>() << true;
     QTest::newRow("annon1") << QMetaType::fromType<decltype(CharTemplate<'>'>::x)>()
                             << QMetaType::fromType<decltype(CharTemplate<'>'>::x)>() << true;
     QTest::newRow("annon2") << QMetaType::fromType<decltype(CharTemplate<'>'>::x)>()
@@ -2597,6 +2724,43 @@ void tst_QMetaType::voidIsNotUnknown()
     QMetaType voidType2 = QMetaType(QMetaType::Void);
     QCOMPARE(voidType, voidType2);
     QVERIFY(voidType != QMetaType(QMetaType::UnknownType));
+}
+
+void tst_QMetaType::typeNameNormalization()
+{
+    // check the we normalize types the right way
+
+#define CHECK_TYPE_NORMALIZATION(Normalized, ...) \
+    do { \
+        /*QCOMPARE(QtPrivate::typenameHelper<Type>(), Normalized);*/ \
+        QByteArray typeName = QMetaObject::normalizedType(#__VA_ARGS__); \
+        QCOMPARE(typeName, Normalized); \
+        typeName = QMetaType::fromType<__VA_ARGS__>().name(); \
+        QCOMPARE(typeName, Normalized); \
+    } while (0)
+
+    CHECK_TYPE_NORMALIZATION("QList<QString*const>", QList<QString * const>);
+    CHECK_TYPE_NORMALIZATION("QList<const QString*>", QList<const QString * >);
+    CHECK_TYPE_NORMALIZATION("QList<const QString*const>", QList<const QString * const>);
+    CHECK_TYPE_NORMALIZATION("QList<const QString*>", QList<QString const *>);
+    CHECK_TYPE_NORMALIZATION("QList<signed char>", QList<signed char>);
+    CHECK_TYPE_NORMALIZATION("QList<uint>", QList<unsigned>);
+    CHECK_TYPE_NORMALIZATION("uint", uint);
+    CHECK_TYPE_NORMALIZATION("QList<QHash<uint,QString*>>", QList<QHash<unsigned, QString *>>);
+    CHECK_TYPE_NORMALIZATION("QList<qlonglong>", QList<qlonglong>);
+    CHECK_TYPE_NORMALIZATION("QList<qulonglong>", QList<qulonglong>);
+    CHECK_TYPE_NORMALIZATION("QList<qlonglong>", QList<long long>);
+    CHECK_TYPE_NORMALIZATION("QList<qulonglong>", QList<unsigned long long>);
+    CHECK_TYPE_NORMALIZATION("QList<qulonglong*>", QList<unsigned long long *>);
+    CHECK_TYPE_NORMALIZATION("QList<ulong>", QList<long unsigned >);
+#ifdef Q_CC_MSVC
+    CHECK_TYPE_NORMALIZATION("qulonglong", __int64 unsigned);
+#endif
+    CHECK_TYPE_NORMALIZATION("std::pair<const QString&&,short>", QPair<const QString &&, signed short>);
+
+    // The string based normalization doesn't handle aliases, QMetaType::fromType() does
+//    CHECK_TYPE_NORMALIZATION("qulonglong", quint64);
+    QCOMPARE(QMetaType::fromType<quint64>().name(), "qulonglong");
 }
 
 // Compile-time test, it should be possible to register function pointer types

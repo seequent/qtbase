@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2013 Olivier Goffart <ogoffart@woboq.com>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -54,6 +54,7 @@
 #include <QtCore/qmetatype.h>
 
 #include <QtCore/qobject_impl.h>
+#include <QtCore/qproperty.h>
 
 #if __has_include(<chrono>)
 #  include <chrono>
@@ -62,6 +63,7 @@
 QT_BEGIN_NAMESPACE
 
 
+class QBindingStorage;
 class QEvent;
 class QTimerEvent;
 class QChildEvent;
@@ -85,7 +87,8 @@ Q_CORE_EXPORT void qt_qFindChildren_helper(const QObject *parent, const QRegular
                                            const QMetaObject &mo, QList<void *> *list, Qt::FindChildOptions options);
 Q_CORE_EXPORT QObject *qt_qFindChild_helper(const QObject *parent, const QString &name, const QMetaObject &mo, Qt::FindChildOptions options);
 
-class Q_CORE_EXPORT QObjectData {
+class Q_CORE_EXPORT QObjectData
+{
     Q_DISABLE_COPY(QObjectData)
 public:
     QObjectData() = default;
@@ -100,18 +103,18 @@ public:
     uint isDeletingChildren : 1;
     uint sendChildEvents : 1;
     uint receiveChildEvents : 1;
-    uint isWindow : 1; //for QWindow
+    uint isWindow : 1; // for QWindow
     uint deleteLaterCalled : 1;
     uint unused : 24;
     int postedEvents;
     QDynamicMetaObjectData *metaObject;
+    QBindingStorage bindingStorage;
     QMetaObject *dynamicMetaObject() const;
 
 #ifdef QT_DEBUG
     enum { CheckForParentChildLoopsWarnDepth = 4096 };
 #endif
 };
-
 
 class Q_CORE_EXPORT QObject
 {
@@ -121,7 +124,7 @@ class Q_CORE_EXPORT QObject
     Q_DECLARE_PRIVATE(QObject)
 
 public:
-    Q_INVOKABLE explicit QObject(QObject *parent=nullptr);
+    Q_INVOKABLE explicit QObject(QObject *parent = nullptr);
     virtual ~QObject();
 
     virtual bool event(QEvent *event);
@@ -130,11 +133,7 @@ public:
 #if defined(QT_NO_TRANSLATION) || defined(Q_CLANG_QDOC)
     static QString tr(const char *sourceText, const char * = nullptr, int = -1)
         { return QString::fromUtf8(sourceText); }
-#if QT_DEPRECATED_SINCE(5, 0)
-    QT_DEPRECATED static QString trUtf8(const char *sourceText, const char * = nullptr, int = -1)
-        { return QString::fromUtf8(sourceText); }
-#endif
-#endif //QT_NO_TRANSLATION
+#endif // QT_NO_TRANSLATION
 
     QString objectName() const;
     void setObjectName(const QString &name);
@@ -220,15 +219,15 @@ public:
         typedef QtPrivate::FunctionPointer<Func1> SignalType;
         typedef QtPrivate::FunctionPointer<Func2> SlotType;
 
-        Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
+        static_assert(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
                           "No Q_OBJECT in the class with the signal");
 
         //compilation error if the arguments does not match.
-        Q_STATIC_ASSERT_X(int(SignalType::ArgumentCount) >= int(SlotType::ArgumentCount),
+        static_assert(int(SignalType::ArgumentCount) >= int(SlotType::ArgumentCount),
                           "The slot requires more arguments than the signal provides.");
-        Q_STATIC_ASSERT_X((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
+        static_assert((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
                           "Signal and slot arguments are not compatible.");
-        Q_STATIC_ASSERT_X((QtPrivate::AreArgumentsCompatible<typename SlotType::ReturnType, typename SignalType::ReturnType>::value),
+        static_assert((QtPrivate::AreArgumentsCompatible<typename SlotType::ReturnType, typename SignalType::ReturnType>::value),
                           "Return type of the slot is not compatible with the return type of the signal.");
 
         const int *types = nullptr;
@@ -260,15 +259,15 @@ public:
         typedef QtPrivate::FunctionPointer<Func1> SignalType;
         typedef QtPrivate::FunctionPointer<Func2> SlotType;
 
-        Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
+        static_assert(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
                           "No Q_OBJECT in the class with the signal");
 
         //compilation error if the arguments does not match.
-        Q_STATIC_ASSERT_X(int(SignalType::ArgumentCount) >= int(SlotType::ArgumentCount),
+        static_assert(int(SignalType::ArgumentCount) >= int(SlotType::ArgumentCount),
                           "The slot requires more arguments than the signal provides.");
-        Q_STATIC_ASSERT_X((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
+        static_assert((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
                           "Signal and slot arguments are not compatible.");
-        Q_STATIC_ASSERT_X((QtPrivate::AreArgumentsCompatible<typename SlotType::ReturnType, typename SignalType::ReturnType>::value),
+        static_assert((QtPrivate::AreArgumentsCompatible<typename SlotType::ReturnType, typename SignalType::ReturnType>::value),
                           "Return type of the slot is not compatible with the return type of the signal.");
 
         const int *types = nullptr;
@@ -299,15 +298,15 @@ public:
         typedef QtPrivate::FunctionPointer<Func1> SignalType;
         const int FunctorArgumentCount = QtPrivate::ComputeFunctorArgumentCount<Func2 , typename SignalType::Arguments>::Value;
 
-        Q_STATIC_ASSERT_X((FunctorArgumentCount >= 0),
+        static_assert((FunctorArgumentCount >= 0),
                           "Signal and slot arguments are not compatible.");
         const int SlotArgumentCount = (FunctorArgumentCount >= 0) ? FunctorArgumentCount : 0;
         typedef typename QtPrivate::FunctorReturnType<Func2, typename QtPrivate::List_Left<typename SignalType::Arguments, SlotArgumentCount>::Value>::Value SlotReturnType;
 
-        Q_STATIC_ASSERT_X((QtPrivate::AreArgumentsCompatible<SlotReturnType, typename SignalType::ReturnType>::value),
+        static_assert((QtPrivate::AreArgumentsCompatible<SlotReturnType, typename SignalType::ReturnType>::value),
                           "Return type of the slot is not compatible with the return type of the signal.");
 
-        Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
+        static_assert(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
                           "No Q_OBJECT in the class with the signal");
 
         const int *types = nullptr;
@@ -344,11 +343,11 @@ public:
         typedef QtPrivate::FunctionPointer<Func1> SignalType;
         typedef QtPrivate::FunctionPointer<Func2> SlotType;
 
-        Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
+        static_assert(QtPrivate::HasQ_OBJECT_Macro<typename SignalType::Object>::Value,
                           "No Q_OBJECT in the class with the signal");
 
         //compilation error if the arguments does not match.
-        Q_STATIC_ASSERT_X((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
+        static_assert((QtPrivate::CheckCompatibleArguments<typename SignalType::Arguments, typename SlotType::Arguments>::value),
                           "Signal and slot arguments are not compatible.");
 
         return disconnectImpl(sender, reinterpret_cast<void **>(&signal), receiver, reinterpret_cast<void **>(&slot),
@@ -368,11 +367,6 @@ public:
     }
 #endif //Q_CLANG_QDOC
 
-
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    void dumpObjectTree(); // ### Qt 6: remove
-    void dumpObjectInfo(); // ### Qt 6: remove
-#endif
     void dumpObjectTree() const;
     void dumpObjectInfo() const;
 
@@ -380,6 +374,8 @@ public:
     bool setProperty(const char *name, const QVariant &value);
     QVariant property(const char *name) const;
     QList<QByteArray> dynamicPropertyNames() const;
+    QBindingStorage *bindingStorage() { return &d_ptr->bindingStorage; }
+    const QBindingStorage *bindingStorage() const { return &d_ptr->bindingStorage; }
 #endif // QT_NO_PROPERTIES
 
 Q_SIGNALS:
@@ -390,7 +386,9 @@ public:
     inline QObject *parent() const { return d_ptr->parent; }
 
     inline bool inherits(const char *classname) const
-        { return const_cast<QObject *>(this)->qt_metacast(classname) != nullptr; }
+    {
+        return const_cast<QObject *>(this)->qt_metacast(classname) != nullptr;
+    }
 
 public Q_SLOTS:
     void deleteLater();
@@ -398,7 +396,7 @@ public Q_SLOTS:
 protected:
     QObject *sender() const;
     int senderSignalIndex() const;
-    int receivers(const char* signal) const;
+    int receivers(const char *signal) const;
     bool isSignalConnected(const QMetaMethod &signal) const;
 
     virtual void timerEvent(QTimerEvent *event);
@@ -444,24 +442,11 @@ inline QMetaObject::Connection QObject::connect(const QObject *asender, const ch
                                             const char *amember, Qt::ConnectionType atype) const
 { return connect(asender, asignal, this, amember, atype); }
 
-#if QT_DEPRECATED_SINCE(5, 0)
-template<typename T>
-inline QT_DEPRECATED T qFindChild(const QObject *o, const QString &name = QString())
-{ return o->findChild<T>(name); }
-
-template<typename T>
-inline QT_DEPRECATED QList<T> qFindChildren(const QObject *o, const QString &name = QString())
-{
-    return o->findChildren<T>(name);
-}
-
-#endif //QT_DEPRECATED
-
 template <class T>
 inline T qobject_cast(QObject *object)
 {
     typedef typename std::remove_cv<typename std::remove_pointer<T>::type>::type ObjType;
-    Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<ObjType>::Value,
+    static_assert(QtPrivate::HasQ_OBJECT_Macro<ObjType>::Value,
                     "qobject_cast requires the type to have a Q_OBJECT macro");
     return static_cast<T>(ObjType::staticMetaObject.cast(object));
 }
@@ -470,7 +455,7 @@ template <class T>
 inline T qobject_cast(const QObject *object)
 {
     typedef typename std::remove_cv<typename std::remove_pointer<T>::type>::type ObjType;
-    Q_STATIC_ASSERT_X(QtPrivate::HasQ_OBJECT_Macro<ObjType>::Value,
+    static_assert(QtPrivate::HasQ_OBJECT_Macro<ObjType>::Value,
                       "qobject_cast requires the type to have a Q_OBJECT macro");
     return static_cast<T>(ObjType::staticMetaObject.cast(object));
 }
@@ -479,6 +464,14 @@ inline T qobject_cast(const QObject *object)
 template <class T> inline const char * qobject_interface_iid()
 { return nullptr; }
 
+inline const QBindingStorage *qGetBindingStorage(const QObject *o)
+{
+    return o->bindingStorage();
+}
+inline QBindingStorage *qGetBindingStorage(QObject *o)
+{
+    return o->bindingStorage();
+}
 
 #if defined(Q_CLANG_QDOC)
 #  define Q_DECLARE_INTERFACE(IFace, IId)
@@ -508,9 +501,10 @@ public:
 
     inline void reblock() noexcept;
     inline void unblock() noexcept;
+
 private:
     Q_DISABLE_COPY(QSignalBlocker)
-    QObject * m_o;
+    QObject *m_o;
     bool m_blocked;
     bool m_inhibited;
 };
@@ -559,13 +553,15 @@ QSignalBlocker::~QSignalBlocker()
 
 void QSignalBlocker::reblock() noexcept
 {
-    if (m_o) m_o->blockSignals(true);
+    if (m_o)
+        m_o->blockSignals(true);
     m_inhibited = false;
 }
 
 void QSignalBlocker::unblock() noexcept
 {
-    if (m_o) m_o->blockSignals(m_blocked);
+    if (m_o)
+        m_o->blockSignals(m_blocked);
     m_inhibited = true;
 }
 

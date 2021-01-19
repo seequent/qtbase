@@ -3,6 +3,7 @@
 #####################################################################
 ## QAndroidIntegrationPlugin Plugin:
 #####################################################################
+qt_find_package(EGL) # special case
 
 qt_internal_add_plugin(QAndroidIntegrationPlugin
     OUTPUT_NAME qtforandroid
@@ -40,26 +41,20 @@ qt_internal_add_plugin(QAndroidIntegrationPlugin
         qandroidplatformtheme.cpp qandroidplatformtheme.h
         qandroidplatformwindow.cpp qandroidplatformwindow.h
         qandroidsystemlocale.cpp qandroidsystemlocale.h
+    DEFINES
+        QT_USE_QSTRINGBUILDER
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${QT_SOURCE_TREE}/src/3rdparty/android
     PUBLIC_LIBRARIES
+        EGL::EGL
         Qt::Core
         Qt::CorePrivate
-        Qt::EglSupportPrivate
-        Qt::EventDispatcherSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
         android
         jnigraphics
-# special case begin
-    INSTALL_DIRECTORY
-        plugins/platforms
-    OUTPUT_DIRECTORY
-        plugins/platforms
-    ARCHIVE_INSTALL_DIRECTORY
-        plugins/platforms
-# special case end
+        EGL::EGL # special case
 )
 
 #### Keys ignored in scope 1:.:.:android.pro:<TRUE>:
@@ -68,23 +63,17 @@ qt_internal_add_plugin(QAndroidIntegrationPlugin
 ## Scopes:
 #####################################################################
 
-
-qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_opengl
-    PUBLIC_LIBRARIES
-        Qt::OpenGLPrivate
-)
-
-qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_android_style_assets
+qt_internal_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_android_style_assets
     SOURCES
         extract.cpp
 )
 
-qt_extend_target(QAndroidIntegrationPlugin CONDITION NOT QT_FEATURE_android_style_assets
+qt_internal_extend_target(QAndroidIntegrationPlugin CONDITION NOT QT_FEATURE_android_style_assets
     SOURCES
         extract-dummy.cpp
 )
 
-qt_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_vulkan
+qt_internal_extend_target(QAndroidIntegrationPlugin CONDITION QT_FEATURE_vulkan
     SOURCES
         qandroidplatformvulkaninstance.cpp qandroidplatformvulkaninstance.h
         qandroidplatformvulkanwindow.cpp qandroidplatformvulkanwindow.h

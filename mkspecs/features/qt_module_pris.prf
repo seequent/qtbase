@@ -135,6 +135,7 @@ defineReplace(qtExportLibsForModule) {
         "" \
         "QT.$${MODULE_ID}.name = $$TARGET" \
         "QT.$${MODULE_ID}.module = $$module_module" \
+        "QT.$${MODULE_ID}.ldflags = $$MODULE_LDFLAGS" \
         "QT.$${MODULE_ID}.libs = $$module_libs" \
         $$module_master \
         "QT.$${MODULE_ID}.includes = $$MODULE_INCLUDES" \
@@ -154,6 +155,7 @@ defineReplace(qtExportLibsForModule) {
         "QT_CONFIG +=$$join(QT.$${MODULE_ID}.QT_CONFIG, " ", " ")" \
         "" \
         "QT_MODULES += $$MODULE"
+    MODULE_PRI_CONT += $$MODULE_PRI_EXTRA_CONTENT
     write_file($$MODULE_PRI, MODULE_PRI_CONT)|error()
     !internal_module:!no_private_module {
         module_build_type += internal_module

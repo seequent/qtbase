@@ -183,7 +183,7 @@ void QPaintEngineExPrivate::replayClipOperations()
     if (!p || !p->d_ptr)
         return;
 
-    const QVector<QPainterClipInfo> &clipInfo = p->d_ptr->state->clipInfo;
+    const QList<QPainterClipInfo> &clipInfo = p->d_ptr->state->clipInfo;
 
     QTransform transform = q->state()->matrix;
 
@@ -431,7 +431,7 @@ void QPaintEngineEx::stroke(const QVectorPath &path, const QPen &pen)
     }
 
     if (pen.style() > Qt::SolidLine) {
-        if (qt_pen_is_cosmetic(pen, state()->renderHints)){
+        if (pen.isCosmetic()) {
             d->activeStroker->setClipRect(d->exDeviceRect);
         } else {
             QRectF clipRect = state()->matrix.inverted().mapRect(QRectF(d->exDeviceRect));
@@ -461,7 +461,7 @@ void QPaintEngineEx::stroke(const QVectorPath &path, const QPen &pen)
         flags |= QVectorPath::CurvedShapeMask;
 
     // ### Perspective Xforms are currently not supported...
-    if (!qt_pen_is_cosmetic(pen, state()->renderHints)) {
+    if (!pen.isCosmetic()) {
         // We include cosmetic pens in this case to avoid having to
         // change the current transform. Normal transformed,
         // non-cosmetic pens will be transformed as part of fill
@@ -951,8 +951,8 @@ void QPaintEngineEx::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap, con
 {
     QBrush brush(state()->pen.color(), pixmap);
     QTransform xform = QTransform::fromTranslate(r.x() - s.x(), r.y() - s.y());
-    if (!qFuzzyCompare(pixmap.devicePixelRatioF(), 1.0))
-        xform.scale(1.0/pixmap.devicePixelRatioF(), 1.0/pixmap.devicePixelRatioF());
+    if (!qFuzzyCompare(pixmap.devicePixelRatio(), qreal(1.0)))
+        xform.scale(1.0/pixmap.devicePixelRatio(), 1.0/pixmap.devicePixelRatio());
     brush.setTransform(xform);
 
     qreal pts[] = { r.x(), r.y(),

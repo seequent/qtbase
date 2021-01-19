@@ -1,4 +1,6 @@
 # Generated from xml.pro.
 
-add_subdirectory(dom)
-add_subdirectory(sax)
+# QTBUG-87671 # special case
+if(NOT ANDROID)
+    add_subdirectory(dom)
+endif()

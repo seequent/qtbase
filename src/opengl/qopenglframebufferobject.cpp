@@ -50,6 +50,8 @@
 #include <qimage.h>
 #include <QtCore/qbytearray.h>
 
+#include <qtopengl_tracepoints_p.h>
+
 QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_DEBUG
@@ -467,11 +469,14 @@ namespace
     }
 }
 
-void QOpenGLFramebufferObjectPrivate::init(QOpenGLFramebufferObject *, const QSize &size,
+void QOpenGLFramebufferObjectPrivate::init(QOpenGLFramebufferObject *qfbo, const QSize &size,
                                            QOpenGLFramebufferObject::Attachment attachment,
                                            GLenum texture_target, GLenum internal_format,
                                            GLint samples, bool mipmap)
 {
+    Q_TRACE_SCOPE(QOpenGLFramebufferObjectPrivate_init, qfbo, size, attachment, texture_target, internal_format, samples, mipmap);
+    Q_UNUSED(qfbo);
+
     QOpenGLContext *ctx = QOpenGLContext::currentContext();
 
     funcs.initializeOpenGLFunctions();
@@ -1218,10 +1223,10 @@ GLuint QOpenGLFramebufferObject::texture() const
 
     \sa takeTexture(), texture()
 */
-QVector<GLuint> QOpenGLFramebufferObject::textures() const
+QList<GLuint> QOpenGLFramebufferObject::textures() const
 {
     Q_D(const QOpenGLFramebufferObject);
-    QVector<GLuint> ids;
+    QList<GLuint> ids;
     if (d->format.samples() != 0)
         return ids;
     ids.reserve(d->colorAttachments.count());
@@ -1305,10 +1310,10 @@ QSize QOpenGLFramebufferObject::size() const
 
     \since 5.6
 */
-QVector<QSize> QOpenGLFramebufferObject::sizes() const
+QList<QSize> QOpenGLFramebufferObject::sizes() const
 {
     Q_D(const QOpenGLFramebufferObject);
-    QVector<QSize> sz;
+    QList<QSize> sz;
     sz.reserve(d->colorAttachments.size());
     for (const auto &color : d->colorAttachments)
         sz.append(color.size);
@@ -1451,19 +1456,6 @@ Q_OPENGL_EXPORT QImage qt_gl_read_framebuffer(const QSize &size, bool alpha_form
 QImage QOpenGLFramebufferObject::toImage(bool flipped) const
 {
     return toImage(flipped, 0);
-}
-
-/*!
-    \fn QImage QOpenGLFramebufferObject::toImage() const
-    \overload
-
-    Returns the contents of this framebuffer object as a QImage. This method flips
-    the image from OpenGL coordinates to raster coordinates.
-*/
-// ### Qt 6: Remove this method and make it a default argument instead.
-QImage QOpenGLFramebufferObject::toImage() const
-{
-    return toImage(true, 0);
 }
 
 /*! \overload

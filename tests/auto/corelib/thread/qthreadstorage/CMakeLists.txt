@@ -5,12 +5,9 @@
 ## tst_qthreadstorage Test:
 #####################################################################
 
-add_qt_test(tst_qthreadstorage
+qt_internal_add_test(tst_qthreadstorage
     SOURCES
         tst_qthreadstorage.cpp
-    LIBRARIES # special case
-        Threads::Threads # special case
-
 )
 
 ## Scopes:

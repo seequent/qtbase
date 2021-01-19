@@ -642,69 +642,18 @@ QTextFrame::iterator QTextFrame::end() const
 }
 
 /*!
+    \fn QTextFrame::iterator::iterator()
+
     Constructs an invalid iterator.
 */
-QTextFrame::iterator::iterator()
-{
-    f = nullptr;
-    b = 0;
-    e = 0;
-    cf = nullptr;
-    cb = 0;
-}
 
 /*!
-  \internal
-*/
-QTextFrame::iterator::iterator(QTextFrame *frame, int block, int begin, int end)
-{
-    f = frame;
-    b = begin;
-    e = end;
-    cf = nullptr;
-    cb = block;
-}
-
-#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
-
-/*!
-    Copy constructor. Constructs a copy of the \a other iterator.
-*/
-QTextFrame::iterator::iterator(const iterator &other) noexcept
-{
-    f = other.f;
-    b = other.b;
-    e = other.e;
-    cf = other.cf;
-    cb = other.cb;
-}
-
-/*!
-    Assigns \a other to this iterator and returns a reference to
-    this iterator.
-*/
-QTextFrame::iterator &QTextFrame::iterator::operator=(const iterator &other) noexcept
-{
-    f = other.f;
-    b = other.b;
-    e = other.e;
-    cf = other.cf;
-    cb = other.cb;
-    return *this;
-}
-
-#endif
-
-/*!
+    \fn QTextFrame *QTextFrame::iterator::currentFrame() const
     Returns the current frame pointed to by the iterator, or \nullptr
     if the iterator currently points to a block.
 
     \sa currentBlock()
 */
-QTextFrame *QTextFrame::iterator::currentFrame() const
-{
-    return cf;
-}
 
 /*!
     Returns the current block the iterator points to. If the iterator
@@ -962,12 +911,6 @@ bool QTextBlock::isValid() const
     \fn QTextBlock::iterator::iterator()
 
     Constructs an iterator for this text block.
-*/
-
-/*!
-    \fn QTextBlock::iterator::iterator(const iterator &other)
-
-    Copy constructor. Constructs a copy of the \a other iterator.
 */
 
 /*!
@@ -1234,9 +1177,9 @@ QString QTextBlock::text() const
 
     \sa charFormat(), blockFormat()
 */
-QVector<QTextLayout::FormatRange> QTextBlock::textFormats() const
+QList<QTextLayout::FormatRange> QTextBlock::textFormats() const
 {
-    QVector<QTextLayout::FormatRange> formats;
+    QList<QTextLayout::FormatRange> formats;
     if (!p || !n)
         return formats;
 

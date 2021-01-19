@@ -41,6 +41,7 @@
 #define QTCONCURRENT_REDUCEKERNEL_H
 
 #include <QtConcurrent/qtconcurrent_global.h>
+#include <QtConcurrent/qtconcurrentfunctionwrappers.h>
 
 #if !defined(QT_NO_CONCURRENT) || defined(Q_CLANG_QDOC)
 
@@ -50,7 +51,6 @@
 #include <QtCore/qmutex.h>
 #include <QtCore/qthread.h>
 #include <QtCore/qthreadpool.h>
-#include <QtCore/qvector.h>
 
 #include <mutex>
 
@@ -86,7 +86,7 @@ class IntermediateResults
 {
 public:
     int begin, end;
-    QVector<T> vector;
+    QList<T> vector;
 };
 
 enum ReduceOption {
@@ -223,37 +223,32 @@ public:
 };
 
 template <typename Sequence, typename Base, typename Functor1, typename Functor2>
-struct SequenceHolder2 : public Base
+struct SequenceHolder2 : private QtPrivate::SequenceHolder<Sequence>, public Base
 {
-    SequenceHolder2(QThreadPool *pool,
-                    const Sequence &_sequence,
-                    Functor1 functor1,
-                    Functor2 functor2,
+    template<typename S = Sequence, typename F1 = Functor1, typename F2 = Functor2>
+    SequenceHolder2(QThreadPool *pool, S &&_sequence, F1 &&functor1, F2 &&functor2,
                     ReduceOptions reduceOptions)
-        : Base(pool, _sequence.begin(), _sequence.end(), functor1, functor2, reduceOptions),
-          sequence(_sequence)
+        : QtPrivate::SequenceHolder<Sequence>(std::forward<S>(_sequence)),
+          Base(pool, this->sequence.cbegin(), this->sequence.cend(),
+               std::forward<F1>(functor1), std::forward<F2>(functor2), reduceOptions)
     { }
 
-    template <typename InitialValueType>
-    SequenceHolder2(QThreadPool *pool,
-                    const Sequence &_sequence,
-                    Functor1 functor1,
-                    Functor2 functor2,
-                    InitialValueType &&initialValue,
-                    ReduceOptions reduceOptions)
-        : Base(pool, _sequence.begin(), _sequence.end(), functor1, functor2,
-               std::forward<InitialValueType>(initialValue), reduceOptions),
-          sequence(_sequence)
+    template<typename InitialValueType, typename S = Sequence,
+             typename F1 = Functor1, typename F2 = Functor2>
+    SequenceHolder2(QThreadPool *pool, S &&_sequence, F1 &&functor1, F2 &&functor2,
+                    InitialValueType &&initialValue, ReduceOptions reduceOptions)
+        : QtPrivate::SequenceHolder<Sequence>(std::forward<S>(_sequence)),
+          Base(pool, this->sequence.cbegin(), this->sequence.cend(),
+               std::forward<F1>(functor1), std::forward<F2>(functor2),
+               std::forward<InitialValueType>(initialValue), reduceOptions)
     { }
-
-    Sequence sequence;
 
     void finish() override
     {
         Base::finish();
         // Clear the sequence to make sure all temporaries are destroyed
         // before finished is signaled.
-        sequence = Sequence();
+        this->sequence = Sequence();
     }
 };
 

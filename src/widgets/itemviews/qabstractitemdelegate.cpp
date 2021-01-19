@@ -414,9 +414,9 @@ bool QAbstractItemDelegate::helpEvent(QHelpEvent *event,
 
     This virtual method is reserved and will be used in Qt 5.1.
 */
-QVector<int> QAbstractItemDelegate::paintingRoles() const
+QList<int> QAbstractItemDelegate::paintingRoles() const
 {
-    return QVector<int>();
+    return QList<int>();
 }
 
 QAbstractItemDelegatePrivate::QAbstractItemDelegatePrivate()
@@ -551,7 +551,7 @@ bool QAbstractItemDelegatePrivate::tryFixup(QWidget *editor)
         }
     }
 #else
-    Q_UNUSED(editor)
+    Q_UNUSED(editor);
 #endif // QT_CONFIG(lineedit)
 
     return true;

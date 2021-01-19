@@ -311,7 +311,9 @@ bool QSslCertificatePrivate::parse(const QByteArray &data)
 
     if (elem.type() == QAsn1Element::Context0Type) {
         QDataStream versionStream(elem.value());
-        if (!elem.read(versionStream) || elem.type() != QAsn1Element::IntegerType)
+        if (!elem.read(versionStream)
+            || elem.type() != QAsn1Element::IntegerType
+            || elem.value().isEmpty())
             return false;
 
         versionString = QByteArray::number(elem.value().at(0) + 1);
@@ -402,10 +404,18 @@ bool QSslCertificatePrivate::parse(const QByteArray &data)
                     QSslCertificateExtension extension;
                     if (!parseExtension(elem.value(), &extension))
                         return false;
-                    extensions << extension;
 
                     if (extension.oid() == QLatin1String("2.5.29.17")) {
                         // subjectAltName
+
+                        // Note, parseExtension() returns true for this extensions,
+                        // but considers it to be unsupported and assignes a useless
+                        // value. OpenSSL also treats this extension as unsupported,
+                        // but properly creates a map with 'name' and 'value' taken
+                        // from the extension. We only support 'email', 'IP' and 'DNS',
+                        // but this is what our subjectAlternativeNames map can contain
+                        // anyway.
+                        QVariantMap extValue;
                         QAsn1Element sanElem;
                         if (sanElem.read(extension.value().toByteArray()) && sanElem.type() == QAsn1Element::SequenceType) {
                             QDataStream nameStream(sanElem.value());
@@ -414,9 +424,11 @@ bool QSslCertificatePrivate::parse(const QByteArray &data)
                                 switch (nameElem.type()) {
                                 case QAsn1Element::Rfc822NameType:
                                     subjectAlternativeNames.insert(QSsl::EmailEntry, nameElem.toString());
+                                    extValue[QStringLiteral("email")] = nameElem.toString();
                                     break;
                                 case QAsn1Element::DnsNameType:
                                     subjectAlternativeNames.insert(QSsl::DnsEntry, nameElem.toString());
+                                    extValue[QStringLiteral("DNS")] = nameElem.toString();
                                     break;
                                 case QAsn1Element::IpAddressType: {
                                     QHostAddress ipAddress;
@@ -431,16 +443,22 @@ bool QSslCertificatePrivate::parse(const QByteArray &data)
                                     default: // Unknown IP address format
                                         break;
                                     }
-                                    if (!ipAddress.isNull())
+                                    if (!ipAddress.isNull()) {
                                         subjectAlternativeNames.insert(QSsl::IpAddressEntry, ipAddress.toString());
+                                        extValue[QStringLiteral("IP")] = ipAddress.toString();
+                                    }
                                     break;
                                 }
                                 default:
                                     break;
                                 }
                             }
+                            extension.d->value = extValue;
+                            extension.d->supported = true;
                         }
                     }
+
+                    extensions << extension;
                 }
             }
         }
@@ -484,9 +502,9 @@ bool QSslCertificatePrivate::parseExtension(const QByteArray &data, QSslCertific
         if (!val.read(valElem.value()) || val.type() != QAsn1Element::SequenceType)
             return false;
         QVariantMap result;
-        const auto elems = val.toVector();
+        const auto elems = val.toList();
         for (const QAsn1Element &el : elems) {
-            QVector<QAsn1Element> items = el.toVector();
+            const auto items = el.toList();
             if (items.size() != 2)
                 return false;
             const QString key = QString::fromLatin1(items.at(0).toObjectName());
@@ -510,7 +528,7 @@ bool QSslCertificatePrivate::parseExtension(const QByteArray &data, QSslCertific
             return false;
 
         QVariantMap result;
-        QVector<QAsn1Element> items = val.toVector();
+        const auto items = val.toList();
         if (items.size() > 0) {
             result[QStringLiteral("ca")] = items.at(0).toBool(&ok);
             if (!ok)
@@ -529,7 +547,7 @@ bool QSslCertificatePrivate::parseExtension(const QByteArray &data, QSslCertific
         if (!val.read(valElem.value()) || val.type() != QAsn1Element::SequenceType)
             return false;
         QVariantMap result;
-        const auto elems = val.toVector();
+        const auto elems = val.toList();
         for (const QAsn1Element &el : elems) {
             if (el.type() == 0x80) {
                 const QString key = QStringLiteral("keyid");

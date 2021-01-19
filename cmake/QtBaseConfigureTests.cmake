@@ -42,7 +42,8 @@ function(qt_run_config_test_architecture)
     endif()
     message(STATUS "Extracting architecture info from ${_arch_file}.")
 
-    file(STRINGS "${_arch_file}" _arch_lines LENGTH_MINIMUM 16 LENGTH_MAXIMUM 1024 ENCODING UTF-8)
+    file(STRINGS "${_arch_file}" _arch_lines LENGTH_MINIMUM 16 LENGTH_MAXIMUM 1024 ENCODING UTF-8
+         REGEX "==Qt=magic=Qt==")
 
     foreach (_line ${_arch_lines})
         string(LENGTH "${_line}" lineLength)
@@ -72,6 +73,8 @@ function(qt_run_config_test_architecture)
     set(TEST_architecture_arch "${_architecture}" CACHE INTERNAL "Target machine architecture")
     list(APPEND QT_BASE_CONFIGURE_TESTS_VARS_TO_EXPORT TEST_architecture_arch)
     set(TEST_subarch 1 CACHE INTERNAL "Ran machine subArchitecture test")
+    set(TEST_subarch_result "${_sub_architecture}" CACHE INTERNAL "Target sub-architectures")
+    list(APPEND QT_BASE_CONFIGURE_TESTS_VARS_TO_EXPORT TEST_subarch_result)
     foreach(it ${_sub_architecture})
         # Equivalent to qmake's QT_CPU_FEATURES.$arch.
         set(TEST_arch_${TEST_architecture_arch}_subarch_${it} 1 CACHE INTERNAL "Target sub architecture result")
@@ -85,64 +88,6 @@ function(qt_run_config_test_architecture)
     set_property(GLOBAL PROPERTY qt_configure_subarch_summary "${subarch_summary}")
 endfunction()
 
-
-function(qt_run_config_test_posix_iconv)
-    set(source "#include <iconv.h>
-
-int main(int, char **)
-{
-    iconv_t x = iconv_open(\"\", \"\");
-
-    char *inp;
-    char *outp;
-    size_t inbytes, outbytes;
-    iconv(x, &inp, &inbytes, &outp, &outbytes);
-
-    iconv_close(x);
-
-    return 0;
-}")
-    check_cxx_source_compiles("${source}" HAVE_POSIX_ICONV)
-
-    if(NOT HAVE_POSIX_ICONV)
-        set(_req_libraries "${CMAKE_REQUIRE_LIBRARIES}")
-        set(CMAKE_REQUIRE_LIBRARIES "iconv")
-        check_cxx_source_compiles("${source}" HAVE_POSIX_ICONV)
-        set(CMAKE_REQUIRE_LIBRARIES "${_req_libraries}")
-        if(HAVE_POSIX_ICONV)
-            set(TEST_iconv_needlib 1 CACHE INTERNAL "Need to link against libiconv")
-        endif()
-    endif()
-
-    set(TEST_posix_iconv "${HAVE_POSIX_ICONV}" CACHE INTERNAL "POSIX iconv")
-endfunction()
-
-
-function(qt_run_config_test_sun_iconv)
-    set(source "#include <iconv.h>
-
-int main(int, char **)
-{
-    iconv_t x = iconv_open(\"\", \"\");
-
-    const char *inp;
-    char *outp;
-    size_t inbytes, outbytes;
-    iconv(x, &inp, &inbytes, &outp, &outbytes);
-
-    iconv_close(x);
-
-    return 0;
-}")
-    if(DARWIN)
-        # as per !config.darwin in configure.json
-        set(HAVE_SUN_ICONV OFF)
-    else()
-        check_cxx_source_compiles("${source}" HAVE_SUN_ICONV)
-    endif()
-
-    set(TEST_sun_iconv "${HAVE_SUN_ICONV}" CACHE INTERNAL "SUN libiconv")
-endfunction()
 
 function(qt_run_linker_version_script_support)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/version_flag.map" "VERS_1 { global: sym; };
@@ -172,16 +117,6 @@ VERS_1;
 endfunction()
 
 function(qt_run_qtbase_config_tests)
-    qt_run_config_test_posix_iconv()
-
-    add_library(Iconv INTERFACE)
-    if(TEST_iconv_needlib)
-       target_link_libraries(Iconv PUBLIC iconv)
-    endif()
-
-    if(NOT TEST_posix_iconv)
-        qt_run_config_test_sun_iconv()
-    endif()
     qt_run_config_test_architecture()
     qt_run_linker_version_script_support()
 endfunction()
@@ -196,3 +131,77 @@ if (CMAKE_ANDROID_ARCH_ABI STREQUAL x86)
     set(TEST_subarch_sse4_2 FALSE CACHE BOOL INTERNAL FORCE)
 endif()
 qt_run_qtbase_config_tests()
+
+function(qt_internal_print_cmake_darwin_info)
+    if(APPLE)
+        if(NOT CMAKE_OSX_ARCHITECTURES)
+            set(default_osx_arch " (defaults to ${CMAKE_SYSTEM_PROCESSOR})")
+        endif()
+        message(STATUS "CMAKE_OSX_ARCHITECTURES: \"${CMAKE_OSX_ARCHITECTURES}\"${default_osx_arch}")
+        message(STATUS "CMAKE_OSX_SYSROOT: \"${CMAKE_OSX_SYSROOT}\"")
+        message(STATUS "CMAKE_OSX_DEPLOYMENT_TARGET: \"${CMAKE_OSX_DEPLOYMENT_TARGET}\"")
+        message(STATUS "QT_MAC_SDK_VERSION: \"${QT_MAC_SDK_VERSION}\"")
+        message(STATUS "QT_MAC_XCODE_VERSION: \"${QT_MAC_XCODE_VERSION}\"")
+        if(QT_UIKIT_SDK)
+            message(STATUS "QT_UIKIT_SDK: \"${QT_UIKIT_SDK}\"")
+        endif()
+    endif()
+endfunction()
+qt_internal_print_cmake_darwin_info()
+
+function(qt_internal_print_cmake_host_and_target_info)
+    message(STATUS "CMAKE_VERSION: \"${CMAKE_VERSION}\"")
+    message(STATUS "CMAKE_HOST_SYSTEM: \"${CMAKE_HOST_SYSTEM}\"")
+    message(STATUS "CMAKE_HOST_SYSTEM_NAME: \"${CMAKE_HOST_SYSTEM_NAME}\"")
+    message(STATUS "CMAKE_HOST_SYSTEM_VERSION: \"${CMAKE_HOST_SYSTEM_VERSION}\"")
+    message(STATUS "CMAKE_HOST_SYSTEM_PROCESSOR: \"${CMAKE_HOST_SYSTEM_PROCESSOR}\"")
+
+    message(STATUS "CMAKE_SYSTEM: \"${CMAKE_SYSTEM_NAME}\"")
+    message(STATUS "CMAKE_SYSTEM_NAME: \"${CMAKE_SYSTEM_NAME}\"")
+    message(STATUS "CMAKE_SYSTEM_VERSION: \"${CMAKE_SYSTEM_VERSION}\"")
+    message(STATUS "CMAKE_SYSTEM_PROCESSOR: \"${CMAKE_SYSTEM_PROCESSOR}\"")
+
+    message(STATUS "CMAKE_CROSSCOMPILING: \"${CMAKE_CROSSCOMPILING}\"")
+endfunction()
+qt_internal_print_cmake_host_and_target_info()
+
+function(qt_internal_print_cmake_compiler_info)
+    message(STATUS "CMAKE_C_COMPILER: \"${CMAKE_C_COMPILER}\" (${CMAKE_C_COMPILER_VERSION})")
+    message(STATUS "CMAKE_CXX_COMPILER: \"${CMAKE_CXX_COMPILER}\" (${CMAKE_CXX_COMPILER_VERSION})")
+    if(CMAKE_OBJC_COMPILER)
+        message(STATUS "CMAKE_OBJC_COMPILER: \"${CMAKE_OBJC_COMPILER}\" (${CMAKE_OBJC_COMPILER_VERSION})")
+    endif()
+    if(CMAKE_OBJCXX_COMPILER)
+        message(STATUS "CMAKE_OBJCXX_COMPILER: \"${CMAKE_OBJCXX_COMPILER}\" (${CMAKE_OBJCXX_COMPILER_VERSION})")
+    endif()
+endfunction()
+qt_internal_print_cmake_compiler_info()
+
+function(qt_internal_print_cmake_windows_info)
+    if(MSVC_VERSION)
+        message(STATUS "MSVC_VERSION: \"${MSVC_VERSION}\"")
+    endif()
+    if(MSVC_TOOLSET_VERSION)
+        message(STATUS "MSVC_TOOLSET_VERSION: \"${MSVC_TOOLSET_VERSION}\"")
+    endif()
+endfunction()
+qt_internal_print_cmake_windows_info()
+
+function(qt_internal_print_cmake_android_info)
+    if(ANDROID)
+        message(STATUS "ANDROID_TOOLCHAIN: \"${ANDROID_TOOLCHAIN}\"")
+        message(STATUS "ANDROID_NDK: \"${ANDROID_NDK}\"")
+        message(STATUS "ANDROID_ABI: \"${ANDROID_ABI}\"")
+        message(STATUS "ANDROID_PLATFORM: \"${ANDROID_PLATFORM}\"")
+        message(STATUS "ANDROID_STL: \"${ANDROID_STL}\"")
+        message(STATUS "ANDROID_PIE: \"${ANDROID_PIE}\"")
+        message(STATUS "ANDROID_CPP_FEATURES: \"${ANDROID_CPP_FEATURES}\"")
+        message(STATUS "ANDROID_ALLOW_UNDEFINED_SYMBOLS: \"${ANDROID_ALLOW_UNDEFINED_SYMBOLS}\"")
+        message(STATUS "ANDROID_ARM_MODE: \"${ANDROID_ARM_MODE}\"")
+        message(STATUS "ANDROID_ARM_NEON: \"${ANDROID_ARM_NEON}\"")
+        message(STATUS "ANDROID_DISABLE_FORMAT_STRING_CHECKS: \"${ANDROID_DISABLE_FORMAT_STRING_CHECKS}\"")
+        message(STATUS "ANDROID_NATIVE_API_LEVEL: \"${ANDROID_NATIVE_API_LEVEL}\"")
+        message(STATUS "ANDROID_LLVM_TRIPLE: \"${ANDROID_LLVM_TRIPLE}\"")
+    endif()
+endfunction()
+qt_internal_print_cmake_android_info()

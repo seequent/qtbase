@@ -1,14 +1,14 @@
 # Generated from tools.pro.
 
-add_subdirectory(qmakelib)
-# special case begin
-if(NOT WIN32) # @todo: this is broken, see QTBUG-78449
+# QTBUG-88538 # special case
+if(NOT ANDROID AND NOT IOS)
+    add_subdirectory(qmakelib)
     add_subdirectory(qmake)
+    add_subdirectory(moc)
+    add_subdirectory(rcc)
 endif()
-# special case end
-#add_subdirectory(moc)
-add_subdirectory(rcc)
-if(TARGET Qt::Widgets)
+# QTBUG-88538 # special case
+if(TARGET Qt::Widgets AND NOT ANDROID AND NOT IOS)
     add_subdirectory(uic)
 endif()
 if(TARGET Qt::DBus)

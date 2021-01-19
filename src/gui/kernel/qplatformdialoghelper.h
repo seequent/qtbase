@@ -150,7 +150,6 @@ public:
         MacLayout,
         KdeLayout,
         GnomeLayout,
-        MacModelessLayout,
         AndroidLayout
     };
     Q_ENUM(ButtonLayout)
@@ -320,9 +319,6 @@ public:
         ShowDirsOnly                = 0x00000001,
         DontResolveSymlinks         = 0x00000002,
         DontConfirmOverwrite        = 0x00000004,
-#if QT_DEPRECATED_SINCE(5, 14)
-        DontUseSheet Q_DECL_ENUMERATOR_DEPRECATED = 0x00000008,
-#endif
         DontUseNativeDialog         = 0x00000010,
         ReadOnly                    = 0x00000020,
         HideNameFilterDetails       = 0x00000040,
@@ -482,7 +478,7 @@ public:
     int addButton(const QString &label, QPlatformDialogHelper::ButtonRole role,
                   void *buttonImpl = nullptr);
     void removeButton(int id);
-    const QVector<CustomButton> &customButtons();
+    const QList<CustomButton> &customButtons();
     const CustomButton *customButton(int id);
 
 private:

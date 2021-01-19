@@ -44,6 +44,7 @@
 
 #if 0
 #pragma qt_no_master_include
+#pragma qt_sync_skip_header_check
 #endif
 
 #if QT_CONFIG(vulkan) || defined(Q_CLANG_QDOC)
@@ -53,6 +54,20 @@
 #include <QtGui/qimage.h>
 #include <QtGui/qmatrix4x4.h>
 #include <QtCore/qset.h>
+
+#ifdef Q_CLANG_QDOC
+typedef void* VkQueue;
+typedef void* VkCommandPool;
+typedef void* VkRenderPass;
+typedef void* VkCommandBuffer;
+typedef void* VkFramebuffer;
+typedef int VkPhysicalDeviceProperties;
+typedef int VkFormat;
+typedef int VkQueueFamilyProperties;
+typedef int VkDeviceQueueCreateInfo;
+typedef int VkFormat;
+typedef int VkSampleCountFlagBits;
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -92,20 +107,20 @@ public:
     void setFlags(Flags flags);
     Flags flags() const;
 
-    QVector<VkPhysicalDeviceProperties> availablePhysicalDevices();
+    QList<VkPhysicalDeviceProperties> availablePhysicalDevices();
     void setPhysicalDeviceIndex(int idx);
 
     QVulkanInfoVector<QVulkanExtension> supportedDeviceExtensions();
     void setDeviceExtensions(const QByteArrayList &extensions);
 
-    void setPreferredColorFormats(const QVector<VkFormat> &formats);
+    void setPreferredColorFormats(const QList<VkFormat> &formats);
 
-    QVector<int> supportedSampleCounts();
+    QList<int> supportedSampleCounts();
     void setSampleCount(int sampleCount);
 
-    typedef std::function<void(const VkQueueFamilyProperties *,
-                               uint32_t,
-                               QVector<VkDeviceQueueCreateInfo> &)> QueueCreateInfoModifier;
+    typedef std::function<void(const VkQueueFamilyProperties *, uint32_t,
+                               QList<VkDeviceQueueCreateInfo> &)>
+            QueueCreateInfoModifier;
     void setQueueCreateInfoModifier(const QueueCreateInfoModifier &modifier);
 
     bool isValid() const;

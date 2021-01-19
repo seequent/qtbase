@@ -22,7 +22,7 @@ find_path(Oracle_INCLUDE_DIRS
   NAMES oci.h
   HINTS ${Oracle_INCLUDE_DIR})
 
-set(ORACLE_OCI_NAMES clntsh ociei oraociei12)
+set(ORACLE_OCI_NAMES clntsh ociei oraociei12 oci)
 
 find_library(Oracle_LIBRARIES
   NAMES NAMES ${ORACLE_OCI_NAMES}
@@ -46,3 +46,5 @@ set_package_properties(Oracle PROPERTIES
   URL "https://www.oracle.com"
   DESCRIPTION "Oracle client library")
 
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(Oracle DEFAULT_MSG Oracle_INCLUDE_DIRS Oracle_LIBRARIES)

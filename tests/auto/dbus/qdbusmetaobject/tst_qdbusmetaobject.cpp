@@ -25,11 +25,15 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-#include <qcoreapplication.h>
-#include <qmetatype.h>
-#include <QtTest/QtTest>
 
-#include <QtDBus/QtDBus>
+#include <QTest>
+#include <QCoreApplication>
+#include <QMetaType>
+#include <QDBusArgument>
+#include <QDBusMetaType>
+#include <QDBusError>
+#include <QDBusUnixFileDescriptor>
+
 #include <private/qdbusmetaobject_p.h>
 
 class tst_QDBusMetaObject: public QObject
@@ -409,7 +413,6 @@ void tst_QDBusMetaObject::types()
         QMetaProperty constructed = result->property(propIdx);
 
         QCOMPARE(constructed.isDesignable(), expected.isDesignable());
-        QCOMPARE(constructed.isEditable(), expected.isEditable());
         QCOMPARE(constructed.isEnumType(), expected.isEnumType());
         QCOMPARE(constructed.isFlagType(), expected.isFlagType());
         QCOMPARE(constructed.isReadable(), expected.isReadable());
@@ -419,7 +422,7 @@ void tst_QDBusMetaObject::types()
         QCOMPARE(constructed.isUser(), expected.isUser());
         QCOMPARE(constructed.isWritable(), expected.isWritable());
         QCOMPARE(constructed.typeName(), expected.typeName());
-        QCOMPARE(constructed.type(), expected.type());
+        QCOMPARE(constructed.metaType(), expected.metaType());
         QCOMPARE(constructed.userType(), expected.userType());
     }
 }

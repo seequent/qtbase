@@ -38,7 +38,9 @@
 #define INVALID_SOCKET -1
 #endif
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QSignalSpy>
+#include <QTimer>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -112,6 +114,8 @@ private slots:
     void eagainBlockingAccept();
 
     void canAccessPendingConnectionsWhileNotListening();
+
+    void pauseAccepting();
 
 private:
     bool shouldSkipIpv6TestsForBrokenGetsockopt();
@@ -474,7 +478,7 @@ public:
     }
 
 protected:
-    void run()
+    void run() override
     {
         sleep(2);
 
@@ -575,7 +579,7 @@ public:
     bool ok;
 
 protected:
-    void incomingConnection(qintptr socketDescriptor)
+    void incomingConnection(qintptr socketDescriptor) override
     {
         // how a user woulddo it (qabstractsocketengine is not public)
         unsigned long arg = 0;
@@ -713,7 +717,7 @@ public:
         lastQuery = QNetworkProxyQuery();
     }
 
-    virtual QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery &query)
+    virtual QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery &query) override
     {
         lastQuery = query;
         ++callCount;
@@ -1044,6 +1048,37 @@ void tst_QTcpServer::canAccessPendingConnectionsWhileNotListening()
     QTcpSocket socket;
     server.addSocketFromOutside(&socket);
     QCOMPARE(&socket, server.nextPendingConnection());
+}
+
+void tst_QTcpServer::pauseAccepting()
+{
+    QTcpServer server;
+    QSignalSpy spy(&server, &QTcpServer::newConnection);
+    QVERIFY(server.listen());
+
+    QFETCH_GLOBAL(bool, setProxy);
+    const auto address = QHostAddress(setProxy ? QtNetworkSettings::socksProxyServerIp()
+                                               : QHostAddress::LocalHost);
+
+    const int NumSockets = 6;
+    QTcpSocket sockets[NumSockets];
+    sockets[0].connectToHost(address, server.serverPort());
+    QVERIFY(spy.wait());
+    QCOMPARE(spy.count(), 1);
+
+    server.pauseAccepting();
+    for (int i = 1; i < NumSockets; ++i)
+        sockets[i].connectToHost(address, server.serverPort());
+    QVERIFY(!spy.wait(400));
+    QCOMPARE(spy.count(), 1);
+
+    server.resumeAccepting();
+    if (setProxy) {
+        QEXPECT_FAIL("", "The socks proxy does weird things after accepting the first connection",
+                     Abort);
+    }
+    QVERIFY(spy.wait());
+    QCOMPARE(spy.count(), 6);
 }
 
 QTEST_MAIN(tst_QTcpServer)

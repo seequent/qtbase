@@ -41,6 +41,7 @@
 #define QCOCOAWINDOW_H
 
 #include <qpa/qplatformwindow.h>
+#include <qpa/qplatformwindow_p.h>
 #include <QRect>
 #include <QPointer>
 
@@ -98,7 +99,8 @@ class QDebug;
 
 class QCocoaMenuBar;
 
-class QCocoaWindow : public QObject, public QPlatformWindow
+class QCocoaWindow : public QObject, public QPlatformWindow,
+    public QNativeInterface::Private::QCocoaWindow
 {
     Q_OBJECT
 public:
@@ -192,7 +194,7 @@ public:
     void setContentBorderThickness(int topThickness, int bottomThickness);
     void registerContentBorderArea(quintptr identifier, int upper, int lower);
     void setContentBorderAreaEnabled(quintptr identifier, bool enable);
-    void setContentBorderEnabled(bool enable);
+    void setContentBorderEnabled(bool enable) override;
     bool testContentBorderAreaPosition(int position) const;
     void applyContentBorderThickness(NSWindow *window = nullptr);
     void updateNSToolbar();
@@ -201,8 +203,7 @@ public:
     QWindow *childWindowAt(QPoint windowPoint);
     bool shouldRefuseKeyWindowAndFirstResponder();
 
-    static QPoint bottomLeftClippedByNSWindowOffsetStatic(QWindow *window);
-    QPoint bottomLeftClippedByNSWindowOffset() const;
+    QPoint bottomLeftClippedByNSWindowOffset() const override;
 
     enum RecreationReason {
         RecreationNotNeeded = 0,
@@ -259,8 +260,6 @@ public: // for QNSView
     bool m_inSetGeometry;
     bool m_inSetStyleMask;
     QCocoaMenuBar *m_menubar;
-
-    bool m_needsInvalidateShadow;
 
     bool m_frameStrutEventsEnabled;
     QRect m_exposedRect;

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -96,7 +96,7 @@ void QTimeLinePrivate::setCurrentTime(int msecs)
     int lastFrame = q->currentFrame();
 
     // Determine if we are looping.
-    int elapsed = (direction == QTimeLine::Backward) ? (-msecs +  duration) : msecs;
+    int elapsed = (direction == QTimeLine::Backward) ? (-msecs + duration) : msecs;
     int loopCount = elapsed / duration;
 
     bool looping = (loopCount != currentLoopCount);
@@ -185,7 +185,7 @@ void QTimeLinePrivate::setCurrentTime(int msecs)
 
     \snippet code/src_corelib_tools_qtimeline.cpp 0
 
-    By default the timeline runs once, from the beginning and towards the end,
+    By default the timeline runs once, from its beginning to its end,
     upon which you must call start() again to restart from the beginning. To
     make the timeline loop, you can call setLoopCount(), passing the number of
     times the timeline should run before finishing. The direction can also be
@@ -193,8 +193,8 @@ void QTimeLinePrivate::setCurrentTime(int msecs)
     setDirection(). You can also pause and unpause the timeline while it's
     running by calling setPaused(). For interactive control, the
     setCurrentTime() function is provided, which sets the time position of the
-    time line directly. Although most useful in NotRunning state, (e.g.,
-    connected to a valueChanged() signal in a QSlider,) this function can be
+    time line directly. Although most useful in NotRunning state (e.g.,
+    connected to a valueChanged() signal in a QSlider), this function can be
     called at any time.
 
     The frame interface is useful for standard widgets, but QTimeLine can be
@@ -205,13 +205,12 @@ void QTimeLinePrivate::setCurrentTime(int msecs)
     step. When running, QTimeLine generates values between 0 and 1 by calling
     valueForTime() and emitting valueChanged(). By default, valueForTime()
     applies an interpolation algorithm to generate these value. You can choose
-    from a set of predefined timeline algorithms by calling
-    setCurveShape().
+    from a set of predefined timeline algorithms by calling setEasingCurve().
 
-    Note that by default, QTimeLine uses the EaseInOut curve shape,
-    which provides a value that grows slowly, then grows steadily, and
-    finally grows slowly. For a custom timeline, you can reimplement
-    valueForTime(), in which case QTimeLine's curveShape property is ignored.
+    Note that, by default, QTimeLine uses QEasingCurve::InOutSine, which
+    provides a value that grows slowly, then grows steadily, and finally grows
+    slowly. For a custom timeline, you can reimplement valueForTime(), in which
+    case QTimeLine's easingCurve property is ignored.
 
     \sa QProgressBar, QProgressDialog
 */
@@ -248,24 +247,6 @@ void QTimeLinePrivate::setCurrentTime(int msecs)
     moves from the end / duration and towards 0).
 
     \sa setDirection()
-*/
-
-/*!
-    \enum QTimeLine::CurveShape
-
-    This enum describes the default shape of QTimeLine's value curve. The
-    default, shape is EaseInOutCurve. The curve defines the relation
-    between the value and the timeline.
-
-    \value EaseInCurve The value starts growing slowly, then increases in speed.
-    \value EaseOutCurve The value starts growing steadily, then ends slowly.
-    \value EaseInOutCurve The value starts growing slowly, then runs steadily, then grows slowly again.
-    \value LinearCurve The value grows linearly (e.g., if the duration is 1000 ms,
-           the value at time 500 ms is 0.5).
-    \value SineCurve The value grows sinusoidally.
-    \value CosineCurve The value grows cosinusoidally.
-
-    \sa setCurveShape()
 */
 
 /*!
@@ -493,68 +474,14 @@ void QTimeLine::setUpdateInterval(int interval)
 }
 
 /*!
-    \property QTimeLine::curveShape
-    \brief the shape of the timeline curve.
-
-    The curve shape describes the relation between the time and value for the
-    base implementation of valueForTime().
-
-    If you have reimplemented valueForTime(), this value is ignored.
-
-    By default, this property is set to \l EaseInOutCurve.
-
-    \sa valueForTime()
-*/
-QTimeLine::CurveShape QTimeLine::curveShape() const
-{
-    Q_D(const QTimeLine);
-    switch (d->easingCurve.type()) {
-    default:
-    case QEasingCurve::InOutSine:
-        return EaseInOutCurve;
-    case QEasingCurve::InCurve:
-        return EaseInCurve;
-    case QEasingCurve::OutCurve:
-        return EaseOutCurve;
-    case QEasingCurve::Linear:
-        return LinearCurve;
-    case QEasingCurve::SineCurve:
-        return SineCurve;
-    case QEasingCurve::CosineCurve:
-        return CosineCurve;
-    }
-    return EaseInOutCurve;
-}
-
-static QEasingCurve::Type convert(QTimeLine::CurveShape shape)
-{
-    switch (shape) {
-#define CASE(x, y) case QTimeLine::x: return QEasingCurve::y
-    CASE(EaseInOutCurve, InOutSine);
-    CASE(EaseInCurve,    InCurve);
-    CASE(EaseOutCurve,   OutCurve);
-    CASE(LinearCurve,    Linear);
-    CASE(SineCurve,      SineCurve);
-    CASE(CosineCurve,    CosineCurve);
-#undef CASE
-    }
-    Q_UNREACHABLE();
-}
-
-void QTimeLine::setCurveShape(CurveShape shape)
-{
-    setEasingCurve(convert(shape));
-}
-
-/*!
     \property QTimeLine::easingCurve
 
     \since 4.6
 
     Specifies the easing curve that the timeline will use.
-    If both easing curve and curveShape are set, the last set property will
-    override the previous one. (If valueForTime() is reimplemented it will
-    override both)
+    If valueForTime() is reimplemented, this value is ignored.
+
+    \sa valueForTime()
 */
 
 QEasingCurve QTimeLine::easingCurve() const
@@ -563,7 +490,7 @@ QEasingCurve QTimeLine::easingCurve() const
     return d->easingCurve;
 }
 
-void QTimeLine::setEasingCurve(const QEasingCurve& curve)
+void QTimeLine::setEasingCurve(const QEasingCurve &curve)
 {
     Q_D(QTimeLine);
     d->easingCurve = curve;
@@ -639,7 +566,7 @@ int QTimeLine::frameForTime(int msec) const
     Reimplement this function to provide a custom curve shape for your
     timeline.
 
-    \sa CurveShape, frameForTime()
+    \sa easingCurve, frameForTime()
 */
 qreal QTimeLine::valueForTime(int msec) const
 {

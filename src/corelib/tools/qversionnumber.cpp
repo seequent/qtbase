@@ -96,13 +96,13 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QVersionNumber::QVersionNumber(const QVector<int> &seg)
+    \fn QVersionNumber::QVersionNumber(const QList<int> &seg)
 
     Constructs a version number from the list of numbers contained in \a seg.
 */
 
 /*!
-    \fn QVersionNumber::QVersionNumber(QVector<int> &&seg)
+    \fn QVersionNumber::QVersionNumber(QList<int> &&seg)
 
     Move-constructs a version number from the list of numbers contained in \a seg.
 
@@ -168,18 +168,18 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn const QVector<int>& QVersionNumber::segments() const
+    \fn const QList<int>& QVersionNumber::segments() const
 
     Returns all of the numerical segments.
 
     \sa majorVersion(), minorVersion(), microVersion()
 */
-QVector<int> QVersionNumber::segments() const
+QList<int> QVersionNumber::segments() const
 {
     if (m_segments.isUsingPointer())
         return *m_segments.pointer_segments;
 
-    QVector<int> result;
+    QList<int> result;
     result.resize(segmentCount());
     for (int i = 0; i < segmentCount(); ++i)
         result[i] = segmentAt(i);
@@ -328,8 +328,7 @@ QVersionNumber QVersionNumber::commonPrefix(const QVersionNumber &v1,
 }
 
 /*!
-    \fn bool operator<(const QVersionNumber &lhs, const QVersionNumber &rhs)
-    \relates QVersionNumber
+    \fn bool QVersionNumber::operator<(const QVersionNumber &lhs, const QVersionNumber &rhs)
 
     Returns \c true if \a lhs is less than \a rhs; otherwise returns \c false.
 
@@ -337,8 +336,7 @@ QVersionNumber QVersionNumber::commonPrefix(const QVersionNumber &v1,
 */
 
 /*!
-    \fn bool operator<=(const QVersionNumber &lhs, const QVersionNumber &rhs)
-    \relates QVersionNumber
+    \fn bool QVersionNumber::operator<=(const QVersionNumber &lhs, const QVersionNumber &rhs)
 
     Returns \c true if \a lhs is less than or equal to \a rhs; otherwise
     returns \c false.
@@ -347,8 +345,7 @@ QVersionNumber QVersionNumber::commonPrefix(const QVersionNumber &v1,
 */
 
 /*!
-    \fn bool operator>(const QVersionNumber &lhs, const QVersionNumber &rhs)
-    \relates QVersionNumber
+    \fn bool QVersionNumber::operator>(const QVersionNumber &lhs, const QVersionNumber &rhs)
 
     Returns \c true if \a lhs is greater than \a rhs; otherwise returns \c
     false.
@@ -357,8 +354,7 @@ QVersionNumber QVersionNumber::commonPrefix(const QVersionNumber &v1,
 */
 
 /*!
-    \fn bool operator>=(const QVersionNumber &lhs, const QVersionNumber &rhs)
-    \relates QVersionNumber
+    \fn bool QVersionNumber::operator>=(const QVersionNumber &lhs, const QVersionNumber &rhs)
 
     Returns \c true if \a lhs is greater than or equal to \a rhs; otherwise
     returns \c false.
@@ -367,8 +363,7 @@ QVersionNumber QVersionNumber::commonPrefix(const QVersionNumber &v1,
 */
 
 /*!
-    \fn bool operator==(const QVersionNumber &lhs, const QVersionNumber &rhs)
-    \relates QVersionNumber
+    \fn bool QVersionNumber::operator==(const QVersionNumber &lhs, const QVersionNumber &rhs)
 
     Returns \c true if \a lhs is equal to \a rhs; otherwise returns \c false.
 
@@ -376,8 +371,7 @@ QVersionNumber QVersionNumber::commonPrefix(const QVersionNumber &v1,
 */
 
 /*!
-    \fn bool operator!=(const QVersionNumber &lhs, const QVersionNumber &rhs)
-    \relates QVersionNumber
+    \fn bool QVersionNumber::operator!=(const QVersionNumber &lhs, const QVersionNumber &rhs)
 
     Returns \c true if \a lhs is not equal to \a rhs; otherwise returns
     \c false.
@@ -462,7 +456,7 @@ QVersionNumber QVersionNumber::fromString(QStringView string, int *suffixIndex)
 */
 QVersionNumber QVersionNumber::fromString(QLatin1String string, int *suffixIndex)
 {
-    QVector<int> seg;
+    QList<int> seg;
 
     const char *start = string.begin();
     const char *end = start;
@@ -487,7 +481,7 @@ QVersionNumber QVersionNumber::fromString(QLatin1String string, int *suffixIndex
 
 void QVersionNumber::SegmentStorage::setVector(int len, int maj, int min, int mic)
 {
-    pointer_segments = new QVector<int>;
+    pointer_segments = new QList<int>;
     pointer_segments->resize(len);
     pointer_segments->data()[0] = maj;
     if (len > 1) {
@@ -525,7 +519,7 @@ QDataStream& operator<<(QDataStream &out, const QVersionNumber &version)
 QDataStream& operator>>(QDataStream &in, QVersionNumber &version)
 {
     if (!version.m_segments.isUsingPointer())
-        version.m_segments.pointer_segments = new QVector<int>;
+        version.m_segments.pointer_segments = new QList<int>;
     in >> *version.m_segments.pointer_segments;
     return in;
 }
@@ -578,7 +572,7 @@ size_t qHash(const QVersionNumber &key, size_t seed)
     \fn template<typename Integer> static bool QTypeRevision::isValidSegment(Integer segment)
 
     Returns true if the given number can be used as either major or minor
-    version in a QTypeRevision. Valid segments need to be \c {>= 0} and \c {< 255}.
+    version in a QTypeRevision. The valid range for \a segment is \c {>= 0} and \c {< 255}.
 */
 
 /*!
@@ -698,7 +692,7 @@ size_t qHash(const QVersionNumber &key, size_t seed)
 
    Writes the revision \a revision to stream \a out.
  */
-QDataStream& operator<<(QDataStream &out, const QTypeRevision &revision)
+QDataStream &operator<<(QDataStream &out, const QTypeRevision &revision)
 {
     return out << revision.toEncodedVersion<quint16>();
 }
@@ -710,7 +704,7 @@ QDataStream& operator<<(QDataStream &out, const QTypeRevision &revision)
 
    Reads a revision from stream \a in and stores it in \a revision.
  */
-QDataStream& operator>>(QDataStream &in, QTypeRevision &revision)
+QDataStream &operator>>(QDataStream &in, QTypeRevision &revision)
 {
     quint16 value;
     in >> value;

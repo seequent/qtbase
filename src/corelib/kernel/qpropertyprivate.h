@@ -52,123 +52,228 @@
 //
 
 #include <QtCore/qglobal.h>
-#include <QtCore/QExplicitlySharedDataPointer>
 #include <QtCore/qtaggedpointer.h>
+#include <QtCore/qmetatype.h>
+
+#include <functional>
 
 QT_BEGIN_NAMESPACE
 
+namespace QtPrivate {
+// QPropertyBindingPrivatePtr operates on a RefCountingMixin solely so that we can inline
+// the constructor and copy constructor
+struct RefCounted {
+    int ref = 0;
+    void addRef() {++ref;}
+    bool deref() {--ref; return ref;}
+};
+}
+
+class QPropertyBindingPrivate;
+class QPropertyBindingPrivatePtr
+{
+public:
+    using T = QtPrivate::RefCounted;
+    T &operator*() const { return *d; }
+    T *operator->() noexcept { return d; }
+    T *operator->() const noexcept { return d; }
+    explicit operator T *() { return d; }
+    explicit operator const T *() const noexcept { return d; }
+    T *data() const noexcept { return d; }
+    T *get() const noexcept { return d; }
+    const T *constData() const noexcept { return d; }
+    T *take() noexcept { T *x = d; d = nullptr; return x; }
+
+    QPropertyBindingPrivatePtr() noexcept : d(nullptr) { }
+    ~QPropertyBindingPrivatePtr()
+    {
+        if (d && (--d->ref == 0))
+            destroyAndFreeMemory();
+    }
+    Q_CORE_EXPORT void destroyAndFreeMemory();
+
+    explicit QPropertyBindingPrivatePtr(T *data) noexcept : d(data) { if (d) d->addRef(); }
+    QPropertyBindingPrivatePtr(const QPropertyBindingPrivatePtr &o) noexcept
+        : d(o.d) { if (d) d->addRef(); }
+
+    void reset(T *ptr = nullptr) noexcept;
+
+    QPropertyBindingPrivatePtr &operator=(const QPropertyBindingPrivatePtr &o) noexcept
+    {
+        reset(o.d);
+        return *this;
+    }
+    QPropertyBindingPrivatePtr &operator=(T *o) noexcept
+    {
+        reset(o);
+        return *this;
+    }
+    QPropertyBindingPrivatePtr(QPropertyBindingPrivatePtr &&o) noexcept : d(qExchange(o.d, nullptr)) {}
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QPropertyBindingPrivatePtr)
+
+    operator bool () const noexcept { return d != nullptr; }
+    bool operator!() const noexcept { return d == nullptr; }
+
+    void swap(QPropertyBindingPrivatePtr &other) noexcept
+    { qSwap(d, other.d); }
+
+    friend bool operator==(const QPropertyBindingPrivatePtr &p1, const QPropertyBindingPrivatePtr &p2) noexcept
+    { return p1.d == p2.d; }
+    friend bool operator!=(const QPropertyBindingPrivatePtr &p1, const QPropertyBindingPrivatePtr &p2) noexcept
+    { return p1.d != p2.d; }
+    friend bool operator==(const QPropertyBindingPrivatePtr &p1, const T *ptr) noexcept
+    { return p1.d == ptr; }
+    friend bool operator!=(const QPropertyBindingPrivatePtr &p1, const T *ptr) noexcept
+    { return p1.d != ptr; }
+    friend bool operator==(const T *ptr, const QPropertyBindingPrivatePtr &p2) noexcept
+    { return ptr == p2.d; }
+    friend bool operator!=(const T *ptr, const QPropertyBindingPrivatePtr &p2) noexcept
+    { return ptr != p2.d; }
+    friend bool operator==(const QPropertyBindingPrivatePtr &p1, std::nullptr_t) noexcept
+    { return !p1; }
+    friend bool operator!=(const QPropertyBindingPrivatePtr &p1, std::nullptr_t) noexcept
+    { return p1; }
+    friend bool operator==(std::nullptr_t, const QPropertyBindingPrivatePtr &p2) noexcept
+    { return !p2; }
+    friend bool operator!=(std::nullptr_t, const QPropertyBindingPrivatePtr &p2) noexcept
+    { return p2; }
+
+private:
+    QtPrivate::RefCounted *d;
+};
+
+
 class QUntypedPropertyBinding;
 class QPropertyBindingPrivate;
-using QPropertyBindingPrivatePtr = QExplicitlySharedDataPointer<QPropertyBindingPrivate>;
-struct QPropertyBasePointer;
+struct QPropertyBindingDataPointer;
+
+class QUntypedPropertyData
+{
+public:
+    // sentinel to check whether a class inherits QUntypedPropertyData
+    struct InheritsQUntypedPropertyData {};
+};
+
+template <typename T>
+class QPropertyData;
 
 namespace QtPrivate {
+struct BindingEvaluationState;
 
-class Q_CORE_EXPORT QPropertyBase
+struct BindingFunctionVTable
+{
+    using CallFn = bool(*)(QMetaType, QUntypedPropertyData *, void *);
+    using DtorFn = void(*)(void *);
+    using MoveCtrFn = void(*)(void *, void *);
+    const CallFn call;
+    const DtorFn destroy;
+    const MoveCtrFn moveConstruct;
+    const qsizetype size;
+
+    template<typename Callable, typename PropertyType=void>
+    static constexpr BindingFunctionVTable createFor()
+    {
+        static_assert (alignof(Callable) <= alignof(std::max_align_t), "Bindings do not support overaligned functors!");
+        return {
+            /*call=*/[](QMetaType metaType, QUntypedPropertyData *dataPtr, void *f){
+                if constexpr (!std::is_invocable_v<Callable>) {
+                    // we got an untyped callable
+                    static_assert (std::is_invocable_r_v<bool, Callable, QMetaType, QUntypedPropertyData *> );
+                    auto untypedEvaluationFunction = static_cast<Callable *>(f);
+                    return std::invoke(*untypedEvaluationFunction, metaType, dataPtr);
+                } else {
+                    Q_UNUSED(metaType);
+                    QPropertyData<PropertyType> *propertyPtr = static_cast<QPropertyData<PropertyType> *>(dataPtr);
+                    // That is allowed by POSIX even if Callable is a function pointer
+                    auto evaluationFunction = static_cast<Callable *>(f);
+                    PropertyType newValue = std::invoke(*evaluationFunction);
+                    if constexpr (QTypeTraits::has_operator_equal_v<PropertyType>) {
+                        if (newValue == propertyPtr->valueBypassingBindings())
+                            return false;
+                    }
+                    propertyPtr->setValueBypassingBindings(std::move(newValue));
+                    return true;
+                }
+            },
+            /*destroy*/[](void *f){ static_cast<Callable *>(f)->~Callable(); },
+            /*moveConstruct*/[](void *addr, void *other){
+                new (addr) Callable(std::move(*static_cast<Callable *>(other)));
+            },
+            /*size*/sizeof(Callable)
+        };
+    }
+};
+
+template<typename Callable, typename PropertyType=void>
+inline constexpr BindingFunctionVTable bindingFunctionVTable = BindingFunctionVTable::createFor<Callable, PropertyType>();
+
+
+// writes binding result into dataPtr
+struct QPropertyBindingFunction {
+    const QtPrivate::BindingFunctionVTable *vtable;
+    void *functor;
+};
+
+using QPropertyObserverCallback = void (*)(QUntypedPropertyData *);
+using QPropertyBindingWrapper = bool(*)(QMetaType, QUntypedPropertyData *dataPtr, QPropertyBindingFunction);
+
+class Q_CORE_EXPORT QPropertyBindingData
 {
     // Mutable because the address of the observer of the currently evaluating binding is stored here, for
     // notification later when the value changes.
     mutable quintptr d_ptr = 0;
-    friend struct QT_PREPEND_NAMESPACE(QPropertyBasePointer);
+    friend struct QT_PREPEND_NAMESPACE(QPropertyBindingDataPointer);
+    Q_DISABLE_COPY(QPropertyBindingData)
 public:
-    QPropertyBase() = default;
-    Q_DISABLE_COPY(QPropertyBase)
-    QPropertyBase(QPropertyBase &&other) = delete;
-    QPropertyBase(QPropertyBase &&other, void *propertyDataPtr);
-    QPropertyBase &operator=(QPropertyBase &&other) = delete;
-    ~QPropertyBase();
+    QPropertyBindingData() = default;
+    QPropertyBindingData(QPropertyBindingData &&other);
+    QPropertyBindingData &operator=(QPropertyBindingData &&other) = delete;
+    ~QPropertyBindingData();
 
-    void moveAssign(QPropertyBase &&other, void *propertyDataPtr);
+    static inline constexpr quintptr BindingBit = 0x1; // Is d_ptr pointing to a binding (1) or list of notifiers (0)?
 
     bool hasBinding() const { return d_ptr & BindingBit; }
 
     QUntypedPropertyBinding setBinding(const QUntypedPropertyBinding &newBinding,
-                                       void *propertyDataPtr, void *staticObserver = nullptr,
-                                       void (*staticObserverCallback)(void*) = nullptr);
-    QPropertyBindingPrivate *binding();
+                                       QUntypedPropertyData *propertyDataPtr,
+                                       QPropertyObserverCallback staticObserverCallback = nullptr,
+                                       QPropertyBindingWrapper bindingWrapper = nullptr);
 
-    void evaluateIfDirty();
-    void removeBinding();
+    QPropertyBindingPrivate *binding() const
+    {
+        if (d_ptr & BindingBit)
+            return reinterpret_cast<QPropertyBindingPrivate*>(d_ptr - BindingBit);
+        return nullptr;
 
+    }
+
+    void evaluateIfDirty(const QUntypedPropertyData *property) const;
+    void markDirty();
+
+    void removeBinding()
+    {
+        if (hasBinding())
+            removeBinding_helper();
+    }
+
+    void registerWithCurrentlyEvaluatingBinding(QtPrivate::BindingEvaluationState *currentBinding) const
+    {
+        if (!currentBinding)
+            return;
+        registerWithCurrentlyEvaluatingBinding_helper(currentBinding);
+    }
     void registerWithCurrentlyEvaluatingBinding() const;
-    void notifyObservers(void *propertyDataPtr);
-
-    void setExtraBit(bool b)
-    {
-        if (b)
-            d_ptr |= ExtraBit;
-        else
-            d_ptr &= ~ExtraBit;
-    }
-
-    bool extraBit() const { return d_ptr & ExtraBit; }
-
-    static const quintptr ExtraBit = 0x1;   // Used for QProperty<bool> specialization
-    static const quintptr BindingBit = 0x2; // Is d_ptr pointing to a binding (1) or list of notifiers (0)?
-    static const quintptr FlagMask = BindingBit | ExtraBit;
-};
-
-template <typename T>
-struct QPropertyValueStorage
-{
+    void notifyObservers(QUntypedPropertyData *propertyDataPtr) const;
 private:
-    T value;
-public:
-    QPropertyBase priv;
-
-    QPropertyValueStorage() : value() {}
-    Q_DISABLE_COPY(QPropertyValueStorage)
-    explicit QPropertyValueStorage(const T &initialValue) : value(initialValue) {}
-    QPropertyValueStorage &operator=(const T &newValue) { value = newValue; return *this; }
-    explicit QPropertyValueStorage(T &&initialValue) : value(std::move(initialValue)) {}
-    QPropertyValueStorage &operator=(T &&newValue) { value = std::move(newValue); return *this; }
-    QPropertyValueStorage(QPropertyValueStorage &&other) : value(std::move(other.value)), priv(std::move(other.priv), this) {}
-    QPropertyValueStorage &operator=(QPropertyValueStorage &&other) { value = std::move(other.value); priv.moveAssign(std::move(other.priv), &value); return *this; }
-
-    T getValue() const { return value; }
-    bool setValueAndReturnTrueIfChanged(T &&v)
-    {
-        if (v == value)
-            return false;
-        value = std::move(v);
-        return true;
-    }
-    bool setValueAndReturnTrueIfChanged(const T &v)
-    {
-        if (v == value)
-            return false;
-        value = v;
-        return true;
-    }
-};
-
-template<>
-struct QPropertyValueStorage<bool>
-{
-    QPropertyBase priv;
-
-    QPropertyValueStorage() = default;
-    Q_DISABLE_COPY(QPropertyValueStorage)
-    explicit QPropertyValueStorage(bool initialValue) { priv.setExtraBit(initialValue); }
-    QPropertyValueStorage &operator=(bool newValue) { priv.setExtraBit(newValue); return *this; }
-    QPropertyValueStorage(QPropertyValueStorage &&other) : priv(std::move(other.priv), this) {}
-    QPropertyValueStorage &operator=(QPropertyValueStorage &&other) { priv.moveAssign(std::move(other.priv), this); return *this; }
-
-    bool getValue() const { return priv.extraBit(); }
-    bool setValueAndReturnTrueIfChanged(bool v)
-    {
-        if (v == priv.extraBit())
-            return false;
-        priv.setExtraBit(v);
-        return true;
-    }
+    void registerWithCurrentlyEvaluatingBinding_helper(BindingEvaluationState *currentBinding) const;
+    void removeBinding_helper();
 };
 
 template <typename T, typename Tag>
 class QTagPreservingPointerToPointer
 {
 public:
-    QTagPreservingPointerToPointer() = default;
+    constexpr QTagPreservingPointerToPointer() = default;
 
     QTagPreservingPointerToPointer(T **ptr)
         : d(reinterpret_cast<quintptr*>(ptr))
@@ -176,13 +281,13 @@ public:
 
     QTagPreservingPointerToPointer<T, Tag> &operator=(T **ptr)
     {
-        d = reinterpret_cast<quintptr*>(ptr);
+        d = reinterpret_cast<quintptr *>(ptr);
         return *this;
     }
 
     QTagPreservingPointerToPointer<T, Tag> &operator=(QTaggedPointer<T, Tag> *ptr)
     {
-        d = reinterpret_cast<quintptr*>(ptr);
+        d = reinterpret_cast<quintptr *>(ptr);
         return *this;
     }
 
@@ -193,7 +298,7 @@ public:
 
     void setPointer(T *ptr)
     {
-        *d = (reinterpret_cast<quintptr>(ptr) & QTaggedPointer<T, Tag>::pointerMask()) | (*d & QTaggedPointer<T, Tag>::tagMask());
+        *d = reinterpret_cast<quintptr>(ptr) | (*d & QTaggedPointer<T, Tag>::tagMask());
     }
 
     T *get() const
@@ -209,6 +314,23 @@ public:
 private:
     quintptr *d = nullptr;
 };
+
+namespace detail {
+    template <typename F>
+    struct ExtractClassFromFunctionPointer;
+
+    template<typename T, typename C>
+    struct ExtractClassFromFunctionPointer<T C::*> { using Class = C; };
+
+    constexpr size_t getOffset(size_t o)
+    {
+        return o;
+    }
+    constexpr size_t getOffset(size_t (*offsetFn)())
+    {
+        return offsetFn();
+    }
+}
 
 } // namespace QtPrivate
 

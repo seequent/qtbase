@@ -7,6 +7,7 @@
 qt_internal_add_plugin(QIbusPlatformInputContextPlugin
     OUTPUT_NAME ibusplatforminputcontextplugin
     TYPE platforminputcontexts
+    DEFAULT_IF FALSE
     SOURCES
         main.cpp
         qibusinputcontextproxy.cpp qibusinputcontextproxy.h
@@ -14,12 +15,13 @@ qt_internal_add_plugin(QIbusPlatformInputContextPlugin
         qibusproxy.cpp qibusproxy.h
         qibusproxyportal.cpp qibusproxyportal.h
         qibustypes.cpp qibustypes.h
+    LIBRARIES
+        XKB::XKB
     PUBLIC_LIBRARIES
         Qt::Core
         Qt::DBus
         Qt::Gui
         Qt::GuiPrivate
-        Qt::XkbCommonSupportPrivate
 )
 
 #### Keys ignored in scope 1:.:.:ibus.pro:<TRUE>:

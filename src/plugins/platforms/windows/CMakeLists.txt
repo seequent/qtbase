@@ -12,6 +12,7 @@ qt_internal_add_plugin(QWindowsIntegrationPlugin
         main.cpp
         qtwindowsglobal.h
         qwin10helpers.cpp qwin10helpers.h
+        qwindowsapplication.cpp qwindowsapplication.h
         qwindowsbackingstore.cpp qwindowsbackingstore.h
         qwindowscombase.h
         qwindowscontext.cpp qwindowscontext.h
@@ -51,7 +52,6 @@ qt_internal_add_plugin(QWindowsIntegrationPlugin
     PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
-        Qt::FontDatabaseSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
         dwmapi
@@ -70,7 +70,7 @@ set(openglblacklists_resource_files
     "openglblacklists/default.json"
 )
 
-qt_add_resource(QWindowsIntegrationPlugin "openglblacklists"
+qt_internal_add_resource(QWindowsIntegrationPlugin "openglblacklists"
     PREFIX
         "/qt-project.org/windows/openglblacklists"
     FILES
@@ -84,7 +84,7 @@ qt_add_resource(QWindowsIntegrationPlugin "openglblacklists"
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl
     SOURCES
         qwindowsglcontext.cpp qwindowsglcontext.h
         qwindowsopenglcontext.h
@@ -92,53 +92,47 @@ qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl
         Qt::OpenGLPrivate
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_directwrite3
-    DEFINES
-        QT_USE_DIRECTWRITE2
-        QT_USE_DIRECTWRITE3
-)
-
-#### Keys ignored in scope 4:.:.:windows.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
+#### Keys ignored in scope 3:.:.:windows.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
 # PLUGIN_EXTENDS = "-"
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl AND NOT QT_FEATURE_dynamicgl
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl AND NOT QT_FEATURE_dynamicgl
     PUBLIC_LIBRARIES
         opengl32
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION MINGW
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION MINGW
     PUBLIC_LIBRARIES
         uuid
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_systemtrayicon
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_systemtrayicon
     SOURCES
         qwindowssystemtrayicon.cpp qwindowssystemtrayicon.h
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_vulkan
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_vulkan
     SOURCES
         qwindowsvulkaninstance.cpp qwindowsvulkaninstance.h
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_clipboard
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_clipboard
     SOURCES
         qwindowsclipboard.cpp qwindowsclipboard.h
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_clipboard AND QT_FEATURE_draganddrop
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_clipboard AND QT_FEATURE_draganddrop
     SOURCES
         qwindowsdrag.cpp qwindowsdrag.h
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_tabletevent
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_tabletevent
     SOURCES
         qwindowstabletsupport.cpp qwindowstabletsupport.h
     INCLUDE_DIRECTORIES
         ${QT_SOURCE_TREE}/src/3rdparty/wintab
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_sessionmanager
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_sessionmanager
     SOURCES
         qwindowssessionmanager.cpp qwindowssessionmanager.h
 )
@@ -169,7 +163,7 @@ if(QT_FEATURE_imageformat_png)
         "images/splitvcursor_64.png"
     )
 
-    qt_add_resource(QWindowsIntegrationPlugin "cursors"
+    qt_internal_add_resource(QWindowsIntegrationPlugin "cursors"
         PREFIX
             "/qt-project.org/windows/cursors"
         FILES
@@ -177,7 +171,7 @@ if(QT_FEATURE_imageformat_png)
     )
 endif()
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_accessibility
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_accessibility
     SOURCES
         uiautomation/qwindowsuiaaccessibility.cpp uiautomation/qwindowsuiaaccessibility.h
         uiautomation/qwindowsuiabaseprovider.cpp uiautomation/qwindowsuiabaseprovider.h
@@ -200,7 +194,13 @@ qt_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_accessibility
         uiautomation/qwindowsuiawindowprovider.cpp uiautomation/qwindowsuiawindowprovider.h
 )
 
-qt_extend_target(QWindowsIntegrationPlugin CONDITION MINGW AND QT_FEATURE_accessibility
+qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION MINGW AND QT_FEATURE_accessibility
     PUBLIC_LIBRARIES
         uuid
 )
+
+# begin special case
+if (MINGW)
+    set_source_files_properties(qwindowspointerhandler.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+endif()
+# end special case

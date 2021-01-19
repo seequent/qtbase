@@ -26,7 +26,9 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QProcess>
+#include <QTestEventLoop>
 
 #include <qcoreapplication.h>
 #include <qmutex.h>
@@ -76,7 +78,7 @@ void tst_QThreadStorage::hasLocalData()
     QVERIFY(!pointers.hasLocalData());
     pointers.setLocalData(new Pointer);
     QVERIFY(pointers.hasLocalData());
-    pointers.setLocalData(0);
+    pointers.setLocalData(nullptr);
     QVERIFY(!pointers.hasLocalData());
 }
 
@@ -88,8 +90,8 @@ void tst_QThreadStorage::localData()
     pointers.setLocalData(p);
     QVERIFY(pointers.hasLocalData());
     QCOMPARE(pointers.localData(), p);
-    pointers.setLocalData(0);
-    QCOMPARE(pointers.localData(), (Pointer *)0);
+    pointers.setLocalData(nullptr);
+    QCOMPARE(pointers.localData(), nullptr);
     QVERIFY(!pointers.hasLocalData());
 }
 
@@ -102,8 +104,8 @@ void tst_QThreadStorage::localData_const()
     pointers.setLocalData(p);
     QVERIFY(pointers.hasLocalData());
     QCOMPARE(const_pointers.localData(), p);
-    pointers.setLocalData(0);
-    QCOMPARE(const_pointers.localData(), (Pointer *)0);
+    pointers.setLocalData(nullptr);
+    QCOMPARE(const_pointers.localData(), nullptr);
     QVERIFY(!pointers.hasLocalData());
 }
 
@@ -113,7 +115,7 @@ void tst_QThreadStorage::setLocalData()
     QVERIFY(!pointers.hasLocalData());
     pointers.setLocalData(new Pointer);
     QVERIFY(pointers.hasLocalData());
-    pointers.setLocalData(0);
+    pointers.setLocalData(nullptr);
     QVERIFY(!pointers.hasLocalData());
 }
 
@@ -129,7 +131,7 @@ public:
         : pointers(p)
     { }
 
-    void run()
+    void run() override
     {
         pointers.setLocalData(new Pointer);
 
@@ -157,7 +159,7 @@ void tst_QThreadStorage::autoDelete()
     QCOMPARE(Pointer::count, c);
 }
 
-bool threadStorageOk;
+static bool threadStorageOk;
 void testAdoptedThreadStorageWin(void *p)
 {
     QThreadStorage<Pointer *>  *pointers = reinterpret_cast<QThreadStorage<Pointer *> *>(p);
@@ -183,7 +185,7 @@ void testAdoptedThreadStorageWin(void *p)
 void *testAdoptedThreadStorageUnix(void *pointers)
 {
     testAdoptedThreadStorageWin(pointers);
-    return 0;
+    return nullptr;
 }
 void tst_QThreadStorage::adoptedThreads()
 {
@@ -194,9 +196,9 @@ void tst_QThreadStorage::adoptedThreads()
     {
 #ifdef Q_OS_UNIX
         pthread_t thread;
-        const int state = pthread_create(&thread, 0, testAdoptedThreadStorageUnix, &pointers);
+        const int state = pthread_create(&thread, nullptr, testAdoptedThreadStorageUnix, &pointers);
         QCOMPARE(state, 0);
-        pthread_join(thread, 0);
+        pthread_join(thread, nullptr);
 #elif defined Q_OS_WIN
         HANDLE thread;
         thread = (HANDLE)_beginthread(testAdoptedThreadStorageWin, 0, &pointers);
@@ -212,7 +214,7 @@ void tst_QThreadStorage::adoptedThreads()
     QTRY_COMPARE(Pointer::count, c);
 }
 
-QBasicAtomicInt cleanupOrder = Q_BASIC_ATOMIC_INITIALIZER(0);
+static QBasicAtomicInt cleanupOrder = Q_BASIC_ATOMIC_INITIALIZER(0);
 
 class First
 {
@@ -249,7 +251,7 @@ void tst_QThreadStorage::ensureCleanupOrder()
             : first(first), second(second)
         { }
 
-        void run()
+        void run() override
         {
             // set in reverse order, but shouldn't matter, the data
             // will be deleted in the order the thread storage objects
@@ -340,7 +342,7 @@ void tst_QThreadStorage::leakInDestructor()
 
         Thread(QThreadStorage<ThreadStorageLocalDataTester *> &t) : tls(t) { }
 
-        void run()
+        void run() override
         {
             QVERIFY(!tls.hasLocalData());
             tls.setLocalData(new ThreadStorageLocalDataTester);
@@ -392,7 +394,7 @@ void tst_QThreadStorage::resetInDestructor()
     class Thread : public QThread
     {
     public:
-        void run()
+        void run() override
         {
             QVERIFY(!ThreadStorageResetLocalDataTesterTls()->hasLocalData());
             ThreadStorageResetLocalDataTesterTls()->setLocalData(new ThreadStorageResetLocalDataTester);
@@ -428,7 +430,8 @@ void tst_QThreadStorage::valueBased()
         Thread(QThreadStorage<SPointer> &t1, QThreadStorage<QString> &t2, QThreadStorage<int> &t3)
         : tlsSPointer(t1), tlsString(t2), tlsInt(t3) { }
 
-        void run() {
+        void run()  override
+        {
             /*QVERIFY(!tlsSPointer.hasLocalData());
             QVERIFY(!tlsString.hasLocalData());
             QVERIFY(!tlsInt.hasLocalData());*/

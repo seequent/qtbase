@@ -9,16 +9,24 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/corelib/mimetypes/mimetypebrowser")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/corelib/mimetypes/mimetypebrowser")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS Gui)
 find_package(Qt6 COMPONENTS Widgets)
 
-add_executable(mimetypebrowser
+qt_add_executable(mimetypebrowser
     main.cpp
     mainwindow.cpp mainwindow.h
     mimetypemodel.cpp mimetypemodel.h
+)
+set_target_properties(mimetypebrowser PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE FALSE
 )
 target_link_libraries(mimetypebrowser PUBLIC
     Qt::Core

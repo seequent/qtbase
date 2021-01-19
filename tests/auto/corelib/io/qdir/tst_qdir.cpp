@@ -27,7 +27,9 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QTemporaryFile>
+#include <QProcess>
 
 #include <qcoreapplication.h>
 #include <qdebug.h>
@@ -886,14 +888,14 @@ void tst_QDir::entryListWithTestFiles()
 #if defined(Q_OS_WIN)
     // ### Sadly, this is a platform difference right now.
     // Note we are using capital L in entryList on one side here, to test case-insensitivity
-    const QVector<QPair<QString, QString> > symLinks =
+    const QList<QPair<QString, QString> > symLinks =
     {
         {m_dataPath + "/entryList/file", entrylistPath + "linktofile.lnk"},
         {m_dataPath + "/entryList/directory", entrylistPath + "linktodirectory.lnk"},
         {m_dataPath + "/entryList/nothing", entrylistPath + "brokenlink.lnk"}
     };
 #else
-    const QVector<QPair<QString, QString> > symLinks =
+    const QList<QPair<QString, QString> > symLinks =
     {
         {"file", entrylistPath + "linktofile.lnk"},
         {"directory", entrylistPath + "linktodirectory.lnk"},
@@ -1653,7 +1655,10 @@ void tst_QDir::dirName()
 void tst_QDir::operator_eq()
 {
     QDir dir1(".");
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wself-assign-overloaded")
     dir1 = dir1;
+QT_WARNING_POP
     dir1.setPath("..");
 }
 

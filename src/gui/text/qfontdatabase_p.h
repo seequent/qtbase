@@ -113,25 +113,18 @@ struct Q_GUI_EXPORT QtFontStyle
         {}
 
         uint style          : 2;
-        signed int  weight  : 8;
+        uint weight         : 10;
         signed int stretch  : 12;
 
-        bool operator==(const Key &other)
+        bool operator==(const Key &other) const noexcept
         {
             return (style == other.style && weight == other.weight &&
                     (stretch == 0 || other.stretch == 0 || stretch == other.stretch));
         }
 
-        bool operator!=(const Key &other)
+        bool operator!=(const Key &other) const noexcept
         {
             return !operator==(other);
-        }
-
-        bool operator<(const Key &o)
-        {
-            int x = (style << 12) + (weight << 14) + stretch;
-            int y = (o.style << 12) + (o.weight << 14) + o.stretch;
-            return (x < y);
         }
     };
 
@@ -262,17 +255,24 @@ public:
             int stretch = QFont::Unstretched;
         };
 
-        QVector<Properties> properties;
+        QList<Properties> properties;
     };
-    QVector<ApplicationFont> applicationFonts;
+    QList<ApplicationFont> applicationFonts;
     int addAppFont(const QByteArray &fontData, const QString &fileName);
     bool isApplicationFont(const QString &fileName);
 
     static QFontDatabasePrivate *instance();
 
+    static void createDatabase();
+    static void parseFontName(const QString &name, QString &foundry, QString &family);
+    static QString resolveFontFamilyAlias(const QString &family);
+    static QFontEngine *findFont(const QFontDef &request, int script /* QChar::Script */);
+    static void load(const QFontPrivate *d, int script /* QChar::Script */);
+    static QFontDatabasePrivate *ensureFontDatabase();
+
     void invalidate();
 };
-Q_DECLARE_TYPEINFO(QFontDatabasePrivate::ApplicationFont, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QFontDatabasePrivate::ApplicationFont, Q_RELOCATABLE_TYPE);
 
 QT_END_NAMESPACE
 

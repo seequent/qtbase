@@ -59,19 +59,9 @@ class QCocoaNativeInterface : public QPlatformNativeInterface
 public:
     QCocoaNativeInterface();
 
-#ifndef QT_NO_OPENGL
-    void *nativeResourceForContext(const QByteArray &resourceString, QOpenGLContext *context) override;
-#endif
     void *nativeResourceForWindow(const QByteArray &resourceString, QWindow *window) override;
 
     NativeResourceForIntegrationFunction nativeResourceFunctionForIntegration(const QByteArray &resource) override;
-
-#ifndef QT_NO_OPENGL
-    static void *cglContextForContext(QOpenGLContext *context);
-    static void *nsOpenGLContextForContext(QOpenGLContext* context);
-#endif
-
-    QFunctionPointer platformFunction(const QByteArray &function) const override;
 
 public Q_SLOTS:
     void onAppFocusWindowChanged(QWindow *window);
@@ -92,15 +82,6 @@ private:
     static void removeFromMimeList(void *macPasteboardMime);
     static void registerDraggedTypes(const QStringList &types);
 
-    // Dock menu support
-    static void setDockMenu(QPlatformMenu *platformMenu);
-
-    // Function to return NSMenu * from QPlatformMenu
-    static void *qMenuToNSMenu(QPlatformMenu *platformMenu);
-
-    // Function to return NSMenu * from QPlatformMenuBar
-    static void *qMenuBarToNSMenu(QPlatformMenuBar *platformMenuBar);
-
     // Set a QWindow as a "guest" (subwindow) of a non-QWindow
     static void setEmbeddedInForeignView(QPlatformWindow *window, bool embedded);
 
@@ -112,9 +93,6 @@ private:
     // touch events, which then will be delivered until the widget
     // deregisters.
     static void registerTouchWindow(QWindow *window,  bool enable);
-
-    // Enable the unified title and toolbar area for a window.
-    static void setContentBorderEnabled(QWindow *window, bool enable);
 
     // Set the size of the unified title and toolbar area.
     static void setContentBorderThickness(QWindow *window, int topThickness, int bottomThickness);

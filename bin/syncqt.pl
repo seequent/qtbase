@@ -233,6 +233,7 @@ sub classNames {
                 $line .= ";" if($line =~ m/^QT_(BEGIN|END)_NAMESPACE(_[A-Z]+)*[\r\n]*$/); #qt macro
                 $line .= ";" if($line =~ m/^QT_MODULE\(.*\)[\r\n]*$/); # QT_MODULE macro
                 $line .= ";" if($line =~ m/^QT_WARNING_(PUSH|POP|DISABLE_\w+\(.*\))[\r\n]*$/); # qt macros
+                $line .= ";" if($line =~ m/^QT_DECLARE_QE?SDP_SPECIALIZATION_DTOR(_WITH_EXPORT)?\(.*\)[\r\n]*$/); # qt macros
                 $$requires = $1 if ($line =~ m/^QT_REQUIRE_CONFIG\((.*)\);[\r\n]*$/);
                 $parsable .= " " . $line;
             }
@@ -423,14 +424,32 @@ sub syncHeader {
     normalizePath(\$header);
     return copyFile($lib, $iheader, $header) if($copy);
 
-    unless(-e $header) {
-        my $header_dir = dirname($header);
+    my $header_dir = dirname($header);
+    my $iheader_out = fixPaths($iheader, $header_dir);
+    my $new_forwarding_header_content = "#include \"$iheader_out\"\n";
+
+    # By default, create / update the forwarding header if it does
+    # not exist.
+    my $forwarding_header_exists = (-e $header ? 1 : 0);
+    my $update_forwarding_header = !$forwarding_header_exists;
+
+    # If remove_stale option is on, make sure to overwrite the
+    # forwarding header contents if the file already exists and its
+    # content is different from what we will generate.
+    if ($forwarding_header_exists && $remove_stale) {
+        my $existing_forwarding_header_content = fileContents($header);
+        $existing_forwarding_header_content =~ s/\r//g; # remove \r's , so comparison is ok on all platforms
+        my $header_content_is_different =
+           $new_forwarding_header_content ne $existing_forwarding_header_content;
+        $update_forwarding_header ||= $header_content_is_different;
+    }
+
+    if ($update_forwarding_header) {
         make_path($header_dir, $lib, $verbose_level);
 
         #write it
-        my $iheader_out = fixPaths($iheader, $header_dir);
         open(HEADER, ">$header") || die "Could not open $header for writing: $!\n";
-        print HEADER "#include \"$iheader_out\"\n";
+        print HEADER "$new_forwarding_header_content";
         close HEADER;
         if(defined($ts)) {
             utime(time, $ts, $header) or die "$iheader, $header";

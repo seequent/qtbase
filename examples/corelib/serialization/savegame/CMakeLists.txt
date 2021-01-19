@@ -9,15 +9,23 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/corelib/serialization/savegame")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/corelib/serialization/savegame")
 
 find_package(Qt6 COMPONENTS Core)
 
-add_executable(savegame
+qt_add_executable(savegame
     character.cpp character.h
     game.cpp game.h
     level.cpp level.h
     main.cpp
+)
+set_target_properties(savegame PROPERTIES
+    WIN32_EXECUTABLE FALSE
+    MACOSX_BUNDLE FALSE
 )
 target_link_libraries(savegame PUBLIC
     Qt::Core

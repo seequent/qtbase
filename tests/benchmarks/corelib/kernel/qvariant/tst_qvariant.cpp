@@ -91,9 +91,9 @@ struct BigClass
 {
     double n,i,e,r,o,b;
 };
-Q_STATIC_ASSERT(sizeof(BigClass) > sizeof(QVariant::Private::Data));
+static_assert(sizeof(BigClass) > sizeof(QVariant::Private::MaxInternalSize));
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(BigClass, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(BigClass, Q_RELOCATABLE_TYPE);
 QT_END_NAMESPACE
 Q_DECLARE_METATYPE(BigClass);
 
@@ -101,9 +101,9 @@ struct SmallClass
 {
     char s;
 };
-Q_STATIC_ASSERT(sizeof(SmallClass) <= sizeof(QVariant::Private::Data));
+static_assert(sizeof(SmallClass) <= sizeof(QVariant::Private::MaxInternalSize));
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(SmallClass, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(SmallClass, Q_RELOCATABLE_TYPE);
 QT_END_NAMESPACE
 Q_DECLARE_METATYPE(SmallClass);
 
@@ -349,7 +349,7 @@ void tst_qvariant::createCoreType()
     QFETCH(int, typeId);
     QBENCHMARK {
         for (int i = 0; i < ITERATION_COUNT; ++i)
-            QVariant(typeId, (void *)0);
+            QVariant(QMetaType(typeId));
     }
 }
 
@@ -365,11 +365,11 @@ void tst_qvariant::createCoreTypeCopy_data()
 void tst_qvariant::createCoreTypeCopy()
 {
     QFETCH(int, typeId);
-    QVariant other(typeId, (void *)0);
+    QVariant other(typeId);
     const void *copy = other.constData();
     QBENCHMARK {
         for (int i = 0; i < ITERATION_COUNT; ++i)
-            QVariant(typeId, copy);
+            QVariant(QMetaType(typeId), copy);
     }
 }
 

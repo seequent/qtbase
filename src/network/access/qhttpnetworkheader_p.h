@@ -56,14 +56,16 @@
 #include <qshareddata.h>
 #include <qurl.h>
 
+#ifndef Q_OS_WASM
 QT_REQUIRE_CONFIG(http);
+#endif
 
 QT_BEGIN_NAMESPACE
 
 class Q_AUTOTEST_EXPORT QHttpNetworkHeader
 {
 public:
-    virtual ~QHttpNetworkHeader() {};
+    virtual ~QHttpNetworkHeader() {}
     virtual QUrl url() const = 0;
     virtual void setUrl(const QUrl &url) = 0;
 
@@ -93,6 +95,7 @@ public:
     QList<QByteArray> headerFieldValues(const QByteArray &name) const;
     void setHeaderField(const QByteArray &name, const QByteArray &data);
     void prependHeaderField(const QByteArray &name, const QByteArray &data);
+    void clearHeaders();
     bool operator==(const QHttpNetworkHeaderPrivate &other) const;
 
 };

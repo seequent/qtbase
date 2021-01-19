@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <qaction.h>
 #include <qactiongroup.h>
@@ -99,6 +99,9 @@ void tst_QActionGroup::visiblePropagation()
     QVERIFY( !testActionGroup.isVisible() );
     QVERIFY( !childAction->isVisible() );
     QVERIFY( !anotherChildAction->isVisible() );
+
+    childAction->setVisible(true);
+    QVERIFY( !childAction->isVisible() );
 
     anotherChildAction->setVisible(false);
 

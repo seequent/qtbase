@@ -335,10 +335,6 @@ inline size_t qHash(const std::unordered_set<int> &key, size_t seed = 0)
 }
 //! [qhashrangecommutative]
 
-//! [29]
-qHash(qMakePair(key.first, key.second), seed);
-//! [29]
-
 //! [30]
 {0, 1, 2}
 //! [30]
@@ -354,3 +350,13 @@ size_t qHash(const K &key);
 size_t qHash(K key, size_t seed);
 size_t qHash(const K &key, size_t seed);
 //! [32]
+
+//! [33]
+namespace std {
+template <> struct hash<K>
+{
+    // seed is optional
+    size_t operator()(const K &key, size_t seed = 0) const;
+};
+}
+//! [33]

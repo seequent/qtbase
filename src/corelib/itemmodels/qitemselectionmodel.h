@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -42,10 +42,9 @@
 
 #include <QtCore/qglobal.h>
 
-#include <QtCore/qset.h>
-#include <QtCore/qvector.h>
-#include <QtCore/qlist.h>
 #include <QtCore/qabstractitemmodel.h>
+#include <QtCore/qlist.h>
+#include <QtCore/qset.h>
 
 QT_REQUIRE_CONFIG(itemmodel);
 
@@ -99,7 +98,6 @@ public:
         { return (tl == other.tl && br == other.br); }
     inline bool operator!=(const QItemSelectionRange &other) const
         { return !operator==(other); }
-    bool operator<(const QItemSelectionRange &other) const;
 
     inline bool isValid() const
     {
@@ -114,7 +112,7 @@ public:
 private:
     QPersistentModelIndex tl, br;
 };
-Q_DECLARE_TYPEINFO(QItemSelectionRange, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QItemSelectionRange, Q_RELOCATABLE_TYPE);
 
 class QItemSelection;
 class QItemSelectionModelPrivate;
@@ -169,7 +167,6 @@ public:
     Q_INVOKABLE QModelIndexList selectedColumns(int row = 0) const;
     const QItemSelection selection() const;
 
-    // ### Qt 6: Merge these two as "QAbstractItemModel *model() const"
     const QAbstractItemModel *model() const;
     QAbstractItemModel *model();
 
@@ -208,37 +205,21 @@ private:
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QItemSelectionModel::SelectionFlags)
 
-#ifdef Q_CC_MSVC
-
-/*
-   ### Qt 6:
-   ### This needs to be removed for next releases of Qt. It is a workaround for vc++ because
-   ### Qt exports QItemSelection that inherits QList<QItemSelectionRange>.
-*/
-
-# ifndef Q_TEMPLATE_EXTERN
-#  if defined(QT_BUILD_CORE_LIB)
-#   define Q_TEMPLATE_EXTERN
-#  else
-#   define Q_TEMPLATE_EXTERN extern
-#  endif
-# endif
-Q_TEMPLATE_EXTERN template class Q_CORE_EXPORT QVector<QItemSelectionRange>;
-#endif // Q_CC_MSVC
-
-class Q_CORE_EXPORT QItemSelection : public QList<QItemSelectionRange>
+// We export each out-of-line method invidually to prevent MSVC from
+// exporting the whole QList class.
+class QItemSelection : public QList<QItemSelectionRange>
 {
 public:
-    QItemSelection() noexcept : QList<QItemSelectionRange>() {}
-    QItemSelection(const QModelIndex &topLeft, const QModelIndex &bottomRight);
+    using QList<QItemSelectionRange>::QList;
+    Q_CORE_EXPORT QItemSelection(const QModelIndex &topLeft, const QModelIndex &bottomRight);
 
     // reusing QList::swap() here is OK!
 
-    void select(const QModelIndex &topLeft, const QModelIndex &bottomRight);
-    bool contains(const QModelIndex &index) const;
-    QModelIndexList indexes() const;
-    void merge(const QItemSelection &other, QItemSelectionModel::SelectionFlags command);
-    static void split(const QItemSelectionRange &range,
+    Q_CORE_EXPORT void select(const QModelIndex &topLeft, const QModelIndex &bottomRight);
+    Q_CORE_EXPORT bool contains(const QModelIndex &index) const;
+    Q_CORE_EXPORT QModelIndexList indexes() const;
+    Q_CORE_EXPORT void merge(const QItemSelection &other, QItemSelectionModel::SelectionFlags command);
+    Q_CORE_EXPORT static void split(const QItemSelectionRange &range,
                       const QItemSelectionRange &other,
                       QItemSelection *result);
 };

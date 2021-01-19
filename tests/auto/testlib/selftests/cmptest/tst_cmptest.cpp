@@ -28,7 +28,7 @@
 
 
 #include <QtCore/QCoreApplication>
-#include <QtTest/QtTest>
+#include <QTest>
 #ifdef QT_GUI_LIB
 #include <QtGui/QColor>
 #include <QtGui/QImage>
@@ -141,7 +141,12 @@ private slots:
     void compare_tostring_data();
     void compareQStringLists();
     void compareQStringLists_data();
+    void compareQListInt_data();
     void compareQListInt();
+    void compareQListIntToArray_data();
+    void compareQListIntToArray();
+    void compareQListIntToInitializerList_data();
+    void compareQListIntToInitializerList();
     void compareQListDouble();
 #ifdef QT_GUI_LIB
     void compareQColor_data();
@@ -306,20 +311,20 @@ void tst_Cmptest::compare_tostring_data()
     ;
 
     QTest::newRow("null hash, invalid")
-        << QVariant(QVariant::Hash)
+        << QVariant(QMetaType(QMetaType::QVariantHash))
         << QVariant()
     ;
 
     QTest::newRow("string, null user type")
         << QVariant::fromValue(QString::fromLatin1("A simple string"))
-        << QVariant(QVariant::Type(qRegisterMetaType<PhonyClass>("PhonyClass")))
+        << QVariant(QMetaType::fromType<PhonyClass>())
     ;
 
     PhonyClass fake1 = {1};
     PhonyClass fake2 = {2};
     QTest::newRow("both non-null user type")
-        << QVariant(qRegisterMetaType<PhonyClass>("PhonyClass"), (const void*)&fake1)
-        << QVariant(qRegisterMetaType<PhonyClass>("PhonyClass"), (const void*)&fake2)
+        << QVariant(QMetaType::fromType<PhonyClass>(), (const void*)&fake1)
+        << QVariant(QMetaType::fromType<PhonyClass>(), (const void*)&fake2)
     ;
 }
 
@@ -425,11 +430,48 @@ void tst_Cmptest::compareQStringLists()
     QCOMPARE(opA, opB);
 }
 
+using IntList = QList<int>;
+
+void tst_Cmptest::compareQListInt_data()
+{
+      QTest::addColumn<IntList>("actual");
+
+      QTest::newRow("match") << IntList{1, 2, 3};
+      QTest::newRow("size mismatch") << IntList{1, 2};
+      QTest::newRow("value mismatch") << IntList{1, 2, 4};
+}
+
 void tst_Cmptest::compareQListInt()
 {
-    QList<int> int1; int1 << 1 << 2 << 3;
-    QList<int> int2; int2 << 1 << 2 << 4;
-    QCOMPARE(int1, int2);
+    QFETCH(IntList, actual);
+    const QList<int> expected{1, 2, 3};
+    QCOMPARE(actual, expected);
+}
+
+void tst_Cmptest::compareQListIntToArray_data()
+{
+    compareQListInt_data();
+}
+
+void tst_Cmptest::compareQListIntToArray()
+{
+    QFETCH(IntList, actual);
+    const int expected[] = {1, 2, 3};
+    QCOMPARE(actual, expected);
+}
+
+void tst_Cmptest::compareQListIntToInitializerList_data()
+{
+    compareQListInt_data();
+}
+
+void tst_Cmptest::compareQListIntToInitializerList()
+{
+    QFETCH(IntList, actual);
+    // Protect ',' in the list
+#define ARG(...) __VA_ARGS__
+    QCOMPARE(actual,  ARG({1, 2, 3}));
+#undef ARG
 }
 
 void tst_Cmptest::compareQListDouble()
@@ -523,7 +565,7 @@ void tst_Cmptest::compareQRegion_data()
     const QRect rect1(QPoint(10, 10), QSize(200, 50));
     const QRegion region1(rect1);
     QRegion listRegion2;
-    const QVector<QRect> list2 = QVector<QRect>() << QRect(QPoint(100, 200), QSize(50, 200)) << rect1;
+    const QList<QRect> list2 = QList<QRect>() << QRect(QPoint(100, 200), QSize(50, 200)) << rect1;
     listRegion2.setRects(list2.constData(), list2.size());
     QTest::newRow("equal-empty") << QRegion() << QRegion();
     QTest::newRow("1-empty") << region1 << QRegion();

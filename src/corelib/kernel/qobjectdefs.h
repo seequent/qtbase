@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2019 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -165,7 +165,8 @@ struct Q_CORE_EXPORT QMetaObject
     const QMetaObject *superClass() const;
 
     bool inherits(const QMetaObject *metaObject) const noexcept;
-    QObject *cast(QObject *obj) const;
+    QObject *cast(QObject *obj) const
+    { return const_cast<QObject *>(cast(const_cast<const QObject *>(obj))); }
     const QObject *cast(const QObject *obj) const;
 
 #if !defined(QT_NO_TRANSLATION) || defined(Q_CLANG_QDOC)
@@ -382,17 +383,11 @@ struct Q_CORE_EXPORT QMetaObject
         ReadProperty,
         WriteProperty,
         ResetProperty,
-        QueryPropertyDesignable,
-        QueryPropertyScriptable,
-        QueryPropertyStored,
-        QueryPropertyEditable,
-        QueryPropertyUser,
         CreateInstance,
         IndexOfMethod,
         RegisterPropertyMetaType,
         RegisterMethodArgumentMetaType,
-        RegisterQPropertyObserver,
-        SetQPropertyBinding
+        BindableProperty
     };
 
     int static_metacall(Call, int, void **) const;
@@ -427,14 +422,14 @@ struct Q_CORE_EXPORT QMetaObject
 #endif
     };
 
-    struct { // private data
+    struct Data { // private data
         SuperData superdata;
         const uint *stringdata;
         const uint *data;
         typedef void (*StaticMetacallFunction)(QObject *, QMetaObject::Call, int, void **);
         StaticMetacallFunction static_metacall;
         const SuperData *relatedMetaObjects;
-        QtPrivate::QMetaTypeInterface *const *metaTypes;
+        const QtPrivate::QMetaTypeInterface *const *metaTypes;
         void *extradata; //reserved for future use
     } d;
 
@@ -458,14 +453,21 @@ public:
 #ifdef Q_QDOC
     operator bool() const;
 #else
+    // still using the restricted bool trick here, in order to support
+    // code using copy-init (e.g. `bool ok = connect(...)`)
     typedef void *Connection::*RestrictedBool;
     operator RestrictedBool() const { return d_ptr && isConnected_helper() ? &Connection::d_ptr : nullptr; }
 #endif
 
-    Connection(Connection &&o) noexcept : d_ptr(o.d_ptr) { o.d_ptr = nullptr; }
-    Connection &operator=(Connection &&other) noexcept
-    { qSwap(d_ptr, other.d_ptr); return *this; }
+    Connection(Connection &&other) noexcept : d_ptr(qExchange(other.d_ptr, nullptr)) {}
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(Connection)
+    void swap(Connection &other) noexcept { qSwap(d_ptr, other.d_ptr); }
 };
+
+inline void swap(QMetaObject::Connection &lhs, QMetaObject::Connection &rhs) noexcept
+{
+    lhs.swap(rhs);
+}
 
 inline const QMetaObject *QMetaObject::superClass() const
 { return d.superdata; }

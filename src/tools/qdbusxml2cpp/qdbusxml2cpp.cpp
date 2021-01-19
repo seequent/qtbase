@@ -71,13 +71,7 @@ static const char includeList[] =
     "#include <QtCore/QVariant>\n";
 
 static const char forwardDeclarations[] =
-    "QT_BEGIN_NAMESPACE\n"
-    "#include <QtCore/qcontainerfwd.h>\n"
-    "class QByteArray;\n"
-    "class QString;\n"
-    "class QStringList;\n"
-    "class QVariant;\n"
-    "QT_END_NAMESPACE\n";
+    "#include <QtCore/qcontainerfwd.h>\n";
 
 static QDBusIntrospection::Interfaces readInput()
 {
@@ -186,12 +180,14 @@ static QString classNameForInterface(const QString &interface, ClassType classTy
     if (!globalClassName.isEmpty())
         return globalClassName;
 
-    const auto parts = interface.splitRef(QLatin1Char('.'));
+    const auto parts = QStringView{interface}.split(QLatin1Char('.'));
 
     QString retval;
     if (classType == Proxy) {
-        for (const auto &part : parts)
-            retval += part[0].toUpper() + part.mid(1);
+        for (const auto &part : parts) {
+            retval += part[0].toUpper();
+            retval += part.mid(1);
+        }
     } else {
         retval += parts.last()[0].toUpper() + parts.last().mid(1);
     }
@@ -209,7 +205,7 @@ static QString classNameForInterface(const QString &interface, ClassType classTy
 // we first search for "Out" and if not found we search for "In"
 static QByteArray qtTypeName(const QString &signature, const QDBusIntrospection::Annotations &annotations, int paramId = -1, const char *direction = "Out", bool isSignal = false)
 {
-    int type = QDBusMetaType::signatureToType(signature.toLatin1());
+    int type = QDBusMetaType::signatureToMetaType(signature.toLatin1()).id();
     if (type == QMetaType::UnknownType) {
         QString annotationName = QString::fromLatin1("org.qtproject.QtDBus.QtTypeName");
         if (paramId >= 0)
@@ -244,7 +240,7 @@ static QByteArray qtTypeName(const QString &signature, const QDBusIntrospection:
         return std::move(qttype).toLatin1();
     }
 
-    return QVariant::typeToName(QVariant::Type(type));
+    return QMetaType(type).name();
 }
 
 static QString nonConstRefArg(const QByteArray &arg)

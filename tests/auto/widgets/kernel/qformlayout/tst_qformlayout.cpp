@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qlayout.h>
 #include <qapplication.h>
 #include <qwidget.h>
@@ -52,7 +52,7 @@ using namespace QTestPrivate;
 
 // ItemRole has enumerators for numerical values 0..2, thus the only
 // valid numerical values for storing into an ItemRole variable are 0..3:
-Q_CONSTEXPR QFormLayout::ItemRole invalidRole = QFormLayout::ItemRole(3);
+constexpr QFormLayout::ItemRole invalidRole = QFormLayout::ItemRole(3);
 
 struct QFormLayoutTakeRowResultHolder {
     QFormLayoutTakeRowResultHolder(QFormLayout::TakeRowResult result) noexcept
@@ -297,15 +297,15 @@ public:
         vspacing = 10;
     }
 
-    virtual int pixelMetric(PixelMetric metric, const QStyleOption * option = 0,
-                            const QWidget * widget = 0 ) const;
+    virtual int pixelMetric(PixelMetric metric, const QStyleOption * option = nullptr,
+                            const QWidget * widget = nullptr) const override;
 
     int hspacing;
     int vspacing;
 };
 
-int CustomLayoutStyle::pixelMetric(PixelMetric metric, const QStyleOption * option /*= 0*/,
-                                   const QWidget * widget /*= 0*/ ) const
+int CustomLayoutStyle::pixelMetric(PixelMetric metric, const QStyleOption * option /*= nullptr*/,
+                                   const QWidget * widget /*= nullptr*/ ) const
 {
     switch (metric) {
         case PM_LayoutHorizontalSpacing:
@@ -391,7 +391,7 @@ void tst_QFormLayout::contentsRect()
 class DummyMacStyle : public QCommonStyle
 {
 public:
-    virtual int styleHint ( StyleHint hint, const QStyleOption * option = 0, const QWidget * widget = 0, QStyleHintReturn * returnData = 0 ) const
+    virtual int styleHint ( StyleHint hint, const QStyleOption * option = 0, const QWidget * widget = nullptr, QStyleHintReturn * returnData = 0 ) const override
     {
         switch(hint) {
             case SH_FormLayoutFormAlignment:
@@ -411,7 +411,7 @@ public:
 class DummyQtopiaStyle : public QCommonStyle
 {
 public:
-    virtual int styleHint ( StyleHint hint, const QStyleOption * option = 0, const QWidget * widget = 0, QStyleHintReturn * returnData = 0 ) const
+    virtual int styleHint ( StyleHint hint, const QStyleOption * option = 0, const QWidget * widget = nullptr, QStyleHintReturn * returnData = 0 ) const override
     {
         switch(hint) {
             case SH_FormLayoutFormAlignment:

@@ -27,11 +27,13 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QPair>
 #include <QSysInfo>
 #include <QLatin1String>
+
+#include <cmath>
 
 class tst_QGlobal: public QObject
 {
@@ -51,6 +53,11 @@ private slots:
     void integerForSize();
     void buildAbiEndianness();
     void testqOverload();
+    void testqMinMax();
+    void qRoundFloats_data();
+    void qRoundFloats();
+    void qRoundDoubles_data();
+    void qRoundDoubles();
 };
 
 extern "C" {        // functions in qglobal.c
@@ -92,7 +99,7 @@ void tst_QGlobal::qIsNull()
 
 void tst_QGlobal::for_each()
 {
-    QVector<int> list;
+    QList<int> list;
     list << 0 << 1 << 2 << 3 << 4 << 5;
 
     int counter = 0;
@@ -111,7 +118,7 @@ void tst_QGlobal::for_each()
 
     // check whether we can pass a constructor as container argument
     counter = 0;
-    foreach (int i, QVector<int>(list)) {
+    foreach (int i, QList<int>(list)) {
         QCOMPARE(i, counter++);
     }
     QCOMPARE(counter, list.count());
@@ -345,6 +352,9 @@ struct MyTemplate
 
 void tst_QGlobal::qstaticassert()
 {
+    // Test multiple Q_STATIC_ASSERT on a single line
+    Q_STATIC_ASSERT(true); Q_STATIC_ASSERT_X(!false, "");
+
     // Force compilation of these classes
     MyTrue tmp1;
     MyExpresion tmp2;
@@ -352,11 +362,6 @@ void tst_QGlobal::qstaticassert()
     Q_UNUSED(tmp1);
     Q_UNUSED(tmp2);
     Q_UNUSED(tmp3);
-#ifdef __COUNTER__
-    // if the compiler supports __COUNTER__, multiple
-    // Q_STATIC_ASSERT's on a single line should compile:
-    Q_STATIC_ASSERT(true); Q_STATIC_ASSERT_X(!false, "");
-#endif // __COUNTER__
     QVERIFY(true); // if the test compiles it has passed.
 }
 
@@ -433,15 +438,15 @@ typedef int (Empty::*memFun) ();
 void tst_QGlobal::integerForSize()
 {
     // compile-only test:
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<1>::Signed) == 1);
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<2>::Signed) == 2);
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<4>::Signed) == 4);
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<8>::Signed) == 8);
+    static_assert(sizeof(QIntegerForSize<1>::Signed) == 1);
+    static_assert(sizeof(QIntegerForSize<2>::Signed) == 2);
+    static_assert(sizeof(QIntegerForSize<4>::Signed) == 4);
+    static_assert(sizeof(QIntegerForSize<8>::Signed) == 8);
 
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<1>::Unsigned) == 1);
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<2>::Unsigned) == 2);
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<4>::Unsigned) == 4);
-    Q_STATIC_ASSERT(sizeof(QIntegerForSize<8>::Unsigned) == 8);
+    static_assert(sizeof(QIntegerForSize<1>::Unsigned) == 1);
+    static_assert(sizeof(QIntegerForSize<2>::Unsigned) == 2);
+    static_assert(sizeof(QIntegerForSize<4>::Unsigned) == 4);
+    static_assert(sizeof(QIntegerForSize<8>::Unsigned) == 8);
 }
 
 typedef QPair<const char *, const char *> stringpair;
@@ -577,6 +582,90 @@ void tst_QGlobal::testqOverload()
 #endif
 }
 
+// enforce that types are identical when comparing
+template<typename T>
+void compare(T a, T b)
+{ QCOMPARE(a, b); }
+
+void tst_QGlobal::testqMinMax()
+{
+    // signed types
+    compare(qMin(float(1), double(-1)), double(-1));
+    compare(qMin(double(1), float(-1)), double(-1));
+    compare(qMin(short(1), int(-1)), int(-1));
+    compare(qMin(short(1), long(-1)), long(-1));
+    compare(qMin(qint64(1), short(-1)), qint64(-1));
+
+    compare(qMax(float(1), double(-1)), double(1));
+    compare(qMax(short(1), long(-1)), long(1));
+    compare(qMax(qint64(1), short(-1)), qint64(1));
+
+    // unsigned types
+    compare(qMin(ushort(1), ulong(2)), ulong(1));
+    compare(qMin(quint64(1), ushort(2)), quint64(1));
+
+    compare(qMax(ushort(1), ulong(2)), ulong(2));
+    compare(qMax(quint64(1), ushort(2)), quint64(2));
+}
+
+void tst_QGlobal::qRoundFloats_data()
+{
+    QTest::addColumn<float>("actual");
+    QTest::addColumn<float>("expected");
+
+    QTest::newRow("round half") << 0.5f << 1.0f;
+    QTest::newRow("round negative half") << -0.5f << -1.0f;
+    QTest::newRow("round negative") << -1.4f << -1.0f;
+    QTest::newRow("round largest representable float less than 0.5") << std::nextafter(0.5f, 0.0f) << 0.0f;
+}
+
+void tst_QGlobal::qRoundFloats() {
+    QFETCH(float, actual);
+    QFETCH(float, expected);
+
+#if !(defined(Q_PROCESSOR_ARM_64) && (__has_builtin(__builtin_round) || defined(Q_CC_GNU)) && !defined(Q_CC_CLANG))
+    QEXPECT_FAIL("round largest representable float less than 0.5",
+                 "We know qRound fails in this case, but decided that we value simplicity over correctness",
+                 Continue);
+#endif
+    QCOMPARE(qRound(actual), expected);
+
+#if !(defined(Q_PROCESSOR_ARM_64) && (__has_builtin(__builtin_round) || defined(Q_CC_GNU)) && !defined(Q_CC_CLANG))
+    QEXPECT_FAIL("round largest representable float less than 0.5",
+                 "We know qRound fails in this case, but decided that we value simplicity over correctness",
+                 Continue);
+#endif
+    QCOMPARE(qRound64(actual), expected);
+}
+
+void tst_QGlobal::qRoundDoubles_data() {
+    QTest::addColumn<double>("actual");
+    QTest::addColumn<double>("expected");
+
+    QTest::newRow("round half") << 0.5 << 1.0;
+    QTest::newRow("round negative half") << -0.5 << -1.0;
+    QTest::newRow("round negative") << -1.4 << -1.0;
+    QTest::newRow("round largest representable double less than 0.5") << std::nextafter(0.5, 0.0) << 0.0;
+}
+
+void tst_QGlobal::qRoundDoubles() {
+    QFETCH(double, actual);
+    QFETCH(double, expected);
+
+#if !(defined(Q_PROCESSOR_ARM_64) && (__has_builtin(__builtin_round) || defined(Q_CC_GNU)) && !defined(Q_CC_CLANG))
+    QEXPECT_FAIL("round largest representable double less than 0.5",
+                 "We know qRound fails in this case, but decided that we value simplicity over correctness",
+                 Continue);
+#endif
+    QCOMPARE(qRound(actual), expected);
+
+#if !(defined(Q_PROCESSOR_ARM_64) && (__has_builtin(__builtin_round) || defined(Q_CC_GNU)) && !defined(Q_CC_CLANG))
+    QEXPECT_FAIL("round largest representable double less than 0.5",
+                 "We know qRound fails in this case, but decided that we value simplicity over correctness",
+                 Continue);
+#endif
+    QCOMPARE(qRound64(actual), expected);
+}
 
 QTEST_APPLESS_MAIN(tst_QGlobal)
 #include "tst_qglobal.moc"

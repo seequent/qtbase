@@ -67,9 +67,8 @@
 #include "qtoolbar_p.h"
 #endif
 #include "qwidgetanimator_p.h"
-#ifdef Q_OS_MACOS
-#include <qpa/qplatformnativeinterface.h>
-#endif
+#include <QtGui/qpa/qplatformwindow.h>
+#include <QtGui/qpa/qplatformwindow_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -316,9 +315,9 @@ void QMainWindowPrivate::init()
     is the position and size (relative to the size of the main window)
     of the toolbars and dock widgets that are stored.
 
-    \sa QMenuBar, QToolBar, QStatusBar, QDockWidget, {Application
-    Example}, {Dock Widgets Example}, {MDI Example}, {SDI Example},
-    {Menus Example}
+    \sa QMenuBar, QToolBar, QStatusBar, QDockWidget,
+    {Qt Widgets - Application Example}, {Dock Widgets Example},
+    {MDI Example}, {SDI Example}, {Menus Example}
 */
 
 /*!
@@ -762,7 +761,7 @@ void QMainWindow::addToolBar(Qt::ToolBarArea area, QToolBar *toolbar)
     disconnect(this, SIGNAL(toolButtonStyleChanged(Qt::ToolButtonStyle)),
                toolbar, SLOT(_q_updateToolButtonStyle(Qt::ToolButtonStyle)));
 
-    if(toolbar->d_func()->state && toolbar->d_func()->state->dragging) {
+    if (toolbar->d_func()->state && toolbar->d_func()->state->dragging) {
         //removing a toolbar which is dragging will cause crash
 #if QT_CONFIG(dockwidget)
         bool animated = isAnimated();
@@ -1351,28 +1350,23 @@ bool QMainWindow::event(QEvent *event)
 
     \since 5.2
 */
-void QMainWindow::setUnifiedTitleAndToolBarOnMac(bool set)
+void QMainWindow::setUnifiedTitleAndToolBarOnMac(bool enabled)
 {
 #ifdef Q_OS_MACOS
+    if (!isWindow())
+        return;
+
     Q_D(QMainWindow);
-    if (isWindow()) {
-        d->useUnifiedToolBar = set;
-        createWinId();
+    d->useUnifiedToolBar = enabled;
+    createWinId();
 
-        QPlatformNativeInterface *nativeInterface = QGuiApplication::platformNativeInterface();
-        if (!nativeInterface)
-            return; // Not Cocoa platform plugin.
-        QPlatformNativeInterface::NativeResourceForIntegrationFunction function =
-            nativeInterface->nativeResourceFunctionForIntegration("setContentBorderEnabled");
-        if (!function)
-            return; // Not Cocoa platform plugin.
+    using namespace QNativeInterface::Private;
+    if (auto *platformWindow = dynamic_cast<QCocoaWindow*>(window()->windowHandle()->handle()))
+        platformWindow->setContentBorderEnabled(enabled);
 
-        typedef void (*SetContentBorderEnabledFunction)(QWindow *window, bool enable);
-        (reinterpret_cast<SetContentBorderEnabledFunction>(function))(window()->windowHandle(), set);
-        update();
-    }
+    update();
 #else
-    Q_UNUSED(set)
+    Q_UNUSED(enabled);
 #endif
 }
 

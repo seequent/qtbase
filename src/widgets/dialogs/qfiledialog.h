@@ -55,8 +55,8 @@ QT_BEGIN_NAMESPACE
 class QModelIndex;
 class QItemSelection;
 struct QFileDialogArgs;
-class QFileIconProvider;
 class QFileDialogPrivate;
+class QAbstractFileIconProvider;
 class QAbstractItemDelegate;
 class QAbstractProxyModel;
 
@@ -73,8 +73,7 @@ class Q_WIDGETS_EXPORT QFileDialog : public QDialog
 public:
     enum ViewMode { Detail, List };
     Q_ENUM(ViewMode)
-    enum FileMode { AnyFile, ExistingFile, Directory, ExistingFiles,
-                    DirectoryOnly Q_DECL_ENUMERATOR_DEPRECATED_X("Use setOption(ShowDirsOnly, true) instead")};
+    enum FileMode { AnyFile, ExistingFile, Directory, ExistingFiles };
     Q_ENUM(FileMode)
     enum AcceptMode { AcceptOpen, AcceptSave };
     Q_ENUM(AcceptMode)
@@ -154,8 +153,8 @@ public:
     void setItemDelegate(QAbstractItemDelegate *delegate);
     QAbstractItemDelegate *itemDelegate() const;
 
-    void setIconProvider(QFileIconProvider *provider);
-    QFileIconProvider *iconProvider() const;
+    void setIconProvider(QAbstractFileIconProvider *provider);
+    QAbstractFileIconProvider *iconProvider() const;
 
     void setLabelText(DialogLabel label, const QString &text);
     QString labelText(DialogLabel label) const;

@@ -40,11 +40,11 @@
 #define QSTRINGTOKENIZER_H
 
 #include <QtCore/qnamespace.h>
+#include <QtCore/qcontainerfwd.h>
 
 QT_BEGIN_NAMESPACE
 
 template <typename, typename> class QStringBuilder;
-template <typename> class QVector;
 
 #if defined(Q_QDOC) || 1 || (defined(__cpp_range_based_for) && __cpp_range_based_for >= 201603)
 #  define Q_STRINGTOKENIZER_USE_SENTINEL
@@ -109,8 +109,8 @@ public:
         iterator() noexcept = default;
 
         // violates std::forward_iterator (returns a reference into the iterator)
-        Q_REQUIRED_RESULT constexpr const Haystack* operator->() const { return Q_ASSERT(current.ok), &current.value; }
-        Q_REQUIRED_RESULT constexpr const Haystack& operator*() const { return *operator->(); }
+        [[nodiscard]] constexpr const Haystack* operator->() const { return Q_ASSERT(current.ok), &current.value; }
+        [[nodiscard]] constexpr const Haystack& operator*() const { return *operator->(); }
 
         iterator& operator++() { advance(); return *this; }
         iterator  operator++(int) { auto tmp = *this; advance(); return tmp; }
@@ -145,12 +145,12 @@ public:
     using reference = typename iterator::reference;
     using const_reference = reference;
 
-    Q_REQUIRED_RESULT iterator begin() const noexcept { return iterator{*this}; }
-    Q_REQUIRED_RESULT iterator cbegin() const noexcept { return begin(); }
+    [[nodiscard]] iterator begin() const noexcept { return iterator{*this}; }
+    [[nodiscard]] iterator cbegin() const noexcept { return begin(); }
     template <bool = std::is_same<iterator, sentinel>::value> // ODR protection
-    Q_REQUIRED_RESULT constexpr sentinel end() const noexcept { return {}; }
+    [[nodiscard]] constexpr sentinel end() const noexcept { return {}; }
     template <bool = std::is_same<iterator, sentinel>::value> // ODR protection
-    Q_REQUIRED_RESULT constexpr sentinel cend() const noexcept { return {}; }
+    [[nodiscard]] constexpr sentinel cend() const noexcept { return {}; }
 
 private:
     Haystack m_haystack;
@@ -173,7 +173,6 @@ namespace Tok {
     template <> struct ViewForImpl<QLatin1String> { using type = QLatin1String; };
     template <> struct ViewForImpl<QChar>         { using type = QChar; };
     template <> struct ViewForImpl<QString>     : ViewForImpl<QStringView> {};
-    template <> struct ViewForImpl<QStringRef>  : ViewForImpl<QStringView> {};
     template <> struct ViewForImpl<QLatin1Char> : ViewForImpl<QChar> {};
     template <> struct ViewForImpl<char16_t>    : ViewForImpl<QChar> {};
     template <> struct ViewForImpl<char16_t*>   : ViewForImpl<QStringView> {};
@@ -302,7 +301,23 @@ class QStringTokenizer
             bool
         >::type;
 public:
-    using value_type = typename Base::value_type;
+    using value_type      = typename Base::value_type;
+    using difference_type = typename Base::difference_type;
+    using size_type       = typename Base::size_type;
+    using reference       = typename Base::reference;
+    using const_reference = typename Base::const_reference;
+    using pointer         = typename Base::pointer;
+    using const_pointer   = typename Base::const_pointer;
+    using iterator        = typename Base::iterator;
+    using const_iterator  = typename Base::const_iterator;
+    using sentinel        = typename Base::sentinel;
+
+#ifdef Q_QDOC
+    [[nodiscard]] iterator begin() const noexcept { return Base::begin(); }
+    [[nodiscard]] iterator cbegin() const noexcept { return begin(); }
+    [[nodiscard]] constexpr sentinel end() const noexcept { return {}; }
+    [[nodiscard]] constexpr sentinel cend() const noexcept { return {}; }
+#endif
 
     constexpr explicit QStringTokenizer(Haystack haystack, Needle needle,
                                         Qt::CaseSensitivity cs,
@@ -329,24 +344,26 @@ public:
                this->needleView(needle), sb, cs}
     {}
 
-    template <typename Container = QVector<value_type>,
-              if_compatible_container<Container> = true>
+#ifdef Q_QDOC
+    template<typename LContainer> LContainer toContainer(LContainer &&c = {}) const & {}
+    template<typename RContainer> RContainer toContainer(RContainer &&c = {}) const && {}
+#else
+    template<typename Container = QList<value_type>, if_compatible_container<Container> = true>
     Container toContainer(Container &&c = {}) const &
     {
         for (auto e : *this)
             c.emplace_back(e);
-        return c;
+        return std::forward<Container>(c);
     }
-
-    template <typename Container = QVector<value_type>,
-              if_compatible_container<Container> = true,
-              if_haystack_not_pinned<Container> = true>
+    template<typename Container = QList<value_type>, if_compatible_container<Container> = true,
+             if_haystack_not_pinned<Container> = true>
     Container toContainer(Container &&c = {}) const &&
     {
         for (auto e : *this)
             c.emplace_back(e);
-        return c;
+        return std::forward<Container>(c);
     }
+#endif
 };
 
 namespace QtPrivate {
@@ -398,7 +415,7 @@ QStringTokenizer(Haystack&&, Needle&&, Qt::CaseSensitivity, Qt::SplitBehavior)
 #undef Q_TOK_RESULT
 
 template <typename Haystack, typename Needle, typename...Flags>
-Q_REQUIRED_RESULT constexpr auto
+[[nodiscard]] constexpr auto
 qTokenize(Haystack &&h, Needle &&n, Flags...flags)
     noexcept(QtPrivate::Tok::is_nothrow_constructible_from<Haystack, Needle>::value)
     -> decltype(QtPrivate::Tok::TokenizerResult<Haystack, Needle>{std::forward<Haystack>(h),
@@ -419,13 +436,13 @@ auto QStringTokenizerBase<Haystack, Needle>::next(tokenizer_state state) const n
         Haystack result;
         if (state.end >= 0) {
             // token separator found => return intermediate element:
-            result = m_haystack.mid(state.start, state.end - state.start);
+            result = m_haystack.sliced(state.start, state.end - state.start);
             const auto ns = QtPrivate::Tok::size(m_needle);
             state.start = state.end + ns;
             state.extra = (ns == 0 ? 1 : 0);
         } else {
             // token separator not found => return final element:
-            result = m_haystack.mid(state.start);
+            result = m_haystack.sliced(state.start);
         }
         if ((m_sb & Qt::SkipEmptyParts) && result.isEmpty())
             continue;

@@ -68,7 +68,7 @@ static quint16 quadIndexData[] =
 };
 
 struct {
-    QVector<QRhiResource *> releasePool;
+    QList<QRhiResource *> releasePool;
     QRhiBuffer *vbuf = nullptr;
     QRhiBuffer *ibuf = nullptr;
     QRhiBuffer *ubuf = nullptr;
@@ -112,7 +112,7 @@ void Window::customInit()
     d.releasePool << d.shadowMap;
     d.shadowMap->create();
 
-    d.shadowSampler = m_r->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
+    d.shadowSampler = m_r->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                       QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
     d.releasePool << d.shadowSampler;
     d.shadowSampler->setTextureCompareOp(QRhiSampler::Less);

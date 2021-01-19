@@ -48,6 +48,7 @@
 #include <QtCore/qmetaobject.h>
 #include <QtCore/qsharedpointer.h>
 #include <QtCore/qtemporarydir.h>
+#include <QtCore/qthread.h>
 
 #include <string.h>
 
@@ -124,11 +125,11 @@ do {\
  * in their code.
  */
 #  define QVERIFY_EXCEPTION_THROWN(expression, exceptiontype) \
-    Q_STATIC_ASSERT_X(false, "Support of exceptions is disabled")
+    static_assert(false, "Support of exceptions is disabled")
 
 #endif // !QT_NO_EXCEPTIONS
 
-
+// NB: not do {...} while (0) wrapped, as qt_test_i is accessed after it
 #define QTRY_LOOP_IMPL(expr, timeoutValue, step) \
     if (!(expr)) { \
         QTest::qWait(0); \
@@ -153,8 +154,8 @@ do {\
 #define QTRY_IMPL(expr, timeout)\
     const int qt_test_step = timeout < 350 ? timeout / 7 + 1 : 50; \
     const int qt_test_timeoutValue = timeout; \
-    { QTRY_LOOP_IMPL((expr), qt_test_timeoutValue, qt_test_step); } \
-    QTRY_TIMEOUT_DEBUG_IMPL((expr), qt_test_timeoutValue, qt_test_step)\
+    { QTRY_LOOP_IMPL(QTest::currentTestFailed() || (expr), qt_test_timeoutValue, qt_test_step); } \
+    QTRY_TIMEOUT_DEBUG_IMPL(QTest::currentTestFailed() || (expr), qt_test_timeoutValue, qt_test_step)
 
 // Will try to wait for the expression to become true while allowing event processing
 #define QTRY_VERIFY_WITH_TIMEOUT(expr, timeout) \
@@ -245,8 +246,14 @@ namespace QTest
         return qstrdup(me.valueToKey(int(e))); // int cast is necessary to support enum classes
     }
 
+    template <typename T>
+    inline typename std::enable_if<!QtPrivate::IsQEnumHelper<T>::Value && std::is_enum_v<T>, char*>::type toString(const T &e)
+    {
+        return qstrdup(QByteArray::number(static_cast<std::underlying_type_t<T>>(e)).constData());
+    }
+
     template <typename T> // Fallback
-    inline typename std::enable_if<!QtPrivate::IsQEnumHelper<T>::Value, char*>::type toString(const T &)
+    inline typename std::enable_if<!QtPrivate::IsQEnumHelper<T>::Value && !std::is_enum_v<T>, char*>::type toString(const T &)
     {
         return nullptr;
     }
@@ -335,14 +342,13 @@ namespace QTest
                                          char *val1, char *val2,
                                          const char *actual, const char *expected,
                                          const char *file, int line);
-    Q_TESTLIB_EXPORT void qSleep(int ms);
     Q_TESTLIB_EXPORT void addColumnInternal(int id, const char *name);
 
     template <typename T>
     inline void addColumn(const char *name, T * = nullptr)
     {
         using QIsSameTConstChar = std::is_same<T, const char*>;
-        Q_STATIC_ASSERT_X(!QIsSameTConstChar::value, "const char* is not allowed as a test data format.");
+        static_assert(!QIsSameTConstChar::value, "const char* is not allowed as a test data format.");
         addColumnInternal(qMetaTypeId<T>(), name);
     }
     Q_TESTLIB_EXPORT QTestData &newRow(const char *dataTag);

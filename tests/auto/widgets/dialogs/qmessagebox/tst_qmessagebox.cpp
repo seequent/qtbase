@@ -25,7 +25,9 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-#include <QtTest/QtTest>
+
+
+#include <QTest>
 #include <QMessageBox>
 #include <QDebug>
 #include <QPair>
@@ -35,6 +37,8 @@
 #include <QApplication>
 #include <QPushButton>
 #include <QDialogButtonBox>
+#include <QSignalSpy>
+
 #include <qpa/qplatformtheme.h>
 #include <private/qguiapplication_p.h>
 
@@ -80,7 +84,8 @@ public:
     bool resized;
 
 protected:
-    void resizeEvent ( QResizeEvent * event ) {
+    void resizeEvent ( QResizeEvent * event ) override
+    {
         resized = true;
         QMessageBox::resizeEvent(event);
     }
@@ -456,9 +461,9 @@ void tst_QMessageBox::instanceSourceCompat()
     QCOMPARE(mb.exec(), int(QMessageBox::Cancel));
 #ifndef Q_OS_MAC
     // mnemonics are not used on OS X
-    closeHelper.start(Qt::ALT + Qt::Key_R, &mb);
+    closeHelper.start(QKeyCombination(Qt::ALT | Qt::Key_R).toCombined(), &mb);
     QCOMPARE(mb.exec(), 0);
-    closeHelper.start(Qt::ALT + Qt::Key_Z, &mb);
+    closeHelper.start(QKeyCombination(Qt::ALT | Qt::Key_Z).toCombined(), &mb);
     QCOMPARE(mb.exec(), 1);
 #endif
 }
@@ -585,7 +590,7 @@ using SignalSignature = void(QDialog::*)();
 Q_DECLARE_METATYPE(SignalSignature);
 Q_DECLARE_METATYPE(QMessageBox::ButtonRole)
 
-using ButtonsCreator = std::function<QVector<QPushButton*>(QMessageBox &)>;
+using ButtonsCreator = std::function<QList<QPushButton *>(QMessageBox &)>;
 Q_DECLARE_METATYPE(ButtonsCreator);
 
 using RoleSet = QSet<QMessageBox::ButtonRole>;
@@ -635,7 +640,7 @@ static void addRejectedRow(const char *title, ButtonsCreator bc)
 static void addCustomButtonsData()
 {
     ButtonsCreator buttonsCreator = [](QMessageBox &messageBox) {
-        QVector<QPushButton*> buttons(QMessageBox::NRoles);
+        QList<QPushButton *> buttons(QMessageBox::NRoles);
         for (int i = QMessageBox::AcceptRole; i < QMessageBox::NRoles; ++i) {
             buttons[i] = messageBox.addButton(
                 QString("Button role: %1").arg(i), QMessageBox::ButtonRole(i));
@@ -651,7 +656,7 @@ static void addCustomButtonsData()
 static void addStandardButtonsData()
 {
     ButtonsCreator buttonsCreator = [](QMessageBox &messageBox) {
-        QVector<QPushButton*> buttons;
+        QList<QPushButton *> buttons;
         for (int i = QMessageBox::FirstButton; i <= QMessageBox::LastButton; i <<= 1)
             buttons << messageBox.addButton(QMessageBox::StandardButton(i));
 

@@ -26,9 +26,11 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QProcess>
+
+#include <QtCore/QList>
 #include <QtCore/QSystemSemaphore>
-#include <QtCore/QVector>
 #include <QtCore/QTemporaryDir>
 
 #define EXISTING_SHARE "existing"
@@ -207,7 +209,7 @@ void tst_QSystemSemaphore::processes()
     QSystemSemaphore sem("store", 1, QSystemSemaphore::Create);
 
     QFETCH(int, processes);
-    QVector<QString> scripts(processes, "acquirerelease");
+    QList<QString> scripts(processes, "acquirerelease");
 
     QList<QProcess*> consumers;
     for (int i = 0; i < scripts.count(); ++i) {

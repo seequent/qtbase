@@ -42,7 +42,7 @@
 
 #include <QtCore/qdatastream.h>
 #include <QtCore/qdatetime.h>
-#include <QtCore/qvector.h>
+#include <QtCore/qlist.h>
 #include <QDebug>
 
 #include <limits>
@@ -120,12 +120,20 @@ bool QAsn1Element::read(QDataStream &stream)
 
     if (length > quint64(std::numeric_limits<int>::max()))
         return false;
-    // value
+
+    // read value in blocks to avoid being fooled by incorrect length
+    const int BUFFERSIZE = 4 * 1024;
     QByteArray tmpValue;
-    tmpValue.resize(length);
-    int count = stream.readRawData(tmpValue.data(), tmpValue.size());
-    if (count != int(length))
-        return false;
+    int remainingLength = length;
+    while (remainingLength) {
+        char readBuffer[BUFFERSIZE];
+        const int bytesToRead = qMin(remainingLength, BUFFERSIZE);
+        const int count = stream.readRawData(readBuffer, bytesToRead);
+        if (count != int(bytesToRead))
+            return false;
+        tmpValue.append(readBuffer, bytesToRead);
+        remainingLength -= bytesToRead;
+    }
 
     mType = tmpType;
     mValue.swap(tmpValue);
@@ -182,12 +190,12 @@ QAsn1Element QAsn1Element::fromInteger(unsigned int val)
     return elem;
 }
 
-QAsn1Element QAsn1Element::fromVector(const QVector<QAsn1Element> &items)
+QAsn1Element QAsn1Element::fromVector(const QList<QAsn1Element> &items)
 {
     QAsn1Element seq;
     seq.mType = SequenceType;
-    QDataStream stream(&seq.mValue, QIODevice::WriteOnly);
-    for (QVector<QAsn1Element>::const_iterator it = items.cbegin(), end = items.cend(); it != end; ++it)
+    QDataStream stream(&seq.mValue, QDataStream::WriteOnly);
+    for (auto it = items.cbegin(), end = items.cend(); it != end; ++it)
         it->write(stream);
     return seq;
 }
@@ -300,7 +308,7 @@ QMultiMap<QByteArray, QString> QAsn1Element::toInfo() const
         QAsn1Element issuerElem;
         QDataStream setStream(elem.mValue);
         if (issuerElem.read(setStream) && issuerElem.mType == QAsn1Element::SequenceType) {
-            QVector<QAsn1Element> elems = issuerElem.toVector();
+            const auto elems = issuerElem.toList();
             if (elems.size() == 2) {
                 const QByteArray key = elems.front().toObjectName();
                 if (!key.isEmpty())
@@ -335,9 +343,9 @@ qint64 QAsn1Element::toInteger(bool *ok) const
     return value;
 }
 
-QVector<QAsn1Element> QAsn1Element::toVector() const
+QList<QAsn1Element> QAsn1Element::toList() const
 {
-    QVector<QAsn1Element> items;
+    QList<QAsn1Element> items;
     if (mType == SequenceType) {
         QAsn1Element elem;
         QDataStream stream(mValue);

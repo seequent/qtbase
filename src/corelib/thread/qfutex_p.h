@@ -56,7 +56,7 @@
 QT_BEGIN_NAMESPACE
 
 namespace QtDummyFutex {
-    Q_DECL_CONSTEXPR inline bool futexAvailable() { return false; }
+    constexpr inline bool futexAvailable() { return false; }
     template <typename Atomic>
     inline bool futexWait(Atomic &, typename Atomic::Type, int = 0)
     { Q_UNREACHABLE(); return false; }
@@ -81,7 +81,7 @@ QT_END_NAMESPACE
 // if not defined in linux/futex.h
 #  define FUTEX_PRIVATE_FLAG        128         // added in v2.6.22
 
-#  if __has_feature(thread_sanitizer) || defined(__SANITIZE_THREAD__)
+#  if (__has_feature(thread_sanitizer) || defined(__SANITIZE_THREAD__)) && __has_include(<sanitizer/tsan_interface.h>)
 #    include <sanitizer/tsan_interface.h>
 inline void _q_tsan_acquire(void *addr, void *addr2)
 {

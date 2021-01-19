@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Copyright (C) 2013 John Layt <jlayt@kde.org>
 ** Contact: https://www.qt.io/licensing/
 **
@@ -198,15 +198,15 @@ QString QTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
                                       QTimeZone::NameType nameType,
                                       const QLocale &locale) const
 {
-    Q_UNUSED(timeType)
-    Q_UNUSED(nameType)
-    Q_UNUSED(locale)
+    Q_UNUSED(timeType);
+    Q_UNUSED(nameType);
+    Q_UNUSED(locale);
     return QString();
 }
 
 QString QTimeZonePrivate::abbreviation(qint64 atMSecsSinceEpoch) const
 {
-    Q_UNUSED(atMSecsSinceEpoch)
+    Q_UNUSED(atMSecsSinceEpoch);
     return QString();
 }
 
@@ -217,13 +217,13 @@ int QTimeZonePrivate::offsetFromUtc(qint64 atMSecsSinceEpoch) const
 
 int QTimeZonePrivate::standardTimeOffset(qint64 atMSecsSinceEpoch) const
 {
-    Q_UNUSED(atMSecsSinceEpoch)
+    Q_UNUSED(atMSecsSinceEpoch);
     return invalidSeconds();
 }
 
 int QTimeZonePrivate::daylightTimeOffset(qint64 atMSecsSinceEpoch) const
 {
-    Q_UNUSED(atMSecsSinceEpoch)
+    Q_UNUSED(atMSecsSinceEpoch);
     return invalidSeconds();
 }
 
@@ -234,13 +234,13 @@ bool QTimeZonePrivate::hasDaylightTime() const
 
 bool QTimeZonePrivate::isDaylightTime(qint64 atMSecsSinceEpoch) const
 {
-    Q_UNUSED(atMSecsSinceEpoch)
+    Q_UNUSED(atMSecsSinceEpoch);
     return false;
 }
 
 QTimeZonePrivate::Data QTimeZonePrivate::data(qint64 forMSecsSinceEpoch) const
 {
-    Q_UNUSED(forMSecsSinceEpoch)
+    Q_UNUSED(forMSecsSinceEpoch);
     return invalidData();
 }
 
@@ -259,7 +259,7 @@ QTimeZonePrivate::Data QTimeZonePrivate::dataForLocalTime(qint64 forLocalMSecs, 
       brackets the correct time and at most one DST transition.
     */
     const qint64 sixteenHoursInMSecs(16 * 3600 * 1000);
-    Q_STATIC_ASSERT(-sixteenHoursInMSecs / 1000 < QTimeZone::MinUtcOffsetSecs
+    static_assert(-sixteenHoursInMSecs / 1000 < QTimeZone::MinUtcOffsetSecs
                   && sixteenHoursInMSecs / 1000 > QTimeZone::MaxUtcOffsetSecs);
     const qint64 recent = forLocalMSecs - sixteenHoursInMSecs;
     const qint64 imminent = forLocalMSecs + sixteenHoursInMSecs;
@@ -454,13 +454,13 @@ bool QTimeZonePrivate::hasTransitions() const
 
 QTimeZonePrivate::Data QTimeZonePrivate::nextTransition(qint64 afterMSecsSinceEpoch) const
 {
-    Q_UNUSED(afterMSecsSinceEpoch)
+    Q_UNUSED(afterMSecsSinceEpoch);
     return invalidData();
 }
 
 QTimeZonePrivate::Data QTimeZonePrivate::previousTransition(qint64 beforeMSecsSinceEpoch) const
 {
-    Q_UNUSED(beforeMSecsSinceEpoch)
+    Q_UNUSED(beforeMSecsSinceEpoch);
     return invalidData();
 }
 
@@ -663,12 +663,25 @@ bool QTimeZonePrivate::isValidId(const QByteArray &ianaId)
     return true;
 }
 
-QString QTimeZonePrivate::isoOffsetFormat(int offsetFromUtc)
+QString QTimeZonePrivate::isoOffsetFormat(int offsetFromUtc, QTimeZone::NameType mode)
 {
-    const int mins = offsetFromUtc / 60;
-    return QString::fromUtf8("UTC%1%2:%3").arg(mins >= 0 ? QLatin1Char('+') : QLatin1Char('-'))
-                                          .arg(qAbs(mins) / 60, 2, 10, QLatin1Char('0'))
-                                          .arg(qAbs(mins) % 60, 2, 10, QLatin1Char('0'));
+    if (mode == QTimeZone::ShortName && !offsetFromUtc)
+        return utcQString();
+
+    char sign = '+';
+    if (offsetFromUtc < 0) {
+        sign = '-';
+        offsetFromUtc = -offsetFromUtc;
+    }
+    const int secs = offsetFromUtc % 60;
+    const int mins = (offsetFromUtc / 60) % 60;
+    const int hour = offsetFromUtc / 3600;
+    QString result = QString::asprintf("UTC%c%02d", sign, hour);
+    if (mode != QTimeZone::ShortName || secs || mins)
+        result += QString::asprintf(":%02d", mins);
+    if (mode == QTimeZone::LongName || secs)
+        result += QString::asprintf(":%02d", secs);
+    return result;
 }
 
 QByteArray QTimeZonePrivate::ianaIdToWindowsId(const QByteArray &id)
@@ -801,13 +814,7 @@ qint64 QUtcTimeZonePrivate::offsetFromUtcString(const QByteArray &id)
 // Create offset from UTC
 QUtcTimeZonePrivate::QUtcTimeZonePrivate(qint32 offsetSeconds)
 {
-    QString utcId;
-
-    if (offsetSeconds == 0)
-        utcId = utcQString();
-    else
-        utcId = isoOffsetFormat(offsetSeconds);
-
+    QString utcId = isoOffsetFormat(offsetSeconds, QTimeZone::ShortName);
     init(utcId.toUtf8(), offsetSeconds, utcId, utcId, QLocale::AnyCountry, utcId);
 }
 
@@ -877,8 +884,8 @@ QString QUtcTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
                                          QTimeZone::NameType nameType,
                                          const QLocale &locale) const
 {
-    Q_UNUSED(timeType)
-    Q_UNUSED(locale)
+    Q_UNUSED(timeType);
+    Q_UNUSED(locale);
     if (nameType == QTimeZone::ShortName)
         return m_abbreviation;
     else if (nameType == QTimeZone::OffsetName)
@@ -888,19 +895,19 @@ QString QUtcTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
 
 QString QUtcTimeZonePrivate::abbreviation(qint64 atMSecsSinceEpoch) const
 {
-    Q_UNUSED(atMSecsSinceEpoch)
+    Q_UNUSED(atMSecsSinceEpoch);
     return m_abbreviation;
 }
 
 qint32 QUtcTimeZonePrivate::standardTimeOffset(qint64 atMSecsSinceEpoch) const
 {
-    Q_UNUSED(atMSecsSinceEpoch)
+    Q_UNUSED(atMSecsSinceEpoch);
     return m_offsetFromUtc;
 }
 
 qint32 QUtcTimeZonePrivate::daylightTimeOffset(qint64 atMSecsSinceEpoch) const
 {
-    Q_UNUSED(atMSecsSinceEpoch)
+    Q_UNUSED(atMSecsSinceEpoch);
     return 0;
 }
 

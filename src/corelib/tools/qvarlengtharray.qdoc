@@ -66,20 +66,20 @@
     compiler won't let you, for example, store a QWidget as a value;
     instead, store a QWidget *.
 
-    QVarLengthArray, like QVector, provides a resizable array data
+    QVarLengthArray, like QList, provides a resizable array data
     structure. The main differences between the two classes are:
 
     \list
     \li QVarLengthArray's API is much more low-level and it lacks
-        some of QVector's functionality.
+        some of QList's functionality.
 
     \li QVarLengthArray doesn't initialize the memory if the value is
-       a basic type. (QVector always does.)
+        a basic type. (QList always does.)
 
-    \li QVector uses \l{implicit sharing} as a memory optimization.
-       QVarLengthArray doesn't provide that feature; however, it
-       usually produces slightly better performance due to reduced
-       overhead, especially in tight loops.
+    \li QList uses \l{implicit sharing} as a memory optimization.
+        QVarLengthArray doesn't provide that feature; however, it
+        usually produces slightly better performance due to reduced
+        overhead, especially in tight loops.
     \endlist
 
     In summary, QVarLengthArray is a low-level optimization class
@@ -87,7 +87,7 @@
     places inside Qt and was added to Qt's public API for the
     convenience of advanced users.
 
-    \sa QVector, QList
+    \sa QList
 */
 
 /*! \fn template<class T, qsizetype Prealloc> QVarLengthArray<T, Prealloc>::QVarLengthArray(qsizetype size)
@@ -404,6 +404,12 @@
     Assigns \a other to this array and returns a reference to this array.
  */
 
+/*! \fn template<class T, qsizetype Prealloc> QVarLengthArray<T, Prealloc> &QVarLengthArray<T, Prealloc>::operator=(QVarLengthArray<T, Prealloc> &&other)
+    Move-assigns \a other to this array and returns a reference to this array.
+    After the move, \a other is empty.
+    \since 6.0
+ */
+
 /*! \fn template<class T, qsizetype Prealloc> QVarLengthArray<T, Prealloc> &QVarLengthArray<T, Prealloc>::operator=(std::initializer_list<T> list)
     \since 5.5
 
@@ -415,6 +421,11 @@
 
 /*! \fn template<class T, qsizetype Prealloc> QVarLengthArray<T, Prealloc>::QVarLengthArray(const QVarLengthArray<T, Prealloc> &other)
     Constructs a copy of \a other.
+ */
+
+/*! \fn template<class T, qsizetype Prealloc> QVarLengthArray<T, Prealloc>::QVarLengthArray(QVarLengthArray<T, Prealloc> &&other)
+    Move-constructs this variable-length array from \a other. After the move, \a other is empty.
+    \since 6.0
  */
 
 /*! \fn template<class T, qsizetype Prealloc> const T &QVarLengthArray<T, Prealloc>::at(qsizetype i) const
@@ -764,7 +775,7 @@
     This function requires the value type to have an implementation
     of \c operator==().
 
-    \sa operator!=()
+    \sa {operator!=(const QVarLengthArray<T, Prealloc1> &left, const QVarLengthArray<T, Prealloc2> &right)}{operator!=()}
 */
 
 /*! \fn template<typename T, qsizetype Prealloc1, qsizetype Prealloc2> bool operator!=(const QVarLengthArray<T, Prealloc1> &left, const QVarLengthArray<T, Prealloc2> &right)
@@ -779,7 +790,7 @@
     This function requires the value type to have an implementation
     of \c operator==().
 
-    \sa operator==()
+    \sa {operator==(const QVarLengthArray<T, Prealloc1> &left, const QVarLengthArray<T, Prealloc2> &right)}{operator==()}
 */
 
 /*! \fn template<typename T, qsizetype Prealloc1, qsizetype Prealloc2> bool operator<(const QVarLengthArray<T,Prealloc1> &lhs, const QVarLengthArray<T,Prealloc2> &rhs)
@@ -863,7 +874,7 @@
     \sa append(), operator<<()
 */
 
-/*! \fn template<class T, qsizetype Prealloc> qsizetype QVarLengthArray<T, Prealloc>::indexOf(const T &value, qsizetype from = 0) const
+/*! \fn template<class T, qsizetype Prealloc> template <typename AT = T> qsizetype QVarLengthArray<T, Prealloc>::indexOf(const AT &value, qsizetype from = 0) const
 
     \since 5.3
     Returns the index position of the first occurrence of \a value in
@@ -876,7 +887,7 @@
     \sa lastIndexOf(), contains()
 */
 
-/*! \fn template<class T, qsizetype Prealloc> qsizetype QVarLengthArray<T, Prealloc>::lastIndexOf(const T &value, qsizetype from = -1) const
+/*! \fn template<class T, qsizetype Prealloc> template <typename AT = T> qsizetype QVarLengthArray<T, Prealloc>::lastIndexOf(const AT &value, qsizetype from = -1) const
 
     \since 5.3
     Returns the index position of the last occurrence of the value \a
@@ -890,7 +901,7 @@
     \sa indexOf(), contains()
 */
 
-/*! \fn template<class T, qsizetype Prealloc> bool QVarLengthArray<T, Prealloc>::contains(const T &value) const
+/*! \fn template<class T, qsizetype Prealloc> template <typename AT = T> bool QVarLengthArray<T, Prealloc>::contains(const AT &value) const
 
     \since 5.3
     Returns \c true if the array contains an occurrence of \a value;
@@ -909,4 +920,56 @@
 
     Returns the hash value for \a key, using \a seed to seed the
     calculation.
+*/
+
+/*! \fn template <typename T, qsizetype Prealloc> template <typename AT = T> qsizetype QVarLengthArray<T, Prealloc>::removeAll(const AT &t)
+    \since 6.1
+
+    Removes all elements that compare equal to \a t from the
+    array. Returns the number of elements removed, if any.
+
+    \sa removeOne()
+*/
+
+/*! \fn template <typename T, qsizetype Prealloc> template <typename AT = T> bool QVarLengthArray<T, Prealloc>::removeOne(const AT &t)
+    \since 6.1
+
+    Removes the first element that compares equal to \a t from the
+    array. Returns whether an element was, in fact, removed.
+
+    \sa removeAll()
+*/
+
+/*! \fn template <typename T, qsizetype Prealloc> template <typename Predicate> qsizetype QVarLengthArray<T, Prealloc>::removeIf(Predicate pred)
+    \since 6.1
+
+    Removes all elements for which the predicate \a pred returns true
+    from the array. Returns the number of elements removed, if any.
+
+    \sa removeAll()
+*/
+
+/*! \fn template <typename T, qsizetype Prealloc, typename AT> qsizetype erase(QVarLengthArray<T, Prealloc> &array, const AT &t)
+    \relates QVarLengthArray
+    \since 6.1
+
+    Removes all elements that compare equal to \a t from the
+    array \a array. Returns the number of elements removed, if any.
+
+    \note \a t is not allowed to be a reference to an element inside \a
+    array. If you cannot be sure that this is not the case, take a copy
+    of \a t and call this function with the copy.
+
+    \sa erase_if()
+*/
+
+/*! \fn template <typename T, qsizetype Prealloc, typename Predicate> qsizetype erase_if(QVarLengthArray<T, Prealloc> &array, Predicate pred)
+    \relates QVarLengthArray
+    \since 6.1
+
+    Removes all elements for which the predicate \a pred returns true
+    from the list \a array. Returns the number of elements removed, if
+    any.
+
+    \sa erase()
 */

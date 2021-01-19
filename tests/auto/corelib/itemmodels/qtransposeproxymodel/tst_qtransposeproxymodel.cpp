@@ -442,7 +442,8 @@ void tst_QTransposeProxyModel::insertRowBase()
     const int oldColCount = proxy.columnCount(proxy.mapFromSource(parent));
     QVERIFY(model->insertRow(1, parent));
     QCOMPARE(proxy.columnCount(proxy.mapFromSource(parent)), oldColCount + 1);
-    QVERIFY(proxy.index(0, 1, proxy.mapFromSource(parent)).data().isNull());
+    QVariant result = proxy.index(0, 1, proxy.mapFromSource(parent)).data();
+    QVERIFY(result.isNull() || (result.metaType().id() == QMetaType::QString && result.toString().isNull()));
     QCOMPARE(columnsInsertSpy.count(), 1);
     QCOMPARE(columnsAboutToBeInsertSpy.count(), 1);
     for (const auto &spyArgs : {columnsInsertSpy.takeFirst(),
@@ -540,8 +541,10 @@ void tst_QTransposeProxyModel::insertColumnProxy()
     QVERIFY(proxy.insertColumn(1, proxyParent));
     QCOMPARE(proxy.columnCount(proxyParent), oldColCount + 1);
     QCOMPARE(model->rowCount(sourceParent), oldRowCount + 1);
-    QVERIFY(proxy.index(0, 1, proxyParent).data().isNull());
-    QVERIFY(model->index(1, 0, sourceParent).data().isNull());
+    QVariant result = proxy.index(0, 1, proxyParent).data();
+    QVERIFY(result.isNull() || (result.metaType().id() == QMetaType::QString && result.toString().isNull()));
+    result = model->index(1, 0, sourceParent).data();
+    QVERIFY(result.isNull() || (result.metaType().id() == QMetaType::QString && result.toString().isNull()));
     QCOMPARE(columnsInsertSpy.count(), 1);
     QCOMPARE(columnsAboutToBeInsertSpy.count(), 1);
     QCOMPARE(rowsInsertSpy.count(), 1);
@@ -713,7 +716,7 @@ void tst_QTransposeProxyModel::span()
         {}
         QSize span(const QModelIndex &index) const override
         {
-            Q_UNUSED(index)
+            Q_UNUSED(index);
             return QSize(2, 1);
         }
     };
@@ -769,15 +772,15 @@ void tst_QTransposeProxyModel::setItemData()
     auto signalData = proxyDataChangeSpy.takeFirst();
     QCOMPARE(signalData.at(0).value<QModelIndex>(), idx);
     QCOMPARE(signalData.at(1).value<QModelIndex>(), idx);
-    const QVector<int> expectedRoles{Qt::DisplayRole, Qt::UserRole, Qt::EditRole, Qt::UserRole + 1};
-    QVector<int> receivedRoles = signalData.at(2).value<QVector<int> >();
+    const QList<int> expectedRoles{Qt::DisplayRole, Qt::UserRole, Qt::EditRole, Qt::UserRole + 1};
+    QList<int> receivedRoles = signalData.at(2).value<QList<int> >();
     QCOMPARE(receivedRoles.size(), expectedRoles.size());
     for (int role : expectedRoles)
         QVERIFY(receivedRoles.contains(role));
     signalData = sourceDataChangeSpy.takeFirst();
     QCOMPARE(signalData.at(0).value<QModelIndex>(), proxy.mapToSource(idx));
     QCOMPARE(signalData.at(1).value<QModelIndex>(), proxy.mapToSource(idx));
-    receivedRoles = signalData.at(2).value<QVector<int> >();
+    receivedRoles = signalData.at(2).value<QList<int> >();
     QCOMPARE(receivedRoles.size(), expectedRoles.size());
     for (int role : expectedRoles)
         QVERIFY(receivedRoles.contains(role));
@@ -793,14 +796,14 @@ void tst_QTransposeProxyModel::setItemData()
     signalData = proxyDataChangeSpy.takeFirst();
     QCOMPARE(signalData.at(0).value<QModelIndex>(), idx);
     QCOMPARE(signalData.at(1).value<QModelIndex>(), idx);
-    receivedRoles = signalData.at(2).value<QVector<int> >();
+    receivedRoles = signalData.at(2).value<QList<int> >();
     QCOMPARE(receivedRoles.size(), expectedRoles.size());
     for (int role : expectedRoles)
         QVERIFY(receivedRoles.contains(role));
     signalData = sourceDataChangeSpy.takeFirst();
     QCOMPARE(signalData.at(0).value<QModelIndex>(), proxy.mapToSource(idx));
     QCOMPARE(signalData.at(1).value<QModelIndex>(), proxy.mapToSource(idx));
-    receivedRoles = signalData.at(2).value<QVector<int> >();
+    receivedRoles = signalData.at(2).value<QList<int> >();
     QCOMPARE(receivedRoles.size(), expectedRoles.size());
     for (int role : expectedRoles)
         QVERIFY(receivedRoles.contains(role));

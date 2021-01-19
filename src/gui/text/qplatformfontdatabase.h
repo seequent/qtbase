@@ -50,12 +50,10 @@
 //
 
 #include <QtGui/qtguiglobal.h>
+#include <QtCore/qloggingcategory.h>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QList>
-#if QT_DEPRECATED_SINCE(5, 5)
-#include <QtCore/QHash>
-#endif
 #include <QtGui/QFontDatabase>
 #include <QtGui/private/qfontengine_p.h>
 #include <QtGui/private/qfont_p.h>
@@ -63,6 +61,7 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_DECLARE_LOGGING_CATEGORY(lcQpaFonts)
 
 class QWritingSystemsPrivate;
 
@@ -129,10 +128,8 @@ public:
     // helper
     static QSupportedWritingSystems writingSystemsFromTrueTypeBits(quint32 unicodeRange[4], quint32 codePageRange[2]);
     static QSupportedWritingSystems writingSystemsFromOS2Table(const char *os2Table, size_t length);
-    static QFont::Weight weightFromInteger(int weight);
 
     //callback
-    static void registerQPF2Font(const QByteArray &dataArray, void *handle);
     static void registerFont(const QString &familyname, const QString &stylename,
                              const QString &foundryname, QFont::Weight weight,
                              QFont::Style style, QFont::Stretch stretch, bool antialiased,

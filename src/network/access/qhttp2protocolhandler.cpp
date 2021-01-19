@@ -264,13 +264,19 @@ void QHttp2ProtocolHandler::_q_uploadDataDestroyed(QObject *uploadData)
 
 void QHttp2ProtocolHandler::_q_readyRead()
 {
-    _q_receiveReply();
+    if (!goingAway || activeStreams.size())
+        _q_receiveReply();
 }
 
 void QHttp2ProtocolHandler::_q_receiveReply()
 {
     Q_ASSERT(m_socket);
     Q_ASSERT(m_channel);
+
+    if (goingAway && activeStreams.isEmpty()) {
+        m_channel->close();
+        return;
+    }
 
     while (!goingAway || activeStreams.size()) {
         const auto result = frameReader.read(*m_socket);
@@ -679,7 +685,8 @@ void QHttp2ProtocolHandler::handlePRIORITY()
     quint32 streamDependency = 0;
     uchar weight = 0;
     const bool noErr = inboundFrame.priority(&streamDependency, &weight);
-    Q_UNUSED(noErr) Q_ASSERT(noErr);
+    Q_UNUSED(noErr);
+    Q_ASSERT(noErr);
 
 
     const bool exclusive = streamDependency & 0x80000000;
@@ -1162,8 +1169,13 @@ void QHttp2ProtocolHandler::updateStream(Stream &stream, const HPack::HttpHeader
     if (QHttpNetworkReply::isHttpRedirect(statusCode) && redirectUrl.isValid())
         httpReply->setRedirectUrl(redirectUrl);
 
-    if (httpReplyPrivate->isCompressed() && httpRequest.d->autoDecompress)
+    if (httpReplyPrivate->isCompressed() && httpRequest.d->autoDecompress) {
         httpReplyPrivate->removeAutoDecompressHeader();
+        httpReplyPrivate->decompressHelper.setEncoding(
+                httpReplyPrivate->headerField("content-encoding"));
+        if (httpReplyPrivate->request.ignoreDecompressionRatio())
+            httpReplyPrivate->decompressHelper.setArchiveBombDetectionEnabled(false);
+    }
 
     if (QHttpNetworkReply::isHttpRedirect(statusCode)
         || statusCode == 401 || statusCode == 407) {
@@ -1206,12 +1218,17 @@ void QHttp2ProtocolHandler::updateStream(Stream &stream, const Frame &frame,
 
         const QByteArray wrapped(data, length);
         if (httpRequest.d->autoDecompress && replyPrivate->isCompressed()) {
-            QByteDataBuffer inDataBuffer;
-            inDataBuffer.append(wrapped);
-            replyPrivate->uncompressBodyData(&inDataBuffer, &replyPrivate->responseData);
-            // Now, make sure replyPrivate's destructor will properly clean up
-            // buffers allocated (if any) by zlib.
-            replyPrivate->autoDecompress = true;
+            Q_ASSERT(replyPrivate->decompressHelper.isValid());
+
+            replyPrivate->decompressHelper.feed(wrapped);
+            while (replyPrivate->decompressHelper.hasData()) {
+                QByteArray output(4 * 1024, Qt::Uninitialized);
+                qint64 read = replyPrivate->decompressHelper.read(output.data(), output.size());
+                if (read > 0) {
+                    output.resize(read);
+                    replyPrivate->responseData.append(std::move(output));
+                }
+            }
         } else {
             replyPrivate->responseData.append(wrapped);
         }

@@ -421,7 +421,7 @@ QByteArray QPdf::generateDashes(const QPen &pen)
     ByteStream s(&result);
     s << '[';
 
-    QVector<qreal> dasharray = pen.dashPattern();
+    QList<qreal> dasharray = pen.dashPattern();
     qreal w = pen.widthF();
     if (w < 0.001)
         w = 1;
@@ -649,7 +649,7 @@ QPdf::Stroker::Stroker()
     basicStroker.setStrokeWidth(.1);
 }
 
-void QPdf::Stroker::setPen(const QPen &pen, QPainter::RenderHints hints)
+void QPdf::Stroker::setPen(const QPen &pen, QPainter::RenderHints)
 {
     if (pen.style() == Qt::NoPen) {
         stroker = nullptr;
@@ -657,7 +657,7 @@ void QPdf::Stroker::setPen(const QPen &pen, QPainter::RenderHints hints)
     }
     qreal w = pen.widthF();
     bool zeroWidth = w < 0.0001;
-    cosmeticPen = qt_pen_is_cosmetic(pen, hints);
+    cosmeticPen = pen.isCosmetic();
     if (zeroWidth)
         w = .1;
 
@@ -666,7 +666,7 @@ void QPdf::Stroker::setPen(const QPen &pen, QPainter::RenderHints hints)
     basicStroker.setJoinStyle(pen.joinStyle());
     basicStroker.setMiterLimit(pen.miterLimit());
 
-    QVector<qreal> dashpattern = pen.dashPattern();
+    QList<qreal> dashpattern = pen.dashPattern();
     if (zeroWidth) {
         for (int i = 0; i < dashpattern.size(); ++i)
             dashpattern[i] *= 10.;
@@ -784,7 +784,7 @@ QPdfPage::QPdfPage()
 {
 }
 
-void QPdfPage::streamImage(int w, int h, int object)
+void QPdfPage::streamImage(int w, int h, uint object)
 {
     *this << w << "0 0 " << -h << "0 " << h << "cm /Im" << object << " Do\n";
     if (!images.contains(object))
@@ -858,12 +858,12 @@ void QPdfEngine::drawRects (const QRectF *rects, int rectCount)
 
     if (d->simplePen || !d->hasPen) {
         // draw strokes natively in this case for better output
-        if(!d->simplePen && !d->stroker.matrix.isIdentity())
+        if (!d->simplePen && !d->stroker.matrix.isIdentity())
             *d->currentPage << "q\n" << QPdf::generateMatrix(d->stroker.matrix);
         for (int i = 0; i < rectCount; ++i)
             *d->currentPage << rects[i].x() << rects[i].y() << rects[i].width() << rects[i].height() << "re\n";
         *d->currentPage << (d->hasPen ? (d->hasBrush ? "B\n" : "S\n") : "f\n");
-        if(!d->simplePen && !d->stroker.matrix.isIdentity())
+        if (!d->simplePen && !d->stroker.matrix.isIdentity())
             *d->currentPage << "Q\n";
     } else {
         QPainterPath p;
@@ -1056,7 +1056,7 @@ void QPdfEngine::drawTextItem(const QPointF &p, const QTextItem &textItem)
     }
 
     *d->currentPage << "q\n";
-    if(!d->simplePen)
+    if (!d->simplePen)
         *d->currentPage << QPdf::generateMatrix(d->stroker.matrix);
 
     bool hp = d->hasPen;
@@ -1137,7 +1137,7 @@ void QPdfEngine::updateState(const QPaintEngineState &state)
         d->hasPen = d->pen.style() != Qt::NoPen;
         d->stroker.setPen(d->pen, state.renderHints());
         QBrush penBrush = d->pen.brush();
-        bool cosmeticPen = qt_pen_is_cosmetic(d->pen, state.renderHints());
+        bool cosmeticPen = d->pen.isCosmetic();
         bool oldSimple = d->simplePen;
         d->simplePen = (d->hasPen && !cosmeticPen && (penBrush.style() == Qt::SolidPattern) && penBrush.isOpaque() && d->opacity == 1.0);
         if (oldSimple != d->simplePen)
@@ -1824,7 +1824,7 @@ void QPdfEnginePrivate::writeAttachmentRoot()
     if (fileCache.isEmpty())
         return;
 
-    QVector<int> attachments;
+    QList<int> attachments;
     const int size = fileCache.size();
     for (int i = 0; i < size; ++i) {
         auto attachment = fileCache.at(i);
@@ -2304,7 +2304,7 @@ int QPdfEnginePrivate::writeCompressed(QIODevice *dev)
 int QPdfEnginePrivate::writeCompressed(const char *src, int len)
 {
 #ifndef QT_NO_COMPRESS
-    if(do_compress) {
+    if (do_compress) {
         uLongf destLen = len + len/100 + 13; // zlib requirement
         Bytef* dest = new Bytef[destLen];
         if (Z_OK == ::compress(dest, &destLen, (const Bytef*) src, (uLongf)len)) {
@@ -2396,7 +2396,7 @@ int QPdfEnginePrivate::createShadingFunction(const QGradient *gradient, int from
     if (stops.at(stops.size() - 1).first < 1)
         stops.append(QGradientStop(1, stops.at(stops.size() - 1).second));
 
-    QVector<int> functions;
+    QList<int> functions;
     const int numStops = stops.size();
     functions.reserve(numStops - 1);
     for (int i = 0; i < numStops - 1; ++i) {
@@ -2420,7 +2420,7 @@ int QPdfEnginePrivate::createShadingFunction(const QGradient *gradient, int from
         functions << f;
     }
 
-    QVector<QGradientBound> gradientBounds;
+    QList<QGradientBound> gradientBounds;
     gradientBounds.reserve((to - from) * (numStops - 1));
 
     for (int step = from; step < to; ++step) {
@@ -2714,7 +2714,7 @@ int QPdfEnginePrivate::addConstantAlphaObject(int brushAlpha, int penAlpha)
 {
     if (brushAlpha == 255 && penAlpha == 255)
         return 0;
-    int object = alphaCache.value(QPair<uint, uint>(brushAlpha, penAlpha), 0);
+    uint object = alphaCache.value(QPair<uint, uint>(brushAlpha, penAlpha), 0);
     if (!object) {
         object = addXrefEntry(-1);
         QByteArray alphaDef;
@@ -2816,7 +2816,7 @@ int QPdfEnginePrivate::addBrushPattern(const QTransform &m, bool *specifyColor, 
     return patternObj;
 }
 
-static inline bool is_monochrome(const QVector<QRgb> &colorTable)
+static inline bool is_monochrome(const QList<QRgb> &colorTable)
 {
     return colorTable.size() == 2
         && colorTable.at(0) == QColor(Qt::black).rgba()
@@ -2833,7 +2833,7 @@ int QPdfEnginePrivate::addImage(const QImage &img, bool *bitmap, bool lossless, 
         return -1;
 
     int object = imageCache.value(serial_no);
-    if(object)
+    if (object)
         return object;
 
     QImage image = img;
@@ -3038,7 +3038,7 @@ void QPdfEnginePrivate::drawTextItem(const QPointF &p, const QTextItemInt &ti)
         noEmbed = true;
     }
 
-    QFontSubset *font = fonts.value(face_id, 0);
+    QFontSubset *font = fonts.value(face_id, nullptr);
     if (!font) {
         font = new QFontSubset(fe, requestObject());
         font->noEmbed = noEmbed;

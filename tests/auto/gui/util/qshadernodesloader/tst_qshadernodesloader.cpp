@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QtCore/qbuffer.h>
 
@@ -71,7 +71,7 @@ namespace
         return port;
     }
 
-    QShaderNode createNode(const QVector<QShaderNodePort> &ports)
+    QShaderNode createNode(const QList<QShaderNodePort> &ports)
     {
         auto node = QShaderNode();
         for (const auto &port : ports)
@@ -225,7 +225,7 @@ void tst_QShaderNodesLoader::shouldLoadFromJsonStream_data()
                            "    }"
                            "}";
 
-    const auto smallProtos = [this]{
+    const auto smallProtos = [&]{
         const auto openGLES2 = createFormat(QShaderFormat::OpenGLES, 2, 0);
         const auto openGLES2Extended = createFormat(QShaderFormat::OpenGLES, 2, 0, {"ext1", "ext2"}, "kdab");
         const auto openGL2 = createFormat(QShaderFormat::OpenGLCompatibilityProfile, 2, 1);

@@ -28,22 +28,12 @@ qt_internal_add_plugin(QOffscreenIntegrationPlugin
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QOffscreenIntegrationPlugin CONDITION UNIX
-    PUBLIC_LIBRARIES
-        Qt::EventDispatcherSupportPrivate
-)
-
-qt_extend_target(QOffscreenIntegrationPlugin CONDITION NOT APPLE
-    PUBLIC_LIBRARIES
-        Qt::FontDatabaseSupportPrivate
-)
-
-qt_extend_target(QOffscreenIntegrationPlugin CONDITION QT_FEATURE_opengl AND QT_FEATURE_xlib AND NOT QT_FEATURE_opengles2
+qt_internal_extend_target(QOffscreenIntegrationPlugin CONDITION QT_FEATURE_opengl AND QT_FEATURE_xlib AND NOT QT_FEATURE_opengles2
     SOURCES
         qoffscreenintegration_x11.cpp qoffscreenintegration_x11.h
-    PUBLIC_LIBRARIES
-        Qt::GlxSupportPrivate
+    LIBRARIES
+        X11::X11
 )
 
-#### Keys ignored in scope 5:.:.:offscreen.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
+#### Keys ignored in scope 3:.:.:offscreen.pro:NOT TARGET___equals____ss_QT_DEFAULT_QPA_PLUGIN:
 # PLUGIN_EXTENDS = "-"

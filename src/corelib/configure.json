@@ -7,10 +7,10 @@
             "doubleconversion": { "type": "enum", "values": [ "no", "qt", "system" ] },
             "eventfd": "boolean",
             "glib": "boolean",
-            "iconv": { "type": "enum", "values": [ "no", "yes", "posix", "sun", "gnu" ] },
             "icu": "boolean",
             "inotify": "boolean",
             "journald": "boolean",
+            "libb2": { "type": "enum", "values": [ "no", "qt", "system" ] },
             "mimetype-database": "boolean",
             "pcre": { "type": "enum", "values": [ "no", "qt", "system" ] },
             "posix-ipc": { "type": "boolean", "name": "ipc_posix" },
@@ -46,52 +46,6 @@
             "headers": "glib.h",
             "sources": [
                 { "type": "pkgConfig", "args": "glib-2.0 gthread-2.0" }
-            ]
-        },
-        "posix_iconv": {
-            "label": "POSIX iconv",
-            "export": "iconv",
-            "test": {
-                "main": [
-                    "iconv_t x = iconv_open(\"\", \"\");",
-                    "char *inp, *outp;",
-                    "size_t inbytes, outbytes;",
-                    "iconv(x, &inp, &inbytes, &outp, &outbytes);",
-                    "iconv_close(x);"
-                ]
-            },
-            "headers": "iconv.h",
-            "sources": [
-                { "libs": "-liconv", "condition": "config.openbsd || config.haiku" },
-                { "libs": "", "condition": "!(config.openbsd || config.haiku)" }
-            ]
-        },
-        "gnu_iconv": {
-            "label": "GNU libiconv",
-            "export": "iconv",
-            "test": {
-                "main": [
-                    "iconv_t x = iconv_open(\"\", \"\");",
-                    "const char *inp;",
-                    "char *outp;",
-                    "size_t inbytes, outbytes;",
-                    "iconv(x, &inp, &inbytes, &outp, &outbytes);",
-                    "iconv_close(x);"
-                ]
-            },
-            "headers": "iconv.h",
-            "sources": [
-                "-liconv"
-            ]
-        },
-        "sun_iconv": {
-            "label": "SUN libiconv",
-            "export": "iconv",
-            "test": {
-                "inherit": "gnu_iconv"
-            },
-            "sources": [
-                ""
             ]
         },
         "icu": {
@@ -156,6 +110,17 @@
             "sources": [
                 "",
                 "-latomic"
+            ]
+        },
+        "libb2": {
+            "label": "libb2",
+            "test": {
+                "main": "BLAKE2B_BLOCKBYTES;"
+            },
+            "headers": "blake2.h",
+            "sources": [
+                { "type": "pkgConfig", "args": "libb2" },
+                "-lb2"
             ]
         },
         "librt": {
@@ -355,7 +320,7 @@
                     "std::future<int> f = std::async([]() { return 42; });",
                     "(void)f.get();"
                 ],
-                "qmake": "unix:LIBS += -lpthread"
+                "qmake": "unix:!android:LIBS += -lpthread"
             }
         },
         "cxx11_random": {
@@ -671,33 +636,6 @@
             "condition": "tests.glibc",
             "output": [ "privateFeature" ]
         },
-        "iconv": {
-            "label": "iconv",
-            "purpose": "Provides internationalization on Unix.",
-            "section": "Internationalization",
-            "condition": "!features.icu && features.textcodec && (features.posix-libiconv || features.sun-libiconv || features.gnu-libiconv)",
-            "output": [ "privateFeature", "feature" ]
-        },
-        "posix-libiconv": {
-            "label": "POSIX iconv",
-            "enable": "input.iconv == 'posix'",
-            "disable": "input.iconv == 'sun' || input.iconv == 'gnu' || input.iconv == 'no'",
-            "condition": "!config.win32 && !config.qnx && !config.android && !config.darwin && libs.posix_iconv",
-            "output": [ "privateFeature" ]
-        },
-        "sun-libiconv": {
-            "label": "SUN iconv",
-            "enable": "input.iconv == 'sun'",
-            "disable": "input.iconv == 'posix' || input.iconv == 'gnu' || input.iconv == 'no'",
-            "condition": "!config.win32 && !config.qnx && !config.android && !config.darwin && !features.posix-libiconv && libs.sun_iconv"
-        },
-        "gnu-libiconv": {
-            "label": "GNU iconv",
-            "enable": "input.iconv == 'gnu'",
-            "disable": "input.iconv == 'posix' || input.iconv == 'sun' || input.iconv == 'no'",
-            "condition": "!config.win32 && !config.qnx && !config.android && !config.darwin && !features.posix-libiconv && !features.sun-libiconv && libs.gnu_iconv",
-            "output": [ "privateFeature" ]
-        },
         "icu": {
             "label": "ICU",
             "autoDetect": "!config.win32",
@@ -721,6 +659,14 @@
             "condition": "libs.journald",
             "output": [ "privateFeature" ]
         },
+        "system-libb2": {
+            "label": "Using system libb2",
+            "comment": "Used by QCryptographicHash for the BLAKE2 hashing algorithms",
+            "disable": "input.libb2 == 'no' || input.libb2 == 'qt'",
+            "enable": "input.libb2 == 'system'",
+            "condition": "libs.libb2",
+            "output": [ "privateFeature" ]
+        },
         "linkat": {
             "label": "linkat()",
             "comment": "Currently only used by QTemporaryFile; linkat() exists on Android, but hardlink creation fails due to security rules",
@@ -737,7 +683,6 @@
             "label": "Mimetype handling",
             "purpose": "Provides MIME type handling.",
             "section": "Utilities",
-            "condition": "features.textcodec",
             "output": [ "publicFeature", "feature" ]
         },
         "mimetype-database": {
@@ -747,8 +692,8 @@
         },
         "pcre2": {
             "label": "PCRE2",
-            "disable": "input.pcre == 'no' || input.pcre == 'system'",
-            "enable": "input.pcre == 'qt'",
+            "disable": "input.pcre == 'no'",
+            "enable": "input.pcre == 'qt' || features.system-pcre2",
             "output": [ "privateConfig" ]
         },
         "system-pcre2": {
@@ -990,26 +935,6 @@
             "section": "Internationalization",
             "output": [ "publicFeature", "feature" ]
         },
-        "textcodec": {
-            "label": "QTextCodec",
-            "purpose": "Supports conversions between text encodings.",
-            "section": "Internationalization",
-            "output": [ "publicFeature", "feature" ]
-        },
-        "codecs": {
-            "label": "Codecs",
-            "purpose": "Supports non-unicode text conversions.",
-            "section": "Internationalization",
-            "condition": "features.textcodec",
-            "output": [ "publicFeature", "feature" ]
-        },
-        "big_codecs": {
-            "label": "Big Codecs",
-            "purpose": "Supports big codecs, e.g. CJK.",
-            "section": "Internationalization",
-            "condition": "features.textcodec",
-            "output": [ "publicFeature", "feature" ]
-        },
         "easingcurve": {
             "label": "Easing curve",
             "purpose": "Provides easing curve.",
@@ -1022,18 +947,6 @@
             "section": "Utilities",
             "condition": "features.properties && features.easingcurve",
             "output": [ "publicFeature", "feature" ]
-        },
-        "statemachine": {
-            "label": "State machine",
-            "purpose": "Provides hierarchical finite state machines.",
-            "section": "Utilities",
-            "condition": "features.properties",
-            "output": [ "publicFeature", "feature" ]
-        },
-        "qeventtransition": {
-            "label": "QEventTransition class",
-            "condition": "features.statemachine",
-            "output": [ "publicFeature" ]
         },
         "gestures": {
             "label": "Gesture",
@@ -1076,6 +989,7 @@
             "label": "QDateTimeParser",
             "purpose": "Provides support for parsing date-time texts.",
             "section": "Utilities",
+            "condition": "features.datestring",
             "output": [ "privateFeature" ]
         },
         "commandlineparser": {
@@ -1100,6 +1014,11 @@
             "condition": "config.win32",
             "output": [ "privateFeature" ]
         },
+        "forkfd_pidfd": {
+            "label": "CLONE_PIDFD support in forkfd",
+            "condition": "config.linux",
+            "output": [ "privateFeature" ]
+        },
         "win32_system_libs": {
             "label": "Windows System Libraries",
             "condition": "config.win32 && libs.advapi32 && libs.gdi32 && libs.kernel32 && libs.netapi32 && libs.ole32 && libs.shell32 && libs.uuid && libs.user32 && libs.winmm && libs.ws2_32"
@@ -1115,12 +1034,6 @@ Note that this is required for plugin loading. Qt GUI needs QPA plugins for basi
         "cborstreamwriter": {
             "label": "CBOR stream writing",
             "purpose": "Provides support for writing the CBOR binary format.",
-            "section": "Utilities",
-            "output": [ "publicFeature" ]
-        },
-        "binaryjson": {
-            "label": "Binary JSON (deprecated)",
-            "purpose": "Provides support for the deprecated binary JSON format.",
             "section": "Utilities",
             "output": [ "publicFeature" ]
         }
@@ -1167,8 +1080,8 @@ Note that this is required for plugin loading. Qt GUI needs QPA plugins for basi
                 "doubleconversion",
                 "system-doubleconversion",
                 "glib",
-                "iconv",
                 "icu",
+                "system-libb2",
                 "mimetype-database",
                 {
                     "message": "Tracing backend",
@@ -1187,7 +1100,12 @@ Note that this is required for plugin loading. Qt GUI needs QPA plugins for basi
                     "condition": "config.qnx"
                 },
                 "pcre2",
-                "system-pcre2"
+                "system-pcre2",
+                {
+                    "type": "feature",
+                    "args": "forkfd_pidfd",
+                    "condition": "config.linux"
+                }
             ]
         }
     ]

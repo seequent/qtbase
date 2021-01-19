@@ -8,7 +8,7 @@ endif()
 ## tst_qsslsocket_onDemandCertificates_member Test:
 #####################################################################
 
-add_qt_test(tst_qsslsocket_onDemandCertificates_member
+qt_internal_add_test(tst_qsslsocket_onDemandCertificates_member
     SOURCES
         tst_qsslsocket_onDemandCertificates_member.cpp
     DEFINES
@@ -16,6 +16,7 @@ add_qt_test(tst_qsslsocket_onDemandCertificates_member
     PUBLIC_LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
+    QT_TEST_SERVER_LIST "squid" "danted" # special case
 )
 
 #### Keys ignored in scope 1:.:.:qsslsocket_onDemandCertificates_member.pro:<TRUE>:

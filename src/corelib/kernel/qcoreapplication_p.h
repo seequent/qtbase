@@ -74,6 +74,10 @@ typedef QList<QTranslator*> QTranslatorList;
 
 class QAbstractEventDispatcher;
 
+#ifndef QT_NO_QOBJECT
+class QEvent;
+#endif
+
 class Q_CORE_EXPORT QCoreApplicationPrivate
 #ifndef QT_NO_QOBJECT
     : public QObjectPrivate
@@ -116,7 +120,7 @@ public:
     bool sendThroughApplicationEventFilters(QObject *, QEvent *);
     static bool sendThroughObjectEventFilters(QObject *, QEvent *);
     static bool notify_helper(QObject *, QEvent *);
-    static inline void setEventSpontaneous(QEvent *e, bool spontaneous) { e->spont = spontaneous; }
+    static inline void setEventSpontaneous(QEvent *e, bool spontaneous) { e->m_spont = spontaneous; }
 
     virtual void createEventDispatcher();
     virtual void eventDispatcherReady();
@@ -131,6 +135,8 @@ public:
     virtual bool shouldQuit() {
       return true;
     }
+
+    virtual void quit();
     void maybeQuit();
 
     static QBasicAtomicPointer<QThread> theMainThread;

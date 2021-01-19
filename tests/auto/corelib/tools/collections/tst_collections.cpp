@@ -42,7 +42,7 @@ static QSet<int> *setX;
 static QStack<int> *stackX;
 static QVarLengthArray<int> *varLengthArrayX;
 static QVarLengthArray<int, 512> *varLengthArrayY;
-static QVector<int> *vectorX;
+static QList<int> *vectorX;
 
 void foo()
 {
@@ -61,7 +61,8 @@ void foo()
     vectorX = 0;
 }
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QVector>
 
 #include <algorithm>
 
@@ -78,7 +79,6 @@ void foo()
 #include "qstring.h"
 #include "qstringlist.h"
 #include "qvarlengtharray.h"
-#include "qvector.h"
 #include "qqueue.h"
 
 class tst_Collections : public QObject
@@ -129,6 +129,12 @@ struct LargeStatic {
     static int count;
     LargeStatic():c(count) { ++count; }
     LargeStatic(const LargeStatic& o):c(o.c) { ++count; }
+    LargeStatic &operator=(const LargeStatic &o)
+    {
+        c = o.c;
+        ++count;
+        return *this;
+    };
     ~LargeStatic() { --count; }
     int c;
     int data[8];
@@ -146,7 +152,7 @@ struct Movable {
 
 int Movable::count = 0;
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(Movable, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(Movable, Q_RELOCATABLE_TYPE);
 QT_END_NAMESPACE
 
 
@@ -450,7 +456,10 @@ void tst_Collections::list()
         {
             QList<int> list;
             list.append(1);
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wself-assign-overloaded")
             list = list;
+QT_WARNING_POP
             QVERIFY(list.size() == 1);
         }
     }
@@ -464,7 +473,7 @@ void tst_Collections::list()
     }
 
     {
-        QVector<QString> vector(5);
+        QList<QString> vector(5);
         vector[0] = "99";
         vector[4] ="100";
         QList<QString> list = vector.toList();
@@ -720,7 +729,7 @@ void tst_Collections::list()
 
 void tst_Collections::vector()
 {
-    QVector<int> v1;
+    QList<int> v1;
     v1 << 1 << 2 << 3;
     QVector<int> v2;
     v2 << 4 << 5;
@@ -804,7 +813,7 @@ void tst_Collections::vector()
     QVERIFY(LargeStatic::count == originalLargeStaticCount);
     {
         QVector<LargeStatic> vector;
-        LargeStatic *dummy = 0;
+        LargeStatic *dummy = nullptr;
         for (int i = 0; i < 10000; ++i) {
             delete dummy;
             dummy = new LargeStatic;
@@ -826,7 +835,7 @@ void tst_Collections::vector()
     QVERIFY(Movable::count == originalMovableCount);
     {
         QVector<Movable> vector;
-        Movable *dummy = 0;
+        Movable *dummy = nullptr;
         for (int i = 0; i < 10000; ++i) {
             delete dummy;
             dummy = new Movable;
@@ -1084,7 +1093,7 @@ void tst_Collections::stack()
     stack.push(1);
     stack.push(2);
     stack.push(3);
-    QVectorIterator<int> i = stack;
+    QListIterator<int> i = stack;
     i.toBack();
     int sum = 0;
     while (i.hasPrevious())
@@ -1113,17 +1122,17 @@ void tst_Collections::hash()
         Hash hash;
         QString key = QLatin1String("  ");
         for (int i = 0; i < 10; ++i) {
-            key[0] = i + '0';
+            key[0] = QChar(i + '0');
             for (int j = 0; j < 10; ++j) {
-                key[1] = j + '0';
+                key[1] = QChar(j + '0');
                 hash.insert(key, "V" + key);
             }
         }
 
         for (int i = 0; i < 10; ++i) {
-            key[0] = i + '0';
+            key[0] = QChar(i + '0');
             for (int j = 0; j < 10; ++j) {
-                key[1] = j + '0';
+                key[1] = QChar(j + '0');
                 hash.remove(key);
             }
         }
@@ -1138,6 +1147,8 @@ void tst_Collections::hash()
         QVERIFY(hash.size() == 2);
         QVERIFY(!hash.isEmpty());
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wself-assign-overloaded")
         {
             Hash hash2 = hash;
             hash2 = hash;
@@ -1150,6 +1161,7 @@ void tst_Collections::hash()
             QVERIFY(hash2.isEmpty());
         }
         QVERIFY(hash.size() == 2);
+QT_WARNING_POP
 
         {
             Hash hash2 = hash;
@@ -1326,19 +1338,19 @@ void tst_Collections::hash()
         hash1.unite(hash2);
         QCOMPARE(hash1.size(), 5);
         auto values = hash1.values();
-        qSort(values);
+        std::sort(values.begin(), values.end());
         QList<QString> expected;
         expected << "Gamma" << "Gamma" << "Beta" << "Gamma" << "Alpha";
-        qSort(expected);
+        std::sort(expected.begin(), expected.end());
         QCOMPARE(values, expected);
 
         hash2 = hash1;
         hash2.unite(hash2);
         QCOMPARE(hash2.size(), 10);
         values = hash2.values();
-        qSort(values);
+        std::sort(values.begin(), values.end());
         expected += expected;
-        qSort(expected);
+        std::sort(expected.begin(), expected.end());
         QCOMPARE(values, expected);
     }
 }
@@ -1361,6 +1373,8 @@ void tst_Collections::map()
         QVERIFY(map.size() == 2);
         QVERIFY(!map.isEmpty());
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wself-assign-overloaded")
         {
             Map map2 = map;
             map2 = map;
@@ -1373,6 +1387,7 @@ void tst_Collections::map()
             QVERIFY(map2.isEmpty());
         }
         QVERIFY(map.size() == 2);
+QT_WARNING_POP
 
         {
             Map map2 = map;
@@ -1645,12 +1660,12 @@ void tst_Collections::map()
     }
 
     {
-        QMap<int, QString> map1, map2;
-        map1.insertMulti(1, "Alpha");
-        map1.insertMulti(1, "Gamma");
-        map2.insertMulti(1, "Beta");
-        map2.insertMulti(1, "Gamma");
-        map2.insertMulti(1, "Gamma");
+        QMultiMap<int, QString> map1, map2;
+        map1.insert(1, "Alpha");
+        map1.insert(1, "Gamma");
+        map2.insert(1, "Beta");
+        map2.insert(1, "Gamma");
+        map2.insert(1, "Gamma");
 
         map1.unite(map2);
         QCOMPARE(map1.size(), 5);
@@ -2347,7 +2362,7 @@ template <class Container>
 void testLinkedListLikeStlIterators()
 {
     Container fake;
-    typename Container::value_type t;
+    typename Container::value_type t = {};
     fake << t;
 
     typename Container::iterator i1 = fake.begin(), i2 = i1 + 1;
@@ -2380,7 +2395,7 @@ void testListLikeStlIterators()
     testLinkedListLikeStlIterators<Container>();
 
     Container fake;
-    typename Container::value_type t;
+    typename Container::value_type t = {};
     fake << t;
 
     typename Container::iterator i1 = fake.begin(), i2 = i1 + 1;
@@ -2489,13 +2504,12 @@ void testMapLikeStlIterators()
 
 void tst_Collections::constAndNonConstStlIterators()
 {
-    testListLikeStlIterators<QList<int> >();
-    testListLikeStlIterators<QStringList >();
-    testListLikeStlIterators<QVector<int> >();
-    testMapLikeStlIterators<QMap<QString, QString> >();
-    testMapLikeStlIterators<QMultiMap<QString, QString> >();
-    testMapLikeStlIterators<QHash<QString, QString> >();
-    testMapLikeStlIterators<QMultiHash<QString, QString> >();
+    testListLikeStlIterators<QList<int>>();
+    testListLikeStlIterators<QStringList>();
+    testMapLikeStlIterators<QMap<QString, QString>>();
+    testMapLikeStlIterators<QMultiMap<QString, QString>>();
+    testMapLikeStlIterators<QHash<QString, QString>>();
+    testMapLikeStlIterators<QMultiHash<QString, QString>>();
 }
 
 void tst_Collections::vector_stl_data()
@@ -2512,7 +2526,7 @@ void tst_Collections::vector_stl()
 {
     QFETCH(QStringList, elements);
 
-    QVector<QString> vector;
+    QList<QString> vector;
     for (int i = 0; i < elements.count(); ++i)
         vector << elements.at(i);
 
@@ -2528,9 +2542,9 @@ void tst_Collections::vector_stl()
         QCOMPARE(*it, vector[j]);
 
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
-    QCOMPARE(QVector<QString>::fromStdVector(stdVector), vector);
+    QCOMPARE(QList<QString>::fromStdVector(stdVector), vector);
 #endif
-    QCOMPARE(QVector<QString>(stdVector.begin(), stdVector.end()), vector);
+    QCOMPARE(QList<QString>(stdVector.begin(), stdVector.end()), vector);
 }
 
 void tst_Collections::list_stl_data()
@@ -2570,7 +2584,7 @@ void tst_Collections::list_stl()
 }
 
 template <typename T>
-T qtInit(T * = 0)
+T qtInit(T * = nullptr)
 {
     return T();
 }
@@ -2580,9 +2594,9 @@ void tst_Collections::q_init()
     QCOMPARE(qtInit<int>(), 0);
     QCOMPARE(qtInit<double>(), 0.0);
     QCOMPARE(qtInit<QString>(), QString());
-    QCOMPARE(qtInit<int *>(), static_cast<int *>(0));
-    QCOMPARE(qtInit<double *>(), static_cast<double *>(0));
-    QCOMPARE(qtInit<QString *>(), static_cast<QString *>(0));
+    QCOMPARE(qtInit<int *>(), static_cast<int *>(nullptr));
+    QCOMPARE(qtInit<double *>(), static_cast<double *>(nullptr));
+    QCOMPARE(qtInit<QString *>(), static_cast<QString *>(nullptr));
     QCOMPARE(qtInit<Pod>().i1, 0);
     QCOMPARE(qtInit<Pod>().i2, 0);
 }
@@ -2596,6 +2610,7 @@ class LessThanComparable
 {
 public:
     bool operator<(const LessThanComparable &) const { return true; }
+    bool operator==(const LessThanComparable &) const { return true; }
 };
 
 class EqualsComparable
@@ -2636,7 +2651,7 @@ void instantiateContainer()
     constIt = constContainer.end();
     constIt = constContainer.cend();
     container.constEnd();
-    Q_UNUSED(constIt)
+    Q_UNUSED(constIt);
 
     container.clear();
     container.contains(value);
@@ -2659,7 +2674,7 @@ void instantiateMutableIterationContainer()
     typename ContainerType::iterator it;
     it = container.begin();
     it = container.end();
-    Q_UNUSED(it)
+    Q_UNUSED(it);
 }
 
 template <typename ContainerType, typename ValueType>
@@ -2724,14 +2739,12 @@ void instantiatePairAssociative()
 {
     instantiateMutableIterationContainer<ContainerType, KeyType>();
 
-    typename ContainerType::iterator it;
-    typename ContainerType::const_iterator constIt;
     const KeyType key = KeyType();
     const ValueType value = ValueType();
     ContainerType container;
     const ContainerType constContainer(container);
 
-    it = container.insert(key, value);
+    auto it = container.insert(key, value);
     container.erase(it);
     container.find(key);
     container.constFind(key);
@@ -2783,10 +2796,6 @@ void tst_Collections::containerInstantiation()
         list.removeAll(value);
     }
 
-    //Instantiate QVector member functions.
-    typedef QVector<EqualsComparable> Vector;
-    instantiateRandomAccess<Vector, EqualsComparable>();
-
     //Instantiate QQueue member functions.
     typedef QQueue<EqualsComparable> Queue;
     instantiateRandomAccess<Queue, EqualsComparable>();
@@ -2824,7 +2833,7 @@ void tst_Collections::qtimerList()
 template <typename Container>
 void testContainerTypedefs(Container container)
 {
-    Q_UNUSED(container)
+    Q_UNUSED(container);
     { QVERIFY_TYPE(typename Container::value_type); }
     { QVERIFY_TYPE(typename Container::iterator); }
     { QVERIFY_TYPE(typename Container::const_iterator); }
@@ -2838,7 +2847,7 @@ void testContainerTypedefs(Container container)
 template <typename Container>
 void testPairAssociativeContainerTypedefs(Container container)
 {
-    Q_UNUSED(container)
+    Q_UNUSED(container);
 
 //  TODO: Not sure how to define value_type for our associative containers
 //    { QVERIFY_TYPE(typename Container::value_type); }
@@ -2860,7 +2869,7 @@ void testPairAssociativeContainerTypedefs(Container container)
 template <typename Container>
 void testSetContainerTypedefs(Container container)
 {
-    Q_UNUSED(container)
+    Q_UNUSED(container);
     { QVERIFY_TYPE(typename Container::iterator); }
     { QVERIFY_TYPE(typename Container::const_iterator); }
     { QVERIFY_TYPE(typename Container::reference); }
@@ -2877,7 +2886,6 @@ void testSetContainerTypedefs(Container container)
 */
 void tst_Collections::containerTypedefs()
 {
-    testContainerTypedefs(QVector<int>());
     testContainerTypedefs(QStack<int>());
     testContainerTypedefs(QList<int>());
     testContainerTypedefs(QQueue<int>());
@@ -2895,31 +2903,42 @@ class T2;
 
 void tst_Collections::forwardDeclared()
 {
-    { typedef QHash<Key1, T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
-    { typedef QMultiHash<Key1, T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
-    { typedef QMap<Key1, T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
-    { typedef QMultiMap<Key1, T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
-    { typedef QPair<T1, T2> C; C *x = 0; Q_UNUSED(x) }
-    { typedef QList<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
-    { typedef QVector<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) Q_UNUSED(i) Q_UNUSED(j) }
-    { typedef QStack<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) Q_UNUSED(i) Q_UNUSED(j) }
-    { typedef QQueue<T1> C; C *x = 0; C::iterator i; C::const_iterator j; Q_UNUSED(x) }
-    { typedef QSet<T1> C; C *x = 0; /* C::iterator i; */ C::const_iterator j; Q_UNUSED(x) }
+#define COMMA ,
+#define TEST(type) do { \
+        using C = type; \
+        C *x = nullptr; \
+        C::iterator i; \
+        C::const_iterator j; \
+        Q_UNUSED(x); \
+        Q_UNUSED(i); \
+        Q_UNUSED(j); \
+    } while (false)
+
+    TEST(QHash<Key1 COMMA T1>);
+    TEST(QMap<Key1 COMMA T1>);
+    TEST(QMultiMap<Key1 COMMA T1>);
+    TEST(QList<T1>);
+    TEST(QVector<T1>);
+    TEST(QStack<T1>);
+    TEST(QQueue<T1>);
+    TEST(QSet<T1>);
+#undef TEST
+#undef COMMA
+
+    {
+        using C = QPair<T1, T2>;
+        C *x = nullptr;
+        Q_UNUSED(x);
+    }
+
+    {
+        using C = QSet<T1>;
+        C *x = nullptr;
+        C::const_iterator j;
+        Q_UNUSED(x);
+        Q_UNUSED(j);
+    }
 }
-
-class alignas(4) Aligned4
-{
-    char i;
-public:
-    Aligned4(int i = 0) : i(i) {}
-
-    enum { PreferredAlignment = 4 };
-
-    inline bool operator==(const Aligned4 &other) const { return i == other.i; }
-    inline bool operator<(const Aligned4 &other) const { return i < other.i; }
-    friend inline size_t qHash(const Aligned4 &a) { return qHash(a.i); }
-};
-Q_STATIC_ASSERT(alignof(Aligned4) % 4 == 0);
 
 #if defined(Q_PROCESSOR_ARM)
 #  if defined(Q_COMPILER_ALIGNAS) && defined(__BIGGEST_ALIGNMENT__)
@@ -2933,19 +2952,30 @@ Q_STATIC_ASSERT(alignof(Aligned4) % 4 == 0);
 #  define BIGGEST_ALIGNMENT_TO_TEST 128
 #endif
 
-class alignas(BIGGEST_ALIGNMENT_TO_TEST) AlignedBiggest
+template <size_t Alignment>
+class alignas(Alignment) AlignedClass
 {
     char i;
+
 public:
-    AlignedBiggest(int i = 0) : i(i) {}
+    AlignedClass(int i = 0) : i(i) {}
 
-    enum { PreferredAlignment = BIGGEST_ALIGNMENT_TO_TEST };
+    enum { PreferredAlignment = Alignment };
 
-    inline bool operator==(const AlignedBiggest &other) const { return i == other.i; }
-    inline bool operator<(const AlignedBiggest &other) const { return i < other.i; }
-    friend inline int qHash(const AlignedBiggest &a) { return qHash(a.i); }
+    inline bool operator==(const AlignedClass &other) const { return i == other.i; }
+    inline bool operator<(const AlignedClass &other) const { return i < other.i; }
+    friend inline size_t qHash(const AlignedClass &a) { return qHash(a.i); }
 };
-Q_STATIC_ASSERT(alignof(AlignedBiggest) % BIGGEST_ALIGNMENT_TO_TEST == 0);
+
+using Aligned4 = AlignedClass<4>;
+static_assert(alignof(Aligned4) % 4 == 0);
+
+using AlignedStdMax = AlignedClass<alignof(std::max_align_t)>;
+static_assert(alignof(AlignedStdMax) % alignof(std::max_align_t) == 0);
+
+using AlignedBiggest = AlignedClass<BIGGEST_ALIGNMENT_TO_TEST>;
+static_assert(BIGGEST_ALIGNMENT_TO_TEST > alignof(std::max_align_t), "Not overly aligned");
+static_assert(alignof(AlignedBiggest) % BIGGEST_ALIGNMENT_TO_TEST == 0);
 
 template<typename C>
 void testVectorAlignment()
@@ -3002,17 +3032,28 @@ void testAssociativeContainerAlignment()
 
 void tst_Collections::alignment()
 {
-    testVectorAlignment<QVector<Aligned4> >();
-    testVectorAlignment<QVector<AlignedBiggest> >();
+    testVectorAlignment<QList<Aligned4> >();
+    testVectorAlignment<QList<AlignedStdMax> >();
+    testVectorAlignment<QList<AlignedBiggest> >();
+
     testContiguousCacheAlignment<QContiguousCache<Aligned4> >();
+    testContiguousCacheAlignment<QContiguousCache<AlignedStdMax> >();
     testContiguousCacheAlignment<QContiguousCache<AlignedBiggest> >();
+
+    // there's no guarentee that std::map supports over-aligned types
     testAssociativeContainerAlignment<QMap<Aligned4, Aligned4> >();
-    testAssociativeContainerAlignment<QMap<Aligned4, AlignedBiggest> >();
-    testAssociativeContainerAlignment<QMap<AlignedBiggest, Aligned4> >();
-    testAssociativeContainerAlignment<QMap<AlignedBiggest, AlignedBiggest> >();
+    testAssociativeContainerAlignment<QMap<Aligned4, AlignedStdMax> >();
+    testAssociativeContainerAlignment<QMap<AlignedStdMax, Aligned4> >();
+    testAssociativeContainerAlignment<QMap<AlignedStdMax, AlignedStdMax> >();
+
     testAssociativeContainerAlignment<QHash<Aligned4, Aligned4> >();
+    testAssociativeContainerAlignment<QHash<Aligned4, AlignedStdMax> >();
     testAssociativeContainerAlignment<QHash<Aligned4, AlignedBiggest> >();
+    testAssociativeContainerAlignment<QHash<AlignedStdMax, Aligned4> >();
+    testAssociativeContainerAlignment<QHash<AlignedStdMax, AlignedStdMax> >();
+    testAssociativeContainerAlignment<QHash<AlignedStdMax, AlignedBiggest> >();
     testAssociativeContainerAlignment<QHash<AlignedBiggest, Aligned4> >();
+    testAssociativeContainerAlignment<QHash<AlignedBiggest, AlignedStdMax> >();
     testAssociativeContainerAlignment<QHash<AlignedBiggest, AlignedBiggest> >();
 }
 
@@ -3289,6 +3330,18 @@ template<class Container> void insert_remove_loop_impl()
     for (int i = 0; i < t.count(); i++) {
         QCOMPARE(t[i], T(IntOrString(expect5[i])));
     }
+
+    t.clear();
+    t << T(IntOrString(1)) << T(IntOrString(2)) << T(IntOrString(3)) << T(IntOrString(4));
+    t.insert(2, 4, T(IntOrString(9)));
+    t.insert(2, 4, T(IntOrString(7)));
+
+    int expect6[] = { 1, 2, 7, 7, 7, 7, 9, 9, 9, 9, 3, 4 };
+    QCOMPARE(size_t(t.count()), sizeof(expect6)/sizeof(int));
+    for (int i = 0; i < t.count(); i++) {
+        QCOMPARE(t[i], T(IntOrString(expect6[i])));
+    }
+
 }
 
 
@@ -3297,25 +3350,25 @@ using ExtList = QList<T>;
 
 void tst_Collections::insert_remove_loop()
 {
-    insert_remove_loop_impl<ExtList<int> >();
-    insert_remove_loop_impl<ExtList<QString> >();
-    insert_remove_loop_impl<QVector<int> >();
-    insert_remove_loop_impl<QVector<QString> >();
-    insert_remove_loop_impl<QVarLengthArray<int> >();
-    insert_remove_loop_impl<QVarLengthArray<QString> >();
-    insert_remove_loop_impl<QVarLengthArray<int, 10> >();
-    insert_remove_loop_impl<QVarLengthArray<QString, 10> >();
-    insert_remove_loop_impl<QVarLengthArray<int, 3> >();
-    insert_remove_loop_impl<QVarLengthArray<QString, 3> >();
-    insert_remove_loop_impl<QVarLengthArray<int, 15> >();
-    insert_remove_loop_impl<QVarLengthArray<QString, 15> >();
+    insert_remove_loop_impl<ExtList<int>>();
+    insert_remove_loop_impl<ExtList<QString>>();
+    insert_remove_loop_impl<QList<int>>();
+    insert_remove_loop_impl<QList<QString>>();
+    insert_remove_loop_impl<QVarLengthArray<int>>();
+    insert_remove_loop_impl<QVarLengthArray<QString>>();
+    insert_remove_loop_impl<QVarLengthArray<int, 10>>();
+    insert_remove_loop_impl<QVarLengthArray<QString, 10>>();
+    insert_remove_loop_impl<QVarLengthArray<int, 3>>();
+    insert_remove_loop_impl<QVarLengthArray<QString, 3>>();
+    insert_remove_loop_impl<QVarLengthArray<int, 15>>();
+    insert_remove_loop_impl<QVarLengthArray<QString, 15>>();
 
-    insert_remove_loop_impl<ExtList<std::string> >();
-    insert_remove_loop_impl<QVector<std::string> >();
-    insert_remove_loop_impl<QVarLengthArray<std::string> >();
-    insert_remove_loop_impl<QVarLengthArray<std::string, 10> >();
-    insert_remove_loop_impl<QVarLengthArray<std::string, 3> >();
-    insert_remove_loop_impl<QVarLengthArray<std::string, 15> >();
+    insert_remove_loop_impl<ExtList<std::string>>();
+    insert_remove_loop_impl<QList<std::string>>();
+    insert_remove_loop_impl<QVarLengthArray<std::string>>();
+    insert_remove_loop_impl<QVarLengthArray<std::string, 10>>();
+    insert_remove_loop_impl<QVarLengthArray<std::string, 3>>();
+    insert_remove_loop_impl<QVarLengthArray<std::string, 15>>();
 }
 
 

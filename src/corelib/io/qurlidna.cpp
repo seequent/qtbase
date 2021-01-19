@@ -45,6 +45,15 @@
 
 #include <algorithm>
 
+/* NOTE: IDNA 2003 is based on Unicode 3.2
+
+   As a result, the assorted Unicode data below snould *not* be updated as part
+   of our routine updates to UCS (see ../text/qt_attributions.json and
+   util/unicode/).  See QTBUG-85323 and RFCs 3491, 3454.
+
+   TODO (QTBUG-85371): Update to IDNA 2008.
+*/
+
 QT_BEGIN_NAMESPACE
 
 // needed by the punycode encoder/decoder
@@ -1525,7 +1534,7 @@ namespace {
                 || (uc >= 0xE000 && uc <= 0xF8FF)
                 || (uc >= 0xFDD0 && uc <= 0xFDEF)
                 || uc == 0xFEFF
-                || (uc >= 0xFFF9 && uc <= 0xFFFF))) {
+                || uc >= 0xFFF9)) {
                 return false;
             }
         } else {
@@ -2078,7 +2087,7 @@ Q_AUTOTEST_EXPORT bool qt_nameprep(QString *source, int from)
 
     // Normalize to Unicode 3.2 form KC
     extern void qt_string_normalize(QString *data, QString::NormalizationForm mode,
-                                    QChar::UnicodeVersion version, int from);
+                                    QChar::UnicodeVersion version, qsizetype from);
     qt_string_normalize(source, QString::NormalizationForm_KC, QChar::Unicode_3_2,
                         firstNonAscii > from ? firstNonAscii - 1 : from);
 
@@ -2539,8 +2548,7 @@ QString qt_ACE_do(QStringView domain, AceOperation op, AceLeadingDot dot)
             // ACE form domains contain only ASCII characters, but we can't consider them simple
             // is this an ACE form?
             // the shortest valid ACE domain is 6 characters long (U+0080 would be 1, but it's not allowed)
-            static const ushort acePrefixUtf16[] = { 'x', 'n', '-', '-' };
-            if (memcmp(result.constData() + prevLen, acePrefixUtf16, sizeof acePrefixUtf16) == 0)
+            if (QStringView{result}.sliced(prevLen).startsWith(u"xn--"))
                 simple = false;
         }
 

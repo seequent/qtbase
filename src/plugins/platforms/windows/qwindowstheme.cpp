@@ -77,7 +77,7 @@
 #include <QtGui/qpixmapcache.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <QtGui/private/qabstractfileiconengine_p.h>
-#include <QtFontDatabaseSupport/private/qwindowsfontdatabase_p.h>
+#include <QtGui/private/qwindowsfontdatabase_p.h>
 #include <private/qhighdpiscaling_p.h>
 #include <private/qsystemlibrary_p.h>
 #include <private/qwinregistry_p.h>
@@ -533,7 +533,7 @@ void QWindowsTheme::refreshPalettes()
         return;
     const bool light =
         !QWindowsContext::isDarkMode()
-        || (QWindowsIntegration::instance()->options() & QWindowsIntegration::DarkModeStyle) == 0;
+        || !QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeStyle);
     m_palettes[SystemPalette] = new QPalette(systemPalette(light));
     m_palettes[ToolTipPalette] = new QPalette(toolTipPalette(*m_palettes[SystemPalette], light));
     m_palettes[MenuPalette] = new QPalette(menuPalette(*m_palettes[SystemPalette], light));
@@ -566,18 +566,23 @@ void QWindowsTheme::refresh()
 }
 
 #ifndef QT_NO_DEBUG_STREAM
-QDebug operator<<(QDebug d, const LOGFONT &lf); // in platformsupport
-
 QDebug operator<<(QDebug d, const NONCLIENTMETRICS &m)
 {
     QDebugStateSaver saver(d);
     d.nospace();
     d.noquote();
     d << "NONCLIENTMETRICS(iMenu=" << m.iMenuWidth  << 'x' << m.iMenuHeight
-      << ", lfCaptionFont=" << m.lfCaptionFont << ", lfSmCaptionFont="
-      << m.lfSmCaptionFont << ", lfMenuFont=" << m.lfMenuFont
-      <<  ", lfMessageFont=" << m.lfMessageFont << ", lfStatusFont="
-      << m.lfStatusFont << ')';
+      << ", lfCaptionFont=";
+    QWindowsFontDatabase::debugFormat(d, m.lfCaptionFont);
+    d << ", lfSmCaptionFont=";
+    QWindowsFontDatabase::debugFormat(d, m.lfSmCaptionFont);
+    d << ", lfMenuFont=";
+    QWindowsFontDatabase::debugFormat(d, m.lfMenuFont);
+    d <<  ", lfMessageFont=";
+    QWindowsFontDatabase::debugFormat(d, m.lfMessageFont);
+    d <<", lfStatusFont=";
+    QWindowsFontDatabase::debugFormat(d, m.lfStatusFont);
+    d << ')';
     return d;
 }
 #endif // QT_NO_DEBUG_STREAM
@@ -835,7 +840,7 @@ class FakePointer
 {
 public:
 
-    Q_STATIC_ASSERT_X(sizeof(T) <= sizeof(void *), "FakePointers can only go that far.");
+    static_assert(sizeof(T) <= sizeof(void *), "FakePointers can only go that far.");
 
     static FakePointer *create(T thing)
     {
@@ -871,8 +876,8 @@ static QPixmap pixmapFromShellImageList(int iImageList, const SHFILEINFO &info)
     }
     imageList->Release();
 #else
-    Q_UNUSED(iImageList)
-    Q_UNUSED(info)
+    Q_UNUSED(iImageList);
+    Q_UNUSED(info);
 #endif // USE_IIMAGELIST
     return result;
 }
@@ -883,7 +888,7 @@ public:
     explicit QWindowsFileIconEngine(const QFileInfo &info, QPlatformTheme::IconOptions opts) :
         QAbstractFileIconEngine(info, opts) {}
 
-    QList<QSize> availableSizes(QIcon::Mode = QIcon::Normal, QIcon::State = QIcon::Off) const override
+    QList<QSize> availableSizes(QIcon::Mode = QIcon::Normal, QIcon::State = QIcon::Off) override
     { return QWindowsTheme::instance()->availableFileIconSizes(); }
 
 protected:

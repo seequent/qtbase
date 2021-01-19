@@ -42,7 +42,9 @@
 #include <QtCore/QDir>
 #include <QtCore/QTemporaryDir>
 
-#include <QtTest/QtTest>
+#include <QTest>
+
+#include <QProcess>
 
 #include <private/cycle_p.h>
 
@@ -221,13 +223,20 @@ bool compareOutput(const QString &logger, const QString &subdir,
 
         if (actualLineBA.startsWith("Config: Using QtTest library") // Text build string
             || actualLineBA.startsWith("    <QtBuild") // XML, Light XML build string
-            || (actualLineBA.startsWith("    <property value=") &&  actualLineBA.endsWith("name=\"QtBuild\"/>"))) { // XUNIT-XML build string
+            || (actualLineBA.startsWith("    <property name=\"QtBuild\" value="))) { // JUnit-XML build string
             continue;
         }
 
         QString actualLine = QString::fromLatin1(actualLineBA);
         QString expectedLine = QString::fromLatin1(expected.at(i));
         expectedLine.replace(qtVersionPlaceHolder(), qtVersion);
+
+        if (logger.endsWith(QLatin1String("junitxml"))) {
+            static QRegularExpression timestampRegex("timestamp=\".*?\"");
+            actualLine.replace(timestampRegex, "timestamp=\"@TEST_START_TIME@\"");
+            static QRegularExpression timeRegex("time=\".*?\"");
+            actualLine.replace(timeRegex, "time=\"@TEST_DURATION@\"");
+        }
 
         // Special handling for ignoring _FILE_ and _LINE_ if logger is teamcity
         if (logger.endsWith(QLatin1String("teamcity"))) {
@@ -708,7 +717,6 @@ bool TestLogger::shouldIgnoreTest(const QString &test) const
             || test == "multiexec"
             || test == "qexecstringlist"
             || test == "benchliboptions"
-            || test == "blacklisted"
             || test == "printdatatags"
             || test == "printdatatagswithglobaltags"
             || test == "silent")
@@ -743,7 +751,7 @@ bool TestLogger::shouldIgnoreTest(const QString &test) const
     return false;
 }
 
-using TestLoggers = QVector<TestLogger>;
+using TestLoggers = QList<TestLogger>;
 
 // ----------------------- Output checking -----------------------
 
@@ -790,7 +798,7 @@ void checkErrorOutput(const QString &test, const QByteArray &errorOutput)
         return;
 #endif
 
-    INFO(errorOutput);
+    INFO(errorOutput.toStdString());
     REQUIRE(errorOutput.isEmpty());
 }
 
@@ -804,7 +812,7 @@ QByteArray sanitizeOutput(const QString &test, const QByteArray &output)
     if (test == "crashes") {
 #if !defined(Q_OS_WIN)
         // Remove digits of times
-        const QLatin1String timePattern("Function time:");
+        const QByteArray timePattern("Function time:");
         int timePos = actual.indexOf(timePattern);
         if (timePos >= 0) {
             timePos += timePattern.size();
@@ -869,6 +877,7 @@ void checkTestOutput(const QString &test, const TestLogger &logger, const QByteA
         return true;
     };
 
+    bool foundExpectionFile = false;
     for (int version = 0; !expectationMatched; ++version) {
         // Look for a test expectation file. Most tests only have a single
         // expectation file, while some have multiple versions that should
@@ -889,12 +898,14 @@ void checkTestOutput(const QString &test, const TestLogger &logger, const QByteA
             } else {
                 // No more versions found, and still no match
                 assert(!expectationMatched);
-                outputMessage += "Could not find any expectation files for subtest '" + test + "'";
+                if (!foundExpectionFile)
+                    outputMessage += "Could not find any expectation files for subtest '" + test + "'";
                 break;
             }
         }
 
         // Found expected result
+        foundExpectionFile = true;
         QString errorMessage;
         auto expectedLines = splitLines(expected);
         if (compareOutput(logger.shortName(), test, actual, actualLines, expectedLines, &errorMessage)) {
@@ -913,7 +924,7 @@ void checkTestOutput(const QString &test, const TestLogger &logger, const QByteA
         }
     }
 
-    INFO(outputMessage);
+    INFO(outputMessage.toStdString());
     CHECK(expectationMatched);
 }
 
@@ -934,7 +945,7 @@ static QProcessEnvironment testEnvironment()
                 || key == "QEMU_SET_ENV" || key == "QEMU_LD_PREFIX" // Required for QEMU
 #  if !defined(Q_OS_MACOS)
                 || key == "DISPLAY" || key == "XAUTHLOCALHOSTNAME"
-                || key.startsWith("XDG_")
+                || key.startsWith("XDG_") || key == "XAUTHORITY"
 #  endif // !Q_OS_MACOS
 #endif // Q_OS_UNIX
 #ifdef __COVERAGESCANNER__
@@ -968,13 +979,13 @@ TestProcessResult runTestProcess(const QString &test, const QStringList &argumen
 {
     QProcessEnvironment environment = testEnvironment();
 
-    const bool crashes = test == "assert" || test == "exceptionthrow"
+    const bool expectedCrash = test == "assert" || test == "exceptionthrow"
         || test == "fetchbogus" || test == "crashedterminate"
         || test == "faildatatype" || test == "failfetchtype"
         || test == "crashes" || test == "silent"
         || test == "blacklisted" || test == "watchdog";
 
-    if (crashes) {
+    if (expectedCrash) {
         environment.insert("QTEST_DISABLE_CORE_DUMP", "1");
         environment.insert("QTEST_DISABLE_STACK_DUMP", "1");
         if (test == "watchdog")
@@ -988,15 +999,25 @@ TestProcessResult runTestProcess(const QString &test, const QStringList &argumen
 
     CAPTURE(command);
     INFO(environment.toStringList().join('\n').toStdString());
+
+    bool startedSuccessfully = process.waitForStarted();
+    bool finishedSuccessfully = process.waitForFinished();
+
     CAPTURE(process.errorString());
+    REQUIRE(startedSuccessfully);
+    REQUIRE(finishedSuccessfully);
 
-    REQUIRE(process.waitForStarted());
-    REQUIRE(process.waitForFinished());
+    auto standardOutput = process.readAllStandardOutput();
+    auto standardError = process.readAllStandardError();
 
-    if (!crashes)
-         REQUIRE(process.exitStatus() == QProcess::NormalExit);
+    auto processCrashed = process.exitStatus() == QProcess::CrashExit;
+    if (!expectedCrash && processCrashed) {
+        INFO(standardOutput.toStdString());
+        INFO(standardError.toStdString());
+        REQUIRE(!processCrashed);
+    }
 
-    return { process.exitCode(), process.readAllStandardOutput(), process.readAllStandardError() };
+    return { process.exitCode(), standardOutput, standardError };
 }
 
 /*
@@ -1211,7 +1232,7 @@ int main(int argc, char **argv)
             rebaseMode = RebaseAll;
 
         args.erase(rebaseArgument);
-        argc = args.size();
+        argc = int(args.size());
         argv = const_cast<char**>(&args[0]);
     }
 
@@ -1241,6 +1262,8 @@ int main(int argc, char **argv)
         qDebug() << "Test outputs left in" << qUtf8Printable(testOutputDir.path());
         testOutputDir.setAutoRemove(false);
     }
+
+    return result;
 #endif
 }
 

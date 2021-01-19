@@ -88,7 +88,7 @@ QT_END_NAMESPACE
 // Window system dependent definitions
 
 
-#if defined(Q_OS_WIN)
+#if defined(Q_OS_WIN) || defined(Q_QDOC)
 #  include <QtGui/qwindowdefs_win.h>
 #endif // Q_OS_WIN
 
@@ -101,10 +101,7 @@ typedef QT_PREPEND_NAMESPACE(quintptr) WId;
 
 QT_BEGIN_NAMESPACE
 
-template<class K, class V> class QHash;
 typedef QHash<WId, QWidget *> QWidgetMapper;
-
-template<class V> class QSet;
 typedef QSet<QWidget *> QWidgetSet;
 
 QT_END_NAMESPACE

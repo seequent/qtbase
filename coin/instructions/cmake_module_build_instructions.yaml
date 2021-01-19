@@ -8,7 +8,8 @@ instructions:
     directory: "{{.BuildDir}}"
   - type: EnvironmentVariable
     variableName: COIN_CMAKE_ARGS
-    variableValue: "-DBUILD_TESTING=OFF {{.SourceDir}}"
+    # The lack of space between the non qtbase configure args and the rest of the args is important!
+    variableValue: "{{.Env.NON_QTBASE_CONFIGURE_ARGS}} -DQT_BUILD_TESTS=OFF -DCMAKE_AUTOGEN_VERBOSE=ON {{.SourceDir}}"
   - !include "{{qt/qtbase}}/call_cmake.yaml"
   - type: ExecuteCommand
     command: "{{.Env.ENV_PREFIX}} cmake --build . --parallel -v"
@@ -37,3 +38,8 @@ instructions:
     transferType: UploadModuleBuildArtifact
     maxTimeInSeconds: 1200
     maxTimeBetweenOutput: 1200
+  - type: EnvironmentVariable
+    variableName: COIN_CONFIG_TYPE
+    variableValue: "Host"
+  - !include "{{qt/qtbase}}/qmake/get_qmake_location_host.yaml"
+  - !include "{{qt/qtbase}}/qmake_examples/build_qmake_examples_instructions.yaml"

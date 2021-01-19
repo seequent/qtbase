@@ -317,11 +317,12 @@ struct QTextureData
     int y2;
     qsizetype bytesPerLine;
     QImage::Format format;
-    const QVector<QRgb> *colorTable;
+    const QList<QRgb> *colorTable;
     bool hasAlpha;
     enum Type {
         Plain,
-        Tiled
+        Tiled,
+        Pattern
     };
     Type type;
     int const_alpha;
@@ -349,8 +350,8 @@ struct QSpanData
         ConicalGradient,
         Texture
     } type : 8;
-    int txop : 8;
-    int fast_matrix : 1;
+    signed int txop : 8;
+    uint fast_matrix : 1;
     bool bilinear;
     QImage *tempImage;
     QRgba64 solidColor;
@@ -605,7 +606,7 @@ public:
     }
 };
 
-static Q_ALWAYS_INLINE uint INTERPOLATE_PIXEL_255(uint x, uint a, uint y, uint b) {
+static inline uint INTERPOLATE_PIXEL_255(uint x, uint a, uint y, uint b) {
     uint t = (x & 0xff00ff) * a + (y & 0xff00ff) * b;
     t = (t + ((t >> 8) & 0xff00ff) + 0x800080) >> 8;
     t &= 0xff00ff;
@@ -619,7 +620,7 @@ static Q_ALWAYS_INLINE uint INTERPOLATE_PIXEL_255(uint x, uint a, uint y, uint b
 
 #if Q_PROCESSOR_WORDSIZE == 8 // 64-bit versions
 
-static Q_ALWAYS_INLINE uint INTERPOLATE_PIXEL_256(uint x, uint a, uint y, uint b) {
+static inline uint INTERPOLATE_PIXEL_256(uint x, uint a, uint y, uint b) {
     quint64 t = (((quint64(x)) | ((quint64(x)) << 24)) & 0x00ff00ff00ff00ff) * a;
     t += (((quint64(y)) | ((quint64(y)) << 24)) & 0x00ff00ff00ff00ff) * b;
     t >>= 8;
@@ -627,7 +628,7 @@ static Q_ALWAYS_INLINE uint INTERPOLATE_PIXEL_256(uint x, uint a, uint y, uint b
     return (uint(t)) | (uint(t >> 24));
 }
 
-static Q_ALWAYS_INLINE uint BYTE_MUL(uint x, uint a) {
+static inline uint BYTE_MUL(uint x, uint a) {
     quint64 t = (((quint64(x)) | ((quint64(x)) << 24)) & 0x00ff00ff00ff00ff) * a;
     t = (t + ((t >> 8) & 0xff00ff00ff00ff) + 0x80008000800080) >> 8;
     t &= 0x00ff00ff00ff00ff;
@@ -636,7 +637,7 @@ static Q_ALWAYS_INLINE uint BYTE_MUL(uint x, uint a) {
 
 #else // 32-bit versions
 
-static Q_ALWAYS_INLINE uint INTERPOLATE_PIXEL_256(uint x, uint a, uint y, uint b) {
+static inline uint INTERPOLATE_PIXEL_256(uint x, uint a, uint y, uint b) {
     uint t = (x & 0xff00ff) * a + (y & 0xff00ff) * b;
     t >>= 8;
     t &= 0xff00ff;
@@ -647,7 +648,7 @@ static Q_ALWAYS_INLINE uint INTERPOLATE_PIXEL_256(uint x, uint a, uint y, uint b
     return x;
 }
 
-static Q_ALWAYS_INLINE uint BYTE_MUL(uint x, uint a) {
+static inline uint BYTE_MUL(uint x, uint a) {
     uint t = (x & 0xff00ff) * a;
     t = (t + ((t >> 8) & 0xff00ff) + 0x800080) >> 8;
     t &= 0xff00ff;
@@ -660,7 +661,7 @@ static Q_ALWAYS_INLINE uint BYTE_MUL(uint x, uint a) {
 }
 #endif
 
-static Q_ALWAYS_INLINE void blend_pixel(quint32 &dst, const quint32 src)
+static inline void blend_pixel(quint32 &dst, const quint32 src)
 {
     if (src >= 0xff000000)
         dst = src;
@@ -668,7 +669,7 @@ static Q_ALWAYS_INLINE void blend_pixel(quint32 &dst, const quint32 src)
         dst = src + BYTE_MUL(dst, qAlpha(~src));
 }
 
-static Q_ALWAYS_INLINE void blend_pixel(quint32 &dst, const quint32 src, const int const_alpha)
+static inline void blend_pixel(quint32 &dst, const quint32 src, const int const_alpha)
 {
     if (const_alpha == 255)
         return blend_pixel(dst, src);
@@ -679,7 +680,7 @@ static Q_ALWAYS_INLINE void blend_pixel(quint32 &dst, const quint32 src, const i
 }
 
 #if defined(__SSE2__)
-static Q_ALWAYS_INLINE uint interpolate_4_pixels_sse2(__m128i vt, __m128i vb, uint distx, uint disty)
+static inline uint Q_DECL_VECTORCALL interpolate_4_pixels_sse2(__m128i vt, __m128i vb, uint distx, uint disty)
 {
     // First interpolate top and bottom pixels in parallel.
     vt = _mm_unpacklo_epi8(vt, _mm_setzero_si128());
@@ -720,7 +721,7 @@ static inline uint interpolate_4_pixels(const uint t[], const uint b[], uint dis
 static constexpr inline bool hasFastInterpolate4() { return true; }
 
 #elif defined(__ARM_NEON__)
-static Q_ALWAYS_INLINE uint interpolate_4_pixels_neon(uint32x2_t vt32, uint32x2_t vb32, uint distx, uint disty)
+static inline uint interpolate_4_pixels_neon(uint32x2_t vt32, uint32x2_t vb32, uint distx, uint disty)
 {
     uint16x8_t vt16 = vmovl_u8(vreinterpret_u8_u32(vt32));
     uint16x8_t vb16 = vmovl_u8(vreinterpret_u8_u32(vb32));
@@ -844,24 +845,24 @@ static inline QRgba64 interpolate_4_pixels_rgb64(const QRgba64 t[], const QRgba6
 }
 #endif // __SSE2__
 
-static Q_ALWAYS_INLINE uint BYTE_MUL_RGB16(uint x, uint a) {
+static inline uint BYTE_MUL_RGB16(uint x, uint a) {
     a += 1;
     uint t = (((x & 0x07e0)*a) >> 8) & 0x07e0;
     t |= (((x & 0xf81f)*(a>>2)) >> 6) & 0xf81f;
     return t;
 }
 
-static Q_ALWAYS_INLINE uint BYTE_MUL_RGB16_32(uint x, uint a) {
+static inline uint BYTE_MUL_RGB16_32(uint x, uint a) {
     uint t = (((x & 0xf81f07e0) >> 5)*a) & 0xf81f07e0;
     t |= (((x & 0x07e0f81f)*a) >> 5) & 0x07e0f81f;
     return t;
 }
 
 // qt_div_255 is a fast rounded division by 255 using an approximation that is accurate for all positive 16-bit integers
-static Q_DECL_CONSTEXPR Q_ALWAYS_INLINE int qt_div_255(int x) { return (x + (x>>8) + 0x80) >> 8; }
-static Q_DECL_CONSTEXPR Q_ALWAYS_INLINE uint qt_div_257_floor(uint x) { return  (x - (x >> 8)) >> 8; }
-static Q_DECL_CONSTEXPR Q_ALWAYS_INLINE uint qt_div_257(uint x) { return qt_div_257_floor(x + 128); }
-static Q_DECL_CONSTEXPR Q_ALWAYS_INLINE uint qt_div_65535(uint x) { return (x + (x>>16) + 0x8000U) >> 16; }
+static constexpr inline int qt_div_255(int x) { return (x + (x>>8) + 0x80) >> 8; }
+static constexpr inline uint qt_div_257_floor(uint x) { return  (x - (x >> 8)) >> 8; }
+static constexpr inline uint qt_div_257(uint x) { return qt_div_257_floor(x + 128); }
+static constexpr inline uint qt_div_65535(uint x) { return (x + (x>>16) + 0x8000U) >> 16; }
 
 template <class T> inline void qt_memfill_template(T *dest, T color, qsizetype count)
 {
@@ -1008,7 +1009,7 @@ inline uint comp_func_Plus_one_pixel(uint d, const uint s)
 #undef AMIX
 
 // must be multiple of 4 for easier SIMD implementations
-static Q_CONSTEXPR int BufferSize = 2048;
+static constexpr int BufferSize = 2048;
 
 // A buffer of intermediate results used by simple bilinear scaling.
 struct IntermediateBuffer

@@ -4,7 +4,7 @@
 ## BundledPcre2 Generic Library:
 #####################################################################
 
-qt_add_3rdparty_library(BundledPcre2
+qt_internal_add_3rdparty_library(BundledPcre2
     QMAKE_LIB_NAME pcre2
     STATIC
     SOURCES
@@ -52,25 +52,34 @@ qt_set_symbol_visibility_hidden(BundledPcre2)
 ## Scopes:
 #####################################################################
 
-qt_extend_target(BundledPcre2 CONDITION QNX OR UIKIT
+qt_internal_extend_target(BundledPcre2 CONDITION QNX OR UIKIT
     DEFINES
         PCRE2_DISABLE_JIT
 )
 
-qt_extend_target(BundledPcre2 CONDITION (TEST_architecture_arch STREQUAL "arm") AND WIN32
+qt_internal_extend_target(BundledPcre2 CONDITION (TEST_architecture_arch STREQUAL "arm") AND WIN32
     DEFINES
         PCRE2_DISABLE_JIT
 )
 
-qt_extend_target(BundledPcre2 CONDITION (TEST_architecture_arch STREQUAL "arm64") AND WIN32
+qt_internal_extend_target(BundledPcre2 CONDITION (TEST_architecture_arch STREQUAL "arm64") AND WIN32
     DEFINES
         PCRE2_DISABLE_JIT
 )
 
-qt_extend_target(BundledPcre2 CONDITION WIN32
+qt_internal_extend_target(BundledPcre2 CONDITION MACOS AND (TEST_architecture_arch STREQUAL "arm64")
+    DEFINES
+        PCRE2_DISABLE_JIT
+)
+
+qt_internal_extend_target(BundledPcre2 CONDITION WIN32
     PUBLIC_DEFINES
         PCRE2_STATIC
 )
 
-#### Keys ignored in scope 7:.:.:pcre2.pri:QT_FEATURE_intelcet:
+#### Keys ignored in scope 8:.:.:pcre2.pri:QT_FEATURE_intelcet:
 # QMAKE_CFLAGS = "$$QMAKE_CFLAGS_SHSTK"
+
+# special case begin
+qt_internal_apply_intel_cet(BundledPcre2 PRIVATE)
+# special case end

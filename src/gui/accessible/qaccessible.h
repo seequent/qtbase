@@ -46,10 +46,10 @@
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qglobal.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qobject.h>
 #include <QtCore/qrect.h>
 #include <QtCore/qset.h>
-#include <QtCore/qvector.h>
 #include <QtCore/qvariant.h>
 #include <QtGui/qcolor.h>
 #include <QtGui/qevent.h>
@@ -216,6 +216,10 @@ public:
 
         State() {
             memset(this, 0, sizeof(State));
+        }
+        friend inline bool operator==(const QAccessible::State &first, const QAccessible::State &second)
+        {
+            return memcmp(&first, &second, sizeof(QAccessible::State)) == 0;
         }
     };
 
@@ -437,8 +441,6 @@ private:
     friend class QAccessibleCache;
 };
 
-Q_GUI_EXPORT bool operator==(const QAccessible::State &first, const QAccessible::State &second);
-
 Q_DECLARE_OPERATORS_FOR_FLAGS(QAccessible::Relation)
 
 class QAccessible2Interface;
@@ -463,7 +465,8 @@ public:
     virtual QWindow *window() const;
 
     // relations
-    virtual QVector<QPair<QAccessibleInterface*, QAccessible::Relation> > relations(QAccessible::Relation match = QAccessible::AllRelations) const;
+    virtual QList<QPair<QAccessibleInterface *, QAccessible::Relation>>
+    relations(QAccessible::Relation match = QAccessible::AllRelations) const;
     virtual QAccessibleInterface *focusChild() const;
 
     virtual QAccessibleInterface *childAt(int x, int y) const = 0;

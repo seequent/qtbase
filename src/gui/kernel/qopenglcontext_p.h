@@ -174,7 +174,7 @@ public:
         // Have to use our own mutex here, not the group's, since
         // m_groups has to be protected too against any concurrent access.
         QMutexLocker locker(&m_mutex);
-        T *resource = static_cast<T *>(group->d_func()->m_resources.value(this, 0));
+        T *resource = static_cast<T *>(group->d_func()->m_resources.value(this, nullptr));
         if (!resource) {
             resource = new T(context);
             insert(context, resource);
@@ -191,6 +191,7 @@ private:
 class QPaintEngineEx;
 class QOpenGLFunctions;
 class QOpenGLTextureHelper;
+class QOpenGLVertexArrayObjectHelper;
 
 class Q_GUI_EXPORT QOpenGLContextVersionFunctionHelper
 {
@@ -211,6 +212,8 @@ public:
         , functions(nullptr)
         , textureFunctions(nullptr)
         , versionFunctions(nullptr)
+        , vaoHelper(nullptr)
+        , vaoHelperDestroyCallback(nullptr)
         , max_texture_size(-1)
         , workaround_brokenFBOReadBack(false)
         , workaround_brokenTexSubImage(false)
@@ -231,6 +234,8 @@ public:
         delete versionFunctions;
     }
 
+    void adopt(QPlatformOpenGLContext *);
+
     QSurfaceFormat requestedFormat;
     QPlatformOpenGLContext *platformGLContext;
     QOpenGLContext *shareContext;
@@ -242,6 +247,9 @@ public:
     QOpenGLTextureHelper* textureFunctions;
     std::function<void()> textureFunctionsDestroyCallback;
     QOpenGLContextVersionFunctionHelper *versionFunctions;
+    QOpenGLVertexArrayObjectHelper *vaoHelper;
+    using QOpenGLVertexArrayObjectHelperDestroyCallback_t = void (*)(QOpenGLVertexArrayObjectHelper *);
+    QOpenGLVertexArrayObjectHelperDestroyCallback_t vaoHelperDestroyCallback;
 
     GLint max_texture_size;
 
@@ -258,7 +266,6 @@ public:
     // Saves us from querying the driver for the current FBO in most paths.
     QOpenGLFramebufferObject *qgl_current_fbo;
 
-    QVariant nativeHandle;
     GLuint defaultFboRedirect;
 
     static QOpenGLContext *setCurrentContext(QOpenGLContext *context);

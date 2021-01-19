@@ -61,6 +61,8 @@
 #include "qnetworkcookiejar.h"
 #include "qnetconmonitor_p.h"
 
+#include "qnetworkreplyimpl_p.h"
+
 #include <string.h>             // for strchr
 
 QT_BEGIN_NAMESPACE
@@ -670,12 +672,10 @@ void QNetworkReplyHttpImplPrivate::postRequest(const QNetworkRequest &newHttpReq
     }
 #endif
 
-    auto redirectPolicy = QNetworkRequest::ManualRedirectPolicy;
+    auto redirectPolicy = QNetworkRequest::NoLessSafeRedirectPolicy;
     const QVariant value = newHttpRequest.attribute(QNetworkRequest::RedirectPolicyAttribute);
     if (value.isValid())
         redirectPolicy = qvariant_cast<QNetworkRequest::RedirectPolicy>(value);
-    else if (newHttpRequest.attribute(QNetworkRequest::FollowRedirectsAttribute).toBool())
-        redirectPolicy = QNetworkRequest::NoLessSafeRedirectPolicy;
 
     httpRequest.setRedirectPolicy(redirectPolicy);
 
@@ -755,8 +755,10 @@ void QNetworkReplyHttpImplPrivate::postRequest(const QNetworkRequest &newHttpReq
     if (newHttpRequest.attribute(QNetworkRequest::HttpPipeliningAllowedAttribute).toBool())
         httpRequest.setPipeliningAllowed(true);
 
-    if (request.attribute(QNetworkRequest::Http2AllowedAttribute).toBool())
-        httpRequest.setHTTP2Allowed(true);
+    if (auto allowed = request.attribute(QNetworkRequest::Http2AllowedAttribute);
+        allowed.isValid() && allowed.canConvert<bool>()) {
+        httpRequest.setHTTP2Allowed(allowed.value<bool>());
+    }
 
     if (request.attribute(QNetworkRequest::Http2DirectAttribute).toBool()) {
         // Intentionally mutually exclusive - cannot be both direct and 'allowed'
@@ -772,6 +774,14 @@ void QNetworkReplyHttpImplPrivate::postRequest(const QNetworkRequest &newHttpReq
     if (request.attribute(QNetworkRequest::EmitAllUploadProgressSignalsAttribute).toBool())
         emitAllUploadProgressSignals = true;
 
+    // For internal use/testing
+    auto ignoreDownloadRatio =
+            request.attribute(QNetworkRequest::Attribute(QNetworkRequest::User - 1));
+    if (!ignoreDownloadRatio.isNull() && ignoreDownloadRatio.canConvert<QByteArray>()
+        && ignoreDownloadRatio.toByteArray() == "__qdecompresshelper_ignore_download_ratio") {
+        httpRequest.setIgnoreDecompressionRatio(true);
+    }
+
     httpRequest.setPeerVerifyName(newHttpRequest.peerVerifyName());
 
     // Create the HTTP thread delegate
@@ -781,7 +791,17 @@ void QNetworkReplyHttpImplPrivate::postRequest(const QNetworkRequest &newHttpReq
 
     // For the synchronous HTTP, this is the normal way the delegate gets deleted
     // For the asynchronous HTTP this is a safety measure, the delegate deletes itself when HTTP is finished
-    QObject::connect(thread, SIGNAL(finished()), delegate, SLOT(deleteLater()));
+    QMetaObject::Connection threadFinishedConnection =
+            QObject::connect(thread, SIGNAL(finished()), delegate, SLOT(deleteLater()));
+
+    // QTBUG-88063: When 'delegate' is deleted the connection will be added to 'thread''s orphaned
+    // connections list. This orphaned list will be cleaned up next time 'thread' emits a signal,
+    // unfortunately that's the finished signal. It leads to a soft-leak so we do this to disconnect
+    // it on deletion so that it cleans up the orphan immediately.
+    QObject::connect(delegate, &QObject::destroyed, delegate, [threadFinishedConnection]() {
+        if (bool(threadFinishedConnection))
+            QObject::disconnect(threadFinishedConnection);
+    });
 
     // Set the properties it needs
     delegate->httpRequest = httpRequest;
@@ -1155,6 +1175,26 @@ void QNetworkReplyHttpImplPrivate::onRedirected(const QUrl &redirectUrl, int htt
     redirectRequest = createRedirectRequest(originalRequest, url, maxRedirectsRemaining);
     operation = getRedirectOperation(operation, httpStatus);
 
+    // Clear stale headers, the relevant ones get set again later
+    httpRequest.clearHeaders();
+    if (operation == QNetworkAccessManager::GetOperation
+        || operation == QNetworkAccessManager::HeadOperation) {
+        // possibly changed from not-GET/HEAD to GET/HEAD, make sure to get rid of upload device
+        uploadByteDevice.reset();
+        uploadByteDevicePosition = 0;
+        if (outgoingData) {
+            QObject::disconnect(outgoingData, SIGNAL(readyRead()), q,
+                                SLOT(_q_bufferOutgoingData()));
+            QObject::disconnect(outgoingData, SIGNAL(readChannelFinished()), q,
+                                SLOT(_q_bufferOutgoingDataFinished()));
+        }
+        outgoingData = nullptr;
+        outgoingDataBuffer.reset();
+        // We need to explicitly unset these headers so they're not reapplied to the httpRequest
+        redirectRequest.setHeader(QNetworkRequest::ContentLengthHeader, QVariant());
+        redirectRequest.setHeader(QNetworkRequest::ContentTypeHeader, QVariant());
+    }
+
     if (const QNetworkCookieJar *const cookieJar = manager->cookieJar()) {
         auto cookies = cookieJar->cookiesForUrl(url);
         if (!cookies.empty()) {
@@ -1435,6 +1475,9 @@ void QNetworkReplyHttpImplPrivate::resetUploadDataSlot(bool *r)
 // Coming from QNonContiguousByteDeviceThreadForwardImpl in HTTP thread
 void QNetworkReplyHttpImplPrivate::sentUploadDataSlot(qint64 pos, qint64 amount)
 {
+    if (!uploadByteDevice) // uploadByteDevice is no longer available
+        return;
+
     if (uploadByteDevicePosition + amount != pos) {
         // Sanity check, should not happen.
         error(QNetworkReply::UnknownNetworkError, QString());
@@ -1448,6 +1491,9 @@ void QNetworkReplyHttpImplPrivate::sentUploadDataSlot(qint64 pos, qint64 amount)
 void QNetworkReplyHttpImplPrivate::wantUploadDataSlot(qint64 maxSize)
 {
     Q_Q(QNetworkReplyHttpImpl);
+
+    if (!uploadByteDevice) // uploadByteDevice is no longer available
+        return;
 
     // call readPointer
     qint64 currentUploadDataLength = 0;

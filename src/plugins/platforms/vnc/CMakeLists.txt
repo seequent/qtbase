@@ -19,13 +19,10 @@ qt_internal_add_plugin(QVncIntegrationPlugin
     PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
-        Qt::EventDispatcherSupportPrivate
         Qt::FbSupportPrivate
-        Qt::FontDatabaseSupportPrivate
         Qt::Gui
         Qt::GuiPrivate
         Qt::Network
-        Qt::ServiceSupportPrivate
 )
 
 #### Keys ignored in scope 1:.:.:vnc.pro:<TRUE>:
@@ -34,7 +31,7 @@ qt_internal_add_plugin(QVncIntegrationPlugin
 ## Scopes:
 #####################################################################
 
-qt_extend_target(QVncIntegrationPlugin CONDITION TARGET Qt::InputSupportPrivate
+qt_internal_extend_target(QVncIntegrationPlugin CONDITION TARGET Qt::InputSupportPrivate
     PUBLIC_LIBRARIES
         Qt::InputSupportPrivate
 )

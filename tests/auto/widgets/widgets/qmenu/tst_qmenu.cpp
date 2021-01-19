@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtTest/private/qtesthelpers_p.h>
 #include <qapplication.h>
 #include <private/qguiapplication_p.h>
@@ -40,6 +40,7 @@
 #include <QWidgetAction>
 #include <QScreen>
 #include <QSpinBox>
+#include <QSignalSpy>
 #include <qdialog.h>
 
 #include <qmenu.h>
@@ -47,7 +48,7 @@
 #include <QStyleHints>
 #include <QTimer>
 #include <qdebug.h>
-
+#include <QToolTip>
 #include <qpa/qplatformtheme.h>
 #include <qpa/qplatformintegration.h>
 
@@ -114,6 +115,7 @@ private slots:
     void QTBUG30595_rtl_submenu();
     void QTBUG20403_nested_popup_on_shortcut_trigger();
     void QTBUG47515_widgetActionEnterLeave();
+    void QTBUG_89082_actionTipsHide();
     void QTBUG8122_widgetActionCrashOnClose();
     void widgetActionTriggerClosesMenu();
 
@@ -299,7 +301,7 @@ void tst_QMenu::addActionsConnect()
     menu.addAction(icon, text, testFunction);
     menu.addAction(icon, text, &menu, testFunction);
 #ifndef QT_NO_SHORTCUT
-    const QKeySequence keySequence(Qt::CTRL + Qt::Key_C);
+    const QKeySequence keySequence(Qt::CTRL | Qt::Key_C);
     menu.addAction(text, &menu, SLOT(deleteLater()), keySequence);
     menu.addAction(text, &menu, &QMenu::deleteLater, keySequence);
     menu.addAction(text, testFunction, keySequence);
@@ -339,14 +341,14 @@ void tst_QMenu::mouseActivation()
     menubar.show();
 
 
-    QTest::mouseClick(&menubar, Qt::LeftButton, 0, menubar.actionGeometry(action).center(), 300);
+    QTest::mouseClick(&menubar, Qt::LeftButton, {}, menubar.actionGeometry(action).center(), 300);
     QVERIFY(submenu.isVisible());
-    QTest::mouseClick(&submenu, Qt::LeftButton, 0, QPoint(5, 5), 300);
+    QTest::mouseClick(&submenu, Qt::LeftButton, {}, QPoint(5, 5), 300);
     QVERIFY(!submenu.isVisible());
 
-    QTest::mouseClick(&menubar, Qt::LeftButton, 0, menubar.actionGeometry(action).center(), 300);
+    QTest::mouseClick(&menubar, Qt::LeftButton, {}, menubar.actionGeometry(action).center(), 300);
     QVERIFY(submenu.isVisible());
-    QTest::mouseClick(&submenu, Qt::RightButton, 0, QPoint(5, 5), 300);
+    QTest::mouseClick(&submenu, Qt::RightButton, {}, QPoint(5, 5), 300);
     QVERIFY(submenu.isVisible());
 #endif
 }
@@ -534,7 +536,7 @@ void tst_QMenu::statusTip()
     QRect rect1 = tb.actionGeometry(&a);
     QToolButton *btn = qobject_cast<QToolButton*>(tb.childAt(rect1.center()));
 
-    QVERIFY(btn != NULL);
+    QVERIFY(btn != nullptr);
 
     //because showMenu calls QMenu::exec, we need to use a singleshot
     //to continue the test
@@ -979,7 +981,7 @@ class Menu258920 : public QMenu
 {
     Q_OBJECT
 public slots:
-    void paintEvent(QPaintEvent *e)
+    void paintEvent(QPaintEvent *e) override
     {
         QMenu::paintEvent(e);
         painted = true;
@@ -1035,7 +1037,7 @@ void tst_QMenu::deleteActionInTriggered()
 class PopulateOnAboutToShowTestMenu : public QMenu {
     Q_OBJECT
 public:
-    explicit PopulateOnAboutToShowTestMenu(QWidget *parent = 0);
+    explicit PopulateOnAboutToShowTestMenu(QWidget *parent = nullptr);
 
 public slots:
     void populateMenu();
@@ -1341,6 +1343,59 @@ void tst_QMenu::QTBUG47515_widgetActionEnterLeave()
     }
 }
 
+void tst_QMenu::QTBUG_89082_actionTipsHide()
+{
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+        QSKIP("Window activation is not supported");
+
+    QWidget widget;
+    QMenu *menu = new QMenu(&widget);
+    menu->addAction("aaa");
+    menu->addAction("bbb");
+    menu->addAction("ccc");
+    menu->addAction("ddd");
+    menu->addAction("eee");
+    menu->addAction("fff");
+    menu->setToolTipsVisible(true);
+
+    auto menuActTip = menu->actions().first();
+    QString tipFullName = "actionTip-this-is-a-long-action-and-show-the-full-name-by-tip";
+    QFontMetrics m_fm = QFontMetrics(QAction().font());
+    const QString &&elidedName = m_fm.elidedText(tipFullName, Qt::ElideRight, 50);
+    menuActTip->setText(elidedName);
+    if (elidedName != tipFullName)
+        menuActTip->setToolTip(tipFullName);
+
+    widget.resize(300, 200);
+    centerOnScreen(&widget);
+    widget.show();
+    widget.activateWindow();
+    QVERIFY(QTest::qWaitForWindowExposed(&widget));
+    menu->popup(widget.geometry().topRight() + QPoint(50, 0));
+    QVERIFY(QTest::qWaitForWindowExposed(menu));
+
+    auto actionZero = menu->actions().at(0);
+    auto actionOne = menu->actions().at(1);
+    auto actionFive = menu->actions().at(5);
+    const QRect submenuRect0 = menu->actionGeometry(actionZero);
+    const QPoint submenuPos0(submenuRect0.topLeft() + QPoint(3, 3));
+
+    const QRect submenuRect1 = menu->actionGeometry(actionOne);
+    const QPoint submenuPos1(submenuRect1.topLeft() + QPoint(3, 3));
+
+    const QRect submenuRect5 = menu->actionGeometry(actionFive);
+    const QPoint submenuPos5(submenuRect5.topLeft() + QPoint(10, 3));
+
+    QTest::mouseMove(menu, submenuPos1);
+    QTest::mouseMove(menu, submenuPos0); //show the tip
+    QTRY_COMPARE_WITH_TIMEOUT(QToolTip::text(), tipFullName, 1000);
+
+    //Move to the fifth action without prompting
+    QTest::mouseMove(menu, submenuPos5);
+    //The previous tip was hidden, but now is a new tip to get text, So there should be no content
+    QTRY_COMPARE_WITH_TIMEOUT(QToolTip::text(), QString(), 1000);
+}
+
 void tst_QMenu::QTBUG8122_widgetActionCrashOnClose()
 {
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
@@ -1410,7 +1465,7 @@ void tst_QMenu::widgetActionTriggerClosesMenu()
         }
 
     protected:
-        QWidget *createWidget(QWidget *parent)
+        QWidget *createWidget(QWidget *parent) override
         {
             QPushButton *button = new QPushButton(QLatin1String("Button"), parent);
             connect(button, &QPushButton::clicked, this, &QAction::trigger);

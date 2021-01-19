@@ -52,14 +52,15 @@
 //
 
 #include <QtGui/private/qtguiglobal_p.h>
-#include "qalgorithms.h"
-#include "qbitarray.h"
-#include "qlist.h"
-#include "qmap.h"
-#include "qpair.h"
-#include <QtCore/qvector.h>
+
+#include <QtCore/qalgorithms.h>
+#include <QtCore/qbitarray.h>
+#include <QtCore/qlist.h>
+#include <QtCore/qmap.h>
+#include <QtCore/qpair.h>
 #include <QtCore/qsize.h>
 #include <QtCore/qrect.h>
+
 #include <float.h>
 #include "qlayoutpolicy_p.h"
 #include "qabstractlayoutstyleinfo_p.h"
@@ -105,8 +106,8 @@ template <typename T>
 class QHVContainer {
     T m_data[2];
 
-    Q_STATIC_ASSERT(Qt::Horizontal == 0x1);
-    Q_STATIC_ASSERT(Qt::Vertical == 0x2);
+    static_assert(Qt::Horizontal == 0x1);
+    static_assert(Qt::Vertical == 0x2);
     static constexpr int map(Qt::Orientation o) noexcept
     {
         return int(o) - 1;
@@ -193,56 +194,27 @@ public:
     qreal q_minimumAscent;
     inline qreal &q_sizes(int which)
     {
-        qreal *t;
-        switch (which) {
-        case Qt::MinimumSize:
-            t = &q_minimumSize;
-            break;
-        case Qt::PreferredSize:
-            t = &q_preferredSize;
-            break;
-        case Qt::MaximumSize:
-            t = &q_maximumSize;
-            break;
-        case Qt::MinimumDescent:
-            t = &q_minimumDescent;
-            break;
-        case (Qt::MinimumDescent + 1):
-            t = &q_minimumAscent;
-            break;
-        default:
-            t = nullptr;
-            break;
-        }
-        return *t;
+        return const_cast<qreal&>(static_cast<const QGridLayoutBox*>(this)->q_sizes(which));
     }
     inline const qreal &q_sizes(int which) const
     {
-        const qreal *t;
         switch (which) {
         case Qt::MinimumSize:
-            t = &q_minimumSize;
-            break;
+            return q_minimumSize;
         case Qt::PreferredSize:
-            t = &q_preferredSize;
-            break;
+            return q_preferredSize;
         case Qt::MaximumSize:
-            t = &q_maximumSize;
-            break;
+            return q_maximumSize;
         case Qt::MinimumDescent:
-            t = &q_minimumDescent;
-            break;
+            return q_minimumDescent;
         case (Qt::MinimumDescent + 1):
-            t = &q_minimumAscent;
-            break;
+            return q_minimumAscent;
         default:
-            t = nullptr;
-            break;
+            Q_UNREACHABLE();
         }
-        return *t;
     }
 };
-Q_DECLARE_TYPEINFO(QGridLayoutBox, Q_MOVABLE_TYPE); // cannot be Q_PRIMITIVE_TYPE, as q_maximumSize, say, is != 0
+Q_DECLARE_TYPEINFO(QGridLayoutBox, Q_RELOCATABLE_TYPE); // cannot be Q_PRIMITIVE_TYPE, as q_maximumSize, say, is != 0
 
 bool operator==(const QGridLayoutBox &box1, const QGridLayoutBox &box2);
 inline bool operator!=(const QGridLayoutBox &box1, const QGridLayoutBox &box2)
@@ -277,10 +249,10 @@ public:
 #endif
 
     QBitArray ignore;   // ### rename q_
-    QVector<QGridLayoutBox> boxes;
+    QList<QGridLayoutBox> boxes;
     MultiCellMap multiCellMap;
-    QVector<int> stretches;
-    QVector<qreal> spacings;
+    QList<int> stretches;
+    QList<qreal> spacings;
     bool hasIgnoreFlag;
 };
 
@@ -296,10 +268,10 @@ public:
 #endif
 
     int count;
-    QVector<QStretchParameter> stretches;
-    QVector<QLayoutParameter<qreal> > spacings;
-    QVector<Qt::Alignment> alignments;
-    QVector<QGridLayoutBox> boxes;
+    QList<QStretchParameter> stretches;
+    QList<QLayoutParameter<qreal>> spacings;
+    QList<Qt::Alignment> alignments;
+    QList<QGridLayoutBox> boxes;
 };
 
 
@@ -471,7 +443,7 @@ protected:
     QList<QGridLayoutItem *> q_items;
 private:
     // User input
-    QVector<QGridLayoutItem *> q_grid;
+    QList<QGridLayoutItem *> q_grid;
     QHVContainer<QLayoutParameter<qreal>> q_defaultSpacings;
     QHVContainer<QGridLayoutRowInfo> q_infos;
     Qt::LayoutDirection m_visualDirection;
@@ -500,11 +472,11 @@ private:
 
     // Output
     mutable QSizeF q_cachedSize;
-    mutable QVector<qreal> q_xx;
-    mutable QVector<qreal> q_yy;
-    mutable QVector<qreal> q_widths;
-    mutable QVector<qreal> q_heights;
-    mutable QVector<qreal> q_descents;
+    mutable QList<qreal> q_xx;
+    mutable QList<qreal> q_yy;
+    mutable QList<qreal> q_widths;
+    mutable QList<qreal> q_heights;
+    mutable QList<qreal> q_descents;
 
     friend class QGridLayoutItem;
 };

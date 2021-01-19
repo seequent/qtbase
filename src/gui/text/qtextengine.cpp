@@ -86,9 +86,9 @@ public:
     {
         if (caps == QFont::SmallCaps)
             generateScriptItemsSmallCaps(reinterpret_cast<const ushort *>(m_string.unicode()), start, length);
-        else if(caps == QFont::Capitalize)
+        else if (caps == QFont::Capitalize)
             generateScriptItemsCapitalize(start, length);
-        else if(caps != QFont::MixedCase) {
+        else if (caps != QFont::MixedCase) {
             generateScriptItemsAndChangeCase(start, length,
                 caps == QFont::AllLowercase ? QScriptAnalysis::Lowercase : QScriptAnalysis::Uppercase);
         }
@@ -1192,7 +1192,7 @@ void QTextEngine::bidiReorder(int numItems, const quint8 *levels, int *visualOrd
     // reverse any contiguous sequence of characters that are at that level or higher.
 
     // reversing is only done up to the lowest odd level
-    if(!(levelLow%2)) levelLow++;
+    if (!(levelLow%2)) levelLow++;
 
     BIDI_DEBUG() << "reorderLine: lineLow = " << (uint)levelLow << ", lineHigh = " << (uint)levelHigh;
 
@@ -1208,7 +1208,7 @@ void QTextEngine::bidiReorder(int numItems, const quint8 *levels, int *visualOrd
             while(i <= count && levels[i] >= levelHigh) i++;
             int end = i-1;
 
-            if(start != end) {
+            if (start != end) {
                 //qDebug() << "reversing from " << start << " to " << end;
                 for(int j = 0; j < (end-start+1)/2; j++) {
                     int tmp = visualOrder[start+j];
@@ -1466,7 +1466,7 @@ void QTextEngine::shapeText(int item) const
 
     // split up the item into parts that come from different font engines
     // k * 3 entries, array[k] == index in string, array[k + 1] == index in glyphs, array[k + 2] == engine index
-    QVector<uint> itemBoundaries;
+    QList<uint> itemBoundaries;
     itemBoundaries.reserve(24);
 
     QGlyphLayout initialGlyphs = availableGlyphs(&si);
@@ -1608,7 +1608,7 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si,
                                          const ushort *string,
                                          int itemLength,
                                          QFontEngine *fontEngine,
-                                         const QVector<uint> &itemBoundaries,
+                                         const QList<uint> &itemBoundaries,
                                          bool kerningEnabled,
                                          bool hasLetterSpacing) const
 {
@@ -1807,12 +1807,14 @@ const QCharAttributes *QTextEngine::attributes() const
         scriptItems[i].script = QChar::Script(si.analysis.script);
     }
 
-    QUnicodeTools::initCharAttributes(reinterpret_cast<const ushort *>(layoutData->string.constData()),
-                                      layoutData->string.length(),
-                                      scriptItems.data(), scriptItems.size(),
-                                      (QCharAttributes *)layoutData->memory,
-                                      QUnicodeTools::CharAttributeOptions(QUnicodeTools::DefaultOptionsCompat
-                                                                          | QUnicodeTools::HangulLineBreakTailoring));
+    QUnicodeTools::initCharAttributes(
+        layoutData->string,
+        scriptItems.data(), scriptItems.size(),
+        reinterpret_cast<QCharAttributes *>(layoutData->memory),
+        QUnicodeTools::CharAttributeOptions(QUnicodeTools::GraphemeBreaks
+                                            | QUnicodeTools::LineBreaks
+                                            | QUnicodeTools::WhiteSpaces
+                                            | QUnicodeTools::HangulLineBreakTailoring));
 
 
     layoutData->haveCharAttributes = true;
@@ -1918,7 +1920,7 @@ void QTextEngine::itemize() const
 
     {
         QUnicodeTools::ScriptItemArray scriptItems;
-        QUnicodeTools::initScripts(string, length, &scriptItems);
+        QUnicodeTools::initScripts(layoutData->string, &scriptItems);
         for (int i = 0; i < scriptItems.length(); ++i) {
             const auto &item = scriptItems.at(i);
             int end = i < scriptItems.length() - 1 ? scriptItems.at(i + 1).position : length;
@@ -2661,8 +2663,8 @@ QTextEngine::LayoutData::LayoutData(const QString &str, void **stack_memory, int
 {
     allocated = _allocated;
 
-    int space_charAttributes = sizeof(QCharAttributes)*string.length()/sizeof(void*) + 1;
-    int space_logClusters = sizeof(unsigned short)*string.length()/sizeof(void*) + 1;
+    int space_charAttributes = int(sizeof(QCharAttributes) * string.length() / sizeof(void*) + 1);
+    int space_logClusters = int(sizeof(unsigned short) * string.length() / sizeof(void*) + 1);
     available_glyphs = ((int)allocated - space_charAttributes - space_logClusters)*(int)sizeof(void*)/(int)QGlyphLayout::SpaceNeeded;
 
     if (available_glyphs < str.length()) {
@@ -2703,8 +2705,8 @@ bool QTextEngine::LayoutData::reallocate(int totalGlyphs)
         return true;
     }
 
-    int space_charAttributes = sizeof(QCharAttributes)*string.length()/sizeof(void*) + 1;
-    int space_logClusters = sizeof(unsigned short)*string.length()/sizeof(void*) + 1;
+    int space_charAttributes = int(sizeof(QCharAttributes) * string.length() / sizeof(void*) + 1);
+    int space_logClusters = int(sizeof(unsigned short) * string.length() / sizeof(void*) + 1);
     int space_glyphs = (totalGlyphs * QGlyphLayout::SpaceNeeded) / sizeof(void *) + 2;
 
     int newAllocated = space_charAttributes + space_glyphs + space_logClusters;
@@ -2887,7 +2889,7 @@ void QTextEngine::setPreeditArea(int position, const QString &preeditText)
     clearLineData();
 }
 
-void QTextEngine::setFormats(const QVector<QTextLayout::FormatRange> &formats)
+void QTextEngine::setFormats(const QList<QTextLayout::FormatRange> &formats)
 {
     if (formats.isEmpty()) {
         if (!specialData)
@@ -2979,7 +2981,7 @@ static QString stringMidRetainingBidiCC(const QString &string,
             suffix += c;
     }
 
-    return prefix + ellidePrefix + string.midRef(midStart, midLength) + ellideSuffix + suffix;
+    return prefix + ellidePrefix + QStringView{string}.mid(midStart, midLength) + ellideSuffix + suffix;
 }
 
 QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int flags, int from, int count) const
@@ -3154,7 +3156,7 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
         if (prevCharJoins(layoutData->string, rightPos))
             ellipsisText.append(ZWJ);
 
-        return layoutData->string.midRef(from, leftPos - from) + ellipsisText + layoutData->string.midRef(rightPos, to - rightPos);
+        return QStringView{layoutData->string}.mid(from, leftPos - from) + ellipsisText + QStringView{layoutData->string}.mid(rightPos, to - rightPos);
     }
 
     return layoutData->string.mid(from, to - from);
@@ -3278,17 +3280,17 @@ QFixed QTextEngine::calculateTabWidth(int item, QFixed x) const
 
 namespace {
 class FormatRangeComparatorByStart {
-    const QVector<QTextLayout::FormatRange> &list;
+    const QList<QTextLayout::FormatRange> &list;
 public:
-    FormatRangeComparatorByStart(const QVector<QTextLayout::FormatRange> &list) : list(list) { }
+    FormatRangeComparatorByStart(const QList<QTextLayout::FormatRange> &list) : list(list) { }
     bool operator()(int a, int b) {
         return list.at(a).start < list.at(b).start;
     }
 };
 class FormatRangeComparatorByEnd {
-    const QVector<QTextLayout::FormatRange> &list;
+    const QList<QTextLayout::FormatRange> &list;
 public:
-    FormatRangeComparatorByEnd(const QVector<QTextLayout::FormatRange> &list) : list(list) { }
+    FormatRangeComparatorByEnd(const QList<QTextLayout::FormatRange> &list) : list(list) { }
     bool operator()(int a, int b) {
         return list.at(a).start + list.at(a).length < list.at(b).start + list.at(b).length;
     }
@@ -3303,7 +3305,7 @@ void QTextEngine::resolveFormats() const
 
     QTextFormatCollection *collection = formatCollection();
 
-    QVector<QTextCharFormat> resolvedFormats(layoutData->items.count());
+    QList<QTextCharFormat> resolvedFormats(layoutData->items.count());
 
     QVarLengthArray<int, 64> formatsSortedByStart;
     formatsSortedByStart.reserve(specialData->formats.size());
@@ -3659,21 +3661,12 @@ void QTextEngine::drawDecorations(QPainter *painter)
 {
     QPen oldPen = painter->pen();
 
-    bool wasCompatiblePainting = painter->renderHints()
-            & QPainter::Qt4CompatiblePainting;
-
-    if (wasCompatiblePainting)
-        painter->setRenderHint(QPainter::Qt4CompatiblePainting, false);
-
     adjustUnderlines();
     drawItemDecorationList(painter, underlineList);
     drawItemDecorationList(painter, strikeOutList);
     drawItemDecorationList(painter, overlineList);
 
     clearDecorations();
-
-    if (wasCompatiblePainting)
-        painter->setRenderHint(QPainter::Qt4CompatiblePainting);
 
     painter->setPen(oldPen);
 }

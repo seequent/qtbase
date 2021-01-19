@@ -125,6 +125,7 @@ public:
     // Cipher settings
     QList<QSslCipher> ciphers() const;
     void setCiphers(const QList<QSslCipher> &ciphers);
+    void setCiphers(const QString &ciphers);
     static QList<QSslCipher> supportedCiphers();
 
     // Certificate Authority (CA) settings
@@ -148,9 +149,9 @@ public:
     QSslKey ephemeralServerKey() const;
 
     // EC settings
-    QVector<QSslEllipticCurve> ellipticCurves() const;
-    void setEllipticCurves(const QVector<QSslEllipticCurve> &curves);
-    static QVector<QSslEllipticCurve> supportedEllipticCurves();
+    QList<QSslEllipticCurve> ellipticCurves() const;
+    void setEllipticCurves(const QList<QSslEllipticCurve> &curves);
+    static QList<QSslEllipticCurve> supportedEllipticCurves();
 
     QByteArray preSharedKeyIdentityHint() const;
     void setPreSharedKeyIdentityHint(const QByteArray &hint);
@@ -188,11 +189,7 @@ public:
         NextProtocolNegotiationUnsupported
     };
 
-#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
     void setAllowedNextProtocols(const QList<QByteArray> &protocols);
-#else
-    void setAllowedNextProtocols(QList<QByteArray> protocols);
-#endif
     QList<QByteArray> allowedNextProtocols() const;
 
     QByteArray nextNegotiatedProtocol() const;

@@ -48,18 +48,9 @@
 #include <qpa/qplatformintegration.h>
 #include <qpa/qplatformnativeinterface.h>
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QSignalSpy>
-
-#ifdef USE_GLX
-// Must be included last due to the X11 types
-#include <QtPlatformHeaders/QGLXNativeContext>
-#endif
-
-#if defined(Q_OS_WIN32) && !QT_CONFIG(opengles2)
-#include <QtPlatformHeaders/QWGLNativeContext>
-#endif
 
 Q_DECLARE_METATYPE(QImage::Format)
 
@@ -102,6 +93,7 @@ private slots:
     void defaultSurfaceFormat();
     void imageFormatPainting();
     void nullTextureInitializtion();
+    void clipRect();
 
 #ifdef USE_GLX
     void glxContextWrap();
@@ -158,17 +150,17 @@ struct SharedResource : public QOpenGLSharedResource
             tracker->destructorCalls++;
     }
 
-    void invalidateResource()
+    void invalidateResource() override
     {
         resource = 0;
         if (tracker)
             tracker->invalidateResourceCalls++;
     }
 
-    void freeResource(QOpenGLContext *context)
+    void freeResource(QOpenGLContext *context) override
     {
         Q_ASSERT(context == QOpenGLContext::currentContext());
-        Q_UNUSED(context)
+        Q_UNUSED(context);
         resource = 0;
         if (tracker)
             tracker->freeResourceCalls++;
@@ -834,7 +826,7 @@ void tst_QOpenGL::fboMRT()
 
     {
         // 3 color attachments, different sizes, same internal format, no depth/stencil.
-        QVector<QSize> sizes;
+        QList<QSize> sizes;
         sizes << QSize(128, 128) << QSize(192, 128) << QSize(432, 123);
         QOpenGLFramebufferObject fbo(sizes[0]);
         fbo.addColorAttachment(sizes[1]);
@@ -882,7 +874,7 @@ void tst_QOpenGL::fboMRT()
 
     {
         // 2 color attachments, same size, same internal format, depth/stencil.
-        QVector<QSize> sizes;
+        QList<QSize> sizes;
         sizes.fill(QSize(128, 128), 2);
         QOpenGLFramebufferObject fbo(sizes[0], QOpenGLFramebufferObject::CombinedDepthStencil);
         fbo.addColorAttachment(sizes[1]);
@@ -922,11 +914,11 @@ void tst_QOpenGL::fboMRT_differentFormats()
         QSKIP("RGB10_A2 not supported on this platform");
 
     // 3 color attachments, same size, different internal format, depth/stencil.
-    QVector<QSize> sizes;
+    QList<QSize> sizes;
     sizes.fill(QSize(128, 128), 3);
     QOpenGLFramebufferObjectFormat format;
     format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
-    QVector<GLenum> internalFormats;
+    QList<GLenum> internalFormats;
     internalFormats << GL_RGBA8 << GL_RGB10_A2 << GL_RGB5_A1;
     format.setInternalTextureFormat(internalFormats[0]);
     QOpenGLFramebufferObject fbo(sizes[0], format);
@@ -1480,9 +1472,14 @@ void tst_QOpenGL::defaultSurfaceFormat()
     QCOMPARE(context->format(), fmt);
 }
 
+using namespace QNativeInterface;
+
 #ifdef USE_GLX
 void tst_QOpenGL::glxContextWrap()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("offscreen"), Qt::CaseInsensitive))
+        QSKIP("Offscreen: This fails.");
+
     QWindow *window = new QWindow;
     window->setSurfaceType(QWindow::OpenGLSurface);
     window->setGeometry(0, 0, 10, 10);
@@ -1496,17 +1493,14 @@ void tst_QOpenGL::glxContextWrap()
     QOpenGLContext *ctx0 = new QOpenGLContext;
     ctx0->setFormat(window->format());
     QVERIFY(ctx0->create());
-    QVariant v = ctx0->nativeHandle();
-    QVERIFY(!v.isNull());
-    QVERIFY(v.canConvert<QGLXNativeContext>());
-    GLXContext context = v.value<QGLXNativeContext>().context();
+    auto *glxContextIf = ctx0->nativeInterface<QGLXContext>();
+    QVERIFY(glxContextIf);
+    GLXContext context = glxContextIf->nativeContext();
     QVERIFY(context);
 
     // Then create another QOpenGLContext wrapping it.
-    QOpenGLContext *ctx = new QOpenGLContext;
-    ctx->setNativeHandle(QVariant::fromValue<QGLXNativeContext>(QGLXNativeContext(context)));
-    QVERIFY(ctx->create());
-    QCOMPARE(ctx->nativeHandle().value<QGLXNativeContext>().context(), context);
+    QOpenGLContext *ctx = QGLXContext::fromNative(context);
+    QVERIFY(ctx);
     QVERIFY(nativeIf->nativeResourceForContext(QByteArrayLiteral("glxcontext"), ctx) == (void *) context);
 
     QVERIFY(ctx->makeCurrent(window));
@@ -1533,11 +1527,9 @@ void tst_QOpenGL::wglContextWrap()
     window->show();
     QVERIFY(QTest::qWaitForWindowExposed(window.data()));
 
-    QVariant v = ctx->nativeHandle();
-    QVERIFY(!v.isNull());
-    QVERIFY(v.canConvert<QWGLNativeContext>());
-    QWGLNativeContext nativeContext = v.value<QWGLNativeContext>();
-    QVERIFY(nativeContext.context());
+    auto *wglContext = ctx->nativeInterface<QWGLContext>();
+    QVERIFY(wglContext);
+    QVERIFY(wglContext->nativeContext());
 
     // Now do a makeCurrent() do make sure the pixel format on the native
     // window (the HWND we are going to retrieve below) is set.
@@ -1547,9 +1539,9 @@ void tst_QOpenGL::wglContextWrap()
     HWND wnd = (HWND) qGuiApp->platformNativeInterface()->nativeResourceForWindow(QByteArrayLiteral("handle"), window.data());
     QVERIFY(wnd);
 
-    QScopedPointer<QOpenGLContext> adopted(new QOpenGLContext);
-    adopted->setNativeHandle(QVariant::fromValue<QWGLNativeContext>(QWGLNativeContext(nativeContext.context(), wnd)));
-    QVERIFY(adopted->create());
+    QScopedPointer<QOpenGLContext> adopted(QWGLContext::fromNative(wglContext->nativeContext(), wnd));
+    QVERIFY(!adopted.isNull());
+    QVERIFY(adopted->isValid());
 
     // This tests two things: that a regular, non-adopted QOpenGLContext is
     // able to return a QSurfaceFormat containing the real values after
@@ -1696,6 +1688,74 @@ void tst_QOpenGL::nullTextureInitializtion()
     QImage i;
     QOpenGLTexture t(i);
     QVERIFY(!t.isCreated());
+}
+
+/*
+    Verify that the clipping works correctly.
+    The red outline should be covered by the blue rect on top and left,
+    while it should be clipped on the right and bottom and thus the red outline be visible
+
+    See: QTBUG-83229
+*/
+void tst_QOpenGL::clipRect()
+{
+#if defined(Q_OS_LINUX) && defined(Q_CC_GNU) && !defined(__x86_64__)
+    QSKIP("QTBUG-22617");
+#endif
+
+    QScopedPointer<QSurface> surface(createSurface(int(QSurface::Window)));
+
+    QOpenGLContext ctx;
+    QVERIFY(ctx.create());
+
+    QVERIFY(ctx.makeCurrent(surface.data()));
+
+    if (!QOpenGLFramebufferObject::hasOpenGLFramebufferObjects())
+        QSKIP("QOpenGLFramebufferObject not supported on this platform");
+
+    // No multisample with combined depth/stencil attachment:
+    QOpenGLFramebufferObjectFormat fboFormat;
+    fboFormat.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
+
+    // Uncomplicate things by using POT:
+    const QSize size(654, 480);
+    const QRect rect(QPoint(0, 0), size);
+    QOpenGLFramebufferObject fbo(size, fboFormat);
+
+    if (fbo.attachment() != QOpenGLFramebufferObject::CombinedDepthStencil)
+        QSKIP("FBOs missing combined depth~stencil support");
+
+    QVERIFY(fbo.bind());
+
+    QPainter fboPainter;
+    QOpenGLPaintDevice device(fbo.width(), fbo.height());
+    bool painterBegun = fboPainter.begin(&device);
+    QVERIFY(painterBegun);
+
+    qreal halfWidth = size.width() / 2.0;
+    qreal halfHeight = size.height() / 2.0;
+
+    QRectF clipRect = QRectF(halfWidth - halfWidth / 2.0, halfHeight - halfHeight / 2.0,
+                             halfWidth / 2.0, halfHeight / 2.0);
+
+    fboPainter.fillRect(rect, Qt::white);
+    fboPainter.setPen(Qt::red);
+    fboPainter.drawRect(clipRect);
+
+    fboPainter.setClipRect(clipRect, Qt::ReplaceClip);
+    fboPainter.fillRect(rect, Qt::blue);
+
+    fboPainter.end();
+
+    const QImage fb = fbo.toImage().convertToFormat(QImage::Format_RGB32);
+    QCOMPARE(fb.size(), size);
+
+    QCOMPARE(fb.pixelColor(clipRect.left() + 1, clipRect.top()), QColor(Qt::blue));
+    QCOMPARE(fb.pixelColor(clipRect.left(), clipRect.top() + 1), QColor(Qt::blue));
+    QCOMPARE(fb.pixelColor(clipRect.left() + 1, clipRect.bottom()), QColor(Qt::red));
+
+    // Enable this once QTBUG-85286 is fixed
+    //QCOMPARE(fb.pixelColor(clipRect.right(), clipRect.top() + 1), QColor(Qt::red));
 }
 
 QTEST_MAIN(tst_QOpenGL)

@@ -63,13 +63,13 @@ QT_WARNING_POP
 
 // silence compilers that complain about this being a static function declared
 // but never defined
-static CborError Q_DECL_UNUSED cbor_encoder_close_container_checked(CborEncoder*, const CborEncoder*)
+[[maybe_unused]] static CborError cbor_encoder_close_container_checked(CborEncoder*, const CborEncoder*)
 {
     Q_UNREACHABLE();
     return CborErrorInternalError;
 }
 
-static CborError Q_DECL_UNUSED cbor_encode_float_as_half_float(CborEncoder *, float)
+[[maybe_unused]] static CborError cbor_encode_float_as_half_float(CborEncoder *, float)
 {
     Q_UNREACHABLE();
     return CborErrorInternalError;
@@ -217,7 +217,7 @@ Q_DECLARE_TYPEINFO(CborEncoder, Q_PRIMITIVE_TYPE);
 class QCborStreamWriterPrivate
 {
 public:
-    static Q_CONSTEXPR quint64 IndefiniteLength = (std::numeric_limits<quint64>::max)();
+    static constexpr quint64 IndefiniteLength = (std::numeric_limits<quint64>::max)();
 
     QIODevice *device;
     CborEncoder encoder;
@@ -243,7 +243,7 @@ public:
 
     void createContainer(CborError (*f)(CborEncoder *, CborEncoder *, size_t), quint64 len = IndefiniteLength)
     {
-        Q_STATIC_ASSERT(size_t(IndefiniteLength) == CborIndefiniteLength);
+        static_assert(size_t(IndefiniteLength) == CborIndefiniteLength);
         if (sizeof(len) != sizeof(size_t) && len != IndefiniteLength) {
             if (Q_UNLIKELY(len >= CborIndefiniteLength)) {
                 // TinyCBOR can't do this in 32-bit mode
@@ -729,7 +729,7 @@ void QCborStreamWriter::appendTextString(const char *utf8, qsizetype len)
    length is implied by the elements contained in it. Note, however, that use
    of indeterminate-length arrays is not compliant with canonical CBOR encoding.
 
-   The following example appends elements from the vector of strings
+   The following example appends elements from the list of strings
    passed as input:
 
    \snippet code/src_corelib_serialization_qcborstream.cpp 20
@@ -802,7 +802,7 @@ bool QCborStreamWriter::endArray()
    indeterminate-length maps is not compliant with canonical CBOR encoding
    (canonical encoding also requires keys to be unique and in sorted order).
 
-   The following example appends elements from the vector of int and
+   The following example appends elements from the list of int and
    string pairs passed as input:
 
    \snippet code/src_corelib_serialization_qcborstream.cpp 22

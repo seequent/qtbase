@@ -43,7 +43,6 @@
 
 #include <QtNetwork/qtnetworkglobal.h>
 #include <QtCore/qlist.h>
-#include <QtCore/qvector.h>
 #ifndef QT_NO_SSL
 #   include <QtNetwork/qtcpsocket.h>
 #   include <QtNetwork/qsslerror.h>
@@ -58,52 +57,8 @@ class QDir;
 class QSslCipher;
 class QSslCertificate;
 class QSslConfiguration;
-class QSslEllipticCurve;
 class QSslPreSharedKeyAuthenticator;
 class QOcspResponse;
-
-enum class QAlertLevel {
-    Warning,
-    Fatal,
-    Unknown
-};
-
-enum class QAlertType {
-    CloseNotify,
-    UnexpectedMessage = 10,
-    BadRecordMac = 20,
-    RecordOverflow = 22,
-    DecompressionFailure = 30, // reserved
-    HandshakeFailure = 40,
-    NoCertificate = 41, // reserved
-    BadCertificate = 42,
-    UnsupportedCertificate = 43,
-    CertificateRevoked = 44,
-    CertificateExpired = 45,
-    CertificateUnknown = 46,
-    IllegalParameter = 47,
-    UnknownCa = 48,
-    AccessDenied = 49,
-    DecodeError = 50,
-    DecryptError = 51,
-    ExportRestriction = 60, // reserved
-    ProtocolVersion = 70,
-    InsufficientSecurity = 71,
-    InternalError = 80,
-    InappropriateFallback = 86,
-    UserCancelled = 90,
-    NoRenegotiation = 100,
-    MissingExtension = 109,
-    UnsupportedExtension = 110,
-    CertificateUnobtainable = 111, // reserved
-    UnrecognizedName = 112,
-    BadCertificateStatusResponse = 113,
-    BadCertificateHashValue = 114, // reserved
-    UnknownPskIdentity = 115,
-    CertificateRequired = 116,
-    NoApplicationProtocol = 120,
-    UnknownAlertMessage = 255
-};
 
 class QSslSocketPrivate;
 class Q_NETWORK_EXPORT QSslSocket : public QTcpSocket
@@ -162,8 +117,6 @@ public:
     bool canReadLine() const override;
     void close() override;
     bool atEnd() const override;
-    bool flush(); // ### Qt6: remove me (implementation moved to private flush())
-    void abort();
 
     // From QAbstractSocket:
     void setReadBufferSize(qint64 size) override;
@@ -187,7 +140,7 @@ public:
     QList<QSslCertificate> peerCertificateChain() const;
     QSslCipher sessionCipher() const;
     QSsl::SslProtocol sessionProtocol() const;
-    QVector<QOcspResponse> ocspResponses() const;
+    QList<QOcspResponse> ocspResponses() const;
 
     // Private keys, for server sockets.
     void setPrivateKey(const QSslKey &key);
@@ -195,35 +148,6 @@ public:
                        QSsl::EncodingFormat format = QSsl::Pem,
                        const QByteArray &passPhrase = QByteArray());
     QSslKey privateKey() const;
-
-    // Cipher settings.
-#if QT_DEPRECATED_SINCE(5, 5)
-    QT_DEPRECATED_X("Use QSslConfiguration::ciphers()") QList<QSslCipher> ciphers() const;
-    QT_DEPRECATED_X("Use QSslConfiguration::setCiphers()") void setCiphers(const QList<QSslCipher> &ciphers);
-    QT_DEPRECATED void setCiphers(const QString &ciphers);
-    QT_DEPRECATED static void setDefaultCiphers(const QList<QSslCipher> &ciphers);
-    QT_DEPRECATED static QList<QSslCipher> defaultCiphers();
-    QT_DEPRECATED_X("Use QSslConfiguration::supportedCiphers()") static QList<QSslCipher> supportedCiphers();
-#endif // QT_DEPRECATED_SINCE(5, 5)
-
-    // CA settings.
-#if QT_DEPRECATED_SINCE(5, 15)
-    QT_DEPRECATED_X("Use QSslConfiguration::addCaCertificate()") void addCaCertificate(const QSslCertificate &certificate);
-    QT_DEPRECATED_X("Use QSslConfiguration::addCaCertificates()") void addCaCertificates(const QList<QSslCertificate> &certificates);
-#endif // QT_DEPRECATED_SINCE(5, 15)
-#if QT_DEPRECATED_SINCE(5, 5)
-    QT_DEPRECATED_X("Use QSslConfiguration::setCaCertificates()") void setCaCertificates(const QList<QSslCertificate> &certificates);
-    QT_DEPRECATED_X("Use QSslConfiguration::caCertificates()") QList<QSslCertificate> caCertificates() const;
-#endif // QT_DEPRECATED_SINCE(5, 5)
-#if QT_DEPRECATED_SINCE(5, 15)
-    QT_DEPRECATED static void addDefaultCaCertificate(const QSslCertificate &certificate);
-    QT_DEPRECATED static void addDefaultCaCertificates(const QList<QSslCertificate> &certificates);
-#endif // QT_DEPRECATED_SINCE(5, 15)
-#if QT_DEPRECATED_SINCE(5, 5)
-    QT_DEPRECATED static void setDefaultCaCertificates(const QList<QSslCertificate> &certificates);
-    QT_DEPRECATED static QList<QSslCertificate> defaultCaCertificates();
-    QT_DEPRECATED_X("Use QSslConfiguration::systemCaCertificates()") static QList<QSslCertificate> systemCaCertificates();
-#endif // QT_DEPRECATED_SINCE(5, 5)
 
     bool waitForConnected(int msecs = 30000) override;
     bool waitForEncrypted(int msecs = 30000);
@@ -255,17 +179,18 @@ Q_SIGNALS:
     void encryptedBytesWritten(qint64 totalBytes);
     void preSharedKeyAuthenticationRequired(QSslPreSharedKeyAuthenticator *authenticator);
     void newSessionTicketReceived();
-    void alertSent(QAlertLevel level, QAlertType type, const QString &description);
-    void alertReceived(QAlertLevel level, QAlertType type, const QString &description);
+    void alertSent(QSsl::AlertLevel level, QSsl::AlertType type, const QString &description);
+    void alertReceived(QSsl::AlertLevel level, QSsl::AlertType type, const QString &description);
     void handshakeInterruptedOnError(const QSslError &error);
 
 protected:
     qint64 readData(char *data, qint64 maxlen) override;
+    qint64 skipData(qint64 maxSize) override;
     qint64 writeData(const char *data, qint64 len) override;
 
 private:
     Q_DECLARE_PRIVATE(QSslSocket)
-    Q_DISABLE_COPY(QSslSocket)
+    Q_DISABLE_COPY_MOVE(QSslSocket)
     Q_PRIVATE_SLOT(d_func(), void _q_connectedSlot())
     Q_PRIVATE_SLOT(d_func(), void _q_hostFoundSlot())
     Q_PRIVATE_SLOT(d_func(), void _q_disconnectedSlot())

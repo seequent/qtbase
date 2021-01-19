@@ -1,10 +1,10 @@
 # Generated from qabstractitemmodeltester.pro.
 
 #####################################################################
-## qabstractitemmodeltester Test:
+## tst_qabstractitemmodeltester Test:
 #####################################################################
 
-add_qt_test(qabstractitemmodeltester
+qt_internal_add_test(tst_qabstractitemmodeltester
     SOURCES
         ../../other/qabstractitemmodelutils/dynamictreemodel.cpp ../../other/qabstractitemmodelutils/dynamictreemodel.h
         tst_qabstractitemmodeltester.cpp

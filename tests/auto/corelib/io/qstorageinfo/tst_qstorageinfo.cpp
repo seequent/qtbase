@@ -26,8 +26,9 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QStorageInfo>
+#include <QTemporaryFile>
 
 #include <stdarg.h>
 
@@ -107,6 +108,13 @@ void tst_QStorageInfo::operatorEqual()
     {
         QStorageInfo storage1;
         QStorageInfo storage2;
+        QCOMPARE(storage1, storage2);
+    }
+
+    // Test copy ctor
+    {
+        QStorageInfo storage1 = QStorageInfo::root();
+        QStorageInfo storage2(storage1);
         QCOMPARE(storage1, storage2);
     }
 }

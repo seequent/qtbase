@@ -14,14 +14,10 @@ qt_internal_add_plugin(QEglFSKmsEglDeviceIntegrationPlugin
         qeglfskmsegldevicescreen.cpp qeglfskmsegldevicescreen.h
     DEFINES
         QT_EGL_NO_X11
-    INCLUDE_DIRECTORIES
-        ../../api
-        ../eglfs_kms_support
     PUBLIC_LIBRARIES
         Libdrm::Libdrm
         Qt::Core
         Qt::CorePrivate
-        Qt::EdidSupportPrivate
         Qt::EglFSDeviceIntegrationPrivate
         Qt::EglFsKmsSupportPrivate
         Qt::Gui
@@ -31,3 +27,10 @@ qt_internal_add_plugin(QEglFSKmsEglDeviceIntegrationPlugin
 
 #### Keys ignored in scope 1:.:.:eglfs_kms_egldevice.pro:<TRUE>:
 # OTHER_FILES = "$$PWD/eglfs_kms_egldevice.json"
+
+# begin special case
+qt_internal_extend_target(QEglFSKmsEglDeviceIntegrationPlugin
+      CONDITION QNX
+      COMPILE_OPTIONS -fpermissive
+)
+# end special case

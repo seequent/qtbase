@@ -190,14 +190,15 @@ QVariantAnimationPrivate::QVariantAnimationPrivate() : duration(250), interpolat
 
 void QVariantAnimationPrivate::convertValues(int t)
 {
+    auto type = QMetaType(t);
     //this ensures that all the keyValues are of type t
     for (int i = 0; i < keyValues.count(); ++i) {
         QVariantAnimation::KeyValue &pair = keyValues[i];
-        pair.second.convert(t);
+        pair.second.convert(type);
     }
     //we also need update to the current interval if needed
-    currentInterval.start.second.convert(t);
-    currentInterval.end.second.convert(t);
+    currentInterval.start.second.convert(type);
+    currentInterval.end.second.convert(type);
 
     //... and the interpolator
     updateInterpolator();
@@ -389,7 +390,7 @@ void QVariantAnimation::setEasingCurve(const QEasingCurve &easing)
     d->recalculateCurrentInterval();
 }
 
-typedef QVector<QVariantAnimation::Interpolator> QInterpolatorVector;
+typedef QList<QVariantAnimation::Interpolator> QInterpolatorVector;
 Q_GLOBAL_STATIC(QInterpolatorVector, registeredInterpolators)
 static QBasicMutex registeredInterpolatorsMutex;
 
@@ -571,7 +572,7 @@ QVariant QVariantAnimation::keyValueAt(qreal step) const
 /*!
     \typedef QVariantAnimation::KeyValues
 
-    This is a typedef for QVector<KeyValue>
+    This is a typedef for QList<KeyValue>
 */
 
 /*!

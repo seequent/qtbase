@@ -65,6 +65,7 @@ QT_BEGIN_NAMESPACE
 
 class QFutureCallOutEvent : public QEvent
 {
+    Q_EVENT_DISABLE_COPY(QFutureCallOutEvent);
 public:
     enum CallOutType {
         Started,
@@ -101,7 +102,7 @@ public:
     int index2;
     QString text;
 
-    QFutureCallOutEvent *clone() const
+    QEvent *clone() const override
     {
         return new QFutureCallOutEvent(callOutType, index1, index2, text);
     }
@@ -194,7 +195,7 @@ public:
     void setState(QFutureInterfaceBase::State state);
 
     // Wrapper for continuation
-    std::function<void()> continuation;
+    std::function<void(const QFutureInterfaceBase &)> continuation;
     QBasicMutex continuationMutex;
 
     bool launchAsync = false;

@@ -209,7 +209,7 @@ static QSet<QByteArray> interfaceNames(int socket)
 static QNetworkInterfacePrivate *findInterface(int socket, QList<QNetworkInterfacePrivate *> &interfaces,
                                                struct ifreq &req)
 {
-    QNetworkInterfacePrivate *iface = 0;
+    QNetworkInterfacePrivate *iface = nullptr;
     int ifindex = 0;
 
 #if !defined(QT_NO_IPV6IFNAME) || defined(SIOCGIFINDEX)
@@ -344,7 +344,7 @@ QT_END_INCLUDE_NAMESPACE
 
 static QList<QNetworkInterfacePrivate *> createInterfaces(ifaddrs *rawList)
 {
-    Q_UNUSED(getMtu)
+    Q_UNUSED(getMtu);
     QList<QNetworkInterfacePrivate *> interfaces;
     QDuplicateTracker<QString> seenInterfaces;
     QDuplicateTracker<int> seenIndexes;
@@ -400,7 +400,7 @@ static void getAddressExtraInfo(QNetworkAddressEntry *entry, struct sockaddr *sa
 {
     Q_UNUSED(entry);
     Q_UNUSED(sa);
-    Q_UNUSED(ifname)
+    Q_UNUSED(ifname);
 }
 
 # elif defined(Q_OS_BSD4)
@@ -487,7 +487,7 @@ static QList<QNetworkInterfacePrivate *> createInterfaces(ifaddrs *rawList)
     memset(&mediareq, 0, sizeof(mediareq));
 
     // ensure both structs start with the name field, of size IFNAMESIZ
-    Q_STATIC_ASSERT(sizeof(mediareq.ifm_name) == sizeof(req.ifr_name));
+    static_assert(sizeof(mediareq.ifm_name) == sizeof(req.ifr_name));
     Q_ASSERT(&mediareq.ifm_name == &req.ifr_name);
 
     // on NetBSD we use AF_LINK and sockaddr_dl
@@ -568,7 +568,7 @@ static void getAddressExtraInfo(QNetworkAddressEntry *entry, struct sockaddr *sa
 
 static QList<QNetworkInterfacePrivate *> createInterfaces(ifaddrs *rawList)
 {
-    Q_UNUSED(getMtu)
+    Q_UNUSED(getMtu);
     QList<QNetworkInterfacePrivate *> interfaces;
 
     // make sure there's one entry for each interface
@@ -600,7 +600,7 @@ static void getAddressExtraInfo(QNetworkAddressEntry *entry, struct sockaddr *sa
 {
     Q_UNUSED(entry);
     Q_UNUSED(sa);
-    Q_UNUSED(ifname)
+    Q_UNUSED(ifname);
 }
 # endif
 
@@ -618,7 +618,7 @@ static QList<QNetworkInterfacePrivate *> interfaceListing()
     for (ifaddrs *ptr = interfaceListing; ptr; ptr = ptr->ifa_next) {
         // Find the interface
         QLatin1String name(ptr->ifa_name);
-        QNetworkInterfacePrivate *iface = 0;
+        QNetworkInterfacePrivate *iface = nullptr;
         QList<QNetworkInterfacePrivate *>::Iterator if_it = interfaces.begin();
         for ( ; if_it != interfaces.end(); ++if_it)
             if ((*if_it)->name == name) {

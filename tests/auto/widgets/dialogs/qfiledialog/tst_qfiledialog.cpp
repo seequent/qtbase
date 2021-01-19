@@ -27,7 +27,10 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QStandardPaths>
+#include <QSignalSpy>
+#include <QTemporaryFile>
 
 #include <qcoreapplication.h>
 #include <qfile.h>
@@ -71,7 +74,7 @@ QT_END_NAMESPACE
 
 static inline bool isCaseSensitiveFileSystem(const QString &path)
 {
-    Q_UNUSED(path)
+    Q_UNUSED(path);
 #if defined(Q_OS_MAC)
     return pathconf(QFile::encodeName(path).constData(), _PC_CASE_SENSITIVE);
 #elif defined(Q_OS_WIN)
@@ -201,8 +204,8 @@ class MyAbstractItemDelegate : public QAbstractItemDelegate
 {
 public:
     MyAbstractItemDelegate() : QAbstractItemDelegate() {};
-    void paint(QPainter *, const QStyleOptionViewItem &, const QModelIndex &) const {}
-    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const { return QSize(); }
+    void paint(QPainter *, const QStyleOptionViewItem &, const QModelIndex &) const override {}
+    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override { return QSize(); }
 };
 
 // emitted any time the selection model emits current changed
@@ -292,7 +295,6 @@ void tst_QFiledialog::filesSelectedSignal_data()
     QTest::newRow("any") << QFileDialog::AnyFile;
     QTest::newRow("existing") << QFileDialog::ExistingFile;
     QTest::newRow("directory") << QFileDialog::Directory;
-    QTest::newRow("directoryOnly") << QFileDialog::DirectoryOnly;
     QTest::newRow("existingFiles") << QFileDialog::ExistingFiles;
 }
 
@@ -317,7 +319,7 @@ void tst_QFiledialog::filesSelectedSignal()
     QModelIndex file;
     for (int i = 0; i < listView->model()->rowCount(root); ++i) {
         file = listView->model()->index(i, 0, root);
-        if (fileMode == QFileDialog::Directory || fileMode == QFileDialog::DirectoryOnly) {
+        if (fileMode == QFileDialog::Directory) {
             if (listView->model()->hasChildren(file))
                 break;
         } else {
@@ -366,7 +368,7 @@ void tst_QFiledialog::filterSelectedSignal()
 
 void tst_QFiledialog::args()
 {
-    QWidget *parent = 0;
+    QWidget *parent = nullptr;
     QString caption = "caption";
     QString directory = QDir::tempPath();
     QString filter = "*.mp3";
@@ -649,8 +651,6 @@ void tst_QFiledialog::fileMode()
     QCOMPARE(fd.fileMode(), QFileDialog::ExistingFile);
     fd.setFileMode(QFileDialog::Directory);
     QCOMPARE(fd.fileMode(), QFileDialog::Directory);
-    fd.setFileMode(QFileDialog::DirectoryOnly);
-    QCOMPARE(fd.fileMode(), QFileDialog::DirectoryOnly);
     fd.setFileMode(QFileDialog::ExistingFiles);
     QCOMPARE(fd.fileMode(), QFileDialog::ExistingFiles);
 }

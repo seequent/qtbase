@@ -55,25 +55,11 @@ QT_BEGIN_NAMESPACE
 // to lacking stdlib support. But QStringLiteral only needs the
 // core language feature, so just use u"" here unconditionally:
 
-typedef char16_t qunicodechar;
-
-Q_STATIC_ASSERT_X(sizeof(qunicodechar) == 2,
-        "qunicodechar must typedef an integral type of size 2");
-
 #define QT_UNICODE_LITERAL(str) u"" str
 #define QStringLiteral(str) \
-    ([]() noexcept -> QString { \
-        enum { Size = sizeof(QT_UNICODE_LITERAL(str))/2 - 1 }; \
-        static const QArrayData qstring_literal = { \
-            Q_BASIC_ATOMIC_INITIALIZER(-1), QArrayData::StaticDataFlags, 0 \
-        }; \
-        QStringPrivate holder = {  \
-            static_cast<QTypedArrayData<char16_t> *>(const_cast<QArrayData *>(&qstring_literal)), \
-            const_cast<qunicodechar *>(QT_UNICODE_LITERAL(str)), \
-            Size \
-        }; \
-        return QString(holder); \
-    }()) \
+    (QString(QStringPrivate(nullptr,  \
+                            const_cast<char16_t *>(QT_UNICODE_LITERAL(str)), \
+                            sizeof(QT_UNICODE_LITERAL(str))/2 - 1))) \
     /**/
 
 using QStringPrivate = QArrayDataPointer<char16_t>;

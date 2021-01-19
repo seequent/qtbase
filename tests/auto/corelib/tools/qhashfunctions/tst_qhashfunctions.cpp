@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <qhash.h>
 
@@ -69,17 +69,13 @@ private Q_SLOTS:
 void tst_QHashFunctions::consistent()
 {
     // QString-like
-    {
-        const QString s = QStringLiteral("abcdefghijklmnopqrstuvxyz").repeated(16);
-
-        QCOMPARE(qHash(s), qHash(QStringRef(&s)));
-        QCOMPARE(qHash(s), qHash(QStringView(s)));
-    }
+    const QString s = QStringLiteral("abcdefghijklmnopqrstuvxyz").repeated(16);
+    QCOMPARE(qHash(s), qHash(QStringView(s)));
 }
 
 void tst_QHashFunctions::initTestCase()
 {
-    Q_STATIC_ASSERT(int(RandomSeed) > 0);
+    static_assert(int(RandomSeed) > 0);
 
     QTest::addColumn<uint>("seedValue");
     QTest::newRow("zero-seed") << 0U;
@@ -176,10 +172,6 @@ void tst_QHashFunctions::qhash_of_empty_and_null_qstring()
     QCOMPARE(null, empty);
     QCOMPARE(qHash(null, seed), qHash(empty, seed));
 
-    QStringRef nullRef, emptyRef(&empty);
-    QCOMPARE(nullRef, emptyRef);
-    QCOMPARE(qHash(nullRef, seed), qHash(emptyRef, seed));
-
     QStringView nullView, emptyView(empty);
     QCOMPARE(nullView, emptyView);
     QCOMPARE(qHash(nullView, seed), qHash(emptyView, seed));
@@ -240,7 +232,7 @@ void tst_QHashFunctions::range()
     {
         // verify that the input iterator category suffices:
         std::stringstream sstream;
-        Q_STATIC_ASSERT((std::is_same<std::input_iterator_tag, std::istream_iterator<int>::iterator_category>::value));
+        static_assert((std::is_same<std::input_iterator_tag, std::istream_iterator<int>::iterator_category>::value));
         std::copy(ints, ints + numInts, std::ostream_iterator<int>(sstream, " "));
         sstream.seekg(0);
         std::istream_iterator<int> it(sstream), end;

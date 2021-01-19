@@ -695,19 +695,18 @@ QAccessibleInterface *QAccessible::queryAccessibleInterface(QObject *object)
         // Find a QAccessiblePlugin (factory) for the class name. If there's
         // no entry in the cache try to create it using the plugin loader.
         if (!qAccessiblePlugins()->contains(cn)) {
-            QAccessiblePlugin *factory = nullptr; // 0 means "no plugin found". This is cached as well.
             const int index = loader()->indexOf(cn);
-            if (index != -1)
-                factory = qobject_cast<QAccessiblePlugin *>(loader()->instance(index));
-            qAccessiblePlugins()->insert(cn, factory);
+            if (index != -1) {
+                QAccessiblePlugin *factory = qobject_cast<QAccessiblePlugin *>(loader()->instance(index));
+                qAccessiblePlugins()->insert(cn, factory);
+            }
         }
 
         // At this point the cache should contain a valid factory pointer or 0:
-        Q_ASSERT(qAccessiblePlugins()->contains(cn));
         QAccessiblePlugin *factory = qAccessiblePlugins()->value(cn);
         if (factory) {
             QAccessibleInterface *result = factory->create(cn, object);
-            if (result) {   // Need this condition because of QDesktopScreenWidget
+            if (result) {
                 QAccessibleCache::instance()->insert(object, result);
                 Q_ASSERT(QAccessibleCache::instance()->containsObject(object));
             }
@@ -1085,15 +1084,16 @@ QPair< int, int > QAccessible::qAccessibleTextBoundaryHelper(const QTextCursor &
     relations, unless they are handled in a specific way such as in tree views.
     It will typically return the labelled-by and label relations.
 
-    It is possible to filter the relations by using \a match.
+    It is possible to filter the relations by using the optional parameter \a match.
     It should never return itself.
 
     \sa parent(), child()
 */
-QVector<QPair<QAccessibleInterface*, QAccessible::Relation> >
-QAccessibleInterface::relations(QAccessible::Relation /*match = QAccessible::AllRelations*/) const
+QList<QPair<QAccessibleInterface*, QAccessible::Relation>>
+QAccessibleInterface::relations(QAccessible::Relation match) const
 {
-    return QVector<QPair<QAccessibleInterface*, QAccessible::Relation> >();
+    Q_UNUSED(match);
+    return { };
 }
 
 /*!
@@ -1798,11 +1798,6 @@ void QAccessibleInterface::virtual_hook(int /*id*/, void * /*data*/)
     interfaces. For example a line edit should implement the
     QAccessibleTextInterface.
 
-    Qt's QLineEdit for example has its accessibility support
-    implemented in QAccessibleLineEdit.
-
-    \snippet code/src_gui_accessible_qaccessible.cpp 3
-
     \sa QAccessible::InterfaceType, QAccessibleTextInterface,
     QAccessibleValueInterface, QAccessibleActionInterface,
     QAccessibleTableInterface, QAccessibleTableCellInterface
@@ -1822,12 +1817,6 @@ const char *qAccessibleEventString(QAccessible::Event event)
 {
     static int eventEnum = QAccessible::staticMetaObject.indexOfEnumerator("Event");
     return QAccessible::staticMetaObject.enumerator(eventEnum).valueToKey(event);
-}
-
-/*! \internal */
-bool operator==(const QAccessible::State &first, const QAccessible::State &second)
-{
-    return memcmp(&first, &second, sizeof(QAccessible::State)) == 0;
 }
 
 #ifndef QT_NO_DEBUG_STREAM

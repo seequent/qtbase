@@ -6695,14 +6695,6 @@ static const unsigned short uc_property_trie[] = {
     2891, 2891, 2891, 2891, 2891, 2891, 2885, 2885
 };
 
-#define GET_PROP_INDEX(ucs4) \
-       (ucs4 < 0x11000 \
-        ? (uc_property_trie[uc_property_trie[ucs4>>5] + (ucs4 & 0x1f)]) \
-        : (uc_property_trie[uc_property_trie[((ucs4 - 0x11000)>>8) + 0x880] + (ucs4 & 0xff)]))
-
-#define GET_PROP_INDEX_UCS2(ucs2) \
-       (uc_property_trie[uc_property_trie[ucs2>>5] + (ucs2 & 0x1f)])
-
 static const Properties uc_properties[] = {
     { 9, 18, 0, 0, -1, 0, 1, 0,  { {0, 0}, {0, 0}, {0, 0}, {0, 0} }, 3, 0, 21, 0, 2 },
     { 9, 8, 0, 0, -1, 0, 1, 0,  { {0, 0}, {0, 0}, {0, 0}, {0, 0} }, 3, 0, 17, 5, 2 },
@@ -9600,12 +9592,17 @@ static const Properties uc_properties[] = {
 
 Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(char32_t ucs4) noexcept
 {
-    return uc_properties + GET_PROP_INDEX(ucs4);
+    Q_ASSERT(ucs4 <= QChar::LastValidCodePoint);
+    if (ucs4 < 0x11000)
+        return uc_properties + uc_property_trie[uc_property_trie[ucs4 >> 5] + (ucs4 & 0x1f)];
+
+    return uc_properties
+        + uc_property_trie[uc_property_trie[((ucs4 - 0x11000) >> 8) + 0x880] + (ucs4 & 0xff)];
 }
 
 Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(char16_t ucs2) noexcept
 {
-    return uc_properties + GET_PROP_INDEX_UCS2(ucs2);
+    return uc_properties + uc_property_trie[uc_property_trie[ucs2 >> 5] + (ucs2 & 0x1f)];
 }
 
 Q_DECL_CONST_FUNCTION Q_CORE_EXPORT const Properties * QT_FASTCALL properties(char32_t ucs4) noexcept
@@ -9637,7 +9634,6 @@ Q_CORE_EXPORT LineBreakClass QT_FASTCALL lineBreakClass(char32_t ucs4) noexcept
 {
     return static_cast<LineBreakClass>(qGetProp(ucs4)->lineBreakClass);
 }
-
 
 static const unsigned short specialCaseMap[] = {
     0x0, // placeholder
@@ -9947,7 +9943,6 @@ static const unsigned short specialCaseMap[] = {
 };
 
 const unsigned int MaxSpecialCaseLength = 3;
-
 
 static const unsigned short uc_decomposition_trie[] = {
     // 0 - 0x3400
@@ -11831,10 +11826,10 @@ static const unsigned short uc_decomposition_trie[] = {
 
 #define GET_DECOMPOSITION_INDEX(ucs4) \
        (ucs4 < 0x3400 \
-        ? (uc_decomposition_trie[uc_decomposition_trie[ucs4>>4] + (ucs4 & 0xf)]) \
-        : (ucs4 < 0x30000 \
-           ? uc_decomposition_trie[uc_decomposition_trie[((ucs4 - 0x3400)>>8) + 0x340] + (ucs4 & 0xff)] \
-           : 0xffff))
+        ? (uc_decomposition_trie[uc_decomposition_trie[ucs4 >> 4] + (ucs4 & 0xf)]) \
+        : ucs4 < 0x30000 \
+        ? uc_decomposition_trie[uc_decomposition_trie[((ucs4 - 0x3400) >> 8) + 0x340] + (ucs4 & 0xff)] \
+        : 0xffff)
 
 static const unsigned short uc_decomposition_map[] = {
     0x103, 0x20, 0x210, 0x20, 0x308, 0x109, 0x61, 0x210,
@@ -14070,10 +14065,10 @@ static const unsigned short uc_ligature_trie[] = {
 
 #define GET_LIGATURE_INDEX(ucs4) \
        (ucs4 < 0x3100 \
-        ? (uc_ligature_trie[uc_ligature_trie[ucs4>>5] + (ucs4 & 0x1f)]) \
-        : (ucs4 < 0x12000 \
-           ? uc_ligature_trie[uc_ligature_trie[((ucs4 - 0x3100)>>8) + 0x188] + (ucs4 & 0xff)] \
-           : 0xffff))
+        ? (uc_ligature_trie[uc_ligature_trie[ucs4 >> 5] + (ucs4 & 0x1f)]) \
+        : ucs4 < 0x12000 \
+        ? uc_ligature_trie[uc_ligature_trie[((ucs4 - 0x3100) >> 8) + 0x188] + (ucs4 & 0xff)] \
+        : 0xffff)
 
 static const unsigned short uc_ligature_map[] = {
     0x54, 0x41, 0xc0, 0x45, 0xc8, 0x49, 0xcc, 0x4e,
@@ -14324,7 +14319,6 @@ static const unsigned short uc_ligature_map[] = {
     0xd805, 0xddba, 0xd805, 0xddb9, 0xd805, 0xddbb, 0x1, 0xd806,
     0xdd35, 0xd806, 0xdd38
 };
-
 
 struct NormalizationCorrection {
     uint ucs4;

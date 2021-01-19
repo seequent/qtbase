@@ -26,14 +26,13 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <private/qflatmap_p.h>
 #include <qbytearray.h>
 #include <qstring.h>
 #include <qstringview.h>
 #include <qvarlengtharray.h>
-#include <qvector.h>
 
 #include <algorithm>
 #include <list>

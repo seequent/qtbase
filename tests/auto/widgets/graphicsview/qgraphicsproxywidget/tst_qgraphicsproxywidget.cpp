@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <QtGui>
 #include <QtWidgets>
 #include <private/qgraphicsproxywidget_p.h>
@@ -170,7 +170,7 @@ class SubQGraphicsProxyWidget : public QGraphicsProxyWidget
 {
 
 public:
-    SubQGraphicsProxyWidget(QGraphicsItem *parent = 0) : QGraphicsProxyWidget(parent),
+    SubQGraphicsProxyWidget(QGraphicsItem *parent = nullptr) : QGraphicsProxyWidget(parent),
     paintCount(0), keyPress(0), focusOut(0)
         {}
 
@@ -225,7 +225,7 @@ public:
     void call_showEvent(QShowEvent* event)
         { return SubQGraphicsProxyWidget::showEvent(event); }
 
-    void paint (QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0)    {
+    void paint (QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr)    {
         paintCount++;
         QGraphicsProxyWidget::paint(painter, option, widget);
     }
@@ -943,7 +943,7 @@ public:
         installEventFilter(this);
     }
 
-    void enterEvent(QEvent *event)
+    void enterEvent(QEnterEvent *event)
     {
         enterCount++;
         QWidget::enterEvent(event);
@@ -1482,7 +1482,7 @@ void tst_QGraphicsProxyWidget::maximumSize()
 class View : public QGraphicsView
 {
 public:
-    View(QGraphicsScene *scene, QWidget *parent = 0)
+    View(QGraphicsScene *scene, QWidget *parent = nullptr)
         : QGraphicsView(scene, parent), npaints(0)
     { }
     QRegion paintEventRegion;
@@ -1524,10 +1524,10 @@ protected:
     }
 };
 
-// ### work around missing QVector ctor from iterator pair:
-static QVector<QRect> rects(const QRegion &region)
+// ### work around missing QList ctor from iterator pair:
+static QList<QRect> rects(const QRegion &region)
 {
-    QVector<QRect> result;
+    QList<QRect> result;
     for (QRect r : region)
         result.push_back(r);
     return result;
@@ -1555,10 +1555,10 @@ void tst_QGraphicsProxyWidget::scrollUpdate()
     // QRect(0, 12, 102, 10) is the scroll update, expanded (-2, -2, 2, 2),
     // intersected with the above update.
     QCOMPARE(rects(view.paintEventRegion),
-             QVector<QRect>() << QRect(0, 0, 200, 12) << QRect(0, 12, 102, 10));
+             QList<QRect>() << QRect(0, 0, 200, 12) << QRect(0, 12, 102, 10));
     QCOMPARE(widget->npaints, 2);
     QCOMPARE(rects(widget->paintEventRegion),
-             QVector<QRect>() << QRect(0, 0, 200, 12) << QRect(0, 12, 102, 10));
+             QList<QRect>() << QRect(0, 0, 200, 12) << QRect(0, 12, 102, 10));
 }
 
 void tst_QGraphicsProxyWidget::setWidget_simple()
@@ -2758,7 +2758,7 @@ void tst_QGraphicsProxyWidget::childPos()
         QApplication::processEvents();
         QApplication::processEvents();
 
-        QWidget *menu = 0;
+        QWidget *menu = nullptr;
         foreach (QObject *child, box->children()) {
             if ((menu = qobject_cast<QWidget *>(child)))
                 break;
@@ -3670,7 +3670,7 @@ void tst_QGraphicsProxyWidget::windowFrameMargins()
 class HoverButton : public QPushButton
 {
 public:
-    HoverButton(QWidget *parent = 0) : QPushButton(parent), hoverLeaveReceived(false)
+    HoverButton(QWidget *parent = nullptr) : QPushButton(parent), hoverLeaveReceived(false)
     {}
 
     bool hoverLeaveReceived;
@@ -3830,7 +3830,7 @@ void tst_QGraphicsProxyWidget::QTBUG_43780_visibility()
 class TouchWidget : public QWidget
 {
 public:
-    TouchWidget(QWidget *parent = 0) : QWidget(parent) {}
+    TouchWidget(QWidget *parent = nullptr) : QWidget(parent) {}
 
     bool event(QEvent *event)
     {
@@ -3871,7 +3871,7 @@ void tst_QGraphicsProxyWidget::forwardTouchEvent()
 
     EventSpy eventSpy(widget);
 
-    QTouchDevice *device = QTest::createTouchDevice();
+    QPointingDevice *device = QTest::createTouchDevice();
 
     QCOMPARE(eventSpy.counts[QEvent::TouchBegin], 0);
     QCOMPARE(eventSpy.counts[QEvent::TouchUpdate], 0);

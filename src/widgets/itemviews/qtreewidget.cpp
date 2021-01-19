@@ -407,7 +407,7 @@ bool QTreeModel::clearItemData(const QModelIndex &index)
     }
     itm->d->display[index.column()] = QVariant();
     itm->values[index.column()].clear();
-    emit dataChanged(index, index, QVector<int>{});
+    emit dataChanged(index, index, QList<int> {});
     return true;
 }
 
@@ -491,7 +491,7 @@ bool QTreeModel::insertColumns(int column, int count, const QModelIndex &parent)
             QTreeWidgetItem *child = children.at(row);
             if (child->children.count())
                 itemstack.push(child);
-            child->values.insert(column, count, QVector<QWidgetItemData>());
+            child->values.insert(column, count, QList<QWidgetItemData>());
         }
     }
 
@@ -622,7 +622,7 @@ void QTreeModel::ensureSorted(int column, Qt::SortOrder order,
     QList<QTreeWidgetItem*> lst = itm->children;
 
     int count = end - start + 1;
-    QVector < QPair<QTreeWidgetItem*,int> > sorting(count);
+    QList<QPair<QTreeWidgetItem *, int>> sorting(count);
     for (int i = 0; i < count; ++i) {
         sorting[i].first = lst.at(start + i);
         sorting[i].second = start + i;
@@ -738,7 +738,10 @@ QList<QTreeWidgetItem*>::iterator QTreeModel::sortedInsertionIterator(
 
 QStringList QTreeModel::mimeTypes() const
 {
-    return view()->mimeTypes();
+    auto v = view();
+    if (v)
+        return v->mimeTypes();
+    return {};
 }
 
 QMimeData *QTreeModel::internalMimeData()  const
@@ -798,7 +801,7 @@ bool QTreeModel::isChanging() const
     if column is -1 then all columns have changed
 */
 
-void QTreeModel::emitDataChanged(QTreeWidgetItem *item, int column, const QVector<int> &roles)
+void QTreeModel::emitDataChanged(QTreeWidgetItem *item, int column, const QList<int> &roles)
 {
     if (signalsBlocked())
         return;
@@ -864,7 +867,7 @@ void QTreeModel::sortItems(QList<QTreeWidgetItem*> *items, int column, Qt::SortO
         return;
 
     // store the original order of indexes
-    QVector< QPair<QTreeWidgetItem*,int> > sorting(items->count());
+    QList<QPair<QTreeWidgetItem *, int>> sorting(items->count());
     for (int i = 0; i < sorting.count(); ++i) {
         sorting[i].first = items->at(i);
         sorting[i].second = i;
@@ -1654,7 +1657,7 @@ QTreeWidgetItem *QTreeWidgetItem::clone() const
 /*!
    Sets the item indicator \a policy. This policy decides when the
    tree branch expand/collapse indicator is shown.
-   The default value is ShowForChildren.
+   The default value is DontShowIndicatorWhenChildless.
 
    \sa childIndicatorPolicy()
 */
@@ -1836,7 +1839,7 @@ void QTreeWidgetItem::setData(int column, int role, const QVariant &value)
     default:
         if (column < values.count()) {
             bool found = false;
-            const QVector<QWidgetItemData> column_values = values.at(column);
+            const QList<QWidgetItemData> column_values = values.at(column);
             for (int i = 0; i < column_values.count(); ++i) {
                 if (column_values.at(i).role == role) {
                     if (column_values.at(i).value == value)
@@ -1858,9 +1861,9 @@ void QTreeWidgetItem::setData(int column, int role, const QVariant &value)
     }
 
     if (model) {
-        const QVector<int> roles((role == Qt::DisplayRole || role == Qt::EditRole) ?
-                                     QVector<int>({Qt::DisplayRole, Qt::EditRole}) :
-                                     QVector<int>({role}));
+        const QList<int> roles((role == Qt::DisplayRole || role == Qt::EditRole)
+                                       ? QList<int>({ Qt::DisplayRole, Qt::EditRole })
+                                       : QList<int>({ role }));
         model->emitDataChanged(this, column, roles);
         if (role == Qt::CheckStateRole) {
             QTreeWidgetItem *p;
@@ -1888,7 +1891,7 @@ QVariant QTreeWidgetItem::data(int column, int role) const
         Q_FALLTHROUGH();
    default:
         if (column >= 0 && column < values.size()) {
-            const QVector<QWidgetItemData> &column_values = values.at(column);
+            const QList<QWidgetItemData> &column_values = values.at(column);
             for (const auto &column_value : column_values) {
                 if (column_value.role == role)
                     return column_value.value;
@@ -3309,18 +3312,6 @@ Qt::DropActions QTreeWidget::supportedDropActions() const
 }
 
 /*!
-  \obsolete
-  Returns an empty list
-
-  \sa mimeData()
-*/
-QList<QTreeWidgetItem*> QTreeWidget::items(const QMimeData *data) const
-{
-    Q_UNUSED(data);
-    return QList<QTreeWidgetItem*>();
-}
-
-/*!
     Returns the QModelIndex associated with the given \a item in the given \a column.
 
     \note In Qt versions prior to 5.7, this function took a non-\c{const} \a item.
@@ -3401,7 +3392,7 @@ void QTreeWidget::dropEvent(QDropEvent *event) {
 
             event->accept();
             // Don't want QAbstractItemView to delete it because it was "moved" we already did it
-            event->setDropAction(Qt::CopyAction);
+            d->dropEventMoved = true;
         }
     }
 

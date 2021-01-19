@@ -68,6 +68,7 @@ public:
 
     QVulkanInfoVector<QVulkanLayer> supportedLayers() const override;
     QVulkanInfoVector<QVulkanExtension> supportedExtensions() const override;
+    QVersionNumber supportedApiVersion() const override;
     bool isValid() const override;
     VkResult errorCode() const override;
     VkInstance vkInstance() const override;
@@ -75,10 +76,10 @@ public:
     QByteArrayList enabledExtensions() const override;
     PFN_vkVoidFunction getInstanceProcAddr(const char *name) override;
     bool supportsPresent(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, QWindow *window) override;
-    void setDebugFilters(const QVector<QVulkanInstance::DebugFilter> &filters) override;
+    void setDebugFilters(const QList<QVulkanInstance::DebugFilter> &filters) override;
 
     void destroySurface(VkSurfaceKHR surface) const;
-    const QVector<QVulkanInstance::DebugFilter> *debugFilters() const { return &m_debugFilters; }
+    const QList<QVulkanInstance::DebugFilter> *debugFilters() const { return &m_debugFilters; }
 
 protected:
     void loadVulkanLibrary(const QString &defaultLibraryName);
@@ -99,6 +100,7 @@ private:
     VkResult m_errorCode;
     QVulkanInfoVector<QVulkanLayer> m_supportedLayers;
     QVulkanInfoVector<QVulkanExtension> m_supportedExtensions;
+    QVersionNumber m_supportedApiVersion;
     QByteArrayList m_enabledLayers;
     QByteArrayList m_enabledExtensions;
 
@@ -110,7 +112,7 @@ private:
 
     VkDebugReportCallbackEXT m_debugCallback;
     PFN_vkDestroyDebugReportCallbackEXT m_vkDestroyDebugReportCallbackEXT;
-    QVector<QVulkanInstance::DebugFilter> m_debugFilters;
+    QList<QVulkanInstance::DebugFilter> m_debugFilters;
 };
 
 QT_END_NAMESPACE

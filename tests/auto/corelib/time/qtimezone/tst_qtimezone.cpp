@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
@@ -26,10 +26,14 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qtimezone.h>
 #include <private/qtimezoneprivate_p.h>
 #include <qlocale.h>
+
+#if defined(Q_OS_WIN)
+#include <QOperatingSystemVersion>
+#endif
 
 #if defined(Q_OS_WIN) && !QT_CONFIG(icu)
 #  define USING_WIN_TZ
@@ -42,7 +46,7 @@ class tst_QTimeZone : public QObject
 public:
     tst_QTimeZone();
 
-private slots:
+private Q_SLOTS:
     // Public class default system tests
     void createTest();
     void nullTest();
@@ -62,6 +66,7 @@ private slots:
     void windowsId();
     void isValidId_data();
     void isValidId();
+    void serialize();
     // Backend tests
     void utcTest();
     void icuTest();
@@ -154,25 +159,23 @@ void tst_QTimeZone::printTimeZone(const QTimeZone &tz)
 
 void tst_QTimeZone::createTest()
 {
-    QTimeZone tz("Pacific/Auckland");
+    const QTimeZone tz("Pacific/Auckland");
 
     if (debug)
         printTimeZone(tz);
 
     // If the tz is not valid then skip as is probably using the UTC backend which is tested later
     if (!tz.isValid())
-        return;
+        QSKIP("System lacks zone used for test"); // This returns.
 
-    // Validity tests
-    QCOMPARE(tz.isValid(), true);
-
-    // Comparison tests
-    QTimeZone tz2("Pacific/Auckland");
-    QTimeZone tz3("Australia/Sydney");
-    QCOMPARE((tz == tz2), true);
-    QCOMPARE((tz != tz2), false);
-    QCOMPARE((tz == tz3), false);
-    QCOMPARE((tz != tz3), true);
+    QCOMPARE(tz.id(), "Pacific/Auckland");
+    // Comparison tests:
+    const QTimeZone same("Pacific/Auckland");
+    QCOMPARE((tz == same), true);
+    QCOMPARE((tz != same), false);
+    const QTimeZone other("Australia/Sydney");
+    QCOMPARE((tz == other), false);
+    QCOMPARE((tz != other), true);
 
     QCOMPARE(tz.country(), QLocale::NewZealand);
 
@@ -228,19 +231,17 @@ void tst_QTimeZone::createTest()
         QCOMPARE(tran.daylightTimeOffset, 0);
 
         QTimeZone::OffsetDataList expected;
-        tran.atUtc = QDateTime(QDate(2011, 4, 3), QTime(2, 0), Qt::OffsetFromUTC, 13 * 3600);
-        tran.offsetFromUtc = 13 * 3600;
-        tran.standardTimeOffset = 12 * 3600;
-        tran.daylightTimeOffset = 3600;
+        // Reuse 2012's fall-back data for 2011-04-03:
+        tran.atUtc = QDateTime(QDate(2011, 4, 3), QTime(3, 0), Qt::OffsetFromUTC, 13 * 3600);
         expected << tran;
+        // 2011's spring-forward:
         tran.atUtc = QDateTime(QDate(2011, 9, 25), QTime(2, 0), Qt::OffsetFromUTC, 12 * 3600);
-        tran.offsetFromUtc = 12 * 3600;
-        tran.standardTimeOffset = 12 * 3600;
-        tran.daylightTimeOffset = 0;
+        tran.offsetFromUtc = 13 * 3600;
+        tran.daylightTimeOffset = 3600;
         expected << tran;
         QTimeZone::OffsetDataList result = tz.transitions(janPrev, jan);
         QCOMPARE(result.count(), expected.count());
-        for (int i = 0; i > expected.count(); ++i) {
+        for (int i = 0; i < expected.count(); ++i) {
             QCOMPARE(result.at(i).atUtc, expected.at(i).atUtc);
             QCOMPARE(result.at(i).offsetFromUtc, expected.at(i).offsetFromUtc);
             QCOMPARE(result.at(i).standardTimeOffset, expected.at(i).standardTimeOffset);
@@ -385,8 +386,8 @@ void tst_QTimeZone::dataStreamTest()
 
 void tst_QTimeZone::isTimeZoneIdAvailable()
 {
-    QList<QByteArray> available = QTimeZone::availableTimeZoneIds();
-    foreach (const QByteArray &id, available) {
+    const QList<QByteArray> available = QTimeZone::availableTimeZoneIds();
+    for (const QByteArray &id : available) {
         QVERIFY(QTimeZone::isTimeZoneIdAvailable(id));
         QVERIFY(QTimeZone(id).isValid());
     }
@@ -448,6 +449,7 @@ void tst_QTimeZone::utcOffsetId_data()
     ROW("UTC+12:00", true, 43200);
     ROW("UTC+13:00", true, 46800);
     ROW("UTC+14:00", true, 50400);
+
     // Windows IDs known to CLDR v35.1:
     ROW("UTC-11", true, -39600);
     ROW("UTC-09", true, -32400);
@@ -500,6 +502,7 @@ void tst_QTimeZone::utcOffsetId()
         QFETCH(int, offset);
         QCOMPARE(zone.offsetFromUtc(epoch), offset);
         QVERIFY(!zone.hasDaylightTime());
+        QCOMPARE(zone.id(), id);
     }
 }
 
@@ -610,10 +613,6 @@ void tst_QTimeZone::transitionEachZone()
             continue;
         }
 #endif
-#ifdef Q_OS_ANDROID
-        if (zone == "America/Mazatlan" || zone == "Mexico/BajaSur")
-            QSKIP("Crashes on Android, see QTBUG-69132");
-#endif
         qint64 here = secs + i * 3600;
         QDateTime when = QDateTime::fromMSecsSinceEpoch(here * 1000, named);
         qint64 stamp = when.toMSecsSinceEpoch();
@@ -701,8 +700,8 @@ void tst_QTimeZone::availableTimeZoneIds()
 
 void tst_QTimeZone::stressTest()
 {
-    QList<QByteArray> idList = QTimeZone::availableTimeZoneIds();
-    foreach (const QByteArray &id, idList) {
+    const QList<QByteArray> idList = QTimeZone::availableTimeZoneIds();
+    for (const QByteArray &id : idList) {
         QTimeZone testZone = QTimeZone(id);
         QCOMPARE(testZone.isValid(), true);
         QCOMPARE(testZone.id(), id);
@@ -935,6 +934,33 @@ void tst_QTimeZone::isValidId()
 #endif
 }
 
+void tst_QTimeZone::serialize()
+{
+    int parts = 0;
+#ifndef QT_NO_DEBUG_STREAM
+    qDebug() << QTimeZone(); // to verify no crash
+    parts++;
+#endif
+#ifndef QT_NO_DATASTREAM
+    QByteArray blob;
+    {
+        QDataStream stream(&blob, QIODevice::WriteOnly);
+        stream << QTimeZone("Europe/Oslo") << QTimeZone(420) << QTimeZone() << qint64(-1);
+    }
+    QDataStream stream(&blob, QIODevice::ReadOnly);
+    QTimeZone invalid, offset, oslo;
+    qint64 minusone;
+    stream >> oslo >> offset >> invalid >> minusone;
+    QCOMPARE(oslo, QTimeZone("Europe/Oslo"));
+    QCOMPARE(offset, QTimeZone(420));
+    QVERIFY(!invalid.isValid());
+    QCOMPARE(minusone, qint64(-1));
+    parts++;
+#endif
+    if (!parts)
+        QSKIP("No serialization enabled");
+}
+
 void tst_QTimeZone::utcTest()
 {
 #ifdef QT_BUILD_INTERNAL
@@ -951,11 +977,11 @@ void tst_QTimeZone::utcTest()
     QCOMPARE(tzp.hasDaylightTime(), false);
     QCOMPARE(tzp.hasTransitions(), false);
 
-    // Test create from UTC Offset
+    // Test create from UTC Offset (uses minimal id, skipping minutes if 0)
     QDateTime now = QDateTime::currentDateTime();
     QTimeZone tz(36000);
-    QCOMPARE(tz.isValid(),   true);
-    QCOMPARE(tz.id(), QByteArray("UTC+10:00"));
+    QVERIFY(tz.isValid());
+    QCOMPARE(tz.id(), QByteArray("UTC+10"));
     QCOMPARE(tz.offsetFromUtc(now), 36000);
     QCOMPARE(tz.standardTimeOffset(now), 36000);
     QCOMPARE(tz.daylightTimeOffset(now), 0);
@@ -970,9 +996,9 @@ void tst_QTimeZone::utcTest()
     QCOMPARE(QTimeZone(max).isValid(), true);
     QCOMPARE(QTimeZone(max + 1).isValid(), false);
 
-    // Test create from standard name
+    // Test create from standard name (preserves :00 for minutes in id):
     tz = QTimeZone("UTC+10:00");
-    QCOMPARE(tz.isValid(),   true);
+    QVERIFY(tz.isValid());
     QCOMPARE(tz.id(), QByteArray("UTC+10:00"));
     QCOMPARE(tz.offsetFromUtc(now), 36000);
     QCOMPARE(tz.standardTimeOffset(now), 36000);

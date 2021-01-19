@@ -67,6 +67,9 @@ QT_BEGIN_NAMESPACE
     desktop environment's settings panel, to let the user globally control UI
     and font sizes in different applications.
 
+    \note Both physical and logical DPI are expressed in device-independent dots.
+    Multiply by QScreen::devicePixelRatio() to get device-dependent density.
+
     \inmodule QtGui
 */
 
@@ -88,6 +91,9 @@ void QScreenPrivate::updateGeometriesWithSignals()
 void QScreenPrivate::emitGeometryChangeSignals(bool geometryChanged, bool availableGeometryChanged)
 {
     Q_Q(QScreen);
+    if (geometryChanged)
+        emit q->geometryChanged(geometry);
+
     if (availableGeometryChanged)
         emit q->availableGeometryChanged(availableGeometry);
 
@@ -96,6 +102,9 @@ void QScreenPrivate::emitGeometryChangeSignals(bool geometryChanged, bool availa
         for (QScreen* sibling : siblings)
             emit sibling->virtualGeometryChanged(sibling->virtualGeometry());
     }
+
+    if (geometryChanged)
+        emit q->physicalDotsPerInchChanged(q->physicalDotsPerInch());
 }
 
 void QScreenPrivate::setPlatformScreen(QPlatformScreen *screen)
@@ -112,8 +121,8 @@ void QScreenPrivate::setPlatformScreen(QPlatformScreen *screen)
     if (refreshRate < 1.0)
         refreshRate = 60.0;
 
-    updatePrimaryOrientation();
     updateHighDpi();
+    updatePrimaryOrientation(); // derived from the geometry
 }
 
 
@@ -248,6 +257,9 @@ QSize QScreen::size() const
   Depending on what information the underlying system provides the value might not be
   entirely accurate.
 
+  \note Physical DPI is expressed in device-independent dots. Multiply by QScreen::devicePixelRatio()
+  to get device-dependent density.
+
   \sa physicalDotsPerInchY()
 */
 qreal QScreen::physicalDotsPerInchX() const
@@ -262,6 +274,9 @@ qreal QScreen::physicalDotsPerInchX() const
   This value represents the actual vertical pixel density on the screen's display.
   Depending on what information the underlying system provides the value might not be
   entirely accurate.
+
+  \note Physical DPI is expressed in device-independent dots. Multiply by QScreen::devicePixelRatio()
+  to get device-dependent density.
 
   \sa physicalDotsPerInchX()
 */
@@ -280,6 +295,9 @@ qreal QScreen::physicalDotsPerInchY() const
 
   This is a convenience property that's simply the average of the physicalDotsPerInchX
   and physicalDotsPerInchY properties.
+
+  \note Physical DPI is expressed in device-independent dots. Multiply by QScreen::devicePixelRatio()
+  to get device-dependent density.
 
   \sa physicalDotsPerInchX()
   \sa physicalDotsPerInchY()
@@ -518,7 +536,7 @@ QRect QScreen::availableVirtualGeometry() const
     based on how it is being held; in that case, this \c orientation property
     will change.
 
-    \sa primaryOrientation(), QWindow::contentOrientation(), QOrientationSensor
+    \sa primaryOrientation(), QWindow::contentOrientation()
 */
 Qt::ScreenOrientation QScreen::orientation() const
 {
@@ -703,10 +721,11 @@ QScreen *QScreen::virtualSiblingAt(QPoint point)
 /*!
     Creates and returns a pixmap constructed by grabbing the contents
     of the given \a window restricted by QRect(\a x, \a y, \a width,
-    \a height).
+    \a height). If \a window is 0, then the entire screen will be
+    grabbed.
 
     The arguments (\a{x}, \a{y}) specify the offset in the window,
-    whereas (\a{width}, \a{height}) specify the area to be copied.  If
+    whereas (\a{width}, \a{height}) specify the area to be copied. If
     \a width is negative, the function copies everything to the right
     border of the window. If \a height is negative, the function
     copies everything to the bottom of the window.

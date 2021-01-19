@@ -45,7 +45,6 @@
 #include "qandroidplatformintegration.h"
 
 #include <qpa/qwindowsysteminterface.h>
-#include <QTouchDevice>
 #include <QTouchEvent>
 #include <QPointer>
 
@@ -202,7 +201,7 @@ namespace QtAndroidInput
             QMetaObject::invokeMethod(inputContext, "longPress", Q_ARG(int, x), Q_ARG(int, y));
 
         //### TODO: add proper API for Qt 5.2
-        static bool rightMouseFromLongPress = qEnvironmentVariableIntValue("QT_NECESSITAS_COMPATIBILITY_LONG_PRESS");
+        static bool rightMouseFromLongPress = qEnvironmentVariableIntValue("QT_ANDROID_ENABLE_RIGHT_MOUSE_FROM_LONG_PRESS");
         if (!rightMouseFromLongPress)
             return;
         m_ignoreMouseEvents = true;
@@ -210,15 +209,15 @@ namespace QtAndroidInput
         QWindow *tlw = topLevelWindowAt(globalPos);
         QPoint localPos = tlw ? (globalPos-tlw->position()) : globalPos;
 
-        // Release left button
-        QWindowSystemInterface::handleMouseEvent(tlw, localPos, globalPos,
-                                                 Qt::MouseButtons(Qt::NoButton), Qt::LeftButton,
-                                                 QEvent::MouseButtonRelease);
-
-        // Press right button
-        QWindowSystemInterface::handleMouseEvent(tlw, localPos, globalPos,
-                                                 Qt::MouseButtons(Qt::RightButton), Qt::RightButton,
-                                                 QEvent::MouseButtonPress);
+        // Click right button if no other button is already pressed.
+        if (!m_mouseGrabber) {
+            QWindowSystemInterface::handleMouseEvent(tlw, localPos, globalPos,
+                                                     Qt::MouseButtons(Qt::RightButton), Qt::RightButton,
+                                                     QEvent::MouseButtonPress);
+            QWindowSystemInterface::handleMouseEvent(tlw, localPos, globalPos,
+                                                     Qt::MouseButtons(Qt::NoButton), Qt::RightButton,
+                                                     QEvent::MouseButtonRelease);
+        }
     }
 
     static void touchBegin(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/)
@@ -229,19 +228,19 @@ namespace QtAndroidInput
     static void touchAdd(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint id, jint action, jboolean /*primary*/, jint x, jint y,
         jfloat major, jfloat minor, jfloat rotation, jfloat pressure)
     {
-        Qt::TouchPointState state = Qt::TouchPointStationary;
+        QEventPoint::State state = QEventPoint::State::Stationary;
         switch (action) {
         case 0:
-            state = Qt::TouchPointPressed;
+            state = QEventPoint::State::Pressed;
             break;
         case 1:
-            state = Qt::TouchPointMoved;
+            state = QEventPoint::State::Updated;
             break;
         case 2:
-            state = Qt::TouchPointStationary;
+            state = QEventPoint::State::Stationary;
             break;
         case 3:
-            state = Qt::TouchPointReleased;
+            state = QEventPoint::State::Released;
             break;
         }
 
@@ -259,7 +258,7 @@ namespace QtAndroidInput
                                  double(major * 2));
         m_touchPoints.push_back(touchPoint);
 
-        if (state == Qt::TouchPointPressed) {
+        if (state == QEventPoint::State::Pressed) {
             QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
             if (inputContext && qGuiApp)
                 QMetaObject::invokeMethod(inputContext, "touchDown", Q_ARG(int, x), Q_ARG(int, y));
@@ -276,15 +275,15 @@ namespace QtAndroidInput
         if (!platformIntegration)
             return;
 
-        QTouchDevice *touchDevice = platformIntegration->touchDevice();
+        QPointingDevice *touchDevice = platformIntegration->touchDevice();
         if (touchDevice == 0) {
-            touchDevice = new QTouchDevice;
-            touchDevice->setType(QTouchDevice::TouchScreen);
-            touchDevice->setCapabilities(QTouchDevice::Position
-                                         | QTouchDevice::Area
-                                         | QTouchDevice::Pressure
-                                         | QTouchDevice::NormalizedPosition);
-            QWindowSystemInterface::registerTouchDevice(touchDevice);
+            touchDevice = new QPointingDevice; // TODO fill out the constructor args
+            touchDevice->setType(QInputDevice::DeviceType::TouchScreen);
+            touchDevice->setCapabilities(QPointingDevice::Capability::Position
+                                         | QPointingDevice::Capability::Area
+                                         | QPointingDevice::Capability::Pressure
+                                         | QPointingDevice::Capability::NormalizedPosition);
+            QWindowSystemInterface::registerInputDevice(touchDevice);
             platformIntegration->setTouchDevice(touchDevice);
         }
 
@@ -344,7 +343,7 @@ namespace QtAndroidInput
 #endif
 
         QWindowSystemInterface::handleTabletEvent(tlw, ulong(time),
-            localPos, globalPosF, QTabletEvent::Stylus, pointerType,
+            localPos, globalPosF, int(QInputDevice::DeviceType::Stylus), pointerType,
             buttons, pressure, 0, 0, 0., 0., 0, deviceId, Qt::NoModifier);
 #endif // QT_CONFIG(tabletevent)
     }
@@ -517,7 +516,7 @@ namespace QtAndroidInput
             return Qt::Key_Search;
 
         case 0x00000055: // KEYCODE_MEDIA_PLAY_PAUSE
-            return Qt::Key_MediaPlay;
+            return Qt::Key_MediaTogglePlayPause;
 
         case 0x00000056: // KEYCODE_MEDIA_STOP
             return Qt::Key_MediaStop;

@@ -266,6 +266,20 @@ QPoint QPlatformWindow::mapToGlobal(const QPoint &pos) const
     return result;
 }
 
+QPointF QPlatformWindow::mapToGlobalF(const QPointF &pos) const
+{
+    const QPoint posPt = pos.toPoint();
+    const QPointF delta = pos - posPt;
+    return mapToGlobal(posPt) + delta;
+}
+
+QPointF QPlatformWindow::mapFromGlobalF(const QPointF &pos) const
+{
+    const QPoint posPt = pos.toPoint();
+    const QPointF delta = pos - posPt;
+    return mapFromGlobal(posPt) + delta;
+}
+
 /*!
     Translates the global screen coordinate \a pos to window
     coordinates using native methods. This is required for embedded windows,
@@ -492,7 +506,7 @@ bool QPlatformWindow::windowEvent(QEvent *event)
 
 bool QPlatformWindow::startSystemResize(Qt::Edges edges)
 {
-    Q_UNUSED(edges)
+    Q_UNUSED(edges);
     return false;
 }
 
@@ -519,7 +533,7 @@ bool QPlatformWindow::startSystemMove()
 
 void QPlatformWindow::setFrameStrutEventsEnabled(bool enabled)
 {
-    Q_UNUSED(enabled) // Do not warn as widgets enable it by default causing warnings with XCB.
+    Q_UNUSED(enabled); // Do not warn as widgets enable it by default causing warnings with XCB.
 }
 
 /*!
@@ -607,7 +621,7 @@ QSize QPlatformWindow::constrainWindowSize(const QSize &size)
 
 void QPlatformWindow::setAlertState(bool enable)
 {
-    Q_UNUSED(enable)
+    Q_UNUSED(enable);
 }
 
 /*!
@@ -835,7 +849,7 @@ QSize QPlatformWindow::windowSizeIncrement() const
 */
 QRect QPlatformWindow::windowGeometry() const
 {
-    return QHighDpi::toNativePixels(window()->geometry(), window());
+    return QHighDpi::toNativeWindowGeometry(window()->geometry(), window());
 }
 
 /*!
@@ -843,7 +857,7 @@ QRect QPlatformWindow::windowGeometry() const
 */
 QRect QPlatformWindow::windowFrameGeometry() const
 {
-    return QHighDpi::toNativePixels(window()->frameGeometry(), window());
+    return QHighDpi::toNativeWindowGeometry(window()->frameGeometry(), window());
 }
 
 /*!
@@ -854,10 +868,10 @@ QRect QPlatformWindow::windowFrameGeometry() const
 
 QRectF QPlatformWindow::closestAcceptableGeometry(const QWindow *qWindow, const QRectF &nativeRect)
 {
-    const QRectF rectF = QHighDpi::fromNativePixels(nativeRect, qWindow);
+    const QRectF rectF = QHighDpi::fromNativeWindowGeometry(nativeRect, qWindow);
     const QRectF correctedGeometryF = qt_window_private(const_cast<QWindow *>(qWindow))->closestAcceptableGeometry(rectF);
     return !correctedGeometryF.isEmpty() && rectF != correctedGeometryF
-        ? QHighDpi::toNativePixels(correctedGeometryF, qWindow) : nativeRect;
+        ? QHighDpi::toNativeWindowGeometry(correctedGeometryF, qWindow) : nativeRect;
 }
 
 QRectF QPlatformWindow::windowClosestAcceptableGeometry(const QRectF &nativeRect) const

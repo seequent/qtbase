@@ -340,7 +340,7 @@ QString QSharedMemory::nativeKey() const
 
   \sa error()
  */
-bool QSharedMemory::create(int size, AccessMode mode)
+bool QSharedMemory::create(qsizetype size, AccessMode mode)
 {
     Q_D(QSharedMemory);
 
@@ -384,7 +384,7 @@ bool QSharedMemory::create(int size, AccessMode mode)
 
   \sa create(), attach()
  */
-int QSharedMemory::size() const
+qsizetype QSharedMemory::size() const
 {
     Q_D(const QSharedMemory);
     return d->size;
@@ -493,7 +493,7 @@ void *QSharedMemory::data()
 
   \sa attach(), create()
  */
-const void* QSharedMemory::constData() const
+const void *QSharedMemory::constData() const
 {
     Q_D(const QSharedMemory);
     return d->memory;

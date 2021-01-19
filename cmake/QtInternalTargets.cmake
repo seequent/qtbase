@@ -81,14 +81,18 @@ add_library(PlatformPluginInternal INTERFACE)
 add_library(Qt::PlatformPluginInternal ALIAS PlatformPluginInternal)
 target_link_libraries(PlatformPluginInternal INTERFACE PlatformCommonInternal)
 
+add_library(PlatformAppInternal INTERFACE)
+add_library(Qt::PlatformAppInternal ALIAS PlatformAppInternal)
+target_link_libraries(PlatformAppInternal INTERFACE PlatformCommonInternal)
+
 add_library(PlatformToolInternal INTERFACE)
 add_library(Qt::PlatformToolInternal ALIAS PlatformToolInternal)
-target_link_libraries(PlatformToolInternal INTERFACE PlatformCommonInternal)
+target_link_libraries(PlatformToolInternal INTERFACE PlatformAppInternal)
 
 if(WARNINGS_ARE_ERRORS)
     qt_internal_set_warnings_are_errors_flags(PlatformModuleInternal)
     qt_internal_set_warnings_are_errors_flags(PlatformPluginInternal)
-    qt_internal_set_warnings_are_errors_flags(PlatformToolInternal)
+    qt_internal_set_warnings_are_errors_flags(PlatformAppInternal)
 endif()
 if(WIN32)
     # Needed for M_PI define. Same as mkspecs/features/qt_module.prf.
@@ -96,18 +100,47 @@ if(WIN32)
     target_compile_definitions(PlatformModuleInternal INTERFACE _USE_MATH_DEFINES)
 endif()
 if(FEATURE_largefile AND UNIX)
-    target_compile_definitions(PlatformModuleInternal
+    target_compile_definitions(PlatformCommonInternal
                                INTERFACE "_LARGEFILE64_SOURCE;_LARGEFILE_SOURCE")
+endif()
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    # Clang will otherwise show error about inline method conflicting with dllimport class attribute in tools
+    # (this was tested with Clang 10)
+    #    error: 'QString::operator[]' redeclared inline; 'dllimport' attribute ignored [-Werror,-Wignored-attributes]
+    target_compile_options(PlatformCommonInternal INTERFACE -Wno-ignored-attributes)
 endif()
 
 # We can't use the gold linker on android with the NDK, which is the default
 # linker. To build our own target we will use the lld linker.
-if (ANDROID)
+# TODO: Why not?
+# Linking Android libs with lld on Windows sometimes deadlocks. Don't use lld on
+# Windows. qmake doesn't use lld to build Android on any host platform.
+if (ANDROID AND NOT CMAKE_HOST_WIN32)
     target_link_options(PlatformModuleInternal INTERFACE -fuse-ld=lld)
 endif()
 
 target_compile_definitions(PlatformCommonInternal INTERFACE $<$<NOT:$<CONFIG:Debug>>:QT_NO_DEBUG>)
 
+function(qt_internal_apply_bitcode_flags target)
+    # See mkspecs/features/uikit/bitcode.prf
+    set(release_flags "-fembed-bitcode")
+    set(debug_flags "-fembed-bitcode-marker")
+
+    set(is_release_genex "$<NOT:$<CONFIG:Debug>>")
+    set(flags_genex "$<IF:${is_release_genex},${release_flags},${debug_flags}>")
+    set(is_enabled_genex "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_NO_BITCODE>>>")
+
+    set(bitcode_flags "$<${is_enabled_genex}:${flags_genex}>")
+
+    target_link_options("${target}" INTERFACE ${bitcode_flags})
+    target_compile_options("${target}" INTERFACE ${bitcode_flags})
+endfunction()
+
+# Apple deprecated the entire OpenGL API in favor of Metal, which
+# we are aware of, so silence the deprecation warnings in code.
+# This does not apply to user-code, which will need to silence
+# their own warnings if they use the deprecated APIs explicitly.
 if(MACOS)
     target_compile_definitions(PlatformCommonInternal INTERFACE GL_SILENCE_DEPRECATION)
 elseif(UIKIT)
@@ -124,6 +157,7 @@ if(UIKIT)
         # TODO: Figure out if this ok or not (sounds ok to me).
         target_compile_definitions(PlatformCommonInternal INTERFACE QT_COMPILER_SUPPORTS_SSE2)
     endif()
+    qt_internal_apply_bitcode_flags(PlatformCommonInternal)
 endif()
 
 # Taken from mkspecs/common/msvc-version.conf and mkspecs/common/msvc-desktop.conf
@@ -133,27 +167,82 @@ if (MSVC)
             -FS
             -Zc:rvalueCast
             -Zc:inline
-    )
+        )
     endif()
     if (MSVC_VERSION GREATER_EQUAL 1899)
         target_compile_options(PlatformCommonInternal INTERFACE
             -Zc:strictStrings
-            -Zc:throwingNew
         )
+        if (NOT CLANG)
+            target_compile_options(PlatformCommonInternal INTERFACE
+                -Zc:throwingNew
+            )
+        endif()
     endif()
-    if (MSVC_VERSION GREATER_EQUAL 1909)
+    if (MSVC_VERSION GREATER_EQUAL 1909 AND NOT CLANG)
         target_compile_options(PlatformCommonInternal INTERFACE
             -Zc:referenceBinding
+        )
+    endif()
+    if (MSVC_VERSION GREATER_EQUAL 1919 AND NOT CLANG)
+        target_compile_options(PlatformCommonInternal INTERFACE
+            -Zc:externConstexpr
         )
     endif()
 
     target_compile_options(PlatformCommonInternal INTERFACE -Zc:wchar_t)
 
+    target_compile_options(PlatformCommonInternal INTERFACE
+        $<$<NOT:$<CONFIG:Debug>>:-guard:cf>
+    )
+
     target_link_options(PlatformCommonInternal INTERFACE
         -DYNAMICBASE -NXCOMPAT
-        $<$<CONFIG:Release>:-OPT:REF>
-        $<$<CONFIG:RelWithDebInfo>:-OPT:REF>
+        $<$<NOT:$<CONFIG:Debug>>:-OPT:REF -OPT:ICF -GUARD:CF>
     )
+endif()
+
+if (GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "9.2")
+    target_compile_options(PlatformCommonInternal INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-Wsuggest-override>)
+endif()
+
+if(QT_FEATURE_force_asserts)
+    target_compile_definitions(PlatformCommonInternal INTERFACE QT_FORCE_ASSERTS)
+endif()
+
+if(DEFINED QT_EXTRA_DEFINES)
+    target_compile_definitions(PlatformCommonInternal INTERFACE ${QT_EXTRA_DEFINES})
+endif()
+
+if(DEFINED QT_EXTRA_INCLUDEPATHS)
+    target_include_directories(PlatformCommonInternal INTERFACE ${QT_EXTRA_INCLUDEPATHS})
+endif()
+
+if(DEFINED QT_EXTRA_LIBDIRS)
+    target_link_directories(PlatformCommonInternal INTERFACE ${QT_EXTRA_LIBDIRS})
+endif()
+
+if(DEFINED QT_EXTRA_FRAMEWORKPATHS AND APPLE)
+    list(TRANSFORM QT_EXTRA_FRAMEWORKPATHS PREPEND "-F" OUTPUT_VARIABLE __qt_fw_flags)
+    target_compile_options(PlatformCommonInternal INTERFACE ${__qt_fw_flags})
+    target_link_options(PlatformCommonInternal INTERFACE ${__qt_fw_flags})
+    unset(__qt_fw_flags)
+endif()
+
+if(QT_FEATURE_use_gold_linker)
+    target_link_options(PlatformCommonInternal INTERFACE "-fuse-ld=gold")
+elseif(QT_FEATURE_use_bfd_linker)
+    target_link_options(PlatformCommonInternal INTERFACE "-fuse-ld=bfd")
+elseif(QT_FEATURE_use_lld_linker)
+    target_link_options(PlatformCommonInternal INTERFACE "-fuse-ld=lld")
+endif()
+
+if(QT_FEATURE_enable_gdb_index)
+    target_link_options(PlatformCommonInternal INTERFACE "-Wl,--gdb-index")
+endif()
+
+if(QT_FEATURE_enable_new_dtags)
+    target_link_options(PlatformCommonInternal INTERFACE "-Wl,--enable-new-dtags")
 endif()
 
 function(qt_get_implicit_sse2_genex_condition out_var)

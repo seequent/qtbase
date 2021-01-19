@@ -42,8 +42,6 @@
 #include "qfiledevice_p.h"
 #include "qfsfileengine_p.h"
 
-#include <private/qmemory_p.h>
-
 #ifdef QT_NO_QOBJECT
 #define tr(X) QString::fromLatin1(X)
 #endif
@@ -61,13 +59,12 @@ QFileDevicePrivate::QFileDevicePrivate()
     writeBufferChunkSize = QFILE_WRITEBUFFER_SIZE;
 }
 
-QFileDevicePrivate::~QFileDevicePrivate()
-    = default;
+QFileDevicePrivate::~QFileDevicePrivate() = default;
 
-QAbstractFileEngine * QFileDevicePrivate::engine() const
+QAbstractFileEngine *QFileDevicePrivate::engine() const
 {
     if (!fileEngine)
-        fileEngine = qt_make_unique<QFSFileEngine>();
+        fileEngine = std::make_unique<QFSFileEngine>();
     return fileEngine.get();
 }
 
@@ -670,7 +667,7 @@ bool QFileDevice::setPermissions(Permissions permissions)
 }
 
 /*!
-    \enum QFileDevice::MemoryMapFlags
+    \enum QFileDevice::MemoryMapFlag
     \since 4.4
 
     This enum describes special options that may be used by the map()
@@ -756,10 +753,10 @@ bool QFileDevice::unmap(uchar *address)
 
 static inline QAbstractFileEngine::FileTime FileDeviceTimeToAbstractFileEngineTime(QFileDevice::FileTime time)
 {
-    Q_STATIC_ASSERT(int(QFileDevice::FileAccessTime) == int(QAbstractFileEngine::AccessTime));
-    Q_STATIC_ASSERT(int(QFileDevice::FileBirthTime) == int(QAbstractFileEngine::BirthTime));
-    Q_STATIC_ASSERT(int(QFileDevice::FileMetadataChangeTime) == int(QAbstractFileEngine::MetadataChangeTime));
-    Q_STATIC_ASSERT(int(QFileDevice::FileModificationTime) == int(QAbstractFileEngine::ModificationTime));
+    static_assert(int(QFileDevice::FileAccessTime) == int(QAbstractFileEngine::AccessTime));
+    static_assert(int(QFileDevice::FileBirthTime) == int(QAbstractFileEngine::BirthTime));
+    static_assert(int(QFileDevice::FileMetadataChangeTime) == int(QAbstractFileEngine::MetadataChangeTime));
+    static_assert(int(QFileDevice::FileModificationTime) == int(QAbstractFileEngine::ModificationTime));
     return QAbstractFileEngine::FileTime(time);
 }
 

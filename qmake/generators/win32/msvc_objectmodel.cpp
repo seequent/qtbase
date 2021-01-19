@@ -1625,7 +1625,13 @@ bool VCLinkerTool::parseOption(const char* option)
             MapLines = _True;
         break;
     case 0x341a6b5: // /MERGE:from=to
-        MergeSections = option+7;
+        if (MergeSections.isEmpty()) {
+            MergeSections = option+7;
+        } else {
+            // vcxproj files / the VS property editor do not support multiple MergeSections entries.
+            // Add them as additional options.
+            AdditionalOptions += option;
+        }
         break;
     case 0x0341d8c: // /MIDL:@file
         MidlCommandFile = option+7;
@@ -1897,7 +1903,8 @@ bool VCMIDLTool::parseOption(const char* option)
         WarnAsError = _True;
         break;
     case 0x3582fde: // /align {N}
-        offset = 3;  // Fallthrough
+        offset = 3;
+        Q_FALLTHROUGH();
     case 0x0003510: // /Zp {N}
         switch (*(option+offset+4)) {
         case '1':

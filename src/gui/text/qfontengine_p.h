@@ -123,13 +123,13 @@ public:
     };
     Q_DECLARE_FLAGS(ShaperFlags, ShaperFlag)
 
-    /* Used with the Freetype font engine. We don't cache glyphs that are too large anyway, so we can make this struct rather small */
+    /* Used with the Freetype font engine. */
     struct Glyph {
         Glyph() = default;
         ~Glyph() { delete [] data; }
         short linearAdvance = 0;
-        unsigned char width = 0;
-        unsigned char height = 0;
+        unsigned short width = 0;
+        unsigned short height = 0;
         short x = 0;
         short y = 0;
         short advance = 0;
@@ -304,14 +304,11 @@ public:
         explicit Holder(void *p, qt_destroy_func_t d) : ptr(p), destroy_func(d) {}
         ~Holder() { if (ptr && destroy_func) destroy_func(ptr); }
         Holder(Holder &&other) noexcept
-            : ptr(other.ptr),
-              destroy_func(other.destroy_func)
+            : ptr(qExchange(other.ptr, nullptr)),
+              destroy_func(qExchange(other.destroy_func, nullptr))
         {
-            other.ptr = nullptr;
-            other.destroy_func = nullptr;
         }
-        Holder &operator=(Holder &&other) noexcept
-        { swap(other); return *this; }
+        QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(Holder)
 
         void swap(Holder &other) noexcept
         {
@@ -353,20 +350,17 @@ public:
             return left_right < other.left_right;
         }
     };
-    QVector<KernPair> kerning_pairs;
+    QList<KernPair> kerning_pairs;
     void loadKerningPairs(QFixed scalingFactor);
 
     GlyphFormat glyphFormat;
     int m_subPixelPositionCount; // Number of positions within a single pixel for this cache
-
-    inline QVariant userData() const { return m_userData; }
 
 protected:
     explicit QFontEngine(Type type);
 
     QFixed lastRightBearing(const QGlyphLayout &glyphs);
 
-    inline void setUserData(const QVariant &userData) { m_userData = userData; }
     QFixed calculatedCapHeight() const;
 
     mutable QFixed m_ascent;
@@ -393,8 +387,6 @@ private:
     mutable QHash<const void *, GlyphCaches> m_glyphCaches;
 
 private:
-    QVariant m_userData;
-
     mutable qreal m_minLeftBearing;
     mutable qreal m_minRightBearing;
 };
@@ -513,7 +505,7 @@ protected:
     virtual QFontEngine *loadEngine(int at);
 
 private:
-    QVector<QFontEngine *> m_engines;
+    QList<QFontEngine *> m_engines;
     QStringList m_fallbackFamilies;
     const int m_script;
     bool m_fallbackFamiliesQueried;

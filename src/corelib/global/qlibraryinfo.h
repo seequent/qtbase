@@ -46,23 +46,10 @@
 
 QT_BEGIN_NAMESPACE
 
-class QStringList;
-
 class Q_CORE_EXPORT QLibraryInfo
 {
 public:
-#if QT_DEPRECATED_SINCE(5, 8)
-    static QT_DEPRECATED QString licensee();
-    static QT_DEPRECATED QString licensedProducts();
-#endif
-
-#if QT_CONFIG(datestring)
-#if QT_DEPRECATED_SINCE(5, 5)
-    static QT_DEPRECATED QDate buildDate();
-#endif // QT_DEPRECATED_SINCE(5, 5)
-#endif // datestring
-
-    static const char * build() noexcept;
+    static const char *build() noexcept;
 
     static bool isDebugBuild();
 
@@ -70,8 +57,7 @@ public:
     static QVersionNumber version() noexcept Q_DECL_CONST_FUNCTION;
 #endif
 
-    enum LibraryLocation
-    {
+    enum LibraryPath {
         PrefixPath = 0,
         DocumentationPath,
         HeadersPath,
@@ -101,10 +87,16 @@ public:
 #endif
         SettingsPath = 100
     };
-    static QString location(LibraryLocation); // ### Qt 6: consider renaming it to path()
+    static QString path(LibraryPath p);
+#if QT_DEPRECATED_SINCE(6, 0)
+    using LibraryLocation = LibraryPath;
+    QT_DEPRECATED_VERSION_X_6_0("Use path()")
+    static QString location(LibraryLocation location)
+    { return path(location); }
+#endif
 #ifdef QT_BUILD_QMAKE
     enum PathGroup { FinalPaths, EffectivePaths, EffectiveSourcePaths, DevicePaths };
-    static QString rawLocation(LibraryLocation, PathGroup);
+    static QString rawLocation(LibraryPath, PathGroup);
     static void reload();
     static void sysrootify(QString *path);
 #endif

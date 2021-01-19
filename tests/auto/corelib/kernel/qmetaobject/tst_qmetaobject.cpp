@@ -26,7 +26,9 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QSignalSpy>
+#include <QSortFilterProxyModel>
 
 #include <qobject.h>
 #include <qmetaobject.h>
@@ -90,7 +92,7 @@ namespace MyNamespace {
         MyFlags myFlags() const { return m_flags; }
         void setMyFlags(MyFlags val) { m_flags = val; }
 
-        MyClass(QObject *parent = 0)
+        MyClass(QObject *parent = nullptr)
             : QObject(parent),
               m_enum(MyEnum1),
               m_flags(MyFlag1|MyFlag2)
@@ -139,7 +141,7 @@ namespace MyNamespace {
         MyFlags myFlags() const { return m_flags; }
         void setMyFlags(MyFlags val) { m_flags = val; }
 
-        MyClass2(QObject *parent = 0)
+        MyClass2(QObject *parent = nullptr)
             : QObject(parent),
               m_enum(MyEnum1),
               m_flags(MyFlag1|MyFlag2)
@@ -320,6 +322,9 @@ private slots:
 
     void indexOfMethod_data();
     void indexOfMethod();
+
+    void firstMethod_data();
+    void firstMethod();
 
     void indexOfMethodPMF();
 
@@ -518,7 +523,7 @@ public slots:
 
     void slotWithRegistrableArgument(QtTestObject *o1, QPointer<QtTestObject> o2,
                                      QSharedPointer<QtTestObject> o3, QWeakPointer<QtTestObject> o4,
-                                     QVector<QtTestObject *> o5, QList<QtTestObject *> o6)
+                                     QList<QtTestObject *> o5, QList<QtTestObject *> o6)
     {
         slotResult = QLatin1String("slotWithRegistrableArgument:") + o1->slotResult + o2->slotResult
             + o3->slotResult + o4.toStrongRef()->slotResult + QString::number(o5.size())
@@ -699,24 +704,24 @@ void tst_QMetaObject::invokeMetaMember()
     QCOMPARE(exp, QString("yessir"));
     QCOMPARE(obj.slotResult, QString("sl1:bubu"));
 
-    QObject *ptr = 0;
+    QObject *ptr = nullptr;
     QVERIFY(QMetaObject::invokeMethod(&obj, "sl11", Q_RETURN_ARG(QObject*,ptr)));
     QCOMPARE(ptr, (QObject *)&obj);
     QCOMPARE(obj.slotResult, QString("sl11"));
     // try again with a space:
-    ptr = 0;
+    ptr = nullptr;
     QVERIFY(QMetaObject::invokeMethod(&obj, "sl11", Q_RETURN_ARG(QObject * , ptr)));
     QCOMPARE(ptr, (QObject *)&obj);
     QCOMPARE(obj.slotResult, QString("sl11"));
 
-    const char *ptr2 = 0;
+    const char *ptr2 = nullptr;
     QVERIFY(QMetaObject::invokeMethod(&obj, "sl12", Q_RETURN_ARG(const char*, ptr2)));
-    QVERIFY(ptr2 != 0);
+    QVERIFY(ptr2 != nullptr);
     QCOMPARE(obj.slotResult, QString("sl12"));
     // try again with a space:
-    ptr2 = 0;
+    ptr2 = nullptr;
     QVERIFY(QMetaObject::invokeMethod(&obj, "sl12", Q_RETURN_ARG(char const * , ptr2)));
-    QVERIFY(ptr2 != 0);
+    QVERIFY(ptr2 != nullptr);
     QCOMPARE(obj.slotResult, QString("sl12"));
 
     // test w/ template args
@@ -1022,12 +1027,12 @@ void tst_QMetaObject::invokeBlockingQueuedMetaMember()
     QCOMPARE(exp, QString("yessir"));
     QCOMPARE(obj.slotResult, QString("sl1:bubu"));
 
-    QObject *ptr = 0;
+    QObject *ptr = nullptr;
     QVERIFY(QMetaObject::invokeMethod(&obj, "sl11", Qt::BlockingQueuedConnection, Q_RETURN_ARG(QObject*,ptr)));
     QCOMPARE(ptr, (QObject *)&obj);
     QCOMPARE(obj.slotResult, QString("sl11"));
     // try again with a space:
-    ptr = 0;
+    ptr = nullptr;
     QVERIFY(QMetaObject::invokeMethod(&obj, "sl11", Qt::BlockingQueuedConnection, Q_RETURN_ARG(QObject * , ptr)));
     QCOMPARE(ptr, (QObject *)&obj);
     QCOMPARE(obj.slotResult, QString("sl11"));
@@ -1218,7 +1223,7 @@ class ConstructibleClass : public QObject
 {
     Q_OBJECT
 public:
-    Q_INVOKABLE ConstructibleClass(QObject *parent = 0)
+    Q_INVOKABLE ConstructibleClass(QObject *parent = nullptr)
         : QObject(parent) {}
 };
 
@@ -1297,7 +1302,7 @@ void tst_QMetaObject::invokeQueuedAutoRegister()
         &obj, "slotWithRegistrableArgument", Qt::QueuedConnection,
         Q_ARG(QtTestObject *, shared.data()), Q_ARG(QPointer<QtTestObject>, shared.data()),
         Q_ARG(QSharedPointer<QtTestObject>, shared), Q_ARG(QWeakPointer<QtTestObject>, shared),
-        Q_ARG(QVector<QtTestObject *>, QVector<QtTestObject *>()),
+        Q_ARG(QList<QtTestObject *>, QList<QtTestObject *>()),
         Q_ARG(QList<QtTestObject *>, QList<QtTestObject *>())));
     QVERIFY(obj.slotResult.isEmpty());
     qApp->processEvents(QEventLoop::AllEvents);
@@ -1320,13 +1325,13 @@ void tst_QMetaObject::normalizedSignature_data()
     QTest::newRow("function ptr spaces") << "void foo( void ( * ) ( void ))" << "void foo(void(*)())";
     QTest::newRow("function ptr void*") << "void foo(void(*)(void*))" << "void foo(void(*)(void*))";
     QTest::newRow("function ptr void* spaces") << "void foo( void ( * ) ( void * ))" << "void foo(void(*)(void*))";
-    QTest::newRow("template args") << " void  foo( QMap<a, a>, QVector<b>) "
-                                   << "void foo(QMap<a,a>,QVector<b>)";
+    QTest::newRow("template args") << " void  foo( QMap<a, a>, QList<b>) "
+                                   << "void foo(QMap<a,a>,QList<b>)";
     QTest::newRow("void template args") << " void  foo( Foo<void>, Bar<void> ) "
                                    << "void foo(Foo<void>,Bar<void>)";
     QTest::newRow("void* template args") << " void  foo( Foo<void*>, Bar<void *> ) "
                                    << "void foo(Foo<void*>,Bar<void*>)";
-    QTest::newRow("rettype") << "QVector<int, int> foo()" << "QVector<int,int>foo()";
+    QTest::newRow("rettype") << "QList<int, int> foo()" << "QList<int,int>foo()";
     QTest::newRow("rettype void template") << "Foo<void> foo()" << "Foo<void>foo()";
     QTest::newRow("const rettype") << "const QString *foo()" << "const QString*foo()";
     QTest::newRow("const ref") << "const QString &foo()" << "const QString&foo()";
@@ -1337,18 +1342,18 @@ void tst_QMetaObject::normalizedSignature_data()
     QTest::newRow("const4") << "void foo(const int)" << "void foo(int)";
     QTest::newRow("const5") << "void foo(const int, int const, const int &, int const &)"
                             << "void foo(int,int,int,int)";
-    QTest::newRow("const6") << "void foo(QVector<const int>)" << "void foo(QVector<const int>)";
-    QTest::newRow("const7") << "void foo(QVector<const int*>)" << "void foo(QVector<const int*>)";
-    QTest::newRow("const8") << "void foo(QVector<int const*>)" << "void foo(QVector<const int*>)";
+    QTest::newRow("const6") << "void foo(QList<const int>)" << "void foo(QList<const int>)";
+    QTest::newRow("const7") << "void foo(QList<const int*>)" << "void foo(QList<const int*>)";
+    QTest::newRow("const8") << "void foo(QList<int const*>)" << "void foo(QList<const int*>)";
     QTest::newRow("const9") << "void foo(const Foo<Bar>)" << "void foo(Foo<Bar>)";
     QTest::newRow("const10") << "void foo(Foo<Bar>const)" << "void foo(Foo<Bar>)";
     QTest::newRow("const11") << "void foo(Foo<Bar> *const)" << "void foo(Foo<Bar>*)";
     QTest::newRow("const12") << "void foo(Foo<Bar>const*const *const)" << "void foo(const Foo<Bar>*const*)";
     QTest::newRow("const13") << "void foo(const Foo<Bar>&)" << "void foo(Foo<Bar>)";
     QTest::newRow("const14") << "void foo(Foo<Bar>const&)" << "void foo(Foo<Bar>)";
-    QTest::newRow("QList") << "void foo(QList<int>)" << "void foo(QVector<int>)";
-    QTest::newRow("QList1") << "void foo(const Template<QList, MyQList const>)"
-                            << "void foo(Template<QVector,const MyQList>)";
+    QTest::newRow("QVector") << "void foo(QVector<int>)" << "void foo(QList<int>)";
+    QTest::newRow("QVector1") << "void foo(const Template<QVector, MyQList const>)"
+                            << "void foo(Template<QList,const MyQList>)";
 
     QTest::newRow("refref") << "const char* foo(const X &&,X const &&, const X* &&) && "
                             << "const char*foo(const X&&,const X&&,const X*&&)&&";
@@ -1373,16 +1378,17 @@ void tst_QMetaObject::normalizedType_data()
     QTest::newRow("white") << "  int  " << "int";
     QTest::newRow("const1") << "int const *" << "const int*";
     QTest::newRow("const2") << "const int *" << "const int*";
-    QTest::newRow("template1") << "QVector<int const *>" << "QVector<const int*>";
-    QTest::newRow("template2") << "QVector<const int *>" << "QVector<const int*>";
+    QTest::newRow("template1") << "QList<int const *>" << "QList<const int*>";
+    QTest::newRow("template2") << "QList<const int *>" << "QList<const int*>";
     QTest::newRow("template3") << "QMap<QString, int>" << "QMap<QString,int>";
     QTest::newRow("template4") << "const QMap<QString, int> &" << "QMap<QString,int>";
-    QTest::newRow("template5") << "QVector< ::Foo::Bar>" << "QVector<::Foo::Bar>";
-    QTest::newRow("template6") << "QVector<::Foo::Bar>" << "QVector<::Foo::Bar>";
-    QTest::newRow("template7") << "QVector<QVector<int> >" << "QVector<QVector<int>>";
+    QTest::newRow("template5") << "QList< ::Foo::Bar>" << "QList<::Foo::Bar>";
+    QTest::newRow("template6") << "QList<::Foo::Bar>" << "QList<::Foo::Bar>";
+    QTest::newRow("template7") << "QList<QList<int> >" << "QList<QList<int>>";
     QTest::newRow("template8") << "QMap<const int, const short*>" << "QMap<const int,const short*>";
-    QTest::newRow("template9") << "QPair<const QPair<int, int const *> , QPair<QHash<int, const char*>  >  >" << "QPair<const QPair<int,const int*>,QPair<QHash<int,const char*>>>";
-    QTest::newRow("template10") << "QList<int const * const> const" << "QVector<const int*const>";
+    QTest::newRow("template9") << "QPair<const QPair<int, int const *> , QPair<QHash<int, const char*>  >  >"
+                               << "std::pair<const std::pair<int,const int*>,std::pair<QHash<int,const char*>>>";
+    QTest::newRow("template10") << "QVector<int const * const> const" << "QList<const int*const>";
     QTest::newRow("template11") << " QSharedPointer<QVarLengthArray< QString const, ( 16>> 2 )> > const & "
         << "QSharedPointer<QVarLengthArray<const QString,(16>>2)>>";
     QTest::newRow("template_sub") << "X<( Y < 8), (Y >6)> const  & " << "X<(Y<8),(Y>6)>";
@@ -1397,18 +1403,19 @@ void tst_QMetaObject::normalizedType_data()
     QTest::newRow("struct2") << "struct foo const*" << "const foo*";
     QTest::newRow("enum") << "enum foo" << "foo";
     QTest::newRow("void") << "void" << "void";
-    QTest::newRow("QList") << "QList<int>" << "QVector<int>";
+    QTest::newRow("QList") << "QList<int>" << "QList<int>";
+    QTest::newRow("QVector") << "QVector<int>" << "QList<int>";
     QTest::newRow("refref") << "X const*const&&" << "const X*const&&";
     QTest::newRow("refref2") << "const X<T const&&>&&" << "const X<const T&&>&&";
-    QTest::newRow("long1") << "long unsigned int long" << "unsigned long long";
+    QTest::newRow("long1") << "long unsigned int long" << "qulonglong";
     QTest::newRow("long2") << "int signed long" << "long";
     QTest::newRow("long3") << "long unsigned" << "ulong";
     QTest::newRow("long double") << " long  double" << "long double";
     QTest::newRow("signed char") << "char signed" << "signed char";
-    QTest::newRow("unsigned char") << "char unsigned" << "unsigned char";
+    QTest::newRow("unsigned char") << "char unsigned" << "uchar";
     QTest::newRow("signed short") << "short signed" << "short";
-    QTest::newRow("unsigned shot") << "short unsigned" << "unsigned short";
-    QTest::newRow("unsigned shot") << "short unsigned" << "unsigned short";
+    QTest::newRow("unsigned short") << "unsigned short" << "ushort";
+    QTest::newRow("short unsigned") << "short unsigned" << "ushort";
     QTest::newRow("array1") << "unsigned int [4]" << "uint[4]";
     QTest::newRow("array2") << "unsigned int const [4][5]" << "const uint[4][5]";
     QTest::newRow("array3") << "unsigned[] const" << "uint[]";
@@ -1445,19 +1452,27 @@ void tst_QMetaObject::customPropertyType()
 {
     QMetaProperty prop = metaObject()->property(metaObject()->indexOfProperty("value3"));
 
+#if QT_DEPRECATED_SINCE(6, 0)
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
+
     QCOMPARE(prop.type(), QVariant::UserType);
+
+    QT_WARNING_POP
+#endif
+
     QCOMPARE(prop.userType(), QMetaType::fromType<MyStruct>().id());
     QCOMPARE(prop.metaType(), QMetaType::fromType<MyStruct>());
 
     qRegisterMetaType<MyStruct>("MyStruct");
-    QCOMPARE(prop.userType(), QMetaType::type("MyStruct"));
+    QCOMPARE(prop.userType(), QMetaType::fromName("MyStruct").id());
 
     prop = metaObject()->property(metaObject()->indexOfProperty("value4"));
-    QCOMPARE(prop.type(), QVariant::List);
+    QCOMPARE(prop.metaType().id(), QMetaType::QVariantList);
     QCOMPARE(prop.metaType(), QMetaType::fromType<QList<QVariant>>());
 
     prop = metaObject()->property(metaObject()->indexOfProperty("value5"));
-    QCOMPARE(prop.type(), QVariant::List);
+    QCOMPARE(prop.metaType().id(), QMetaType::QVariantList);
 }
 
 void tst_QMetaObject::checkScope_data()
@@ -1658,7 +1673,7 @@ void tst_QMetaObject::metaMethod()
     //wrong object
     //QVERIFY(!sl13.invoke(this, Q_RETURN_ARG(QList<QString>, returnValue), Q_ARG(QList<QString>, argument)));
     QVERIFY(!sl13.invoke(0,  Q_RETURN_ARG(QList<QString>, returnValue), Q_ARG(QList<QString>, argument)));
-    QCOMPARE(returnValue, QList<QString>());
+    QVERIFY(returnValue.isEmpty());
 
     QVERIFY(sl13.invoke(&obj, Q_RETURN_ARG(QList<QString>, returnValue), Q_ARG(QList<QString>, argument)));
     QCOMPARE(returnValue, argument);
@@ -1688,6 +1703,42 @@ void tst_QMetaObject::indexOfMethod()
     QCOMPARE(object->metaObject()->method(idx).methodSignature(), name);
     QCOMPARE(object->metaObject()->indexOfSlot(name), isSignal ? -1 : idx);
     QCOMPARE(object->metaObject()->indexOfSignal(name), !isSignal ? -1 : idx);
+}
+
+class Base : public QObject {
+    Q_OBJECT
+public slots:
+    int test() {return 0;}
+    int baseOnly() {return 0;}
+};
+
+class Derived : public Base {
+    Q_OBJECT
+
+public slots:
+    int test() {return 1;}
+};
+
+void tst_QMetaObject::firstMethod_data()
+{
+    QTest::addColumn<QByteArray>("name");
+    QTest::addColumn<QMetaMethod>("method");
+
+    const QMetaObject &derived = Derived::staticMetaObject;
+    const QMetaObject &base = Base::staticMetaObject;
+
+    QTest::newRow("own method") << QByteArray("test") << derived.method(derived.indexOfMethod("test()"));
+    QTest::newRow("parent method") << QByteArray("baseOnly") << derived.method(base.indexOfMethod("baseOnly()"));
+    QTest::newRow("invalid") << QByteArray("invalid") << QMetaMethod();
+}
+
+void tst_QMetaObject::firstMethod()
+{
+    QFETCH(QByteArray, name);
+    QFETCH(QMetaMethod, method);
+
+    QMetaMethod firstMethod = QMetaObjectPrivate::firstMethod(&Derived::staticMetaObject, name);
+    QCOMPARE(firstMethod, method);
 }
 
 void tst_QMetaObject::indexOfMethodPMF()

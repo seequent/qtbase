@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qgraphicswidget.h>
 #include <qgraphicsscene.h>
 #include <qgraphicssceneevent.h>
@@ -174,7 +174,7 @@ private slots:
 // Subclass that exposes the protected functions.
 class SubQGraphicsWidget : public QGraphicsWidget {
 public:
-    SubQGraphicsWidget(QGraphicsItem *parent = 0, Qt::WindowFlags windowFlags = { })
+    SubQGraphicsWidget(QGraphicsItem *parent = nullptr, Qt::WindowFlags windowFlags = { })
         : QGraphicsWidget(parent, windowFlags), eventCount(0)
         { }
 
@@ -254,7 +254,7 @@ protected:
 class SizeHinter : public QGraphicsWidget
 {
 public:
-    SizeHinter(QGraphicsItem *parent = 0, Qt::WindowFlags wFlags = { },
+    SizeHinter(QGraphicsItem *parent = nullptr, Qt::WindowFlags wFlags = { },
                 const QSizeF &min = QSizeF(5,5),
                 const QSizeF &pref = QSizeF(50, 50),
                 const QSizeF &max = QSizeF(500, 500))
@@ -382,7 +382,7 @@ void tst_QGraphicsWidget::dumpFocusChain()
     // ### this test is very strange...
     QFETCH(bool, scene);
     SubQGraphicsWidget *parent = new SubQGraphicsWidget;
-    QGraphicsScene *theScene = 0;
+    QGraphicsScene *theScene = nullptr;
     if (scene) {
         theScene = new QGraphicsScene(this);
         theScene->addItem(parent);
@@ -518,7 +518,7 @@ void tst_QGraphicsWidget::focusWidget2()
 class FocusWatchWidget : public QGraphicsWidget
 {
 public:
-    FocusWatchWidget(QGraphicsItem *parent = 0) : QGraphicsWidget(parent) { gotFocusInCount = 0; gotFocusOutCount = 0; }
+    FocusWatchWidget(QGraphicsItem *parent = nullptr) : QGraphicsWidget(parent) { gotFocusInCount = 0; gotFocusOutCount = 0; }
     int gotFocusInCount, gotFocusOutCount;
 protected:
     void focusInEvent(QFocusEvent *fe) { gotFocusInCount++; QGraphicsWidget::focusInEvent(fe); }
@@ -640,11 +640,11 @@ void tst_QGraphicsWidget::fontPropagatesResolveToChildren()
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
-    QCOMPARE(font.resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(root->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(child1->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(child2->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(child3->font().resolve(), uint(QFont::StyleResolved));
+    QCOMPARE(font.resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(root->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(child1->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(child2->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(child3->font().resolveMask(), uint(QFont::StyleResolved));
 }
 
 void tst_QGraphicsWidget::fontPropagatesResolveToGrandChildren()
@@ -675,12 +675,12 @@ void tst_QGraphicsWidget::fontPropagatesResolveToGrandChildren()
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
-    QCOMPARE(font.resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild1->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild2->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild3->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild4->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild5->font().resolve(), uint(QFont::StyleResolved));
+    QCOMPARE(font.resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild1->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild2->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild3->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild4->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild5->font().resolveMask(), uint(QFont::StyleResolved));
 }
 
 void tst_QGraphicsWidget::fontPropagatesResolveViaNonWidget()
@@ -711,12 +711,12 @@ void tst_QGraphicsWidget::fontPropagatesResolveViaNonWidget()
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
-    QCOMPARE(font.resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild1->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild2->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild3->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild4->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild5->font().resolve(), uint(QFont::StyleResolved));
+    QCOMPARE(font.resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild1->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild2->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild3->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild4->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild5->font().resolveMask(), uint(QFont::StyleResolved));
 }
 
 void tst_QGraphicsWidget::fontPropagatesResolveFromScene()
@@ -747,16 +747,16 @@ void tst_QGraphicsWidget::fontPropagatesResolveFromScene()
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
-    QCOMPARE(font.resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(root->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(child1->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(child2->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(child3->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild1->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild2->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild3->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild4->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild5->font().resolve(), uint(QFont::StyleResolved));
+    QCOMPARE(font.resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(root->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(child1->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(child2->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(child3->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild1->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild2->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild3->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild4->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild5->font().resolveMask(), uint(QFont::StyleResolved));
 }
 
 void tst_QGraphicsWidget::fontPropagatesResolveInParentChange()
@@ -785,8 +785,8 @@ void tst_QGraphicsWidget::fontPropagatesResolveInParentChange()
     QVERIFY(!grandChild2->font().italic());
     QVERIFY(grandChild2->font().bold());
 
-    QCOMPARE(grandChild1->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild2->font().resolve(), uint(QFont::WeightResolved));
+    QCOMPARE(grandChild1->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild2->font().resolveMask(), uint(QFont::WeightResolved));
 
     grandChild2->setParentItem(child1);
 
@@ -800,8 +800,8 @@ void tst_QGraphicsWidget::fontPropagatesResolveInParentChange()
     QVERIFY(grandChild2->font().italic());
     QVERIFY(!grandChild2->font().bold());
 
-    QCOMPARE(grandChild1->font().resolve(), uint(QFont::StyleResolved));
-    QCOMPARE(grandChild2->font().resolve(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild1->font().resolveMask(), uint(QFont::StyleResolved));
+    QCOMPARE(grandChild2->font().resolveMask(), uint(QFont::StyleResolved));
 
 }
 
@@ -911,12 +911,12 @@ void tst_QGraphicsWidget::fontPropagationWidgetItemWidget()
     widget->setFont(font);
 
     QCOMPARE(widget2->font().pointSize(), 43);
-    QCOMPARE(widget2->font().resolve(), uint(QFont::SizeResolved));
+    QCOMPARE(widget2->font().resolveMask(), uint(QFont::SizeResolved));
 
     widget->setFont(QFont());
 
     QCOMPARE(widget2->font().pointSize(), qApp->font().pointSize());
-    QCOMPARE(widget2->font().resolve(), QFont().resolve());
+    QCOMPARE(widget2->font().resolveMask(), QFont().resolveMask());
 }
 
 void tst_QGraphicsWidget::fontPropagationSceneChange()
@@ -1396,7 +1396,7 @@ void tst_QGraphicsWidget::setTabOrder()
     QApplication::setActiveWindow(&view);
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
-    QGraphicsWidget *lastItem = 0;
+    QGraphicsWidget *lastItem = nullptr;
     QTest::ignoreMessage(QtWarningMsg, "QGraphicsWidget::setTabOrder(0, 0) is undefined");
     QGraphicsWidget::setTabOrder(0, 0);
 
@@ -1873,51 +1873,58 @@ Q_DECLARE_METATYPE(Inst)
 void tst_QGraphicsWidget::setSizes_data()
 {
 
-    QTest::addColumn<QVector<Inst> >("inputInstructions");
-    QTest::addColumn<QVector<Inst> >("compareInstructions");
+    QTest::addColumn<QList<Inst>>("inputInstructions");
+    QTest::addColumn<QList<Inst>>("compareInstructions");
 
-    QTest::newRow("minSize1") << (QVector<Inst>() << Inst(Size, QSize(25, 25)) << Inst(MinimumSize, QSize(10, 10)))
-                                << (QVector<Inst>() << Inst(Size, QSize(25,25)));
-    QTest::newRow("minSize2") << (QVector<Inst>() << Inst(Size, QSizeF(20, 20)) << Inst(MinimumSize, QSizeF(25, 25)))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(25, 25)));
-    QTest::newRow("minWidth1") << (QVector<Inst>() << Inst(Size, QSizeF(20, 20)) << Inst(MinimumWidth, 5.0))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(20, 20)));
-    QTest::newRow("minWidth2") << (QVector<Inst>() << Inst(Size, QSizeF(20, 20)) << Inst(MinimumWidth, 25.0))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(25, 20)));
-    QTest::newRow("minHeight1") << (QVector<Inst>() << Inst(Size, QSizeF(20, 20)) << Inst(MinimumHeight, 5.0))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(20, 20)));
-    QTest::newRow("minHeight2") << (QVector<Inst>() << Inst(Size, QSizeF(20, 20)) << Inst(MinimumHeight, 25.0))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(20, 25)));
-    QTest::newRow("maxSize1") << (QVector<Inst>() << Inst(Size, QSizeF(40, 40)) << Inst(MaximumSize, QSizeF(30, 30)))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(30, 30)));
-    QTest::newRow("maxSize2") << (QVector<Inst>() << Inst(Size, QSizeF(40, 40)) << Inst(MaximumSize, QSizeF(30, -1)))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(30, 40)));
-    QTest::newRow("maxSize3") << (QVector<Inst>() << Inst(Size, QSizeF(40, 40)) << Inst(MaximumSize, QSizeF(-1, 30)))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(40, 30)));
-    QTest::newRow("maxWidth1")<< (QVector<Inst>() << Inst(Size, QSizeF(40, 40)) << Inst(MaximumWidth, 30))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(30, 40)));
-    QTest::newRow("maxHeight")<< (QVector<Inst>() << Inst(Size, QSizeF(40, 40)) << Inst(MaximumHeight, 20))
-                                 << (QVector<Inst>() << Inst(Size, QSizeF(40, 20)));
-    QTest::newRow("unsetMinSize")<< (QVector<Inst>() << Inst(Size, QSizeF(40, 40)) << Inst(MinimumSize, QSizeF(-1, -1)))
-                                 << (QVector<Inst>() << Inst(MinimumSize, QSizeF(5, 5)));
-    QTest::newRow("unsetMaxSize")<< (QVector<Inst>() << Inst(Size, QSizeF(40, 40)) << Inst(MaximumSize, QSizeF(-1, -1)))
-                                 << (QVector<Inst>() << Inst(MaximumSize, QSizeF(500, 500)));
-    QTest::newRow("unsetMinSize, expand size to minimumSizeHint") << (QVector<Inst>()
-                                        << Inst(MinimumSize, QSize(0, 0))
-                                        << Inst(Size, QSize(1,1))
-                                        << Inst(MinimumSize, QSize(-1.0, -1.0))
-                                        )
-                                    << (QVector<Inst>()
-                                        << Inst(Size, QSize(5,5))
-                                        << Inst(MinimumSize, QSize(5,5))
-                                        );
-
+    QTest::newRow("minSize1") << (QList<Inst>()
+                                  << Inst(Size, QSize(25, 25)) << Inst(MinimumSize, QSize(10, 10)))
+                              << (QList<Inst>() << Inst(Size, QSize(25, 25)));
+    QTest::newRow("minSize2") << (QList<Inst>() << Inst(Size, QSizeF(20, 20))
+                                                << Inst(MinimumSize, QSizeF(25, 25)))
+                              << (QList<Inst>() << Inst(Size, QSizeF(25, 25)));
+    QTest::newRow("minWidth1") << (QList<Inst>()
+                                   << Inst(Size, QSizeF(20, 20)) << Inst(MinimumWidth, 5.0))
+                               << (QList<Inst>() << Inst(Size, QSizeF(20, 20)));
+    QTest::newRow("minWidth2") << (QList<Inst>()
+                                   << Inst(Size, QSizeF(20, 20)) << Inst(MinimumWidth, 25.0))
+                               << (QList<Inst>() << Inst(Size, QSizeF(25, 20)));
+    QTest::newRow("minHeight1") << (QList<Inst>()
+                                    << Inst(Size, QSizeF(20, 20)) << Inst(MinimumHeight, 5.0))
+                                << (QList<Inst>() << Inst(Size, QSizeF(20, 20)));
+    QTest::newRow("minHeight2") << (QList<Inst>()
+                                    << Inst(Size, QSizeF(20, 20)) << Inst(MinimumHeight, 25.0))
+                                << (QList<Inst>() << Inst(Size, QSizeF(20, 25)));
+    QTest::newRow("maxSize1") << (QList<Inst>() << Inst(Size, QSizeF(40, 40))
+                                                << Inst(MaximumSize, QSizeF(30, 30)))
+                              << (QList<Inst>() << Inst(Size, QSizeF(30, 30)));
+    QTest::newRow("maxSize2") << (QList<Inst>() << Inst(Size, QSizeF(40, 40))
+                                                << Inst(MaximumSize, QSizeF(30, -1)))
+                              << (QList<Inst>() << Inst(Size, QSizeF(30, 40)));
+    QTest::newRow("maxSize3") << (QList<Inst>() << Inst(Size, QSizeF(40, 40))
+                                                << Inst(MaximumSize, QSizeF(-1, 30)))
+                              << (QList<Inst>() << Inst(Size, QSizeF(40, 30)));
+    QTest::newRow("maxWidth1") << (QList<Inst>()
+                                   << Inst(Size, QSizeF(40, 40)) << Inst(MaximumWidth, 30))
+                               << (QList<Inst>() << Inst(Size, QSizeF(30, 40)));
+    QTest::newRow("maxHeight") << (QList<Inst>()
+                                   << Inst(Size, QSizeF(40, 40)) << Inst(MaximumHeight, 20))
+                               << (QList<Inst>() << Inst(Size, QSizeF(40, 20)));
+    QTest::newRow("unsetMinSize") << (QList<Inst>() << Inst(Size, QSizeF(40, 40))
+                                                    << Inst(MinimumSize, QSizeF(-1, -1)))
+                                  << (QList<Inst>() << Inst(MinimumSize, QSizeF(5, 5)));
+    QTest::newRow("unsetMaxSize") << (QList<Inst>() << Inst(Size, QSizeF(40, 40))
+                                                    << Inst(MaximumSize, QSizeF(-1, -1)))
+                                  << (QList<Inst>() << Inst(MaximumSize, QSizeF(500, 500)));
+    QTest::newRow("unsetMinSize, expand size to minimumSizeHint")
+            << (QList<Inst>() << Inst(MinimumSize, QSize(0, 0)) << Inst(Size, QSize(1, 1))
+                              << Inst(MinimumSize, QSize(-1.0, -1.0)))
+            << (QList<Inst>() << Inst(Size, QSize(5, 5)) << Inst(MinimumSize, QSize(5, 5)));
 }
 
 void tst_QGraphicsWidget::setSizes()
 {
-    QFETCH(QVector<Inst>, inputInstructions);
-    QFETCH(QVector<Inst>, compareInstructions);
+    QFETCH(QList<Inst>, inputInstructions);
+    QFETCH(QList<Inst>, compareInstructions);
 
     QGraphicsScene scene;
     QGraphicsView view(&scene);
@@ -2580,7 +2587,7 @@ void tst_QGraphicsWidget::shortcutsDeletion()
 class MessUpPainterWidget : public QGraphicsWidget
 {
 public:
-    MessUpPainterWidget(QGraphicsItem * parent = 0, Qt::WindowFlags wFlags = { })
+    MessUpPainterWidget(QGraphicsItem * parent = nullptr, Qt::WindowFlags wFlags = { })
     : QGraphicsWidget(parent, wFlags)
     {}
 
@@ -3271,8 +3278,7 @@ void tst_QGraphicsWidget::itemSendGeometryPosChangesDeactivated()
     item->setGeometry(QRectF(0, 0, 60, 60));
     QCOMPARE(item->geometry(), QRectF(0, 0, 60, 60));
     QCOMPARE(item->pos(), QPointF(0, 0));
-    item->setPos(QPointF(10, 10));
-    QCOMPARE(item->pos(), QPointF(10, 10));
+    item->setPos(QPointF(10, 10)); QCOMPARE(item->pos(), QPointF(10, 10));
     QCOMPARE(item->geometry(), QRectF(10, 10, 60, 60));
 }
 
@@ -3280,7 +3286,7 @@ class TabFocusWidget : public QGraphicsWidget
 {
     Q_OBJECT
 public:
-    TabFocusWidget(const QString &name, QGraphicsItem *parent = 0)
+    TabFocusWidget(const QString &name, QGraphicsItem *parent = nullptr)
         : QGraphicsWidget(parent)
     { setFocusPolicy(Qt::TabFocus); setData(0, name); }
 };

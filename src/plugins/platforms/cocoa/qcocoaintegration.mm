@@ -63,10 +63,10 @@
 #include <qpa/qplatforminputcontextfactory_p.h>
 #include <qpa/qplatformoffscreensurface.h>
 #include <QtCore/qcoreapplication.h>
-
-#include <QtPlatformHeaders/qcocoanativecontext.h>
+#include <QtGui/qpointingdevice.h>
 
 #include <QtGui/private/qcoregraphics_p.h>
+#include <QtGui/private/qopenglcontext_p.h>
 
 #include <QtGui/private/qfontengine_coretext_p.h>
 
@@ -199,6 +199,8 @@ QCocoaIntegration::QCocoaIntegration(const QStringList &paramList)
     QMacInternalPasteboardMime::initializeMimeTypes();
     QCocoaMimeTypes::initializeMimeTypes();
     QWindowSystemInterfacePrivate::TabletEvent::setPlatformSynthesizesMouse(false);
+    QWindowSystemInterface::registerInputDevice(new QInputDevice(QString("keyboard"), 0,
+                                                                 QInputDevice::DeviceType::Keyboard, QString(), this));
 
     connect(qGuiApp, &QGuiApplication::focusWindowChanged,
         this, &QCocoaIntegration::focusWindowChanged);
@@ -257,8 +259,8 @@ bool QCocoaIntegration::hasCapability(QPlatformIntegration::Capability cap) cons
         // AppKit expects rendering to happen on the main thread, and we can
         // easily end up in situations where rendering on secondary threads
         // will result in visual artifacts, bugs, or even deadlocks, when
-        // building with SDK 10.14 or higher which enbles view layer-backing.
-        return QMacVersion::buildSDK() < QOperatingSystemVersion(QOperatingSystemVersion::MacOSMojave);
+        // layer-backed.
+        return false;
     case OpenGL:
     case BufferQueueingOpenGL:
 #endif
@@ -308,6 +310,19 @@ QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLCo
 {
     return new QCocoaGLContext(context);
 }
+
+QOpenGLContext *QCocoaIntegration::createOpenGLContext(NSOpenGLContext *nativeContext, QOpenGLContext *shareContext) const
+{
+    if (!nativeContext)
+        return nullptr;
+
+    auto *context = new QOpenGLContext;
+    context->setShareContext(shareContext);
+    auto *contextPrivate = QOpenGLContextPrivate::get(context);
+    contextPrivate->adopt(new QCocoaGLContext(nativeContext));
+    return context;
+}
+
 #endif
 
 QPlatformBackingStore *QCocoaIntegration::createPlatformBackingStore(QWindow *window) const
@@ -318,13 +333,7 @@ QPlatformBackingStore *QCocoaIntegration::createPlatformBackingStore(QWindow *wi
         return nullptr;
     }
 
-    QPlatformBackingStore *backingStore = nullptr;
-    if (platformWindow->view().layer)
-        backingStore = new QCALayerBackingStore(window);
-    else
-        backingStore = new QNSWindowBackingStore(window);
-
-    return backingStore;
+    return new QCALayerBackingStore(window);
 }
 
 QAbstractEventDispatcher *QCocoaIntegration::createEventDispatcher() const
@@ -477,6 +486,12 @@ void QCocoaIntegration::setApplicationIcon(const QIcon &icon) const
 void QCocoaIntegration::beep() const
 {
     NSBeep();
+}
+
+void QCocoaIntegration::quit() const
+{
+    qCDebug(lcQpaApplication) << "Terminating application";
+    [NSApp terminate:nil];
 }
 
 void QCocoaIntegration::closePopups(QWindow *forWindow)

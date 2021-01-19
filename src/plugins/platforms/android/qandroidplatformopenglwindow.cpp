@@ -51,7 +51,7 @@
 
 #include <qpa/qwindowsysteminterface.h>
 #include <qpa/qplatformscreen.h>
-#include <QtEglSupport/private/qeglconvenience_p.h>
+#include <QtGui/private/qeglconvenience_p.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 
@@ -107,9 +107,7 @@ void QAndroidPlatformOpenGLWindow::setGeometry(const QRect &rect)
         QtAndroid::setSurfaceGeometry(m_nativeSurfaceId, rect);
 
     QRect availableGeometry = screen()->availableGeometry();
-    if (m_oldGeometry.width() == 0
-            && m_oldGeometry.height() == 0
-            && rect.width() > 0
+    if (rect.width() > 0
             && rect.height() > 0
             && availableGeometry.width() > 0
             && availableGeometry.height() > 0) {

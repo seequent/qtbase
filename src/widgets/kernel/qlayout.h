@@ -64,6 +64,7 @@ class Q_WIDGETS_EXPORT QLayout : public QObject, public QLayoutItem
     Q_DECLARE_PRIVATE(QLayout)
 
     Q_PROPERTY(int spacing READ spacing WRITE setSpacing)
+    Q_PROPERTY(QMargins contentsMargins READ contentsMargins WRITE setContentsMargins)
     Q_PROPERTY(SizeConstraint sizeConstraint READ sizeConstraint WRITE setSizeConstraint)
 public:
     enum SizeConstraint {
@@ -76,8 +77,7 @@ public:
     };
     Q_ENUM(SizeConstraint)
 
-    QLayout(QWidget *parent);
-    QLayout();
+    explicit QLayout(QWidget *parent = nullptr);
     ~QLayout();
 
     virtual int spacing() const;
@@ -85,6 +85,7 @@ public:
 
     void setContentsMargins(int left, int top, int right, int bottom);
     void setContentsMargins(const QMargins &margins);
+    void unsetContentsMargins();
     void getContentsMargins(int *left, int *top, int *right, int *bottom) const;
     QMargins contentsMargins() const;
     QRect contentsRect() const;
@@ -117,14 +118,14 @@ public:
     virtual void setGeometry(const QRect&) override;
     virtual QLayoutItem *itemAt(int index) const = 0;
     virtual QLayoutItem *takeAt(int index) = 0;
-    virtual int indexOf(QWidget *) const;
-    QT6_VIRTUAL int indexOf(QLayoutItem *) const;
+    virtual int indexOf(const QWidget *) const;
+    virtual int indexOf(const QLayoutItem *) const;
     virtual int count() const = 0;
     bool isEmpty() const override;
     QSizePolicy::ControlTypes controlTypes() const override;
 
-    QT6_VIRTUAL QLayoutItem *replaceWidget(QWidget *from, QWidget *to,
-                                           Qt::FindChildOptions options = Qt::FindChildrenRecursively);
+    virtual QLayoutItem *replaceWidget(QWidget *from, QWidget *to,
+                                       Qt::FindChildOptions options = Qt::FindChildrenRecursively);
 
     int totalHeightForWidth(int w) const;
     QSize totalMinimumSize() const;

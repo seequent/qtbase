@@ -351,6 +351,8 @@ static inline bool windowIsAccelerated(const QWindow *w)
         return qt_window_private(const_cast<QWindow *>(w))->compositing;
     case QSurface::VulkanSurface:
         return true;
+    case QSurface::Direct3DSurface:
+        return true;
     default:
         return false;
     }
@@ -821,7 +823,7 @@ QWindowsWindowData
     }
 
     if (QWindowsContext::isDarkMode()
-        && (QWindowsIntegration::instance()->options() & QWindowsIntegration::DarkModeWindowFrames) != 0
+        && QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeWindowFrames)
         && shouldApplyDarkFrame(w)) {
         QWindowsWindow::setDarkBorderToWindow(result.hwnd, true);
     }
@@ -1128,6 +1130,20 @@ QMargins QWindowsBaseWindow::frameMargins_sys() const
     return QWindowsGeometryHint::frame(handle(), style(), exStyle());
 }
 
+std::optional<QWindowsBaseWindow::TouchWindowTouchTypes>
+    QWindowsBaseWindow::touchWindowTouchTypes_sys() const
+{
+    ULONG touchFlags = 0;
+    if (IsTouchWindow(handle(), &touchFlags) == FALSE)
+        return {};
+    TouchWindowTouchTypes result;
+    if ((touchFlags & TWF_FINETOUCH) != 0)
+        result.setFlag(TouchWindowTouchType::FineTouch);
+    if ((touchFlags & TWF_WANTPALM) != 0)
+        result.setFlag(TouchWindowTouchType::WantPalmTouch);
+    return result;
+}
+
 void QWindowsBaseWindow::hide_sys() // Normal hide, do not activate other windows.
 {
     SetWindowPos(handle(), nullptr , 0, 0, 0, 0,
@@ -1166,6 +1182,27 @@ QPoint QWindowsBaseWindow::mapToGlobal(const QPoint &pos) const
 QPoint QWindowsBaseWindow::mapFromGlobal(const QPoint &pos) const
 {
     return QWindowsGeometryHint::mapFromGlobal(handle(), pos);
+}
+
+void QWindowsBaseWindow::setHasBorderInFullScreen(bool)
+{
+    Q_UNIMPLEMENTED();
+}
+
+bool QWindowsBaseWindow::hasBorderInFullScreen() const
+{
+    Q_UNIMPLEMENTED();
+    return false;
+}
+
+QMargins QWindowsBaseWindow::customMargins() const
+{
+    return {};
+}
+
+void QWindowsBaseWindow::setCustomMargins(const QMargins &)
+{
+    Q_UNIMPLEMENTED();
 }
 
 /*!
@@ -1321,8 +1358,7 @@ bool QWindowsWindow::m_borderInFullScreenDefault = false;
 QWindowsWindow::QWindowsWindow(QWindow *aWindow, const QWindowsWindowData &data) :
     QWindowsBaseWindow(aWindow),
     m_data(data),
-    m_cursor(new CursorHandle),
-    m_format(aWindow->requestedFormat())
+    m_cursor(new CursorHandle)
 #if QT_CONFIG(vulkan)
   , m_vkSurface(VK_NULL_HANDLE)
 #endif
@@ -1331,21 +1367,23 @@ QWindowsWindow::QWindowsWindow(QWindow *aWindow, const QWindowsWindowData &data)
     const Qt::WindowType type = aWindow->type();
     if (type == Qt::Desktop)
         return; // No further handling for Qt::Desktop
-#ifndef QT_NO_OPENGL
-    if (aWindow->surfaceType() == QWindow::OpenGLSurface) {
-        if (QOpenGLContext::openGLModuleType() == QOpenGLContext::LibGL)
-            setFlag(OpenGLSurface);
-        else
-            setFlag(OpenGL_ES2);
-    }
-#endif // QT_NO_OPENGL
+    if (aWindow->surfaceType() == QWindow::Direct3DSurface)
+        setFlag(Direct3DSurface);
+#if QT_CONFIG(opengl)
+    if (aWindow->surfaceType() == QWindow::OpenGLSurface)
+        setFlag(OpenGLSurface);
+#endif
 #if QT_CONFIG(vulkan)
     if (aWindow->surfaceType() == QSurface::VulkanSurface)
         setFlag(VulkanSurface);
 #endif
     updateDropSite(window()->isTopLevel());
 
-    registerTouchWindow();
+    // Register touch unless if the flags are already set by a hook
+    // such as HCBT_CREATEWND
+    if (!touchWindowTouchTypes_sys().has_value())
+        registerTouchWindow();
+
     const qreal opacity = qt_window_private(aWindow)->opacity;
     if (!qFuzzyCompare(opacity, qreal(1.0)))
         setOpacity(opacity);
@@ -1390,6 +1428,11 @@ void QWindowsWindow::initialize()
         if (obtainedScreen && screen() != obtainedScreen)
             QWindowSystemInterface::handleWindowScreenChanged<QWindowSystemInterface::SynchronousDelivery>(w, obtainedScreen->screen());
     }
+}
+
+QSurfaceFormat QWindowsWindow::format() const
+{
+    return window()->requestedFormat();
 }
 
 void QWindowsWindow::fireExpose(const QRegion &region, bool force)
@@ -1788,8 +1831,11 @@ void QWindowsWindow::handleHidden()
 void QWindowsWindow::handleCompositionSettingsChanged()
 {
     const QWindow *w = window();
-    if ((w->surfaceType() == QWindow::OpenGLSurface || w->surfaceType() == QWindow::VulkanSurface)
-            && w->format().hasAlpha()) {
+    if ((w->surfaceType() == QWindow::OpenGLSurface
+         || w->surfaceType() == QWindow::VulkanSurface
+         || w->surfaceType() == QWindow::Direct3DSurface)
+        && w->format().hasAlpha())
+    {
         applyBlurBehindWindow(handle());
     }
 }
@@ -1965,9 +2011,10 @@ void QWindowsWindow::handleGeometryChange()
         return; // QGuiApplication will send resize when screen actually changes
     }
     QWindowSystemInterface::handleGeometryChange(window(), m_data.geometry);
-    // QTBUG-32121: OpenGL/normal windows (with exception of ANGLE) do not receive
-    // expose events when shrinking, synthesize.
-    if (!testFlag(OpenGL_ES2) && isExposed()
+    // QTBUG-32121: OpenGL/normal windows (with exception of ANGLE
+    // which we no longer support in Qt 6) do not receive expose
+    // events when shrinking, synthesize.
+    if (isExposed()
         && m_data.geometry.size() != previousGeometry.size() // Exclude plain move
         // One dimension grew -> Windows will send expose, no need to synthesize.
         && !(m_data.geometry.width() > previousGeometry.width() || m_data.geometry.height() > previousGeometry.height())) {
@@ -2082,8 +2129,7 @@ bool QWindowsWindow::handleWmPaint(HWND hwnd, UINT message,
     if (!window()->isVisible() && (GetWindowLong(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0)
         return false;
     // Ignore invalid update bounding rectangles
-    RECT updateRect;
-    if (!GetUpdateRect(m_data.hwnd, &updateRect, FALSE))
+    if (!GetUpdateRect(m_data.hwnd, 0, FALSE))
         return false;
     PAINTSTRUCT ps;
 
@@ -2096,7 +2142,9 @@ bool QWindowsWindow::handleWmPaint(HWND hwnd, UINT message,
 
     // Observed painting problems with Aero style disabled (QTBUG-7865).
     if (Q_UNLIKELY(!dwmIsCompositionEnabled())
-            && ((testFlag(OpenGLSurface) && testFlag(OpenGLDoubleBuffered)) || testFlag(VulkanSurface)))
+        && ((testFlag(OpenGLSurface) && testFlag(OpenGLDoubleBuffered))
+            || testFlag(VulkanSurface)
+            || testFlag(Direct3DSurface)))
     {
         SelectClipRgn(ps.hdc, nullptr);
     }
@@ -2105,7 +2153,7 @@ bool QWindowsWindow::handleWmPaint(HWND hwnd, UINT message,
     // we still need to send isExposed=true, for compatibility.
     // Our tests depend on it.
     fireExpose(QRegion(qrectFromRECT(ps.rcPaint)), true);
-    if (qSizeOfRect(updateRect) == m_data.geometry.size() && !QWindowsContext::instance()->asyncExpose())
+    if (!QWindowsContext::instance()->asyncExpose())
         QWindowSystemInterface::flushWindowSystemEvents(QEventLoop::ExcludeUserInputEvents);
 
     EndPaint(hwnd, &ps);
@@ -2480,7 +2528,7 @@ void QWindowsWindow::setOpacity(qreal level)
         m_opacity = level;
         if (m_data.hwnd)
             setWindowOpacity(m_data.hwnd, m_data.flags,
-                             window()->format().hasAlpha(), testFlag(OpenGLSurface) || testFlag(VulkanSurface),
+                             window()->format().hasAlpha(), testFlag(OpenGLSurface) || testFlag(VulkanSurface) || testFlag(Direct3DSurface),
                              level);
     }
 }
@@ -2547,8 +2595,9 @@ void QWindowsWindow::requestActivateWindow()
         // when activating windows of inactive applications. Attach to the input of the
         // currently active window while setting the foreground window to always activate
         // the window when desired.
+        const auto activationBehavior = QWindowsIntegration::instance()->windowActivationBehavior();
         if (QGuiApplication::applicationState() != Qt::ApplicationActive
-            && QWindowsNativeInterface::windowActivationBehavior() == QWindowsWindowFunctions::AlwaysActivateWindow) {
+            && activationBehavior == QWindowsApplication::AlwaysActivateWindow) {
             if (const HWND foregroundWindow = GetForegroundWindow()) {
                 foregroundThread = GetWindowThreadProcessId(foregroundWindow, nullptr);
                 if (foregroundThread && foregroundThread != currentThread)
@@ -3004,8 +3053,8 @@ void *QWindowsWindow::surface(void *nativeConfig, int *err)
         return &m_vkSurface;
     }
 #elif defined(QT_NO_OPENGL)
-    Q_UNUSED(err)
-    Q_UNUSED(nativeConfig)
+    Q_UNUSED(err);
+    Q_UNUSED(nativeConfig);
     return 0;
 #endif
 #ifndef QT_NO_OPENGL
@@ -3015,6 +3064,8 @@ void *QWindowsWindow::surface(void *nativeConfig, int *err)
     }
 
     return m_surface;
+#else
+    return nullptr;
 #endif
 }
 
@@ -3037,28 +3088,28 @@ void QWindowsWindow::invalidateSurface()
 #endif // QT_NO_OPENGL
 }
 
-void QWindowsWindow::setTouchWindowTouchTypeStatic(QWindow *window, QWindowsWindowFunctions::TouchWindowTouchTypes touchTypes)
+void QWindowsWindow::registerTouchWindow()
 {
-    if (!window->handle())
+    if ((QWindowsContext::instance()->systemInfo() & QWindowsContext::SI_SupportsTouch) == 0)
         return;
-    static_cast<QWindowsWindow *>(window->handle())->registerTouchWindow(touchTypes);
-}
 
-void QWindowsWindow::registerTouchWindow(QWindowsWindowFunctions::TouchWindowTouchTypes touchTypes)
-{
-    if ((QWindowsContext::instance()->systemInfo() & QWindowsContext::SI_SupportsTouch)
-        && !testFlag(TouchRegistered)) {
-        ULONG touchFlags = 0;
-        const bool ret = IsTouchWindow(m_data.hwnd, &touchFlags);
-        // Return if it is not a touch window or the flags are already set by a hook
-        // such as HCBT_CREATEWND
-        if (ret || touchFlags != 0)
+    // Initially register or re-register to change the flags
+    const auto touchTypes = QWindowsIntegration::instance()->touchWindowTouchType();
+    if (testFlag(TouchRegistered)) {
+        const auto currentTouchTypes = touchWindowTouchTypes_sys();
+        if (currentTouchTypes.has_value() && currentTouchTypes.value() == touchTypes)
             return;
-        if (RegisterTouchWindow(m_data.hwnd, ULONG(touchTypes)))
-            setFlag(TouchRegistered);
-        else
-            qErrnoWarning("RegisterTouchWindow() failed for window '%s'.", qPrintable(window()->objectName()));
     }
+
+    ULONG touchFlags = 0;
+    if (touchTypes.testFlag(TouchWindowTouchType::FineTouch))
+        touchFlags |= TWF_FINETOUCH;
+    if (touchTypes.testFlag(TouchWindowTouchType::WantPalmTouch))
+        touchFlags |= TWF_WANTPALM;
+    if (RegisterTouchWindow(m_data.hwnd, touchFlags))
+        setFlag(TouchRegistered);
+    else
+        qErrnoWarning("RegisterTouchWindow() failed for window '%s'.", qPrintable(window()->objectName()));
 }
 
 void QWindowsWindow::aboutToMakeCurrent()
@@ -3092,9 +3143,14 @@ void QWindowsWindow::setHasBorderInFullScreenDefault(bool border)
     m_borderInFullScreenDefault = border;
 }
 
+bool QWindowsWindow::hasBorderInFullScreen() const
+{
+    return testFlag(HasBorderInFullScreen);
+}
+
 void QWindowsWindow::setHasBorderInFullScreen(bool border)
 {
-    if (testFlag(HasBorderInFullScreen) == border)
+    if (hasBorderInFullScreen() == border)
         return;
     if (border)
         setFlag(HasBorderInFullScreen);

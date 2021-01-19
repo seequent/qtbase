@@ -233,7 +233,7 @@ void ColorDock::changeSizeHints()
 
     QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::reject);
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
 
     topLayout->addWidget(buttonBox);
 
@@ -680,7 +680,7 @@ void BlueTitleBar::updateMask()
     Q_ASSERT(dw);
 
     QRect rect = dw->rect();
-    QPixmap bitmap(dw->size());
+    QBitmap bitmap(dw->size());
 
     {
         QPainter painter(&bitmap);

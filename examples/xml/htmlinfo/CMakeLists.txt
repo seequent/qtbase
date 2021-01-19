@@ -9,12 +9,20 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/xml/htmlinfo")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/xml/htmlinfo")
 
 find_package(Qt6 COMPONENTS Core)
 
-add_executable(htmlinfo
+qt_add_executable(htmlinfo
     main.cpp
+)
+set_target_properties(htmlinfo PROPERTIES
+    WIN32_EXECUTABLE FALSE
+    MACOSX_BUNDLE FALSE
 )
 target_link_libraries(htmlinfo PUBLIC
     Qt::Core

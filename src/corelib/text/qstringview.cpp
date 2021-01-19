@@ -69,7 +69,7 @@ QT_BEGIN_NAMESPACE
 
     When used as an interface type, QStringView allows a single function to accept
     a wide variety of UTF-16 string data sources. One function accepting QStringView
-    thus replaces three function overloads (taking QString, QStringRef, and
+    thus replaces three function overloads (taking QString and
     \c{(const QChar*, int)}), while at the same time enabling even more string data
     sources to be passed to the function, such as \c{u"Hello World"}, a \c char16_t
     string literal.
@@ -105,11 +105,7 @@ QT_BEGIN_NAMESPACE
     allowed in \c constexpr functions). You can use an indexed loop and/or utf16() in
     \c constexpr contexts instead.
 
-    \note We strongly discourage the use of QList<QStringView>,
-    because QList is a very inefficient container for QStringViews (it would heap-allocate
-    every element). Use QVector (or std::vector) to hold QStringViews instead.
-
-    \sa QString, QStringRef
+    \sa QString
 */
 
 /*!
@@ -282,11 +278,9 @@ QT_BEGIN_NAMESPACE
     \fn template <typename Char, size_t N> QStringView::QStringView(const Char (&string)[N])
 
     Constructs a string view on the character string literal \a string.
-    The length is set to \c{N-1}, excluding the trailing \{Char(0)}.
-    If you need the full array, use the constructor from pointer and
-    size instead:
-
-    \snippet code/src_corelib_text_qstringview.cpp 2
+    The view covers the array until the first \c{Char(0)} is encountered,
+    or \c N, whichever comes first.
+    If you need the full array, use fromArray() instead.
 
     \a string must remain valid for the lifetime of this string view
     object.
@@ -296,6 +290,8 @@ QT_BEGIN_NAMESPACE
     type. The compatible character types are: \c QChar, \c ushort, \c
     char16_t and (on platforms, such as Windows, where it is a 16-bit
     type) \c wchar_t.
+
+    \sa fromArray
 */
 
 /*!
@@ -309,17 +305,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QStringView::QStringView(const QStringRef &str)
-
-    Constructs a string view on \a str.
-
-    \c{str.data()} must remain valid for the lifetime of this string view object.
-
-    The string view will be null if and only if \c{str.isNull()}.
-*/
-
-/*!
-    \fn template <typename StdBasicString> QStringView::QStringView(const StdBasicString &str)
+    \fn template <typename Container, if_compatible_container<Container>> QStringView::QStringView(const Container &str)
 
     Constructs a string view on \a str. The length is taken from \c{str.size()}.
 
@@ -335,6 +321,25 @@ QT_BEGIN_NAMESPACE
     have to return \nullptr for this).
 
     \sa isNull(), isEmpty()
+*/
+
+/*!
+    \fn template <typename Char, size_t Size> static QStringView QStringView::fromArray(const Char (&string)[Size]) noexcept
+
+    Constructs a string view on the full character string literal \a string,
+    including any trailing \c{Char(0)}. If you don't want the
+    null-terminator included in the view then you can chop() it off
+    when you are certain it is at the end. Alternatively you can use
+    the constructor overload taking an array literal which will create
+    a view up to, but not including, the first null-terminator in the data.
+
+    \a string must remain valid for the lifetime of this string view
+    object.
+
+    This function will work with any array literal if \c Char is a
+    compatible character type. The compatible character types are: \c QChar, \c ushort, \c
+    char16_t and (on platforms, such as Windows, where it is a 16-bit
+    type) \c wchar_t.
 */
 
 /*!
@@ -390,7 +395,7 @@ QT_BEGIN_NAMESPACE
 
     This function is provided for STL compatibility.
 
-    \sa end(), cbegin(), rbegin(), data()
+    \sa end(), constBegin(), cbegin(), rbegin(), data()
 */
 
 /*!
@@ -400,7 +405,16 @@ QT_BEGIN_NAMESPACE
 
     This function is provided for STL compatibility.
 
-    \sa cend(), begin(), crbegin(), data()
+    \sa cend(), begin(), constBegin(), crbegin(), data()
+*/
+
+/*!
+    \fn QStringView::const_iterator QStringView::constBegin() const
+    \since 6.1
+
+    Same as begin().
+
+    \sa constEnd(), begin(), cbegin(), crbegin(), data()
 */
 
 /*!
@@ -411,7 +425,7 @@ QT_BEGIN_NAMESPACE
 
     This function is provided for STL compatibility.
 
-    \sa begin(), cend(), rend()
+    \sa begin(), constEnd(), cend(), rend()
 */
 
 /*! \fn QStringView::const_iterator QStringView::cend() const
@@ -420,7 +434,15 @@ QT_BEGIN_NAMESPACE
 
     This function is provided for STL compatibility.
 
-    \sa cbegin(), end(), crend()
+    \sa cbegin(), end(), constEnd(), crend()
+*/
+
+/*! \fn QStringView::const_iterator QStringView::constEnd() const
+    \since 6.1
+
+    Same as end().
+
+    \sa constBegin(), end(), cend(), crend()
 */
 
 /*!
@@ -500,7 +522,7 @@ QT_BEGIN_NAMESPACE
 
     Returns the size of this string view, in UTF-16 code points (that is,
     surrogate pairs count as two for the purposes of this function, the same
-    as in QString and QStringRef).
+    as in QString).
 
     \sa empty(), isEmpty(), isNull(), length()
 */
@@ -616,7 +638,7 @@ QT_BEGIN_NAMESPACE
     Returns the substring of length \a length starting at position
     \a start in this object.
 
-    \obsolete Use slice() instead in new code.
+    \obsolete Use sliced() instead in new code.
 
     Returns an empty string view if \a start exceeds the
     length of the string. If there are less than \a length characters
@@ -624,7 +646,7 @@ QT_BEGIN_NAMESPACE
     \a length is negative (default), the function returns all characters that
     are available from \a start.
 
-    \sa first(), last(), slice(), chopped(), chop(), truncate()
+    \sa first(), last(), sliced(), chopped(), chop(), truncate()
 */
 
 /*!
@@ -638,7 +660,7 @@ QT_BEGIN_NAMESPACE
     The entire string is returned if \a length is greater than or equal
     to size(), or less than zero.
 
-    \sa first(), last(), slice(), startsWith(), chopped(), chop(), truncate()
+    \sa first(), last(), sliced(), startsWith(), chopped(), chop(), truncate()
 */
 
 /*!
@@ -652,7 +674,7 @@ QT_BEGIN_NAMESPACE
     The entire string is returned if \a length is greater than or equal
     to size(), or less than zero.
 
-    \sa first(), last(), slice(), endsWith(), chopped(), chop(), truncate()
+    \sa first(), last(), sliced(), endsWith(), chopped(), chop(), truncate()
 */
 
 /*!
@@ -664,7 +686,7 @@ QT_BEGIN_NAMESPACE
 
     \note The behavior is undefined when \a n < 0 or \a n > size().
 
-    \sa last(), subString(), startsWith(), chopped(), chop(), truncate()
+    \sa last(), sliced(), startsWith(), chopped(), chop(), truncate()
 */
 
 /*!
@@ -675,11 +697,11 @@ QT_BEGIN_NAMESPACE
 
     \note The behavior is undefined when \a n < 0 or \a n > size().
 
-    \sa first(), subString(), endsWith(), chopped(), chop(), truncate()
+    \sa first(), sliced(), endsWith(), chopped(), chop(), truncate()
 */
 
 /*!
-    \fn QStringView QStringView::slice(qsizetype pos, qsizetype n) const
+    \fn QStringView QStringView::sliced(qsizetype pos, qsizetype n) const
     \since 6.0
 
     Returns a string view that points to \a n characters of this string,
@@ -692,8 +714,9 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QStringView QStringView::from(qsizetype pos) const
+    \fn QStringView QStringView::sliced(qsizetype pos) const
     \since 6.0
+    \overload
 
     Returns a string view starting at position \a pos in this object,
     and extending to its end.
@@ -767,7 +790,7 @@ QT_BEGIN_NAMESPACE
     \fn int QStringView::compare(QLatin1String l1, Qt::CaseSensitivity cs) const
     \fn int QStringView::compare(QChar ch) const
     \fn int QStringView::compare(QChar ch, Qt::CaseSensitivity cs) const
-    \since 5.14
+    \since 5.15
 
     Returns an integer that compares to zero as this string-view compares to the
     Latin-1 string \a l1, or character \a ch, respectively.
@@ -776,6 +799,19 @@ QT_BEGIN_NAMESPACE
     otherwise the comparison is case-insensitive.
 
     \sa operator==(), operator<(), operator>()
+*/
+
+/*!
+    \fn QStringView::operator==(QStringView lhs, QStringView rhs)
+    \fn QStringView::operator!=(QStringView lhs, QStringView rhs)
+    \fn QStringView::operator< (QStringView lhs, QStringView rhs)
+    \fn QStringView::operator<=(QStringView lhs, QStringView rhs)
+    \fn QStringView::operator> (QStringView lhs, QStringView rhs)
+    \fn QStringView::operator>=(QStringView lhs, QStringView rhs)
+
+    Operators for comparing \a lhs to \a rhs.
+
+    \sa compare()
 */
 
 /*!
@@ -862,6 +898,67 @@ QT_BEGIN_NAMESPACE
     \sa QString::lastIndexOf()
 */
 
+#if QT_CONFIG(regularexpression)
+/*!
+    \fn qsizetype QStringView::indexOf(const QRegularExpression &re, qsizetype from, QRegularExpressionMatch *rmatch) const
+    \since 6.1
+
+    Returns the index position of the first match of the regular
+    expression \a re in the string view, searching forward from index
+    position \a from. Returns -1 if \a re didn't match anywhere.
+
+    If the match is successful and \a rmatch is not \nullptr, it also
+    writes the results of the match into the QRegularExpressionMatch object
+    pointed to by \a rmatch.
+
+    \note Due to how the regular expression matching algorithm works,
+    this function will actually match repeatedly from the beginning of
+    the string view until the position \a from is reached.
+*/
+
+/*!
+    \fn qsizetype QStringView::lastIndexOf(const QRegularExpression &re, qsizetype from, QRegularExpressionMatch *rmatch) const
+    \since 6.1
+
+    Returns the index position of the last match of the regular
+    expression \a re in the string view, which starts before the index
+    position \a from. Returns -1 if \a re didn't match anywhere.
+
+    If the match is successful and \a rmatch is not \nullptr, it also
+    writes the results of the match into the QRegularExpressionMatch object
+    pointed to by \a rmatch.
+*/
+
+/*!
+    \fn bool QStringView::contains(const QRegularExpression &re, QRegularExpressionMatch *rmatch) const
+    \since 6.1
+
+    Returns \c true if the regular expression \a re matches somewhere in this
+    string view; otherwise returns \c false.
+
+    If the match is successful and \a rmatch is not \nullptr, it also
+    writes the results of the match into the QRegularExpressionMatch object
+    pointed to by \a rmatch.
+
+    \sa QRegularExpression::match()
+*/
+
+/*!
+    \fn qsizetype QStringView::count(const QRegularExpression &re) const
+    \since 6.1
+
+    Returns the number of times the regular expression \a re matches
+    in the string view.
+
+    For historical reasons, this function counts overlapping matches.
+    This behavior is different from simply iterating over the matches
+    in the string using QRegularExpressionMatchIterator.
+
+    \sa QRegularExpression::globalMatch()
+
+*/
+#endif // QT_CONFIG(regularexpression)
+
 /*!
     \fn QByteArray QStringView::toLatin1() const
 
@@ -898,16 +995,16 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn QVector<uint> QStringView::toUcs4() const
+    \fn QList<uint> QStringView::toUcs4() const
 
-    Returns a UCS-4/UTF-32 representation of the string as a QVector<uint>.
+    Returns a UCS-4/UTF-32 representation of the string as a QList<uint>.
 
     UCS-4 is a Unicode codec and therefore it is lossless. All characters from
     this string will be encoded in UCS-4. Any invalid sequence of code units in
     this string is replaced by the Unicode replacement character
     (QChar::ReplacementCharacter, which corresponds to \c{U+FFFD}).
 
-    The returned vector is not 0-terminated.
+    The returned list is not 0-terminated.
 
     \sa toUtf8(), toLatin1(), toLocal8Bit(), QStringEncoder
 */
@@ -921,10 +1018,10 @@ QT_BEGIN_NAMESPACE
 
     Returns a string-view that references \a{s}' data, but is never null.
 
-    This is a faster way to convert a QString or QStringRef to a QStringView,
+    This is a faster way to convert a QString to a QStringView,
     if null QStrings can legitimately be treated as empty ones.
 
-    \sa QString::isNull(), QStringRef::isNull(), QStringView
+    \sa QString::isNull(), QStringView
 */
 
 /*!
@@ -1221,11 +1318,11 @@ QT_BEGIN_NAMESPACE
 
 
 /*!
-    \fn QStringView::tokenize(Needle &&sep, Flags...flags) const
-    \fn QLatin1String::tokenize(Needle &&sep, Flags...flags) const
-    \fn QString::tokenize(Needle &&sep, Flags...flags) const &
-    \fn QString::tokenize(Needle &&sep, Flags...flags) const &&
-    \fn QString::tokenize(Needle &&sep, Flags...flags) &&
+    \fn template <typename Needle, typename...Flags> auto QStringView::tokenize(Needle &&sep, Flags...flags) const
+    \fn template <typename Needle, typename...Flags> auto QLatin1String::tokenize(Needle &&sep, Flags...flags) const
+    \fn template <typename Needle, typename...Flags> auto QString::tokenize(Needle &&sep, Flags...flags) const &
+    \fn template <typename Needle, typename...Flags> auto QString::tokenize(Needle &&sep, Flags...flags) const &&
+    \fn template <typename Needle, typename...Flags> auto QString::tokenize(Needle &&sep, Flags...flags) &&
 
     Splits the string into substring views wherever \a sep occurs, and
     returns a lazy sequence of those strings.

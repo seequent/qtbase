@@ -41,7 +41,6 @@
 #include "qfilesystemengine_p.h"
 #include "qoperatingsystemversion.h"
 #include "qplatformdefs.h"
-#include "qvector.h"
 
 #include <QtCore/qt_windows.h>
 
@@ -58,8 +57,8 @@ QFileSystemIterator::QFileSystemIterator(const QFileSystemEntry &entry, QDir::Fi
     , uncShareIndex(0)
     , onlyDirs(false)
 {
-    Q_UNUSED(nameFilters)
-    Q_UNUSED(flags)
+    Q_UNUSED(nameFilters);
+    Q_UNUSED(flags);
     if (nativePath.endsWith(QLatin1String(".lnk"))) {
         QFileSystemMetaData metaData;
         QFileSystemEntry link = QFileSystemEngine::getLinkTarget(entry, metaData);
@@ -101,7 +100,7 @@ bool QFileSystemIterator::advance(QFileSystemEntry &fileEntry, QFileSystemMetaDa
                                          FINDEX_SEARCH_OPS(searchOps), 0, dwAdditionalFlags);
         if (findFileHandle == INVALID_HANDLE_VALUE) {
             if (nativePath.startsWith(QLatin1String("\\\\?\\UNC\\"))) {
-                const QVector<QStringRef> parts = nativePath.splitRef(QLatin1Char('\\'), Qt::SkipEmptyParts);
+                const auto parts = QStringView{nativePath}.split(QLatin1Char('\\'), Qt::SkipEmptyParts);
                 if (parts.count() == 4 && QFileSystemEngine::uncListSharesOnServer(
                         QLatin1String("\\\\") + parts.at(2), &uncShares)) {
                     if (uncShares.isEmpty())

@@ -376,6 +376,8 @@ static int qt_gl_resolve_extensions()
         extensions |= QOpenGLExtensions::PixelBufferObject;
     if (extensionMatcher.match("GL_ARB_texture_swizzle") || extensionMatcher.match("GL_EXT_texture_swizzle"))
         extensions |= QOpenGLExtensions::TextureSwizzle;
+    if (extensionMatcher.match("GL_OES_standard_derivatives"))
+        extensions |= QOpenGLExtensions::StandardDerivatives;
 
     if (ctx->isOpenGLES()) {
         if (format.majorVersion() >= 2)
@@ -388,7 +390,8 @@ static int qt_gl_resolve_extensions()
                 | QOpenGLExtensions::MapBufferRange
                 | QOpenGLExtensions::FramebufferBlit
                 | QOpenGLExtensions::FramebufferMultisample
-                | QOpenGLExtensions::Sized8Formats;
+                | QOpenGLExtensions::Sized8Formats
+                | QOpenGLExtensions::StandardDerivatives;
 #ifndef Q_OS_WASM
             // WebGL 2.0 specification explicitly does not support texture swizzles
             // https://www.khronos.org/registry/webgl/specs/latest/2.0/#5.19
@@ -444,6 +447,9 @@ static int qt_gl_resolve_extensions()
 
         if (format.version() >= qMakePair(1, 4) || extensionMatcher.match("GL_SGIS_generate_mipmap"))
             extensions |= QOpenGLExtensions::GenerateMipmap;
+
+        if (format.majorVersion() >= 2)
+            extensions |= QOpenGLExtensions::StandardDerivatives;
 
         if (format.majorVersion() >= 3 || extensionMatcher.match("GL_ARB_framebuffer_object")) {
             extensions |= QOpenGLExtensions::FramebufferMultisample
@@ -557,13 +563,6 @@ bool QOpenGLExtensions::hasOpenGLExtension(QOpenGLExtensions::OpenGLExtension ex
 }
 
 /*!
-    \fn void QOpenGLFunctions::initializeGLFunctions()
-    \obsolete
-
-    Use initializeOpenGLFunctions() instead.
-*/
-
-/*!
     Initializes OpenGL function resolution for the current context.
 
     After calling this function, the QOpenGLFunctions object can only be
@@ -581,7 +580,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBindTexture(\a target, \a texture).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBindTexture.xhtml}{glBindTexture()}.
 
     \since 5.3
@@ -592,7 +591,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBlendFunc(\a sfactor, \a dfactor).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendFunc.xhtml}{glBlendFunc()}.
 
     \since 5.3
@@ -603,7 +602,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glClear(\a mask).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glClear.xhtml}{glClear()}.
 
     \since 5.3
@@ -614,7 +613,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glClearColor(\a red, \a green, \a blue, \a alpha).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glClearColor.xhtml}{glClearColor()}.
 
     \since 5.3
@@ -625,7 +624,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glClearStencil(\a s).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glClearStencil.xhtml}{glClearStencil()}.
 
     \since 5.3
@@ -636,7 +635,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glColorMask(\a red, \a green, \a blue, \a alpha).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glColorMask.xhtml}{glColorMask()}.
 
     \since 5.3
@@ -647,7 +646,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCopyTexImage2D(\a target, \a level, \a internalformat, \a x, \a y, \a width, \a height, \a border).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCopyTexImage2D.xhtml}{glCopyTexImage2D()}.
 
     \since 5.3
@@ -658,7 +657,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCopyTexSubImage2D(\a target, \a level, \a xoffset, \a yoffset, \a x, \a y, \a width, \a height).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCopyTexSubImage2D.xhtml}{glCopyTexSubImage2D()}.
 
     \since 5.3
@@ -669,7 +668,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCullFace(\a mode).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCullFace.xhtml}{glCullFace()}.
 
     \since 5.3
@@ -680,7 +679,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDeleteTextures(\a n, \a textures).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDeleteTextures.xhtml}{glDeleteTextures()}.
 
     \since 5.3
@@ -691,7 +690,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDepthFunc(\a func).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDepthFunc.xhtml}{glDepthFunc()}.
 
     \since 5.3
@@ -702,7 +701,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDepthMask(\a flag).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDepthMask.xhtml}{glDepthMask()}.
 
     \since 5.3
@@ -713,8 +712,8 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDisable(\a cap).
 
-    For more information, see the OpenGL ES 2.0 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDisable.xhtml}{glDisable()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEnable.xhtml}{glDisable()}.
 
     \since 5.3
 */
@@ -724,7 +723,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDrawArrays(\a mode, \a first, \a count).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDrawArrays.xhtml}{glDrawArrays()}.
 
     \since 5.3
@@ -735,7 +734,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDrawElements(\a mode, \a count, \a type, \a indices).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDrawElements.xhtml}{glDrawElements()}.
 
     \since 5.3
@@ -746,7 +745,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glEnable(\a cap).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEnable.xhtml}{glEnable()}.
 
     \since 5.3
@@ -757,7 +756,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glFinish().
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glFinish.xhtml}{glFinish()}.
 
     \since 5.3
@@ -768,7 +767,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glFlush().
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glFlush.xhtml}{glFlush()}.
 
     \since 5.3
@@ -779,7 +778,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glFrontFace(\a mode).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glFrontFace.xhtml}{glFrontFace()}.
 
     \since 5.3
@@ -790,7 +789,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGenTextures(\a n, \a textures).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGenTextures.xhtml}{glGenTextures()}.
 
     \since 5.3
@@ -801,7 +800,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetBooleanv(\a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGet.xhtml}{glGetBooleanv()}.
 
     \since 5.3
@@ -812,7 +811,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetError().
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetError.xhtml}{glGetError()}.
 
     \since 5.3
@@ -823,7 +822,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetFloatv(\a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGet.xhtml}{glGetFloatv()}.
 
     \since 5.3
@@ -834,7 +833,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetIntegerv(\a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGet.xhtml}{glGetIntegerv()}.
 
     \since 5.3
@@ -845,7 +844,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetString(\a name).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetString.xhtml}{glGetString()}.
 
     \since 5.3
@@ -856,7 +855,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetTexParameterfv(\a target, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetTexParameter.xhtml}{glGetTexParameterfv()}.
 
     \since 5.3
@@ -867,7 +866,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetTexParameteriv(\a target, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetTexParameter.xhtml}{glGetTexParameteriv()}.
 
     \since 5.3
@@ -878,7 +877,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glHint(\a target, \a mode).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glHint.xhtml}{glHint()}.
 
     \since 5.3
@@ -889,7 +888,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glIsEnabled(\a cap).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsEnabled.xhtml}{glIsEnabled()}.
 
     \since 5.3
@@ -900,7 +899,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glIsTexture(\a texture).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsTexture.xhtml}{glIsTexture()}.
 
     \since 5.3
@@ -911,7 +910,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glLineWidth(\a width).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glLineWidth.xhtml}{glLineWidth()}.
 
     \since 5.3
@@ -922,7 +921,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glPixelStorei(\a pname, \a param).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glPixelStorei.xhtml}{glPixelStorei()}.
 
     \since 5.3
@@ -933,7 +932,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glPolygonOffset(\a factor, \a units).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glPolygonOffset.xhtml}{glPolygonOffset()}.
 
     \since 5.3
@@ -944,7 +943,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glReadPixels(\a x, \a y, \a width, \a height, \a format, \a type, \a pixels).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glReadPixels.xhtml}{glReadPixels()}.
 
     \since 5.3
@@ -955,7 +954,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glScissor(\a x, \a y, \a width, \a height).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glScissor.xhtml}{glScissor()}.
 
     \since 5.3
@@ -966,7 +965,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glStencilFunc(\a func, \a ref, \a mask).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glStencilFunc.xhtml}{glStencilFunc()}.
 
     \since 5.3
@@ -977,7 +976,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glStencilMask(\a mask).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glStencilMask.xhtml}{glStencilMask()}.
 
     \since 5.3
@@ -988,7 +987,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glStencilOp(\a fail, \a zfail, \a zpass).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glStencilOp.xhtml}{glStencilOp()}.
 
     \since 5.3
@@ -999,7 +998,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glTexImage2D(\a target, \a level, \a internalformat, \a width, \a height, \a border, \a format, \a type, \a pixels).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexImage2D.xhtml}{glTexImage2D()}.
 
     \since 5.3
@@ -1010,7 +1009,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glTexParameterf(\a target, \a pname, \a param).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexParameter.xhtml}{glTexParameterf()}.
 
     \since 5.3
@@ -1021,7 +1020,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glTexParameterfv(\a target, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexParameter.xhtml}{glTexParameterfv()}.
 
     \since 5.3
@@ -1032,7 +1031,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glTexParameteri(\a target, \a pname, \a param).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexParameter.xhtml}{glTexParameteri()}.
 
     \since 5.3
@@ -1043,7 +1042,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glTexParameteriv(\a target, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexParameter.xhtml}{glTexParameteriv()}.
 
     \since 5.3
@@ -1054,7 +1053,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glTexSubImage2D(\a target, \a level, \a xoffset, \a yoffset, \a width, \a height, \a format, \a type, \a pixels).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexSubImage2D.xhtml}{glTexSubImage2D()}.
 
     \since 5.3
@@ -1065,7 +1064,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glViewport(\a x, \a y, \a width, \a height).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glViewport.xhtml}{glViewport()}.
 
     \since 5.3
@@ -1076,7 +1075,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glActiveTexture(\a texture).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glActiveTexture.xhtml}{glActiveTexture()}.
 */
 
@@ -1085,7 +1084,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glAttachShader(\a program, \a shader).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glAttachShader.xhtml}{glAttachShader()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1096,7 +1095,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBindAttribLocation(\a program, \a index, \a name).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBindAttribLocation.xhtml}{glBindAttribLocation()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1107,7 +1106,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBindBuffer(\a target, \a buffer).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBindBuffer.xhtml}{glBindBuffer()}.
 */
 
@@ -1119,7 +1118,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
     Note that Qt will translate a \a framebuffer argument of 0 to the currently
     bound QOpenGLContext's defaultFramebufferObject().
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBindFramebuffer.xhtml}{glBindFramebuffer()}.
 */
 
@@ -1128,7 +1127,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBindRenderbuffer(\a target, \a renderbuffer).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBindRenderbuffer.xhtml}{glBindRenderbuffer()}.
 */
 
@@ -1137,7 +1136,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBlendColor(\a red, \a green, \a blue, \a alpha).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendColor.xhtml}{glBlendColor()}.
 */
 
@@ -1146,7 +1145,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBlendEquation(\a mode).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendEquation.xhtml}{glBlendEquation()}.
 */
 
@@ -1155,7 +1154,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBlendEquationSeparate(\a modeRGB, \a modeAlpha).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendEquationSeparate.xhtml}{glBlendEquationSeparate()}.
 */
 
@@ -1164,7 +1163,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBlendFuncSeparate(\a srcRGB, \a dstRGB, \a srcAlpha, \a dstAlpha).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendFuncSeparate.xhtml}{glBlendFuncSeparate()}.
 */
 
@@ -1173,7 +1172,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBufferData(\a target, \a size, \a data, \a usage).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBufferData.xhtml}{glBufferData()}.
 */
 
@@ -1182,7 +1181,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glBufferSubData(\a target, \a offset, \a size, \a data).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBufferSubData.xhtml}{glBufferSubData()}.
 */
 
@@ -1191,7 +1190,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCheckFramebufferStatus(\a target).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCheckFramebufferStatus.xhtml}{glCheckFramebufferStatus()}.
 */
 
@@ -1202,7 +1201,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
     desktop OpenGL systems and glClearDepthf(\a depth) on
     embedded OpenGL ES systems.
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glClearDepthf.xhtml}{glClearDepthf()}.
 */
 
@@ -1211,7 +1210,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCompileShader(\a shader).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCompileShader.xhtml}{glCompileShader()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1222,7 +1221,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCompressedTexImage2D(\a target, \a level, \a internalformat, \a width, \a height, \a border, \a imageSize, \a data).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCompressedTexImage2D.xhtml}{glCompressedTexImage2D()}.
 */
 
@@ -1231,7 +1230,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCompressedTexSubImage2D(\a target, \a level, \a xoffset, \a yoffset, \a width, \a height, \a format, \a imageSize, \a data).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCompressedTexSubImage2D.xhtml}{glCompressedTexSubImage2D()}.
 */
 
@@ -1240,7 +1239,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCreateProgram().
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCreateProgram.xhtml}{glCreateProgram()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1251,7 +1250,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glCreateShader(\a type).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCreateShader.xhtml}{glCreateShader()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1262,7 +1261,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDeleteBuffers(\a n, \a buffers).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDeleteBuffers.xhtml}{glDeleteBuffers()}.
 */
 
@@ -1271,7 +1270,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDeleteFramebuffers(\a n, \a framebuffers).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDeleteFramebuffers.xhtml}{glDeleteFramebuffers()}.
 */
 
@@ -1280,7 +1279,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDeleteProgram(\a program).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDeleteProgram.xhtml}{glDeleteProgram()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1291,7 +1290,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDeleteRenderbuffers(\a n, \a renderbuffers).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDeleteRenderbuffers.xhtml}{glDeleteRenderbuffers()}.
 */
 
@@ -1300,7 +1299,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDeleteShader(\a shader).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDeleteShader.xhtml}{glDeleteShader()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1313,7 +1312,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
     desktop OpenGL systems and glDepthRangef(\a zNear, \a zFar) on
     embedded OpenGL ES systems.
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDepthRangef.xhtml}{glDepthRangef()}.
 */
 
@@ -1322,7 +1321,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDetachShader(\a program, \a shader).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDetachShader.xhtml}{glDetachShader()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1333,8 +1332,8 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glDisableVertexAttribArray(\a index).
 
-    For more information, see the OpenGL ES 2.0 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es2.0/html/glDisableVertexAttribArray.xhtml}{glDisableVertexAttribArray()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEnableVertexAttribArray.xhtml}{glDisableVertexAttribArray()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
 */
@@ -1344,7 +1343,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glEnableVertexAttribArray(\a index).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEnableVertexAttribArray.xhtml}{glEnableVertexAttribArray()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1355,7 +1354,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glFramebufferRenderbuffer(\a target, \a attachment, \a renderbuffertarget, \a renderbuffer).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glFramebufferRenderbuffer.xhtml}{glFramebufferRenderbuffer()}.
 */
 
@@ -1364,7 +1363,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glFramebufferTexture2D(\a target, \a attachment, \a textarget, \a texture, \a level).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glFramebufferTexture2D.xhtml}{glFramebufferTexture2D()}.
 */
 
@@ -1373,7 +1372,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGenBuffers(\a n, \a buffers).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGenBuffers.xhtml}{glGenBuffers()}.
 */
 
@@ -1382,7 +1381,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGenerateMipmap(\a target).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGenerateMipmap.xhtml}{glGenerateMipmap()}.
 */
 
@@ -1391,7 +1390,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGenFramebuffers(\a n, \a framebuffers).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGenFramebuffers.xhtml}{glGenFramebuffers()}.
 */
 
@@ -1400,7 +1399,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGenRenderbuffers(\a n, \a renderbuffers).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGenRenderbuffers.xhtml}{glGenRenderbuffers()}.
 */
 
@@ -1409,7 +1408,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetActiveAttrib(\a program, \a index, \a bufsize, \a length, \a size, \a type, \a name).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetActiveAttrib.xhtml}{glGetActiveAttrib()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1420,7 +1419,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetActiveUniform(\a program, \a index, \a bufsize, \a length, \a size, \a type, \a name).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetActiveUniform.xhtml}{glGetActiveUniform()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1431,7 +1430,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetAttachedShaders(\a program, \a maxcount, \a count, \a shaders).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetAttachedShaders.xhtml}{glGetAttachedShaders()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1442,7 +1441,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetAttribLocation(\a program, \a name).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetAttribLocation.xhtml}{glGetAttribLocation()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1453,8 +1452,8 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetBufferParameteriv(\a target, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetBufferParameteriv.xhtml}{glGetBufferParameteriv()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetBufferParameter.xhtml}{glGetBufferParameteriv()}.
 */
 
 /*!
@@ -1462,7 +1461,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetFramebufferAttachmentParameteriv(\a target, \a attachment, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetFramebufferAttachmentParameteriv.xhtml}{glGetFramebufferAttachmentParameteriv()}.
 */
 
@@ -1471,7 +1470,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetProgramiv(\a program, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetProgramiv.xhtml}{glGetProgramiv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1482,7 +1481,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetProgramInfoLog(\a program, \a bufsize, \a length, \a infolog).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetProgramInfoLog.xhtml}{glGetProgramInfoLog()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1493,7 +1492,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetRenderbufferParameteriv(\a target, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetRenderbufferParameteriv.xhtml}{glGetRenderbufferParameteriv()}.
 */
 
@@ -1502,7 +1501,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetShaderiv(\a shader, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetShaderiv.xhtml}{glGetShaderiv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1513,7 +1512,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetShaderInfoLog(\a shader, \a bufsize, \a length, \a infolog).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetShaderInfoLog.xhtml}{glGetShaderInfoLog()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1524,7 +1523,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetShaderPrecisionFormat(\a shadertype, \a precisiontype, \a range, \a precision).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetShaderPrecisionFormat.xhtml}{glGetShaderPrecisionFormat()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1535,7 +1534,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetShaderSource(\a shader, \a bufsize, \a length, \a source).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetShaderSource.xhtml}{glGetShaderSource()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1546,7 +1545,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetUniformfv(\a program, \a location, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetUniform.xhtml}{glGetUniformfv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1557,7 +1556,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetUniformiv(\a program, \a location, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetUniform.xhtml}{glGetUniformiv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1568,7 +1567,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetUniformLocation(\a program, \a name).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetUniformLocation.xhtml}{glGetUniformLocation()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1579,8 +1578,8 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetVertexAttribfv(\a index, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetVertexAttribfv.xhtml}{glGetVertexAttribfv()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetVertexAttrib.xhtml}{glGetVertexAttribfv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
 */
@@ -1590,8 +1589,8 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetVertexAttribiv(\a index, \a pname, \a params).
 
-    For more information, see the OpenGL ES 2.0 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetVertexAttribiv.xhtml}{glGetVertexAttribiv()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetVertexAttrib.xhtml}{glGetVertexAttribiv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
 */
@@ -1601,7 +1600,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glGetVertexAttribPointerv(\a index, \a pname, \a pointer).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetVertexAttribPointerv.xhtml}{glGetVertexAttribPointerv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1612,7 +1611,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glIsBuffer(\a buffer).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsBuffer.xhtml}{glIsBuffer()}.
 */
 
@@ -1621,7 +1620,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glIsFramebuffer(\a framebuffer).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsFramebuffer.xhtml}{glIsFramebuffer()}.
 */
 
@@ -1630,7 +1629,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glIsProgram(\a program).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsProgram.xhtml}{glIsProgram()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1641,7 +1640,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glIsRenderbuffer(\a renderbuffer).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsRenderbuffer.xhtml}{glIsRenderbuffer()}.
 */
 
@@ -1650,7 +1649,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glIsShader(\a shader).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsShader.xhtml}{glIsShader()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1661,7 +1660,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glLinkProgram(\a program).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glLinkProgram.xhtml}{glLinkProgram()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1672,7 +1671,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glReleaseShaderCompiler().
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glReleaseShaderCompiler.xhtml}{glReleaseShaderCompiler()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1683,7 +1682,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glRenderbufferStorage(\a target, \a internalformat, \a width, \a height).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glRenderbufferStorage.xhtml}{glRenderbufferStorage()}.
 */
 
@@ -1692,7 +1691,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glSampleCoverage(\a value, \a invert).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glSampleCoverage.xhtml}{glSampleCoverage()}.
 */
 
@@ -1701,7 +1700,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glShaderBinary(\a n, \a shaders, \a binaryformat, \a binary, \a length).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glShaderBinary.xhtml}{glShaderBinary()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1712,7 +1711,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glShaderSource(\a shader, \a count, \a string, \a length).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glShaderSource.xhtml}{glShaderSource()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1723,7 +1722,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glStencilFuncSeparate(\a face, \a func, \a ref, \a mask).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glStencilFuncSeparate.xhtml}{glStencilFuncSeparate()}.
 */
 
@@ -1732,7 +1731,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glStencilMaskSeparate(\a face, \a mask).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glStencilMaskSeparate.xhtml}{glStencilMaskSeparate()}.
 */
 
@@ -1741,7 +1740,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glStencilOpSeparate(\a face, \a fail, \a zfail, \a zpass).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glStencilOpSeparate.xhtml}{glStencilOpSeparate()}.
 */
 
@@ -1750,7 +1749,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform1f(\a location, \a x).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform1f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1761,7 +1760,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform1fv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform1fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1772,7 +1771,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform1i(\a location, \a x).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform1i()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1783,7 +1782,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform1iv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform1iv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1794,7 +1793,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform2f(\a location, \a x, \a y).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform2f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1805,7 +1804,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform2fv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform2fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1816,7 +1815,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform2i(\a location, \a x, \a y).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform2i()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1827,7 +1826,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform2iv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform2iv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1838,7 +1837,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform3f(\a location, \a x, \a y, \a z).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform3f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1849,7 +1848,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform3fv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform3fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1860,7 +1859,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform3i(\a location, \a x, \a y, \a z).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform3i()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1871,7 +1870,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform3iv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform3iv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1882,7 +1881,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform4f(\a location, \a x, \a y, \a z, \a w).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform4f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1893,7 +1892,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform4fv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform4fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1904,7 +1903,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform4i(\a location, \a x, \a y, \a z, \a w).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform4i()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1915,7 +1914,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniform4iv(\a location, \a count, \a v).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniform4iv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1926,7 +1925,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniformMatrix2fv(\a location, \a count, \a transpose, \a value).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniformMatrix2fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1937,7 +1936,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniformMatrix3fv(\a location, \a count, \a transpose, \a value).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniformMatrix3fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1948,7 +1947,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUniformMatrix4fv(\a location, \a count, \a transpose, \a value).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUniform.xhtml}{glUniformMatrix4fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1959,7 +1958,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glUseProgram(\a program).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUseProgram.xhtml}{glUseProgram()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1970,7 +1969,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glValidateProgram(\a program).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glValidateProgram.xhtml}{glValidateProgram()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1981,7 +1980,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib1f(\a indx, \a x).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib1f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -1992,7 +1991,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib1fv(\a indx, \a values).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib1fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2003,7 +2002,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib2f(\a indx, \a x, \a y).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib2f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2014,7 +2013,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib2fv(\a indx, \a values).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib2fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2025,7 +2024,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib3f(\a indx, \a x, \a y, \a z).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib3f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2036,7 +2035,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib3fv(\a indx, \a values).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib3fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2047,7 +2046,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib4f(\a indx, \a x, \a y, \a z, \a w).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib4f()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2058,7 +2057,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttrib4fv(\a indx, \a values).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttrib.xhtml}{glVertexAttrib4fv()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2069,7 +2068,7 @@ void QOpenGLFunctions::initializeOpenGLFunctions()
 
     Convenience function that calls glVertexAttribPointer(\a indx, \a size, \a type, \a normalized, \a stride, \a ptr).
 
-    For more information, see the OpenGL ES 2.0 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttribPointer.xhtml}{glVertexAttribPointer()}.
 
     This convenience function will do nothing on OpenGL ES 1.x systems.
@@ -2564,7 +2563,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     function either in core or as an extension.
 
     For more information, see the OpenGL ES 3.x documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEndQuery.xhtml}{glEndQuery()}.
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBeginQuery.xhtml}{glEndQuery()}.
 */
 
 /*!
@@ -2577,7 +2576,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     function either in core or as an extension.
 
     For more information, see the OpenGL ES 3.x documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEndTransformFeedback.xhtml}{glEndTransformFeedback()}.
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBeginTransformFeedback.xhtml}{glEndTransformFeedback()}.
 */
 
 /*!
@@ -3474,7 +3473,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     function either in core or as an extension.
 
     For more information, see the OpenGL ES 3.x documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glUnmapBuffer.xhtml}{glUnmapBuffer()}.
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glMapBufferRange.xhtml}{glUnmapBuffer()}.
 */
 
 /*!
@@ -3630,7 +3629,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     function either in core or as an extension.
 
     For more information, see the OpenGL ES 3.x documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCreateShaderProgramv.xhtml}{glCreateShaderProgramv()}.
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCreateShaderProgram.xhtml}{glCreateShaderProgramv()}.
 */
 
 /*!
@@ -4436,7 +4435,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     function either in core or as an extension.
 
     For more information, see the OpenGL ES 3.x documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttribIFormat.xhtml}{glVertexAttribIFormat()}.
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glVertexAttribFormat.xhtml}{glVertexAttribIFormat()}.
 */
 
 /*!
@@ -4461,7 +4460,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendBarrier.xhtml}{glBlendBarrier()}.
 */
 
@@ -4474,7 +4473,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendEquationSeparate.xhtml}{glBlendEquationSeparatei()}.
 */
 
@@ -4487,8 +4486,8 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendEquationi.xhtml}{glBlendEquationi()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendEquation.xhtml}{glBlendEquationi()}.
 */
 
 /*!
@@ -4500,7 +4499,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendFuncSeparate.xhtml}{glBlendFuncSeparatei()}.
 */
 
@@ -4513,8 +4512,8 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendFunci.xhtml}{glBlendFunci()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glBlendFunc.xhtml}{glBlendFunci()}.
 */
 
 /*!
@@ -4526,7 +4525,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glColorMask.xhtml}{glColorMaski()}.
 */
 
@@ -4539,7 +4538,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glCopyImageSubData.xhtml}{glCopyImageSubData()}.
 */
 
@@ -4552,7 +4551,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDebugMessageCallback.xhtml}{glDebugMessageCallback()}.
 */
 
@@ -4565,7 +4564,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDebugMessageControl.xhtml}{glDebugMessageContro()}.
 */
 
@@ -4578,7 +4577,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDebugMessageInsert.xhtml}{glDebugMessageInsert()}.
 */
 
@@ -4591,7 +4590,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glEnable.xhtml}{glDisablei()}.
 */
 
@@ -4604,7 +4603,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDrawElementsBaseVertex.xhtml}{glDrawElementsBaseVerte()}.
 */
 
@@ -4617,7 +4616,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDrawElementsInstancedBaseVertex.xhtml}{glDrawElementsInstancedBaseVerte()}.
 */
 
@@ -4630,7 +4629,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glDrawRangeElementsBaseVertex.xhtml}{glDrawRangeElementsBaseVerte()}.
 */
 
@@ -4643,8 +4642,8 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
-    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEnablei.xhtml}{glEnablei()}.
+    For more information, see the OpenGL ES 3.X documentation for
+    \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glEnable.xhtml}{glEnablei()}.
 */
 
 /*!
@@ -4656,7 +4655,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glFramebufferTexture.xhtml}{glFramebufferTexture()}.
 */
 
@@ -4669,7 +4668,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetDebugMessageLog.xhtml}{glGetDebugMessageLog()}.
 */
 
@@ -4682,7 +4681,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetGraphicsResetStatus.xhtml}{glGetGraphicsResetStatus()}.
 */
 
@@ -4695,7 +4694,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetObjectLabel.xhtml}{glGetObjectLabe()}.
 */
 
@@ -4708,7 +4707,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetObjectPtrLabel.xhtml}{glGetObjectPtrLabe()}.
 */
 
@@ -4721,7 +4720,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetPointerv.xhtml}{glGetPointerv()}.
 */
 
@@ -4734,7 +4733,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetSamplerParameter.xhtml}{glGetSamplerParameterIiv()}.
 */
 
@@ -4747,7 +4746,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetSamplerParameter.xhtml}{glGetSamplerParameterIuiv()}.
 */
 
@@ -4760,7 +4759,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetTexParameter.xhtml}{glGetTexParameterIiv()}.
 */
 
@@ -4773,7 +4772,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetTexParameter.xhtml}{glGetTexParameterIuiv()}.
 */
 
@@ -4786,7 +4785,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetUniform.xhtml}{glGetnUniformfv()}.
 */
 
@@ -4799,7 +4798,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetUniform.xhtml}{glGetnUniformiv()}.
 */
 
@@ -4812,7 +4811,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glGetUniform.xhtml}{glGetnUniformuiv()}.
 */
 
@@ -4825,7 +4824,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glIsEnabled.xhtml}{glIsEnabledi()}.
 */
 
@@ -4838,7 +4837,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glMinSampleShading.xhtml}{glMinSampleShading()}.
 */
 
@@ -4851,7 +4850,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glObjectLabel.xhtml}{glObjectLabe()}.
 */
 
@@ -4864,7 +4863,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glObjectPtrLabel.xhtml}{glObjectPtrLabe()}.
 */
 
@@ -4877,7 +4876,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glPatchParameteri.xhtml}{glPatchParameteri()}.
 */
 
@@ -4890,7 +4889,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glPopDebugGroup.xhtml}{glPopDebugGroup()}.
 */
 
@@ -4903,7 +4902,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glPrimitiveBoundingBox.xhtml}{glPrimitiveBoundingBo()}.
 */
 
@@ -4916,7 +4915,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glPushDebugGroup.xhtml}{glPushDebugGroup()}.
 */
 
@@ -4929,7 +4928,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glReadPixels.xhtml}{glReadnPixels()}.
 */
 
@@ -4942,7 +4941,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glSamplerParameter.xhtml}{glSamplerParameterIiv()}.
 */
 
@@ -4955,7 +4954,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glSamplerParameter.xhtml}{glSamplerParameterIuiv()}.
 */
 
@@ -4968,7 +4967,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexBuffer.xhtml}{glTexBuffer()}.
 */
 
@@ -4981,7 +4980,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexBufferRange.xhtml}{glTexBufferRange()}.
 */
 
@@ -4994,7 +4993,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexParameter.xhtml}{glTexParameterIiv()}.
 */
 
@@ -5007,7 +5006,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexParameter.xhtml}{glTexParameterIuiv()}.
 */
 
@@ -5020,7 +5019,7 @@ QT_OPENGL_IMPLEMENT(QOpenGLFunctionsPrivate, QT_OPENGL_FUNCTIONS)
     with plain OpenGL, the function is only usable when the given profile and version contains the
     function either in core or as an extension.
 
-    For more information, see the OpenGL ES 3.2 documentation for
+    For more information, see the OpenGL ES 3.X documentation for
     \l{https://www.khronos.org/registry/OpenGL-Refpages/es3/html/glTexStorage3DMultisample.xhtml}{glTexStorage3DMultisample()}.
 */
 

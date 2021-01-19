@@ -9,7 +9,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/dbus/chat")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/dbus/chat")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS Gui)
@@ -29,11 +33,15 @@ qt6_add_dbus_adaptor(chat_SRCS
     chat_adaptor
 )
 # special case end
-add_qt_gui_executable(chat
+qt_add_executable(chat
     chat.cpp chat.h
     chatmainwindow.ui
     chatsetnickname.ui
     ${chat_SRCS} # special case
+)
+set_target_properties(chat PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
 )
 target_link_libraries(chat PUBLIC
     Qt::Core

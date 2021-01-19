@@ -27,7 +27,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 #include <qstring.h>
 #include <qlist.h>
 #include <qstringlist.h>
@@ -69,13 +69,14 @@ private slots:
     void captureCount();
     void captureNames_data();
     void captureNames();
+    void captureNamesNul();
     void pcreJitStackUsage_data();
     void pcreJitStackUsage();
     void regularExpressionMatch_data();
     void regularExpressionMatch();
     void JOptionUsage_data();
     void JOptionUsage();
-    void QStringAndQStringRefEquivalence();
+    void QStringAndQStringViewEquivalence();
     void threadSafety_data();
     void threadSafety();
 
@@ -111,7 +112,7 @@ struct Match
     QHash<QString, QString> namedCaptured;
 };
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(Match, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(Match, Q_RELOCATABLE_TYPE);
 QT_END_NAMESPACE
 
 Q_DECLARE_METATYPE(Match)
@@ -167,7 +168,7 @@ bool operator!=(const Match &m, const QRegularExpressionMatch &rem)
 }
 
 
-bool operator==(const QRegularExpressionMatchIterator &iterator, const QVector<Match> &expectedMatchList)
+bool operator==(const QRegularExpressionMatchIterator &iterator, const QList<Match> &expectedMatchList)
 {
     QRegularExpressionMatchIterator i = iterator;
 
@@ -183,20 +184,41 @@ bool operator==(const QRegularExpressionMatchIterator &iterator, const QVector<M
     if (i.hasNext())
         return false;
 
+    i = iterator;
+
+    int index = 0;
+    for (const QRegularExpressionMatch &match : i) {
+        if (match != expectedMatchList[index++])
+            return false;
+    }
+
+    if (index != expectedMatchList.size())
+        return false;
+
+    // do it again
+    index = 0;
+    for (const QRegularExpressionMatch &match : i) {
+        if (match != expectedMatchList[index++])
+            return false;
+    }
+
+    if (index != expectedMatchList.size())
+        return false;
+
     return true;
 }
 
-bool operator==(const QVector<Match> &expectedMatchList, const QRegularExpressionMatchIterator &iterator)
+bool operator==(const QList<Match> &expectedMatchList, const QRegularExpressionMatchIterator &iterator)
 {
     return operator==(iterator, expectedMatchList);
 }
 
-bool operator!=(const QRegularExpressionMatchIterator &iterator, const QVector<Match> &expectedMatchList)
+bool operator!=(const QRegularExpressionMatchIterator &iterator, const QList<Match> &expectedMatchList)
 {
     return !operator==(iterator, expectedMatchList);
 }
 
-bool operator!=(const QVector<Match> &expectedMatchList, const QRegularExpressionMatchIterator &iterator)
+bool operator!=(const QList<Match> &expectedMatchList, const QRegularExpressionMatchIterator &iterator)
 {
     return !operator==(expectedMatchList, iterator);
 }
@@ -213,9 +235,9 @@ void consistencyCheck(const QRegularExpressionMatch &match)
                 QVERIFY(match.lastCapturedIndex() == 0);
 
             for (int i = 0; i <= match.lastCapturedIndex(); ++i) {
-                int startPos = match.capturedStart(i);
-                int endPos = match.capturedEnd(i);
-                int length = match.capturedLength(i);
+                qsizetype startPos = match.capturedStart(i);
+                qsizetype endPos = match.capturedEnd(i);
+                qsizetype length = match.capturedLength(i);
                 QString captured = match.captured(i);
                 QStringView capturedView = match.capturedView(i);
 
@@ -299,7 +321,7 @@ template<typename QREMatch, typename QREMatchFunc, typename Subject, typename Re
 static void testMatchImpl(const QRegularExpression &regexp,
                           QREMatchFunc matchingMethod,
                           const Subject &subject,
-                          int offset,
+                          qsizetype offset,
                           QRegularExpression::MatchType matchType,
                           QRegularExpression::MatchOptions matchOptions,
                           const Result &result)
@@ -333,7 +355,7 @@ static void testMatch(const QRegularExpression &regexp,
                       QREMatchFuncForString matchingMethodForString,
                       QREMatchFuncForStringRef matchingMethodForStringRef,
                       const QString &subject,
-                      int offset,
+                      qsizetype offset,
                       QRegularExpression::MatchType matchType,
                       QRegularExpression::MatchOptions matchOptions,
                       const Result &result)
@@ -351,10 +373,10 @@ static void testMatch(const QRegularExpression &regexp,
                             result);
 }
 
-typedef QRegularExpressionMatch (QRegularExpression::*QREMatchStringPMF)(const QString &, int, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
-typedef QRegularExpressionMatch (QRegularExpression::*QREMatchStringViewPMF)(QStringView, int, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
-typedef QRegularExpressionMatchIterator (QRegularExpression::*QREGlobalMatchStringPMF)(const QString &, int, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
-typedef QRegularExpressionMatchIterator (QRegularExpression::*QREGlobalMatchStringViewPMF)(QStringView, int, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
+typedef QRegularExpressionMatch (QRegularExpression::*QREMatchStringPMF)(const QString &, qsizetype, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
+typedef QRegularExpressionMatch (QRegularExpression::*QREMatchStringViewPMF)(QStringView, qsizetype, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
+typedef QRegularExpressionMatchIterator (QRegularExpression::*QREGlobalMatchStringPMF)(const QString &, qsizetype, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
+typedef QRegularExpressionMatchIterator (QRegularExpression::*QREGlobalMatchStringViewPMF)(QStringView, qsizetype, QRegularExpression::MatchType, QRegularExpression::MatchOptions) const;
 
 void tst_QRegularExpression::provideRegularExpressions()
 {
@@ -625,19 +647,19 @@ void tst_QRegularExpression::normalMatch_data()
 {
     QTest::addColumn<QRegularExpression>("regexp");
     QTest::addColumn<QString>("subject");
-    QTest::addColumn<int>("offset");
+    QTest::addColumn<qsizetype>("offset");
     QTest::addColumn<QRegularExpression::MatchOptions>("matchOptions");
     QTest::addColumn<Match>("match");
 
     Match m;
-    int offset = 0;
+    qsizetype offset = 0;
 
     m.clear();
     m.isValid = true; m.hasMatch = true;
     m.captured << "string" << "string";
     QTest::newRow("match01") << QRegularExpression("(\\bstring\\b)")
                              << "a string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -646,7 +668,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << "a string" << "a" << "string";
     QTest::newRow("match02") << QRegularExpression("(\\w+) (\\w+)")
                              << "a string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -657,7 +679,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.namedCaptured["noun"] = "string";
     QTest::newRow("match03") << QRegularExpression("(?<article>\\w+) (?<noun>\\w+)")
                              << "a string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -666,7 +688,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << " string" << QString() << "string";
     QTest::newRow("match04") << QRegularExpression("(\\w+)? (\\w+)")
                              << " string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -675,7 +697,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << " string" << QString("") << "string";
     QTest::newRow("match05") << QRegularExpression("(\\w*) (\\w+)")
                              << " string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -683,7 +705,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.isValid = true; m.hasMatch = true;
     m.captured << "c123def" << "c12" << "3" << "def";
     offset = 2;
-    for (int i = 0; i <= offset; ++i) {
+    for (qsizetype i = 0; i <= offset; ++i) {
         QTest::newRow(("match06-offset" + QByteArray::number(i)).constData())
                 << QRegularExpression("(\\w*)(\\d+)(\\w*)")
                 << QStringLiteral("abc123def").mid(offset - i)
@@ -696,7 +718,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.isValid = true; m.hasMatch = true;
     m.captured << QString("");
     offset = 9;
-    for (int i = 0; i <= offset; ++i) {
+    for (qsizetype i = 0; i <= offset; ++i) {
         QTest::newRow(("match07-offset" + QByteArray::number(i)).constData())
                 << QRegularExpression("\\w*")
                 << QStringLiteral("abc123def").mid(offset - i)
@@ -710,7 +732,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << QString("a string") << QString("a string") << QString("");
     QTest::newRow("match08") << QRegularExpression("(.*)(.*)")
                              << "a string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -719,7 +741,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << QString("a string") << QString("") << QString("a string");
     QTest::newRow("match09") << QRegularExpression("(.*?)(.*)")
                              << "a string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -734,7 +756,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.namedCaptured["nonexisting3"] = QString();
     QTest::newRow("match10") << QRegularExpression("(?<article>\\w+) (?<noun>\\w+)")
                              << "a string"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -745,7 +767,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.namedCaptured["nonexisting"] = QString();
     QTest::newRow("match11") << QRegularExpression("(?<digits>\\d*)")
                              << "abcde"
-                             << 0
+                             << qsizetype(0)
                              << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                              << m;
 
@@ -757,7 +779,7 @@ void tst_QRegularExpression::normalMatch_data()
     QTest::newRow("match12")
             << QRegularExpression("\\Bbcd\\B")
             << "abcde"
-            << 1
+            << qsizetype(1)
             << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
             << m;
 
@@ -767,14 +789,14 @@ void tst_QRegularExpression::normalMatch_data()
     m.isValid = true;
     QTest::newRow("nomatch01") << QRegularExpression("\\d+")
                                << "a string"
-                               << 0
+                               << qsizetype(0)
                                << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                << m;
 
     m.clear();
     m.isValid = true;
     offset = 1;
-    for (int i = 0; i <= offset; ++i) {
+    for (qsizetype i = 0; i <= offset; ++i) {
         QTest::newRow(("nomatch02-offset" + QByteArray::number(i)).constData())
             << QRegularExpression("(\\w+) (\\w+)")
             << QStringLiteral("a string").mid(offset - i)
@@ -786,7 +808,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.clear();
     m.isValid = true;
     offset = 9;
-    for (int i = 0; i <= offset; ++i) {
+    for (qsizetype i = 0; i <= offset; ++i) {
         QTest::newRow(("nomatch03-offset" + QByteArray::number(i)).constData())
                 << QRegularExpression("\\w+")
                 << QStringLiteral("abc123def").mid(offset - i)
@@ -801,7 +823,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.isValid = true;
     QTest::newRow("anchoredmatch01") << QRegularExpression("\\d+")
                                      << "abc123def"
-                                     << 0
+                                     << qsizetype(0)
                                      << QRegularExpression::MatchOptions(QRegularExpression::AnchorAtOffsetMatchOption)
                                      << m;
 
@@ -812,7 +834,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << "678";
     QTest::newRow("negativeoffset01") << QRegularExpression("\\d+")
                                       << "abc123def678ghi"
-                                      << -6
+                                      << qsizetype(-6)
                                       << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                       << m;
 
@@ -821,7 +843,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << "678";
     QTest::newRow("negativeoffset02") << QRegularExpression("\\d+")
                                       << "abc123def678ghi"
-                                      << -8
+                                      << qsizetype(-8)
                                       << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                       << m;
 
@@ -830,7 +852,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << "678ghi" << "678" << "ghi";
     QTest::newRow("negativeoffset03") << QRegularExpression("(\\d+)(\\w+)")
                                       << "abc123def678ghi"
-                                      << -8
+                                      << qsizetype(-8)
                                       << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                       << m;
 
@@ -838,7 +860,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.isValid = true;
     QTest::newRow("negativeoffset04") << QRegularExpression("\\d+")
                                       << "abc123def678ghi"
-                                      << -3
+                                      << qsizetype(-3)
                                       << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                       << m;
 
@@ -847,7 +869,7 @@ void tst_QRegularExpression::normalMatch_data()
     m.captured << "678";
     QTest::newRow("negativeoffset05") << QRegularExpression("^\\d+", QRegularExpression::MultilineOption)
                                       << "a\nbc123\ndef\n678gh\ni"
-                                      << -10
+                                      << qsizetype(-10)
                                       << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                       << m;
 }
@@ -857,7 +879,7 @@ void tst_QRegularExpression::normalMatch()
 {
     QFETCH(QRegularExpression, regexp);
     QFETCH(QString, subject);
-    QFETCH(int, offset);
+    QFETCH(qsizetype, offset);
     QFETCH(QRegularExpression::MatchOptions, matchOptions);
     QFETCH(Match, match);
 
@@ -875,20 +897,20 @@ void tst_QRegularExpression::partialMatch_data()
 {
     QTest::addColumn<QRegularExpression>("regexp");
     QTest::addColumn<QString>("subject");
-    QTest::addColumn<int>("offset");
+    QTest::addColumn<qsizetype>("offset");
     QTest::addColumn<QRegularExpression::MatchType>("matchType");
     QTest::addColumn<QRegularExpression::MatchOptions>("matchOptions");
     QTest::addColumn<Match>("match");
 
     Match m;
-    int offset = 0;
+    qsizetype offset = 0;
 
     m.clear();
     m.isValid = true; m.hasPartialMatch = true;
     m.captured << "str";
     QTest::newRow("softmatch01") << QRegularExpression("string")
                                     << "a str"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferCompleteMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -898,7 +920,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << " str";
     QTest::newRow("softmatch02") << QRegularExpression("\\bstring\\b")
                                     << "a str"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferCompleteMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -908,7 +930,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << " str";
     QTest::newRow("softmatch03") << QRegularExpression("(\\bstring\\b)")
                                     << "a str"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferCompleteMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -918,7 +940,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "8 Dec 19";
     QTest::newRow("softmatch04") << QRegularExpression("^(\\d{1,2}) (\\w{3}) (\\d{4})$")
                                     << "8 Dec 19"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferCompleteMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -928,7 +950,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "8 Dec 1985" << "8" << "Dec" << "1985";
     QTest::newRow("softmatch05") << QRegularExpression("^(\\d{1,2}) (\\w{3}) (\\d{4})$")
                                     << "8 Dec 1985"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferCompleteMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -938,7 +960,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "def";
     QTest::newRow("softmatch06") << QRegularExpression("abc\\w+X|def")
                                     << "abcdef"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferCompleteMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -948,7 +970,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "abcdef";
     QTest::newRow("softmatch07") << QRegularExpression("abc\\w+X|defY")
                                     << "abcdef"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferCompleteMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -957,7 +979,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.isValid = true; m.hasPartialMatch = true;
     m.captured << "def";
     offset = 1;
-    for (int i = 0; i <= offset; ++i) {
+    for (qsizetype i = 0; i <= offset; ++i) {
         QTest::newRow(("softmatch08-offset" + QByteArray::number(i)).constData())
                 << QRegularExpression("abc\\w+X|defY")
                 << QStringLiteral("abcdef").mid(offset - i)
@@ -974,7 +996,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "str";
     QTest::newRow("hardmatch01") << QRegularExpression("string")
                                     << "a str"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -984,7 +1006,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << " str";
     QTest::newRow("hardmatch02") << QRegularExpression("\\bstring\\b")
                                     << "a str"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -994,7 +1016,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << " str";
     QTest::newRow("hardmatch03") << QRegularExpression("(\\bstring\\b)")
                                     << "a str"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1004,7 +1026,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "8 Dec 19";
     QTest::newRow("hardmatch04") << QRegularExpression("^(\\d{1,2}) (\\w{3}) (\\d{4})$")
                                     << "8 Dec 19"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1014,7 +1036,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "8 Dec 1985";
     QTest::newRow("hardmatch05") << QRegularExpression("^(\\d{1,2}) (\\w{3}) (\\d{4})$")
                                     << "8 Dec 1985"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1024,7 +1046,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "abcdef";
     QTest::newRow("hardmatch06") << QRegularExpression("abc\\w+X|def")
                                     << "abcdef"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1034,7 +1056,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "abcdef";
     QTest::newRow("hardmatch07") << QRegularExpression("abc\\w+X|defY")
                                     << "abcdef"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1043,7 +1065,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.isValid = true; m.hasPartialMatch = true;
     m.captured << "def";
     offset = 1;
-    for (int i = 0; i <= offset; ++i) {
+    for (qsizetype i = 0; i <= offset; ++i) {
         QTest::newRow(("hardmatch08-offset" + QByteArray::number(i)).constData())
                 << QRegularExpression("abc\\w+X|defY")
                 << QStringLiteral("abcdef").mid(offset - i)
@@ -1058,7 +1080,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "ab";
     QTest::newRow("hardmatch09") << QRegularExpression("abc|ab")
                                     << "ab"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1068,7 +1090,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "abc";
     QTest::newRow("hardmatch10") << QRegularExpression("abc(def)?")
                                     << "abc"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1078,7 +1100,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.captured << "abc";
     QTest::newRow("hardmatch11") << QRegularExpression("(abc)*")
                                     << "abc"
-                                    << 0
+                                    << qsizetype(0)
                                     << QRegularExpression::PartialPreferFirstMatch
                                     << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                     << m;
@@ -1090,7 +1112,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.isValid = true;
     QTest::newRow("nomatch01") << QRegularExpression("abc\\w+X|defY")
                                << "123456"
-                               << 0
+                               << qsizetype(0)
                                << QRegularExpression::PartialPreferCompleteMatch
                                << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                << m;
@@ -1099,7 +1121,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.isValid = true;
     QTest::newRow("nomatch02") << QRegularExpression("abc\\w+X|defY")
                                << "123456"
-                               << 0
+                               << qsizetype(0)
                                << QRegularExpression::PartialPreferFirstMatch
                                << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                << m;
@@ -1108,7 +1130,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.isValid = true;
     QTest::newRow("nomatch03") << QRegularExpression("abc\\w+X|defY")
                                << "ab123"
-                               << 0
+                               << qsizetype(0)
                                << QRegularExpression::PartialPreferCompleteMatch
                                << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                << m;
@@ -1117,7 +1139,7 @@ void tst_QRegularExpression::partialMatch_data()
     m.isValid = true;
     QTest::newRow("nomatch04") << QRegularExpression("abc\\w+X|defY")
                                << "ab123"
-                               << 0
+                               << qsizetype(0)
                                << QRegularExpression::PartialPreferFirstMatch
                                << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                << m;
@@ -1128,7 +1150,7 @@ void tst_QRegularExpression::partialMatch()
 {
     QFETCH(QRegularExpression, regexp);
     QFETCH(QString, subject);
-    QFETCH(int, offset);
+    QFETCH(qsizetype, offset);
     QFETCH(QRegularExpression::MatchType, matchType);
     QFETCH(QRegularExpression::MatchOptions, matchOptions);
     QFETCH(Match, match);
@@ -1147,12 +1169,12 @@ void tst_QRegularExpression::globalMatch_data()
 {
     QTest::addColumn<QRegularExpression>("regexp");
     QTest::addColumn<QString>("subject");
-    QTest::addColumn<int>("offset");
+    QTest::addColumn<qsizetype>("offset");
     QTest::addColumn<QRegularExpression::MatchType>("matchType");
     QTest::addColumn<QRegularExpression::MatchOptions>("matchOptions");
-    QTest::addColumn<QVector<Match> >("matchList");
+    QTest::addColumn<QList<Match> >("matchList");
 
-    QVector<Match> matchList;
+    QList<Match> matchList;
     Match m;
 
     matchList.clear();
@@ -1166,7 +1188,7 @@ void tst_QRegularExpression::globalMatch_data()
     matchList << m;
     QTest::newRow("globalmatch01") << QRegularExpression("\\w+")
                                    << "the quick fox"
-                                   << 0
+                                   << qsizetype(0)
                                    << QRegularExpression::NormalMatch
                                    << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                    << matchList;
@@ -1182,7 +1204,7 @@ void tst_QRegularExpression::globalMatch_data()
     matchList << m;
     QTest::newRow("globalmatch02") << QRegularExpression("(\\w+?)(\\w+)")
                                    << "the quick fox"
-                                   << 0
+                                   << qsizetype(0)
                                    << QRegularExpression::NormalMatch
                                    << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                    << matchList;
@@ -1200,14 +1222,14 @@ void tst_QRegularExpression::globalMatch_data()
     matchList << m;
     QTest::newRow("globalmatch03") << QRegularExpression("\\G(?:\\w\\w\\w)*?AAA")
                                    << "ACA""GTG""CGA""AAA""AAA""AAG""GAA""AAG""AAA""AAA"
-                                   << 0
+                                   << qsizetype(0)
                                    << QRegularExpression::NormalMatch
                                    << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                    << matchList;
 
     QTest::newRow("globalmatch04") << QRegularExpression("(?:\\w\\w\\w)*?AAA")
                                    << "ACA""GTG""CGA""AAA""AAA""AAG""GAA""AAG""AAA""AAA"
-                                   << 0
+                                   << qsizetype(0)
                                    << QRegularExpression::NormalMatch
                                    << QRegularExpression::MatchOptions(QRegularExpression::AnchorAtOffsetMatchOption)
                                    << matchList;
@@ -1232,7 +1254,7 @@ void tst_QRegularExpression::globalMatch_data()
 
     QTest::newRow("globalmatch_emptycaptures01") << QRegularExpression("a*b*|c")
                                                  << "ccaabbd"
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1255,7 +1277,7 @@ void tst_QRegularExpression::globalMatch_data()
 
     QTest::newRow("globalmatch_emptycaptures02") << QRegularExpression(".*")
                                                  << "the\nquick\nfox"
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1280,7 +1302,7 @@ void tst_QRegularExpression::globalMatch_data()
 
     QTest::newRow("globalmatch_emptycaptures03") << QRegularExpression(".*")
                                                  << "the\nquick\nfox\n"
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1303,7 +1325,7 @@ void tst_QRegularExpression::globalMatch_data()
 
     QTest::newRow("globalmatch_emptycaptures04") << QRegularExpression("(*CRLF).*")
                                                  << "the\r\nquick\r\nfox"
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1328,7 +1350,7 @@ void tst_QRegularExpression::globalMatch_data()
 
     QTest::newRow("globalmatch_emptycaptures05") << QRegularExpression("(*CRLF).*")
                                                  << "the\r\nquick\r\nfox\r\n"
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1355,7 +1377,7 @@ void tst_QRegularExpression::globalMatch_data()
 
     QTest::newRow("globalmatch_emptycaptures06") << QRegularExpression("(*ANYCRLF).*")
                                                  << "the\r\nquick\nfox\rjumped"
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1377,7 +1399,7 @@ void tst_QRegularExpression::globalMatch_data()
     matchList << m;
     QTest::newRow("globalmatch_emptycaptures07") << QRegularExpression("[\\x{0000}-\\x{FFFF}]*")
                                                  << QString::fromUtf8("ABC""\xf0\x9d\x85\x9d""DEF""\xf0\x9d\x85\x9e""GHI")
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1395,7 +1417,7 @@ void tst_QRegularExpression::globalMatch_data()
     matchList << m;
     QTest::newRow("globalmatch_emptycaptures08") << QRegularExpression("[\\x{0000}-\\x{FFFF}]*")
                                                  << QString::fromUtf8("ABC""\xc3\x80""\xf0\x9d\x85\x9d""\xc3\x80""DEF""\xc3\x80")
-                                                 << 0
+                                                 << qsizetype(0)
                                                  << QRegularExpression::NormalMatch
                                                  << QRegularExpression::MatchOptions(QRegularExpression::NoMatchOption)
                                                  << matchList;
@@ -1405,10 +1427,10 @@ void tst_QRegularExpression::globalMatch()
 {
     QFETCH(QRegularExpression, regexp);
     QFETCH(QString, subject);
-    QFETCH(int, offset);
+    QFETCH(qsizetype, offset);
     QFETCH(QRegularExpression::MatchType, matchType);
     QFETCH(QRegularExpression::MatchOptions, matchOptions);
-    QFETCH(QVector<Match>, matchList);
+    QFETCH(QList<Match>, matchList);
 
     testMatch<QRegularExpressionMatchIterator>(regexp,
                                                static_cast<QREGlobalMatchStringPMF>(&QRegularExpression::globalMatch),
@@ -1620,6 +1642,36 @@ void tst_QRegularExpression::captureNames()
 
 }
 
+void tst_QRegularExpression::captureNamesNul()
+{
+    QRegularExpression re("a(\\d+)b(?<name>\\d+)c(?<anotherName>\\d+)d(\\d+)e$");
+    QVERIFY(re.isValid());
+
+    QCOMPARE(re.captureCount(), 4);
+
+    QStringList namedCaptureGroups = re.namedCaptureGroups();
+    QCOMPARE(namedCaptureGroups[0], QString());
+    QCOMPARE(namedCaptureGroups[1], QString());
+    QCOMPARE(namedCaptureGroups[2], "name");
+    QCOMPARE(namedCaptureGroups[3], "anotherName");
+    QCOMPARE(namedCaptureGroups[4], QString());
+
+    QRegularExpressionMatch m = re.match("a12b456c789d0e");
+    QVERIFY(m.hasMatch());
+
+    QString captureName("name");
+    QCOMPARE(m.captured(captureName), "456");
+    QCOMPARE(m.captured(QStringView(captureName)), "456");
+    QCOMPARE(m.captured(qToStringViewIgnoringNull(captureName)), "456");
+    QCOMPARE(m.captured(u"name"), "456");
+
+    captureName = "anotherName";
+    QCOMPARE(m.captured(captureName), "789");
+    QCOMPARE(m.captured(QStringView(captureName)), "789");
+    QCOMPARE(m.captured(qToStringViewIgnoringNull(captureName)), "789");
+    QCOMPARE(m.captured(u"anotherName"), "789");
+}
+
 void tst_QRegularExpression::pcreJitStackUsage_data()
 {
     QTest::addColumn<QString>("pattern");
@@ -1706,7 +1758,7 @@ void tst_QRegularExpression::JOptionUsage()
     QCOMPARE(re.isValid(), isValid);
 }
 
-void tst_QRegularExpression::QStringAndQStringRefEquivalence()
+void tst_QRegularExpression::QStringAndQStringViewEquivalence()
 {
     const QString subject = QStringLiteral("Mississippi");
     {
@@ -1722,7 +1774,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QCOMPARE(match.capturedEnd(), 4);
         }
         {
-            const QRegularExpressionMatch match = re.match(QStringRef(&subject));
+            const QRegularExpressionMatch match = re.match(QStringView(subject));
             consistencyCheck(match);
             QVERIFY(match.isValid());
             QVERIFY(match.hasMatch());
@@ -1740,7 +1792,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QCOMPARE(match.capturedEnd(), 4);
         }
         {
-            const QRegularExpressionMatch match = re.match(QStringRef(&subject), 1);
+            const QRegularExpressionMatch match = re.match(QStringView(subject), 1);
             consistencyCheck(match);
             QVERIFY(match.isValid());
             QVERIFY(match.hasMatch());
@@ -1758,7 +1810,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QCOMPARE(match.capturedEnd(), 6);
         }
         {
-            const QRegularExpressionMatch match = re.match(subject.midRef(1));
+            const QRegularExpressionMatch match = re.match(QStringView(subject).mid(1));
             consistencyCheck(match);
             QVERIFY(match.isValid());
             QVERIFY(match.hasMatch());
@@ -1776,7 +1828,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QCOMPARE(match.capturedEnd(), 6);
         }
         {
-            const QRegularExpressionMatch match = re.match(subject.midRef(1), 1);
+            const QRegularExpressionMatch match = re.match(QStringView(subject).mid(1), 1);
             consistencyCheck(match);
             QVERIFY(match.isValid());
             QVERIFY(match.hasMatch());
@@ -1794,7 +1846,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QCOMPARE(match.capturedEnd(), 7);
         }
         {
-            const QRegularExpressionMatch match = re.match(QStringRef(&subject), 4);
+            const QRegularExpressionMatch match = re.match(QStringView(subject), 4);
             consistencyCheck(match);
             QVERIFY(match.isValid());
             QVERIFY(match.hasMatch());
@@ -1809,7 +1861,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!match.hasMatch());
         }
         {
-            const QRegularExpressionMatch match = re.match(subject.midRef(4));
+            const QRegularExpressionMatch match = re.match(QStringView(subject).mid(4));
             consistencyCheck(match);
             QVERIFY(match.isValid());
             QVERIFY(!match.hasMatch());
@@ -1842,7 +1894,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!i.hasNext());
         }
         {
-            QRegularExpressionMatchIterator i = re.globalMatch(QStringRef(&subject));
+            QRegularExpressionMatchIterator i = re.globalMatch(QStringView(subject));
             QVERIFY(i.isValid());
 
             consistencyCheck(i);
@@ -1894,7 +1946,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!i.hasNext());
         }
         {
-            QRegularExpressionMatchIterator i = re.globalMatch(QStringRef(&subject), 1);
+            QRegularExpressionMatchIterator i = re.globalMatch(QStringView(subject), 1);
             QVERIFY(i.isValid());
 
             consistencyCheck(i);
@@ -1936,7 +1988,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!i.hasNext());
         }
         {
-            QRegularExpressionMatchIterator i = re.globalMatch(subject.midRef(1));
+            QRegularExpressionMatchIterator i = re.globalMatch(QStringView(subject).mid(1));
             QVERIFY(i.isValid());
 
             consistencyCheck(i);
@@ -1968,7 +2020,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!i.hasNext());
         }
         {
-            QRegularExpressionMatchIterator i = re.globalMatch(subject.midRef(1), 1);
+            QRegularExpressionMatchIterator i = re.globalMatch(QStringView(subject).mid(1), 1);
             QVERIFY(i.isValid());
 
             consistencyCheck(i);
@@ -2000,7 +2052,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!i.hasNext());
         }
         {
-            QRegularExpressionMatchIterator i = re.globalMatch(subject.midRef(1), 1);
+            QRegularExpressionMatchIterator i = re.globalMatch(QStringView(subject).mid(1), 1);
             QVERIFY(i.isValid());
 
             consistencyCheck(i);
@@ -2033,7 +2085,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!i.hasNext());
         }
         {
-            QRegularExpressionMatchIterator i = re.globalMatch(QStringRef(&subject), 4);
+            QRegularExpressionMatchIterator i = re.globalMatch(QStringView(subject), 4);
             QVERIFY(i.isValid());
 
             consistencyCheck(i);
@@ -2055,7 +2107,7 @@ void tst_QRegularExpression::QStringAndQStringRefEquivalence()
             QVERIFY(!i.hasNext());
         }
         {
-            QRegularExpressionMatchIterator i = re.globalMatch(subject.midRef(4));
+            QRegularExpressionMatchIterator i = re.globalMatch(QStringView(subject).mid(4));
             consistencyCheck(i);
             QVERIFY(i.isValid());
             QVERIFY(!i.hasNext());
@@ -2080,7 +2132,7 @@ private:
     {
         yieldCurrentThread();
         for (int i = 0; i < MATCH_ITERATIONS; ++i)
-            m_re.match(m_subject);
+            (void)m_re.match(m_subject);
     }
 
     const QRegularExpression &m_re;
@@ -2136,7 +2188,7 @@ void tst_QRegularExpression::threadSafety()
     for (int threadSafetyIteration = 0; threadSafetyIteration < THREAD_SAFETY_ITERATIONS && time.elapsed() < 2000; ++threadSafetyIteration) {
         QRegularExpression re(pattern);
 
-        QVector<MatcherThread *> threads;
+        QList<MatcherThread *> threads;
         for (int i = 0; i < threadCount; ++i) {
             MatcherThread *thread = new MatcherThread(re, subject);
             thread->start();
@@ -2154,9 +2206,9 @@ void tst_QRegularExpression::wildcard_data()
 {
     QTest::addColumn<QString>("pattern");
     QTest::addColumn<QString>("string");
-    QTest::addColumn<int>("foundIndex");
+    QTest::addColumn<qsizetype>("foundIndex");
 
-    auto addRow = [](const char *pattern, const char *string, int foundIndex) {
+    auto addRow = [](const char *pattern, const char *string, qsizetype foundIndex) {
         QTest::newRow(pattern) << pattern << string << foundIndex;
     };
 
@@ -2210,7 +2262,7 @@ void tst_QRegularExpression::wildcard()
 {
     QFETCH(QString, pattern);
     QFETCH(QString, string);
-    QFETCH(int, foundIndex);
+    QFETCH(qsizetype, foundIndex);
 
     QRegularExpression re(QRegularExpression::wildcardToRegularExpression(pattern));
     QRegularExpressionMatch match = re.match(string);

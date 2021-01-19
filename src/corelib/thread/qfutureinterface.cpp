@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -422,7 +422,7 @@ void QFutureInterfaceBase::waitForResult(int resultIndex)
 void QFutureInterfaceBase::waitForFinished()
 {
     QMutexLocker lock(&d->m_mutex);
-    const bool alreadyFinished = !isRunningOrPending();
+    const bool alreadyFinished = isFinished();
     lock.unlock();
 
     if (!alreadyFinished) {
@@ -430,7 +430,7 @@ void QFutureInterfaceBase::waitForFinished()
 
         lock.relock();
 
-        while (isRunningOrPending())
+        while (!isFinished())
             d->waitCondition.wait(&d->m_mutex);
     }
 
@@ -484,12 +484,29 @@ void QFutureInterfaceBase::setFilterMode(bool enable)
     resultStoreBase().setFilterMode(enable);
 }
 
+/*!
+    \internal
+    Sets the progress range's minimum and maximum values to \a minimum and
+    \a maximum respectively.
+
+    If \a maximum is smaller than \a minimum, \a minimum becomes the only
+    legal value.
+
+    The progress value is reset to be \a minimum.
+
+    The progress range usage can be disabled by using setProgressRange(0, 0).
+    In this case progress value is also reset to 0.
+
+    The behavior of this method is mostly inspired by
+    \l QProgressBar::setRange.
+*/
 void QFutureInterfaceBase::setProgressRange(int minimum, int maximum)
 {
     QMutexLocker locker(&d->m_mutex);
     d->m_progressMinimum = minimum;
-    d->m_progressMaximum = maximum;
+    d->m_progressMaximum = qMax(minimum, maximum);
     d->sendCallOut(QFutureCallOutEvent(QFutureCallOutEvent::ProgressRange, minimum, maximum));
+    d->m_progressValue = minimum;
 }
 
 void QFutureInterfaceBase::setProgressValue(int progressValue)
@@ -497,12 +514,25 @@ void QFutureInterfaceBase::setProgressValue(int progressValue)
     setProgressValueAndText(progressValue, QString());
 }
 
+/*!
+    \internal
+    In case of the \a progressValue falling out of the progress range,
+    this method has no effect.
+    Such behavior is inspired by \l QProgressBar::setValue.
+*/
 void QFutureInterfaceBase::setProgressValueAndText(int progressValue,
                                                    const QString &progressText)
 {
     QMutexLocker locker(&d->m_mutex);
     if (d->manualProgress == false)
         d->manualProgress = true;
+
+    const bool useProgressRange = (d->m_progressMaximum != 0) || (d->m_progressMinimum != 0);
+    if (useProgressRange
+        && ((progressValue < d->m_progressMinimum) || (progressValue > d->m_progressMaximum))) {
+        return;
+    }
+
     if (d->m_progressValue >= progressValue)
         return;
 
@@ -543,6 +573,11 @@ QFutureInterfaceBase &QFutureInterfaceBase::operator=(const QFutureInterfaceBase
         delete d;
     d = other.d;
     return *this;
+}
+
+void QFutureInterfaceBase::swap(QFutureInterfaceBase &other) noexcept
+{
+    qSwap(d, other.d);
 }
 
 bool QFutureInterfaceBase::refT() const
@@ -709,14 +744,14 @@ void QFutureInterfaceBasePrivate::setState(QFutureInterfaceBase::State newState)
     state.storeRelaxed(newState);
 }
 
-void QFutureInterfaceBase::setContinuation(std::function<void()> func)
+void QFutureInterfaceBase::setContinuation(std::function<void(const QFutureInterfaceBase &)> func)
 {
     QMutexLocker lock(&d->continuationMutex);
     // If the state is ready, run continuation immediately,
     // otherwise save it for later.
     if (isFinished()) {
         lock.unlock();
-        func();
+        func(*this);
     } else {
         d->continuation = std::move(func);
     }
@@ -727,7 +762,7 @@ void QFutureInterfaceBase::runContinuation() const
     QMutexLocker lock(&d->continuationMutex);
     if (d->continuation) {
         lock.unlock();
-        d->continuation();
+        d->continuation(*this);
     }
 }
 

@@ -123,15 +123,15 @@ protected:
         return list.contains(format);
     }
 
-    QVariant retrieveData_sys(const QString &fmt, QVariant::Type type) const override
+    QVariant retrieveData_sys(const QString &fmt, QMetaType type) const override
     {
-        auto requestedType = QMetaType::Type(type);
+        auto requestedType = type;
         if (fmt.isEmpty() || isEmpty())
             return QByteArray();
 
         (void)formats(); // trigger update of format list
 
-        QVector<xcb_atom_t> atoms;
+        QList<xcb_atom_t> atoms;
         const xcb_atom_t *targets = (const xcb_atom_t *) format_atoms.data();
         int size = format_atoms.size() / sizeof(xcb_atom_t);
         atoms.reserve(size);
@@ -445,10 +445,10 @@ xcb_window_t QXcbClipboard::owner() const
 
 xcb_atom_t QXcbClipboard::sendTargetsSelection(QMimeData *d, xcb_window_t window, xcb_atom_t property)
 {
-    QVector<xcb_atom_t> types;
+    QList<xcb_atom_t> types;
     QStringList formats = QInternalMimeData::formatsHelper(d);
     for (int i = 0; i < formats.size(); ++i) {
-        QVector<xcb_atom_t> atoms = QXcbMime::mimeAtomsForFormat(connection(), formats.at(i));
+        QList<xcb_atom_t> atoms = QXcbMime::mimeAtomsForFormat(connection(), formats.at(i));
         for (int j = 0; j < atoms.size(); ++j) {
             if (!types.contains(atoms.at(j)))
                 types.append(atoms.at(j));
@@ -781,6 +781,12 @@ xcb_generic_event_t *QXcbClipboard::waitForClipboardEvent(xcb_window_t window, i
         if (e) // found the waited for event
             return e;
 
+        // It is safe to assume here that the pointed to node won't be re-used
+        // while we are holding the pointer to it. The nodes can be recycled
+        // only when they are dequeued, which is done only by
+        // QXcbConnection::processXcbEvents().
+        const QXcbEventNode *flushedTailNode = queue->flushedTail();
+
         if (checkManager) {
             auto reply = Q_XCB_REPLY(xcb_get_selection_owner, xcb_connection(), atom(QXcbAtom::CLIPBOARD_MANAGER));
             if (!reply || reply->owner == XCB_NONE)
@@ -806,7 +812,7 @@ xcb_generic_event_t *QXcbClipboard::waitForClipboardEvent(xcb_window_t window, i
 
         const auto elapsed = timer.elapsed();
         if (elapsed < clipboard_timeout)
-            queue->waitForNewEvents(clipboard_timeout - elapsed);
+            queue->waitForNewEvents(flushedTailNode, clipboard_timeout - elapsed);
     } while (timer.elapsed() < clipboard_timeout);
 
     return nullptr;

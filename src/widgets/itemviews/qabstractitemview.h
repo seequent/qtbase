@@ -223,7 +223,12 @@ public:
     void setItemDelegateForColumn(int column, QAbstractItemDelegate *delegate);
     QAbstractItemDelegate *itemDelegateForColumn(int column) const;
 
-    QAbstractItemDelegate *itemDelegate(const QModelIndex &index) const;
+#if QT_DEPRECATED_SINCE(6, 0)
+    QT_DEPRECATED_VERSION_X_6_0("Use itemDelegateForIndex instead")
+    QAbstractItemDelegate *itemDelegate(const QModelIndex &index) const
+    { return itemDelegateForIndex(index); }
+#endif
+    virtual QAbstractItemDelegate *itemDelegateForIndex(const QModelIndex &index) const;
 
     virtual QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
 
@@ -242,7 +247,8 @@ public Q_SLOTS:
     void update(const QModelIndex &index);
 
 protected Q_SLOTS:
-    virtual void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles = QVector<int>());
+    virtual void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight,
+                             const QList<int> &roles = QList<int>());
     virtual void rowsInserted(const QModelIndex &parent, int start, int end);
     virtual void rowsAboutToBeRemoved(const QModelIndex &parent, int start, int end);
     virtual void selectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
@@ -296,7 +302,7 @@ protected:
     virtual void startDrag(Qt::DropActions supportedActions);
 #endif
 
-    virtual QStyleOptionViewItem viewOptions() const;
+    virtual void initViewItemOption(QStyleOptionViewItem *option) const;
 
     enum State {
         NoState,

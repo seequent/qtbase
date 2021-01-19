@@ -30,7 +30,7 @@
 #include <QtGui/QVulkanFunctions>
 #include <QtGui/QVulkanWindow>
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QSignalSpy>
 
@@ -86,8 +86,8 @@ void tst_QVulkan::vulkanInstance()
 
 void tst_QVulkan::vulkanCheckSupported()
 {
-    // Test the early calls to supportedLayers/extensions that need the library
-    // and some basics, but do not initialize the instance.
+    // Test the early calls to supportedLayers/extensions/apiVersion that need
+    // the library and some basics, but do not initialize the instance.
     QVulkanInstance inst;
     QVERIFY(!inst.isValid());
 
@@ -103,6 +103,9 @@ void tst_QVulkan::vulkanCheckSupported()
         QVERIFY(!ve.isEmpty());
         QVERIFY(ve == inst.supportedExtensions());
     }
+
+    qDebug() << inst.supportedApiVersion();
+    QVERIFY(inst.supportedApiVersion().majorVersion() >= 1);
 }
 
 void tst_QVulkan::vulkanPlainWindow()
@@ -153,8 +156,24 @@ void tst_QVulkan::vulkanVersionRequest()
     inst.destroy();
 
     inst.setApiVersion(QVersionNumber(10, 0, 0));
-    QVERIFY(!inst.create());
-    QCOMPARE(inst.errorCode(), VK_ERROR_INCOMPATIBLE_DRIVER);
+
+    bool result = inst.create();
+
+    // Starting with Vulkan 1.1 the spec does not allow the implementation to
+    // fail the instance creation. So check for the 1.0 behavior only when
+    // create() failed, skip this verification with 1.1+ (where create() will
+    // succeed for any bogus api version).
+    if (!result)
+        QCOMPARE(inst.errorCode(), VK_ERROR_INCOMPATIBLE_DRIVER);
+
+    inst.destroy();
+
+    // Verify that specifying the version returned from supportedApiVersion
+    // (either 1.0.0 or what vkEnumerateInstanceVersion returns in Vulkan 1.1+)
+    // leads to successful instance creation.
+    inst.setApiVersion(inst.supportedApiVersion());
+    result = inst.create();
+    QVERIFY(result);
 }
 
 static void waitForUnexposed(QWindow *w)
@@ -190,7 +209,7 @@ void tst_QVulkan::vulkanWindow()
     w.hide();
     waitForUnexposed(&w);
     w.setVulkanInstance(&inst);
-    QVector<VkPhysicalDeviceProperties> pdevs = w.availablePhysicalDevices();
+    QList<VkPhysicalDeviceProperties> pdevs = w.availablePhysicalDevices();
     if (pdevs.isEmpty())
         QSKIP("No Vulkan physical devices; skip");
     w.show();

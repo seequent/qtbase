@@ -40,7 +40,6 @@
 #include "qcolordialog.h"
 
 #include "qapplication.h"
-#include <private/qdesktopwidget_p.h>
 #include "qdrawutil.h"
 #include "qevent.h"
 #include "qimage.h"
@@ -461,19 +460,19 @@ void QWellArray::keyPressEvent(QKeyEvent* e)
 {
     switch(e->key()) {                        // Look at the key code
     case Qt::Key_Left:                                // If 'left arrow'-key,
-        if(curCol > 0)                        // and cr't not in leftmost col
+        if (curCol > 0)                        // and cr't not in leftmost col
             setCurrent(curRow, curCol - 1);        // set cr't to next left column
         break;
     case Qt::Key_Right:                                // Correspondingly...
-        if(curCol < numCols()-1)
+        if (curCol < numCols()-1)
             setCurrent(curRow, curCol + 1);
         break;
     case Qt::Key_Up:
-        if(curRow > 0)
+        if (curRow > 0)
             setCurrent(curRow - 1, curCol);
         break;
     case Qt::Key_Down:
-        if(curRow < numRows()-1)
+        if (curRow < numRows()-1)
             setCurrent(curRow + 1, curCol);
         break;
 #if 0
@@ -1564,9 +1563,11 @@ bool QColorDialogPrivate::selectColor(const QColor &col)
 
 QColor QColorDialogPrivate::grabScreenColor(const QPoint &p)
 {
-    const QWidget *desktop = QApplication::desktop();
-    const QPixmap pixmap = QGuiApplication::primaryScreen()->grabWindow(desktop->winId(), p.x(), p.y(), 1, 1);
-    QImage i = pixmap.toImage();
+    QScreen *screen = QGuiApplication::screenAt(p);
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    const QPixmap pixmap = screen->grabWindow(0, p.x(), p.y(), 1, 1);
+    const QImage i = pixmap.toImage();
     return i.pixel(0, 0);
 }
 
@@ -1758,10 +1759,10 @@ void QColorDialogPrivate::initWidgets()
     } else {
         // better color picker size for small displays
 #if defined(QT_SMALL_COLORDIALOG)
-        QSize screenSize = QDesktopWidgetPrivate::availableGeometry(QCursor::pos()).size();
+        QSize screenSize = QGuiApplication::screenAt(QCursor::pos())->availableGeometry().size();
         pWidth = pHeight = qMin(screenSize.width(), screenSize.height());
         pHeight -= 20;
-        if(screenSize.height() > screenSize.width())
+        if (screenSize.height() > screenSize.width())
             pWidth -= 20;
 #else
         pWidth = 150;

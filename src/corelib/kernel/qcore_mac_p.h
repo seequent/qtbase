@@ -53,6 +53,9 @@
 
 #include "private/qglobal_p.h"
 
+#include <QtCore/qoperatingsystemversion.h>
+struct mach_header;
+
 #ifndef __IMAGECAPTURE__
 #  define __IMAGECAPTURE__
 #endif
@@ -72,6 +75,7 @@
 
 #include "qstring.h"
 #include "qscopedpointer.h"
+#include "qpair.h"
 
 #if defined( __OBJC__) && defined(QT_NAMESPACE)
 #define QT_NAMESPACE_ALIAS_OBJC_CLASS(__KLASS__) @compatibility_alias __KLASS__ QT_MANGLE_NAMESPACE(__KLASS__)
@@ -183,8 +187,6 @@ private:
 };
 
 #ifdef Q_OS_MACOS
-Q_CORE_EXPORT QChar qt_mac_qtKey2CocoaKey(Qt::Key key);
-Q_CORE_EXPORT Qt::Key qt_mac_cocoaKey2QtKey(QChar keyCode);
 Q_CORE_EXPORT bool qt_mac_applicationIsInDarkMode();
 #endif
 
@@ -258,30 +260,24 @@ public:
     QAppleLogActivity(os_activity_t activity) : activity(activity) {}
     ~QAppleLogActivity() { if (activity) leave(); }
 
-    QAppleLogActivity(const QAppleLogActivity &) = delete;
-    QAppleLogActivity& operator=(const QAppleLogActivity &) = delete;
+    Q_DISABLE_COPY(QAppleLogActivity)
 
-    QAppleLogActivity(QAppleLogActivity&& other)
-        : activity(other.activity), state(other.state) { other.activity = nullptr; }
-
-    QAppleLogActivity& operator=(QAppleLogActivity &&other)
+    QAppleLogActivity(QAppleLogActivity &&other)
+        : activity(qExchange(other.activity, nullptr)), state(other.state)
     {
-        if (this != &other) {
-            activity = other.activity;
-            state = other.state;
-            other.activity = nullptr;
-        }
-        return *this;
     }
 
-    QAppleLogActivity&& enter()
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QAppleLogActivity)
+
+    QAppleLogActivity &&enter()
     {
         if (activity)
             os_activity_scope_enter(static_cast<os_activity_t>(*this), &state);
         return std::move(*this);
     }
 
-    void leave() {
+    void leave()
+    {
         if (activity)
             os_activity_scope_leave(&state);
     }
@@ -289,6 +285,12 @@ public:
     operator os_activity_t()
     {
         return reinterpret_cast<os_activity_t>(static_cast<void *>(activity));
+    }
+
+    void swap(QAppleLogActivity &other)
+    {
+        qSwap(activity, other.activity);
+        qSwap(state, other.state);
     }
 
 private:
@@ -302,13 +304,6 @@ private:
             return QAppleLogActivity(); \
         return QAppleLogActivity(os_activity_create(description, parent, OS_ACTIVITY_FLAG_DEFAULT)); \
     }()
-
-#define QT_VA_ARGS_CHOOSE(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N
-#define QT_VA_ARGS_COUNT(...) QT_VA_ARGS_CHOOSE(__VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-
-#define QT_OVERLOADED_MACRO(MACRO, ...) _QT_OVERLOADED_MACRO(MACRO, QT_VA_ARGS_COUNT(__VA_ARGS__))(__VA_ARGS__)
-#define _QT_OVERLOADED_MACRO(MACRO, ARGC) _QT_OVERLOADED_MACRO_EXPAND(MACRO, ARGC)
-#define _QT_OVERLOADED_MACRO_EXPAND(MACRO, ARGC) MACRO##ARGC
 
 #define QT_APPLE_LOG_ACTIVITY_WITH_PARENT3(condition, description, parent) QT_APPLE_LOG_ACTIVITY_CREATE(condition, description, parent)
 #define QT_APPLE_LOG_ACTIVITY_WITH_PARENT2(description, parent) QT_APPLE_LOG_ACTIVITY_WITH_PARENT3(true, description, parent)
@@ -341,19 +336,18 @@ public:
     }
 #endif
 
-    QMacNotificationObserver(const QMacNotificationObserver& other) = delete;
-    QMacNotificationObserver(QMacNotificationObserver&& other) : observer(other.observer) {
-        other.observer = nullptr;
+    QMacNotificationObserver(const QMacNotificationObserver &other) = delete;
+    QMacNotificationObserver(QMacNotificationObserver &&other)
+        : observer(qExchange(other.observer, nullptr))
+    {
     }
 
-    QMacNotificationObserver &operator=(const QMacNotificationObserver& other) = delete;
-    QMacNotificationObserver &operator=(QMacNotificationObserver&& other) {
-        if (this != &other) {
-            remove();
-            observer = other.observer;
-            other.observer = nullptr;
-        }
-        return *this;
+    QMacNotificationObserver &operator=(const QMacNotificationObserver &other) = delete;
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QMacNotificationObserver)
+
+    void swap(QMacNotificationObserver &other) noexcept
+    {
+        qSwap(observer, other.observer);
     }
 
     void remove();
@@ -372,7 +366,7 @@ class Q_CORE_EXPORT QMacKeyValueObserver
 public:
     using Callback = std::function<void()>;
 
-    QMacKeyValueObserver() {}
+    QMacKeyValueObserver() = default;
 
 #if defined( __OBJC__)
     // Note: QMacKeyValueObserver must not outlive the object observed!
@@ -386,31 +380,29 @@ public:
 
     QMacKeyValueObserver(const QMacKeyValueObserver &other);
 
-    QMacKeyValueObserver(QMacKeyValueObserver &&other) { swap(other, *this); }
+    QMacKeyValueObserver(QMacKeyValueObserver &&other) noexcept { swap(other); }
 
     ~QMacKeyValueObserver() { removeObserver(); }
 
-    QMacKeyValueObserver &operator=(const QMacKeyValueObserver &other) {
+    QMacKeyValueObserver &operator=(const QMacKeyValueObserver &other)
+    {
         QMacKeyValueObserver tmp(other);
-        swap(tmp, *this);
+        swap(tmp);
         return *this;
     }
 
-    QMacKeyValueObserver &operator=(QMacKeyValueObserver &&other) {
-        QMacKeyValueObserver tmp(std::move(other));
-        swap(tmp, *this);
-        return *this;
-    }
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QMacKeyValueObserver)
 
     void removeObserver();
 
-private:
-    void swap(QMacKeyValueObserver &first, QMacKeyValueObserver &second) {
-        std::swap(first.object, second.object);
-        std::swap(first.keyPath, second.keyPath);
-        std::swap(first.callback, second.callback);
+    void swap(QMacKeyValueObserver &other) noexcept
+    {
+        qSwap(object, other.object);
+        qSwap(keyPath, other.keyPath);
+        qSwap(callback, other.callback);
     }
 
+private:
 #if defined( __OBJC__)
     void addObserver(NSKeyValueObservingOptions options);
 #endif
@@ -420,6 +412,28 @@ private:
     std::unique_ptr<Callback> callback;
 
     static KeyValueObserver *observer;
+};
+
+// -------------------------------------------------------------------------
+
+class Q_CORE_EXPORT QMacVersion
+{
+public:
+    enum VersionTarget {
+        ApplicationBinary,
+        QtLibraries
+    };
+
+    static QOperatingSystemVersion buildSDK(VersionTarget target = ApplicationBinary);
+    static QOperatingSystemVersion deploymentTarget(VersionTarget target = ApplicationBinary);
+    static QOperatingSystemVersion currentRuntime();
+
+private:
+    QMacVersion() = default;
+    using VersionTuple = QPair<QOperatingSystemVersion, QOperatingSystemVersion>;
+    static VersionTuple versionsForImage(const mach_header *machHeader);
+    static VersionTuple applicationVersion();
+    static VersionTuple libraryVersion();
 };
 
 // -------------------------------------------------------------------------

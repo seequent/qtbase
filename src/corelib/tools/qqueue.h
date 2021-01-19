@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
@@ -51,11 +51,6 @@ class QQueue : public QList<T>
 public:
     // compiler-generated special member functions are fine!
     inline void swap(QQueue<T> &other) noexcept { QList<T>::swap(other); } // prevent QList<->QQueue swaps
-#ifndef Q_QDOC
-    // bring in QList::swap(int, int). We cannot say using QList<T>::swap,
-    // because we don't want to make swap(QList&) available.
-    Q_DECL_DEPRECATED inline void swap(int i, int j) { QList<T>::swapItemsAt(i, j); }
-#endif
     inline void enqueue(const T &t) { QList<T>::append(t); }
     inline T dequeue() { return QList<T>::takeFirst(); }
     inline T &head() { return QList<T>::first(); }

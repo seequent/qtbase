@@ -92,8 +92,6 @@ static jmethodID m_createBitmapMethodID = nullptr;
 static jobject m_ARGB_8888_BitmapConfigValue = nullptr;
 static jobject m_RGB_565_BitmapConfigValue = nullptr;
 
-static bool m_statusBarShowing = true;
-
 static jclass m_bitmapDrawableClass = nullptr;
 static jmethodID m_bitmapDrawableConstructorMethodID = nullptr;
 
@@ -137,8 +135,13 @@ namespace QtAndroid
         m_androidPlatformIntegration = androidPlatformIntegration;
 
         // flush the pending state if necessary.
-        if (m_androidPlatformIntegration && (m_pendingApplicationState != -1))
+        if (m_androidPlatformIntegration && (m_pendingApplicationState != -1)) {
+            if (m_pendingApplicationState == Qt::ApplicationActive)
+                QtAndroidPrivate::handleResume();
+            else if (m_pendingApplicationState == Qt::ApplicationInactive)
+                QtAndroidPrivate::handlePause();
             QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationState(m_pendingApplicationState));
+        }
 
         m_pendingApplicationState = -1;
     }
@@ -203,6 +206,21 @@ namespace QtAndroid
     void setSystemUiVisibility(SystemUiVisibility uiVisibility)
     {
         QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "setSystemUiVisibility", "(I)V", jint(uiVisibility));
+    }
+
+    void notifyAccessibilityLocationChange()
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "notifyAccessibilityLocationChange");
+    }
+
+    void notifyObjectHide(uint accessibilityObjectId)
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "notifyObjectHide","(I)V", accessibilityObjectId);
+    }
+
+    void notifyObjectFocus(uint accessibilityObjectId)
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass, "notifyObjectFocus","(I)V", accessibilityObjectId);
     }
 
     jobject createBitmap(QImage img, JNIEnv *env)
@@ -456,7 +474,8 @@ static jboolean startQtAndroidPlugin(JNIEnv *env, jobject /*object*/, jstring pa
     QByteArray string = nativeString;
     env->ReleaseStringUTFChars(paramsString, nativeString);
 
-    m_applicationParams=string.split('\t');
+    for (auto str : string.split('\t'))
+        m_applicationParams.append(str.split(' '));
 
     // Go home
     QDir::setCurrent(QDir::homePath());
@@ -807,7 +826,7 @@ if (!VAR) { \
 static int registerNatives(JNIEnv *env)
 {
     jclass clazz;
-    FIND_AND_CHECK_CLASS("org/qtproject/qt5/android/QtNative");
+    FIND_AND_CHECK_CLASS("org/qtproject/qt/android/QtNative");
     m_applicationClass = static_cast<jclass>(env->NewGlobalRef(clazz));
 
     if (env->RegisterNatives(m_applicationClass, methods, sizeof(methods) / sizeof(methods[0])) < 0) {

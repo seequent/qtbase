@@ -44,10 +44,10 @@
 #include <QtCore/qmap.h>
 #include <QtCore/qpair.h>
 #include <QtCore/qvariant.h>
-#include <QtCore/qvector.h>
 #include <QtCore/qstringlist.h>
 #include <QtCore/qbitarray.h>
 #include <QtCore/qmimedata.h>
+#include <QtCore/qiodevice.h>
 #include <private/qduplicatetracker_p.h>
 #include <private/qstandarditemmodel_p.h>
 #include <qdebug.h>
@@ -190,7 +190,7 @@ void QStandardItemPrivate::childDeleted(QStandardItem *child)
     int index = childIndex(child);
     Q_ASSERT(index != -1);
     const auto modelIndex = child->index();
-    children.replace(index, 0);
+    children.replace(index, nullptr);
     emit model->dataChanged(modelIndex, modelIndex);
 }
 
@@ -274,11 +274,11 @@ void QStandardItemPrivate::setItemData(const QMap<int, QVariant> &roles)
     std::sort(values.begin(), values.end(), byRole);
 
     /*
-        Create a vector of QStandardItemData that will contain the original values
+        Create a list of QStandardItemData that will contain the original values
         if the matching role is not contained in roles, the new value if it is and
         if the new value is an invalid QVariant, it will be removed.
     */
-    QVector<QStandardItemData> newValues;
+    QList<QStandardItemData> newValues;
     newValues.reserve(values.size());
     roleMapStandardItemDataUnion(roles.keyValueBegin(),
                                  roles.keyValueEnd(),
@@ -288,7 +288,7 @@ void QStandardItemPrivate::setItemData(const QMap<int, QVariant> &roles)
     if (newValues != values) {
         values.swap(newValues);
         if (model) {
-            QVector<int> roleKeys;
+            QList<int> roleKeys;
             roleKeys.reserve(roles.size() + 1);
             bool hasEditRole = false;
             bool hasDisplayRole = false;
@@ -314,7 +314,7 @@ void QStandardItemPrivate::setItemData(const QMap<int, QVariant> &roles)
 const QMap<int, QVariant> QStandardItemPrivate::itemData() const
 {
     QMap<int, QVariant> result;
-    QVector<QStandardItemData>::const_iterator it;
+    QList<QStandardItemData>::const_iterator it;
     for (it = values.cbegin(); it != values.cend(); ++it){
         // Qt::UserRole - 1 is used internally to store the flags
         if (it->role != Qt::UserRole - 1)
@@ -332,8 +332,8 @@ void QStandardItemPrivate::sortChildren(int column, Qt::SortOrder order)
     if (column >= columnCount())
         return;
 
-    QVector<QPair<QStandardItem*, int> > sortable;
-    QVector<int> unsortable;
+    QList<QPair<QStandardItem*, int> > sortable;
+    QList<int> unsortable;
 
     sortable.reserve(rowCount());
     unsortable.reserve(rowCount());
@@ -355,7 +355,7 @@ void QStandardItemPrivate::sortChildren(int column, Qt::SortOrder order)
     }
 
     QModelIndexList changedPersistentIndexesFrom, changedPersistentIndexesTo;
-    QVector<QStandardItem*> sorted_children(children.count());
+    QList<QStandardItem*> sorted_children(children.count());
     for (int i = 0; i < rowCount(); ++i) {
         int r = (i < sortable.count()
                  ? sortable.at(i).second
@@ -380,7 +380,7 @@ void QStandardItemPrivate::sortChildren(int column, Qt::SortOrder order)
         model->changePersistentIndexList(changedPersistentIndexesFrom, changedPersistentIndexesTo);
     }
 
-    QVector<QStandardItem*>::iterator it;
+    QList<QStandardItem*>::iterator it;
     for (it = children.begin(); it != children.end(); ++it) {
         if (*it)
             (*it)->d_func()->sortChildren(column, order);
@@ -406,7 +406,7 @@ void QStandardItemPrivate::setModel(QStandardItemModel *mod)
                 itm->d_func()->model->d_func()->invalidatePersistentIndex(itm->d_func()->model->indexFromItem(itm));
             }
             itm->d_func()->model = mod;
-            const QVector<QStandardItem*> &childList = itm->d_func()->children;
+            const QList<QStandardItem*> &childList = itm->d_func()->children;
             for (int i = 0; i < childList.count(); ++i) {
                 QStandardItem *chi = childList.at(i);
                 if (chi)
@@ -442,6 +442,7 @@ void QStandardItemModelPrivate::init()
     Q_Q(QStandardItemModel);
     QObject::connect(q, SIGNAL(dataChanged(QModelIndex,QModelIndex)),
                      q, SLOT(_q_emitItemChanged(QModelIndex,QModelIndex)));
+    roleNames = QAbstractItemModelPrivate::defaultRoleNames();
 }
 
 /*!
@@ -481,7 +482,7 @@ bool QStandardItemPrivate::insertRows(int row, const QList<QStandardItem*> &item
         rows += count;
         int index = childIndex(row, 0);
         if (index != -1)
-            children.insert(index, columnCount() * count, 0);
+            children.insert(index, columnCount() * count, nullptr);
     }
     for (int i = 0; i < items.count(); ++i) {
         QStandardItem *item = items.at(i);
@@ -511,7 +512,7 @@ bool QStandardItemPrivate::insertRows(int row, int count, const QList<QStandardI
         rows += count;
         int index = childIndex(row, 0);
         if (index != -1)
-            children.insert(index, columnCount() * count, 0);
+            children.insert(index, columnCount() * count, nullptr);
     }
     if (!items.isEmpty()) {
         int index = childIndex(row, 0);
@@ -555,7 +556,7 @@ bool QStandardItemPrivate::insertColumns(int column, int count, const QList<QSta
         columns += count;
         int index = childIndex(0, column);
         for (int row = 0; row < rowCount(); ++row) {
-            children.insert(index, count, 0);
+            children.insert(index, count, nullptr);
             index += columnCount();
         }
     }
@@ -588,7 +589,7 @@ bool QStandardItemPrivate::insertColumns(int column, int count, const QList<QSta
 /*!
   \internal
 */
-void QStandardItemModelPrivate::itemChanged(QStandardItem *item, const QVector<int> &roles)
+void QStandardItemModelPrivate::itemChanged(QStandardItem *item, const QList<int> &roles)
 {
     Q_Q(QStandardItemModel);
     Q_ASSERT(item);
@@ -661,7 +662,7 @@ void QStandardItemModelPrivate::rowsInserted(QStandardItem *parent,
 {
     Q_Q(QStandardItemModel);
     if (parent == root.data())
-        rowHeaderItems.insert(row, count, 0);
+        rowHeaderItems.insert(row, count, nullptr);
     q->endInsertRows();
 }
 
@@ -673,7 +674,7 @@ void QStandardItemModelPrivate::columnsInserted(QStandardItem *parent,
 {
     Q_Q(QStandardItemModel);
     if (parent == root.data())
-        columnHeaderItems.insert(column, count, 0);
+        columnHeaderItems.insert(column, count, nullptr);
     q->endInsertColumns();
 }
 
@@ -919,17 +920,18 @@ void QStandardItem::setData(const QVariant &value, int role)
 {
     Q_D(QStandardItem);
     role = (role == Qt::EditRole) ? Qt::DisplayRole : role;
-    const QVector<int> roles((role == Qt::DisplayRole) ?
-                                QVector<int>({Qt::DisplayRole, Qt::EditRole}) :
-                                QVector<int>({role}));
-    QVector<QStandardItemData>::iterator it;
-    for (it = d->values.begin(); it != d->values.end(); ++it) {
+    const QList<int> roles((role == Qt::DisplayRole) ?
+                                QList<int>({Qt::DisplayRole, Qt::EditRole}) :
+                                QList<int>({role}));
+    for (auto it = d->values.begin(); it != d->values.end(); ++it) {
         if ((*it).role == role) {
             if (value.isValid()) {
                 if ((*it).value.userType() == value.userType() && (*it).value == value)
                     return;
                 (*it).value = value;
             } else {
+                // Don't need to assign proper it after erase() since we
+                // return unconditionally in this code path.
                 d->values.erase(it);
             }
             if (d->model)
@@ -954,7 +956,7 @@ void QStandardItem::clearData()
         return;
     d->values.clear();
     if (d->model)
-        d->model->d_func()->itemChanged(this, QVector<int>{});
+        d->model->d_func()->itemChanged(this, QList<int>{});
 }
 
 /*!
@@ -966,14 +968,31 @@ void QStandardItem::clearData()
 */
 QVariant QStandardItem::data(int role) const
 {
+    QModelRoleData result(role);
+    multiData(result);
+    return result.data();
+}
+
+void QStandardItem::multiData(QModelRoleDataSpan roleDataSpan) const
+{
     Q_D(const QStandardItem);
-    role = (role == Qt::EditRole) ? Qt::DisplayRole : role;
-    QVector<QStandardItemData>::const_iterator it;
-    for (it = d->values.begin(); it != d->values.end(); ++it) {
-        if ((*it).role == role)
-            return (*it).value;
+
+    const auto valuesBegin = d->values.begin();
+    const auto valuesEnd = d->values.end();
+
+    for (auto &roleData : roleDataSpan) {
+        const int role = (roleData.role() == Qt::EditRole) ? Qt::DisplayRole : roleData.role();
+        const auto hasSameRole = [role](const QStandardItemData &data)
+        {
+            return data.role == role;
+        };
+
+        auto dataIt = std::find_if(valuesBegin, valuesEnd, hasSameRole);
+        if (dataIt != valuesEnd)
+            roleData.setData(dataIt->value);
+        else
+            roleData.clearData();
     }
-    return QVariant();
 }
 
 /*!
@@ -1881,7 +1900,7 @@ QStandardItem *QStandardItem::takeChild(int row, int column)
         item = d->children.at(index);
         if (item)
             item->d_func()->setParentAndModel(nullptr, nullptr);
-        d->children.replace(index, 0);
+        d->children.replace(index, nullptr);
     }
     return item;
 }
@@ -2195,9 +2214,9 @@ QStandardItemModel::QStandardItemModel(int rows, int columns, QObject *parent)
     Q_D(QStandardItemModel);
     d->init();
     d->root->insertColumns(0, columns);
-    d->columnHeaderItems.insert(0, columns, 0);
+    d->columnHeaderItems.insert(0, columns, nullptr);
     d->root->insertRows(0, rows);
-    d->rowHeaderItems.insert(0, rows, 0);
+    d->rowHeaderItems.insert(0, rows, nullptr);
     d->root->d_func()->setModel(this);
 }
 
@@ -2754,7 +2773,7 @@ QStandardItem *QStandardItemModel::takeHorizontalHeaderItem(int column)
     QStandardItem *headerItem = d->columnHeaderItems.at(column);
     if (headerItem) {
         headerItem->d_func()->setParentAndModel(nullptr, nullptr);
-        d->columnHeaderItems.replace(column, 0);
+        d->columnHeaderItems.replace(column, nullptr);
     }
     return headerItem;
 }
@@ -2776,7 +2795,7 @@ QStandardItem *QStandardItemModel::takeVerticalHeaderItem(int row)
     QStandardItem *headerItem = d->rowHeaderItems.at(row);
     if (headerItem) {
         headerItem->d_func()->setParentAndModel(nullptr, nullptr);
-        d->rowHeaderItems.replace(row, 0);
+        d->rowHeaderItems.replace(row, nullptr);
     }
     return headerItem;
 }
@@ -2820,6 +2839,17 @@ QVariant QStandardItemModel::data(const QModelIndex &index, int role) const
     Q_D(const QStandardItemModel);
     QStandardItem *item = d->itemFromIndex(index);
     return item ? item->data(role) : QVariant();
+}
+
+/*!
+  \reimp
+*/
+void QStandardItemModel::multiData(const QModelIndex &index, QModelRoleDataSpan roleDataSpan) const
+{
+    Q_D(const QStandardItemModel);
+    QStandardItem *item = d->itemFromIndex(index);
+    if (item)
+        item->multiData(roleDataSpan);
 }
 
 /*!
@@ -3079,7 +3109,7 @@ QStringList QStandardItemModel::mimeTypes() const
 QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
 {
     QMimeData *data = QAbstractItemModel::mimeData(indexes);
-    if(!data)
+    if (!data)
         return nullptr;
 
     const QString format = qStandardItemModelDataListMimeType();
@@ -3110,7 +3140,7 @@ QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
             if (seen.hasSeen(itm))
                 continue;
 
-            const QVector<QStandardItem*> &childList = itm->d_func()->children;
+            const QList<QStandardItem*> &childList = itm->d_func()->children;
             for (int i = 0; i < childList.count(); ++i) {
                 QStandardItem *chi = childList.at(i);
                 if (chi) {
@@ -3131,7 +3161,7 @@ QMimeData *QStandardItemModel::mimeData(const QModelIndexList &indexes) const
         if (itemsSet.contains(item)) //if the item is selection 'top-level', stream its position
             stream << item->row() << item->column();
 
-        stream << *item << item->columnCount() << item->d_ptr->children.count();
+        stream << *item << item->columnCount() << int(item->d_ptr->children.count());
         stack += item->d_ptr->children;
     }
 
@@ -3195,8 +3225,8 @@ bool QStandardItemModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
     int left = INT_MAX;
     int bottom = 0;
     int right = 0;
-    QVector<int> rows, columns;
-    QVector<QStandardItem *> items;
+    QList<int> rows, columns;
+    QList<QStandardItem *> items;
 
     while (!stream.atEnd()) {
         int r, c;
@@ -3219,7 +3249,7 @@ bool QStandardItemModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
     int dragColumnCount = right - left + 1;
 
     // Compute the number of continuous rows upon insertion and modify the rows to match
-    QVector<int> rowsToInsert(bottom + 1);
+    QList<int> rowsToInsert(bottom + 1);
     for (int i = 0; i < rows.count(); ++i)
         rowsToInsert[rows.at(i)] = 1;
     for (int i = 0; i < rowsToInsert.count(); ++i) {
@@ -3248,7 +3278,7 @@ bool QStandardItemModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
     if (!parentItem)
         parentItem = invisibleRootItem();
 
-    QVector<QPersistentModelIndex> newIndexes(items.size());
+    QList<QPersistentModelIndex> newIndexes(items.size());
     // set the data in the table
     for (int j = 0; j < items.size(); ++j) {
         int relativeRow = rows.at(j) - top;

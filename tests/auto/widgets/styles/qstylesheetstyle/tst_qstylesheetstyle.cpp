@@ -54,7 +54,7 @@
 #include <QtGui/QPainter>
 #include <QtGui/QScreen>
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <QtCore/QDebug>
 #include <QtCore/QMetaObject>
@@ -71,8 +71,6 @@ class tst_QStyleSheetStyle : public QObject
     Q_OBJECT
 public:
     tst_QStyleSheetStyle();
-
-    static void initMain();
 
 private slots:
     void init();
@@ -126,6 +124,7 @@ private slots:
     void QTBUG15910_crashNullWidget();
     void QTBUG36933_brokenPseudoClassLookup();
     void styleSheetChangeBeforePolish();
+    void placeholderColor();
     //at the end because it mess with the style.
     void widgetStyle();
     void appStyle();
@@ -172,12 +171,6 @@ private:
     const QRect m_availableGeometry = QGuiApplication::primaryScreen()->availableGeometry();
     QSize m_testSize;
 };
-
-// highdpiImages() tests HighDPI scaling; disable initially.
-void tst_QStyleSheetStyle::initMain()
-{
-    QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
-}
 
 tst_QStyleSheetStyle::tst_QStyleSheetStyle()
 {
@@ -1086,7 +1079,7 @@ void tst_QStyleSheetStyle::background()
     typedef QSharedPointer<QWidget> WidgetPtr;
 
     const QString styleSheet = QStringLiteral("* { background-color: #e8ff66; }");
-    QVector<WidgetPtr> widgets;
+    QList<WidgetPtr> widgets;
     const QPoint topLeft = m_availableGeometry.topLeft();
     // Testing inheritance styling of QDialog.
     WidgetPtr toplevel(new SingleInheritanceDialog);
@@ -1602,8 +1595,8 @@ void tst_QStyleSheetStyle::toolTip()
     // including one without stylesheet (the tooltip will be reused,
     // but its color must change)
     const QWidgetList widgets{wid4, wid1, wid2, wid3, wid4};
-    const QVector<QColor> colors{normalToolTip, QColor("#ae2"), QColor("#f81"),
-                                 QColor("#0b8"), normalToolTip};
+    const QList<QColor> colors { normalToolTip, QColor("#ae2"), QColor("#f81"), QColor("#0b8"),
+                                 normalToolTip };
 
     QWidgetList topLevels;
     for (int i = 0; i < widgets.count() ; ++i) {
@@ -1918,7 +1911,7 @@ void tst_QStyleSheetStyle::QTBUG15910_crashNullWidget()
         void paintEvent(QPaintEvent *) override
         {
             QStyleOption opt;
-            opt.init(this);
+            opt.initFrom(this);
             QPainter p(this);
             style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, nullptr);
             style()->drawPrimitive(QStyle::PE_Frame, &opt, &p, nullptr);
@@ -2111,13 +2104,13 @@ void tst_QStyleSheetStyle::widgetStylePropagation()
     QLabel childLabel(&parentLabel);
     childLabel.setObjectName("childLabel");
 
-    if (parentFont.resolve())
+    if (parentFont.resolveMask())
         parentLabel.setFont(parentFont);
-    if (childFont.resolve())
+    if (childFont.resolveMask())
         childLabel.setFont(childFont);
-    if (parentPalette.resolve())
+    if (parentPalette.resolveMask())
         parentLabel.setPalette(parentPalette);
-    if (childPalette.resolve())
+    if (childPalette.resolveMask())
         childLabel.setPalette(childPalette);
     if (!parentStyleSheet.isEmpty())
         parentLabel.setStyleSheet(parentStyleSheet);
@@ -2215,8 +2208,9 @@ void tst_QStyleSheetStyle::highdpiImages()
     w.setWindowTitle(QLatin1String(QTest::currentTestFunction()) + QLatin1String("::")
                      + QLatin1String(QTest::currentDataTag()));
     QScreen *screen = QGuiApplication::primaryScreen();
+    auto inverseDpr = 1 / screen->devicePixelRatio();
     w.move(screen->availableGeometry().topLeft());
-    QHighDpiScaling::setScreenFactor(screen, screenFactor);
+    QHighDpiScaling::setScreenFactor(screen, inverseDpr * screenFactor);
     w.setStyleSheet("QWidget { background-image: url(\":/images/testimage.png\"); }");
     w.show();
 
@@ -2227,6 +2221,21 @@ void tst_QStyleSheetStyle::highdpiImages()
 
     QHighDpiScaling::setScreenFactor(screen, 1.0);
     QHighDpiScaling::updateHighDpiScaling(); // reset to normal
+}
+
+void tst_QStyleSheetStyle::placeholderColor()
+{
+    const QColor red(Qt::red);
+    qApp->setStyleSheet("* { color: red; }");
+    QLineEdit le1;
+    QLineEdit le2;
+    le2.setEnabled(false);
+    le1.ensurePolished();
+    QCOMPARE(le1.palette().placeholderText(), red);
+    le2.ensurePolished();
+    QCOMPARE(le2.palette().placeholderText(), red);
+    le2.setEnabled(true);
+    QCOMPARE(le2.palette().placeholderText(), red);
 }
 
 QTEST_MAIN(tst_QStyleSheetStyle)

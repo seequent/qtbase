@@ -104,7 +104,6 @@ QT_END_NAMESPACE
 #include <qmutex.h>
 #include <qsocketnotifier.h>
 #include <qthread.h>
-#include <qelapsedtimer.h>
 
 #ifdef Q_OS_QNX
 #  include <sys/neutrino.h>
@@ -152,15 +151,14 @@ struct QProcessPoller
 {
     QProcessPoller(const QProcessPrivate &proc);
 
-    int poll(int timeout);
+    int poll(const QDeadlineTimer &deadline);
 
     pollfd &stdinPipe() { return pfds[0]; }
     pollfd &stdoutPipe() { return pfds[1]; }
     pollfd &stderrPipe() { return pfds[2]; }
     pollfd &forkfd() { return pfds[3]; }
-    pollfd &childStartedPipe() { return pfds[4]; }
 
-    enum { n_pfds = 5 };
+    enum { n_pfds = 4 };
     pollfd pfds[n_pfds];
 };
 
@@ -178,15 +176,11 @@ QProcessPoller::QProcessPoller(const QProcessPrivate &proc)
     }
 
     forkfd().fd = proc.forkfd;
-
-    if (proc.processState == QProcess::Starting)
-        childStartedPipe().fd = proc.childStartedPipe[0];
 }
 
-int QProcessPoller::poll(int timeout)
+int QProcessPoller::poll(const QDeadlineTimer &deadline)
 {
-    const nfds_t nfds = (childStartedPipe().fd == -1) ? 4 : 5;
-    return qt_poll_msecs(pfds, nfds, timeout);
+    return qt_poll_msecs(pfds, n_pfds, deadline.remainingTime());
 }
 } // anonymous namespace
 
@@ -227,18 +221,10 @@ void QProcessPrivate::closeChannel(Channel *channel)
 
 /*
     Create the pipes to a QProcessPrivate::Channel.
-
-    This function must be called in order: stdin, stdout, stderr
 */
 bool QProcessPrivate::openChannel(Channel &channel)
 {
     Q_Q(QProcess);
-
-    if (&channel == &stderrChannel && processChannelMode == QProcess::MergedChannels) {
-        channel.pipe[0] = -1;
-        channel.pipe[1] = -1;
-        return true;
-    }
 
     if (channel.type == Channel::Normal) {
         // we're piping this channel to our own process
@@ -248,14 +234,13 @@ bool QProcessPrivate::openChannel(Channel &channel)
         // create the socket notifiers
         if (threadData.loadRelaxed()->hasEventDispatcher()) {
             if (&channel == &stdinChannel) {
-                channel.notifier = new QSocketNotifier(channel.pipe[1],
-                                                       QSocketNotifier::Write, q);
-                channel.notifier->setEnabled(false);
+                channel.notifier = new QSocketNotifier(QSocketNotifier::Write, q);
+                channel.notifier->setSocket(channel.pipe[1]);
                 QObject::connect(channel.notifier, SIGNAL(activated(QSocketDescriptor)),
                                  q, SLOT(_q_canWrite()));
             } else {
-                channel.notifier = new QSocketNotifier(channel.pipe[0],
-                                                       QSocketNotifier::Read, q);
+                channel.notifier = new QSocketNotifier(QSocketNotifier::Read, q);
+                channel.notifier->setSocket(channel.pipe[0]);
                 const char *receiver;
                 if (&channel == &stdoutChannel)
                     receiver = SLOT(_q_canReadStandardOutput());
@@ -334,6 +319,24 @@ bool QProcessPrivate::openChannel(Channel &channel)
     }
 }
 
+void QProcessPrivate::commitChannels()
+{
+    // copy the stdin socket if asked to (without closing on exec)
+    if (stdinChannel.pipe[0] != INVALID_Q_PIPE)
+        qt_safe_dup2(stdinChannel.pipe[0], STDIN_FILENO, 0);
+
+    // copy the stdout and stderr if asked to
+    if (stdoutChannel.pipe[1] != INVALID_Q_PIPE)
+        qt_safe_dup2(stdoutChannel.pipe[1], STDOUT_FILENO, 0);
+    if (stderrChannel.pipe[1] != INVALID_Q_PIPE) {
+        qt_safe_dup2(stderrChannel.pipe[1], STDERR_FILENO, 0);
+    } else {
+        // merge stdout and stderr if asked to
+        if (processChannelMode == QProcess::MergedChannels)
+            qt_safe_dup2(STDOUT_FILENO, STDERR_FILENO, 0);
+    }
+}
+
 static char **_q_dupEnvironment(const QProcessEnvironmentPrivate::Map &environment, int *envc)
 {
     *envc = 0;
@@ -368,19 +371,19 @@ void QProcessPrivate::startProcess()
 #endif
 
     // Initialize pipes
-    if (!openChannel(stdinChannel) ||
-        !openChannel(stdoutChannel) ||
-        !openChannel(stderrChannel) ||
-        qt_create_pipe(childStartedPipe) != 0) {
+    if (!openChannels() || qt_create_pipe(childStartedPipe) != 0) {
         setErrorAndEmit(QProcess::FailedToStart, qt_error_string(errno));
         cleanup();
         return;
     }
 
     if (threadData.loadRelaxed()->hasEventDispatcher()) {
-        startupSocketNotifier = new QSocketNotifier(childStartedPipe[0],
-                                                    QSocketNotifier::Read, q);
-        QObject::connect(startupSocketNotifier, SIGNAL(activated(QSocketDescriptor)),
+        // Set up to notify about startup completion (and premature death).
+        // Once the process has started successfully, we reconfigure the
+        // notifier to watch the fork_fd for expected death.
+        stateNotifier = new QSocketNotifier(childStartedPipe[0],
+                                            QSocketNotifier::Read, q);
+        QObject::connect(stateNotifier, SIGNAL(activated(QSocketDescriptor)),
                          q, SLOT(_q_startupNotification()));
     }
 
@@ -450,19 +453,13 @@ void QProcessPrivate::startProcess()
         workingDirPtr = encodedWorkingDirectory.constData();
     }
 
-    // Select FFD_USE_FORK and FFD_VFORK_SEMANTICS based on whether there's
-    // user code running in the child process: if there is, we don't know what
-    // the user will want to do, so we err on the safe side and request an
-    // actual fork() (for example, the user could attempt to do some
-    // synchronization with the parent process). But if there isn't, then our
-    // code in execChild() is just a handful of dup2() and a chdir(), so it's
-    // safe with vfork semantics: suspend the parent execution until the child
-    // either execve()s or _exit()s.
     int ffdflags = FFD_CLOEXEC;
-    if (typeid(*q) != typeid(QProcess))
-        ffdflags |= FFD_USE_FORK;
-    else
-        ffdflags |= FFD_VFORK_SEMANTICS;
+
+    // QTBUG-86285
+#if !QT_CONFIG(forkfd_pidfd)
+    ffdflags |= FFD_USE_FORK;
+#endif
+
     pid_t childPid;
     forkfd = ::forkfd(ffdflags , &childPid);
     int lastForkErrno = errno;
@@ -499,7 +496,8 @@ void QProcessPrivate::startProcess()
         ::_exit(-1);
     }
 
-    pid = Q_PID(childPid);
+    pid = qint64(childPid);
+    Q_ASSERT(pid > 0);
 
     // parent
     // close the ends we don't use and make all pipes non-blocking
@@ -528,12 +526,6 @@ void QProcessPrivate::startProcess()
     }
     if (stderrChannel.pipe[0] != -1)
         ::fcntl(stderrChannel.pipe[0], F_SETFL, ::fcntl(stderrChannel.pipe[0], F_GETFL) | O_NONBLOCK);
-
-    if (threadData.loadRelaxed()->eventDispatcher.loadAcquire()) {
-        deathNotifier = new QSocketNotifier(forkfd, QSocketNotifier::Read, q);
-        QObject::connect(deathNotifier, SIGNAL(activated(QSocketDescriptor)),
-                         q, SLOT(_q_processDied()));
-    }
 }
 
 struct ChildError
@@ -546,25 +538,10 @@ void QProcessPrivate::execChild(const char *workingDir, char **argv, char **envp
 {
     ::signal(SIGPIPE, SIG_DFL);         // reset the signal that we ignored
 
-    Q_Q(QProcess);
     ChildError error = { 0, {} };       // force zeroing of function[8]
 
-    // copy the stdin socket if asked to (without closing on exec)
-    if (inputChannelMode != QProcess::ForwardedInputChannel)
-        qt_safe_dup2(stdinChannel.pipe[0], STDIN_FILENO, 0);
-
-    // copy the stdout and stderr if asked to
-    if (processChannelMode != QProcess::ForwardedChannels) {
-        if (processChannelMode != QProcess::ForwardedOutputChannel)
-            qt_safe_dup2(stdoutChannel.pipe[1], STDOUT_FILENO, 0);
-
-        // merge stdout and stderr if asked to
-        if (processChannelMode == QProcess::MergedChannels) {
-            qt_safe_dup2(STDOUT_FILENO, STDERR_FILENO, 0);
-        } else if (processChannelMode != QProcess::ForwardedErrorChannel) {
-            qt_safe_dup2(stderrChannel.pipe[1], STDERR_FILENO, 0);
-        }
-    }
+    // Render channels configuration.
+    commitChannels();
 
     // make sure this fd is closed if execv() succeeds
     qt_safe_close(childStartedPipe[0]);
@@ -576,8 +553,8 @@ void QProcessPrivate::execChild(const char *workingDir, char **argv, char **envp
         goto report_errno;
     }
 
-    // this is a virtual call, and it base behavior is to do nothing.
-    q->setupChildProcess();
+    if (childProcessModifier)
+        childProcessModifier();
 
     // execute the process
     if (!envp) {
@@ -602,13 +579,14 @@ report_errno:
 
 bool QProcessPrivate::processStarted(QString *errorMessage)
 {
+    Q_Q(QProcess);
+
     ChildError buf;
     int ret = qt_safe_read(childStartedPipe[0], &buf, sizeof(buf));
 
-    if (startupSocketNotifier) {
-        startupSocketNotifier->setEnabled(false);
-        startupSocketNotifier->deleteLater();
-        startupSocketNotifier = nullptr;
+    if (stateNotifier) {
+        stateNotifier->setEnabled(false);
+        stateNotifier->disconnect(q);
     }
     qt_safe_close(childStartedPipe[0]);
     childStartedPipe[0] = -1;
@@ -617,11 +595,26 @@ bool QProcessPrivate::processStarted(QString *errorMessage)
     qDebug("QProcessPrivate::processStarted() == %s", i <= 0 ? "true" : "false");
 #endif
 
+    if (ret <= 0) {  // process successfully started
+        if (stateNotifier) {
+            QObject::connect(stateNotifier, SIGNAL(activated(QSocketDescriptor)),
+                             q, SLOT(_q_processDied()));
+            stateNotifier->setSocket(forkfd);
+            stateNotifier->setEnabled(true);
+        }
+        if (stdoutChannel.notifier)
+            stdoutChannel.notifier->setEnabled(true);
+        if (stderrChannel.notifier)
+            stderrChannel.notifier->setEnabled(true);
+
+        return true;
+    }
+
     // did we read an error message?
-    if (ret > 0 && errorMessage)
+    if (errorMessage)
         *errorMessage = QLatin1String(buf.function) + QLatin1String(": ") + qt_error_string(buf.code);
 
-    return ret <= 0;
+    return false;
 }
 
 qint64 QProcessPrivate::bytesAvailableInChannel(const Channel *channel) const
@@ -688,26 +681,27 @@ bool QProcessPrivate::writeToStdin()
 void QProcessPrivate::terminateProcess()
 {
 #if defined (QPROCESS_DEBUG)
-    qDebug("QProcessPrivate::terminateProcess()");
+    qDebug("QProcessPrivate::terminateProcess() pid=%jd", intmax_t(pid));
 #endif
-    if (pid)
+    if (pid > 0)
         ::kill(pid_t(pid), SIGTERM);
 }
 
 void QProcessPrivate::killProcess()
 {
 #if defined (QPROCESS_DEBUG)
-    qDebug("QProcessPrivate::killProcess()");
+    qDebug("QProcessPrivate::killProcess() pid=%jd", intmax_t(pid));
 #endif
-    if (pid)
+    if (pid > 0)
         ::kill(pid_t(pid), SIGKILL);
 }
 
-bool QProcessPrivate::waitForStarted(int msecs)
+bool QProcessPrivate::waitForStarted(const QDeadlineTimer &deadline)
 {
+    const qint64 msecs = deadline.remainingTime();
 #if defined (QPROCESS_DEBUG)
-    qDebug("QProcessPrivate::waitForStarted(%d) waiting for child to start (fd = %d)", msecs,
-           childStartedPipe[0]);
+    qDebug("QProcessPrivate::waitForStarted(%lld) waiting for child to start (fd = %d)",
+           msecs, childStartedPipe[0]);
 #endif
 
     pollfd pfd = qt_make_pollfd(childStartedPipe[0], POLLIN);
@@ -715,7 +709,7 @@ bool QProcessPrivate::waitForStarted(int msecs)
     if (qt_poll_msecs(&pfd, 1, msecs) == 0) {
         setError(QProcess::Timedout);
 #if defined (QPROCESS_DEBUG)
-        qDebug("QProcessPrivate::waitForStarted(%d) == false (timed out)", msecs);
+        qDebug("QProcessPrivate::waitForStarted(%lld) == false (timed out)", msecs);
 #endif
         return false;
     }
@@ -727,20 +721,16 @@ bool QProcessPrivate::waitForStarted(int msecs)
     return startedEmitted;
 }
 
-bool QProcessPrivate::waitForReadyRead(int msecs)
+bool QProcessPrivate::waitForReadyRead(const QDeadlineTimer &deadline)
 {
 #if defined (QPROCESS_DEBUG)
-    qDebug("QProcessPrivate::waitForReadyRead(%d)", msecs);
+    qDebug("QProcessPrivate::waitForReadyRead(%lld)", deadline.remainingTime());
 #endif
-
-    QElapsedTimer stopWatch;
-    stopWatch.start();
 
     forever {
         QProcessPoller poller(*this);
 
-        int timeout = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
-        int ret = poller.poll(timeout);
+        int ret = poller.poll(deadline);
 
         if (ret < 0) {
             break;
@@ -750,22 +740,14 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
             return false;
         }
 
-        if (qt_pollfd_check(poller.childStartedPipe(), POLLIN)) {
-            if (!_q_startupNotification())
-                return false;
-        }
-
+        // This calls QProcessPrivate::tryReadFromChannel(), which returns true
+        // if we emitted readyRead() signal on the current read channel.
         bool readyReadEmitted = false;
-        if (qt_pollfd_check(poller.stdoutPipe(), POLLIN)) {
-            bool canRead = _q_canReadStandardOutput();
-            if (currentReadChannel == QProcess::StandardOutput && canRead)
-                readyReadEmitted = true;
-        }
-        if (qt_pollfd_check(poller.stderrPipe(), POLLIN)) {
-            bool canRead = _q_canReadStandardError();
-            if (currentReadChannel == QProcess::StandardError && canRead)
-                readyReadEmitted = true;
-        }
+        if (qt_pollfd_check(poller.stdoutPipe(), POLLIN) && _q_canReadStandardOutput())
+            readyReadEmitted = true;
+        if (qt_pollfd_check(poller.stderrPipe(), POLLIN) && _q_canReadStandardError())
+            readyReadEmitted = true;
+
         if (readyReadEmitted)
             return true;
 
@@ -776,28 +758,26 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
         if (processState == QProcess::NotRunning)
             return false;
 
+        // We do this after checking the pipes, so we cannot reach it as long
+        // as there is any data left to be read from an already dead process.
         if (qt_pollfd_check(poller.forkfd(), POLLIN)) {
-            if (_q_processDied())
-                return false;
+            processFinished();
+            return false;
         }
     }
     return false;
 }
 
-bool QProcessPrivate::waitForBytesWritten(int msecs)
+bool QProcessPrivate::waitForBytesWritten(const QDeadlineTimer &deadline)
 {
 #if defined (QPROCESS_DEBUG)
-    qDebug("QProcessPrivate::waitForBytesWritten(%d)", msecs);
+    qDebug("QProcessPrivate::waitForBytesWritten(%lld)", deadline.remainingTime());
 #endif
-
-    QElapsedTimer stopWatch;
-    stopWatch.start();
 
     while (!writeBuffer.isEmpty()) {
         QProcessPoller poller(*this);
 
-        int timeout = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
-        int ret = poller.poll(timeout);
+        int ret = poller.poll(deadline);
 
         if (ret < 0) {
             break;
@@ -806,11 +786,6 @@ bool QProcessPrivate::waitForBytesWritten(int msecs)
         if (ret == 0) {
             setError(QProcess::Timedout);
             return false;
-        }
-
-        if (qt_pollfd_check(poller.childStartedPipe(), POLLIN)) {
-            if (!_q_startupNotification())
-                return false;
         }
 
         if (qt_pollfd_check(poller.stdinPipe(), POLLOUT))
@@ -827,28 +802,24 @@ bool QProcessPrivate::waitForBytesWritten(int msecs)
             return false;
 
         if (qt_pollfd_check(poller.forkfd(), POLLIN)) {
-            if (_q_processDied())
-                return false;
+            processFinished();
+            return false;
         }
     }
 
     return false;
 }
 
-bool QProcessPrivate::waitForFinished(int msecs)
+bool QProcessPrivate::waitForFinished(const QDeadlineTimer &deadline)
 {
 #if defined (QPROCESS_DEBUG)
-    qDebug("QProcessPrivate::waitForFinished(%d)", msecs);
+    qDebug("QProcessPrivate::waitForFinished(%lld)", deadline.remainingTime());
 #endif
-
-    QElapsedTimer stopWatch;
-    stopWatch.start();
 
     forever {
         QProcessPoller poller(*this);
 
-        int timeout = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
-        int ret = poller.poll(timeout);
+        int ret = poller.poll(deadline);
 
         if (ret < 0) {
             break;
@@ -858,10 +829,6 @@ bool QProcessPrivate::waitForFinished(int msecs)
             return false;
         }
 
-        if (qt_pollfd_check(poller.childStartedPipe(), POLLIN)) {
-            if (!_q_startupNotification())
-                return false;
-        }
         if (qt_pollfd_check(poller.stdinPipe(), POLLOUT))
             _q_canWrite();
 
@@ -876,8 +843,8 @@ bool QProcessPrivate::waitForFinished(int msecs)
             return true;
 
         if (qt_pollfd_check(poller.forkfd(), POLLIN)) {
-            if (_q_processDied())
-                return true;
+            processFinished();
+            return true;
         }
     }
     return false;
@@ -887,10 +854,9 @@ void QProcessPrivate::findExitCode()
 {
 }
 
-bool QProcessPrivate::waitForDeadChild()
+void QProcessPrivate::waitForDeadChild()
 {
-    if (forkfd == -1)
-        return true; // child has already exited
+    Q_ASSERT(forkfd != -1);
 
     // read the process information from our fd
     forkfd_info info;
@@ -900,8 +866,8 @@ bool QProcessPrivate::waitForDeadChild()
     exitCode = info.status;
     crashed = info.code != CLD_EXITED;
 
-    delete deathNotifier;
-    deathNotifier = nullptr;
+    delete stateNotifier;
+    stateNotifier = nullptr;
 
     EINTR_LOOP(ret, forkfd_close(forkfd));
     forkfd = -1; // Child is dead, don't try to kill it anymore
@@ -910,7 +876,6 @@ bool QProcessPrivate::waitForDeadChild()
     qDebug() << "QProcessPrivate::waitForDeadChild() dead with exitCode"
              << exitCode << ", crashed?" << crashed;
 #endif
-    return true;
 }
 
 bool QProcessPrivate::startDetached(qint64 *pid)
@@ -929,9 +894,7 @@ bool QProcessPrivate::startDetached(qint64 *pid)
         return false;
     }
 
-    if ((stdinChannel.type == Channel::Redirect && !openChannel(stdinChannel))
-            || (stdoutChannel.type == Channel::Redirect && !openChannel(stdoutChannel))
-            || (stderrChannel.type == Channel::Redirect && !openChannel(stderrChannel))) {
+    if (!openChannelsForDetached()) {
         closeChannel(&stdinChannel);
         closeChannel(&stdoutChannel);
         closeChannel(&stderrChannel);
@@ -958,15 +921,8 @@ bool QProcessPrivate::startDetached(qint64 *pid)
         if (doubleForkPid == 0) {
             qt_safe_close(pidPipe[1]);
 
-            // copy the stdin socket if asked to (without closing on exec)
-            if (stdinChannel.type == Channel::Redirect)
-                qt_safe_dup2(stdinChannel.pipe[0], STDIN_FILENO, 0);
-
-            // copy the stdout and stderr if asked to
-            if (stdoutChannel.type == Channel::Redirect)
-                qt_safe_dup2(stdoutChannel.pipe[1], STDOUT_FILENO, 0);
-            if (stderrChannel.type == Channel::Redirect)
-                qt_safe_dup2(stderrChannel.pipe[1], STDERR_FILENO, 0);
+            // Render channels configuration.
+            commitChannels();
 
             if (!encodedWorkingDirectory.isEmpty()) {
                 if (QT_CHDIR(encodedWorkingDirectory.constData()) == -1)

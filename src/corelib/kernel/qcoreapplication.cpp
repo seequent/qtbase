@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -73,7 +73,6 @@
 #include <private/qlocale_p.h>
 #include <private/qlocking_p.h>
 #include <private/qhooks_p.h>
-#include <private/qtextcodec_p.h>
 
 #ifndef QT_NO_QOBJECT
 #if defined(Q_OS_UNIX)
@@ -351,8 +350,7 @@ QAbstractEventDispatcher *QCoreApplicationPrivate::eventDispatcher = nullptr;
 QCoreApplication *QCoreApplication::self = nullptr;
 uint QCoreApplicationPrivate::attribs =
     (1 << Qt::AA_SynthesizeMouseForUnhandledTouchEvents) |
-    (1 << Qt::AA_SynthesizeMouseForUnhandledTabletEvents) |
-    (1 << Qt::AA_UseHighDpiPixmaps);
+    (1 << Qt::AA_SynthesizeMouseForUnhandledTabletEvents);
 
 struct QCoreApplicationData {
     QCoreApplicationData() noexcept {
@@ -389,10 +387,11 @@ static bool quitLockRefEnabled = true;
 #endif
 
 #if defined(Q_OS_WIN)
-// Check whether the command line arguments match those passed to main()
-// by comparing to the global __argv/__argc (MS extension).
-// Deep comparison is required since argv/argc is rebuilt by WinMain for
-// GUI apps or when using MinGW due to its globbing.
+// Check whether the command line arguments passed to QCoreApplication
+// match those passed into main(), to see if the user has modified them
+// before passing them on to us. We do this by comparing to the global
+// __argv/__argc (MS extension). Deep comparison is required since
+// argv/argc is rebuilt by our WinMain entrypoint.
 static inline bool isArgvModified(int argc, char **argv)
 {
     if (__argc != argc || !__argv /* wmain() */)
@@ -493,7 +492,7 @@ void QCoreApplicationPrivate::cleanupThreadData()
             const QPostEvent &pe = thisThreadData->postEventList.at(i);
             if (pe.event) {
                 --pe.receiver->d_func()->postedEvents;
-                pe.event->posted = false;
+                pe.event->m_posted = false;
                 delete pe.event;
             }
         }
@@ -578,11 +577,9 @@ void QCoreApplicationPrivate::initLocale()
         return;
     qt_locale_initialized = true;
 
-#ifdef QT_LOCALE_IS_UTF8
     // Android's Bionic didn't get nl_langinfo until NDK 15 (Android 8.0),
     // which is too new for Qt, so we just assume it's always UTF-8.
     auto nl_langinfo = [](int) { return "UTF-8"; };
-#endif
 
     const char *locale = setlocale(LC_ALL, "");
     const char *codec = nl_langinfo(CODESET);
@@ -664,8 +661,7 @@ void QCoreApplicationPrivate::initLocale()
     Translation files can be added or removed
     using installTranslator() and removeTranslator(). Application
     strings can be translated using translate(). The QObject::tr()
-    and QObject::trUtf8() functions are implemented in terms of
-    translate().
+    function is implemented in terms of translate().
 
     \section1 Accessing Command Line Arguments
 
@@ -714,26 +710,6 @@ QCoreApplication::QCoreApplication(QCoreApplicationPrivate &p)
     // note: it is the subclasses' job to call
     // QCoreApplicationPrivate::eventDispatcher->startingUp();
 }
-
-#ifndef QT_NO_QOBJECT
-/*!
-    \deprecated
-    This function is equivalent to calling \c {QCoreApplication::eventDispatcher()->flush()},
-    which also is deprecated, see QAbstractEventDispatcher::flush(). Use sendPostedEvents()
-    and processEvents() for more fine-grained control of the event loop instead.
-
-    Historically this functions was used to flush the platform-specific native event queues.
-
-    \sa sendPostedEvents(), processEvents(), QAbstractEventDispatcher::flush()
-*/
-#if QT_DEPRECATED_SINCE(5, 9)
-void QCoreApplication::flush()
-{
-    if (self && self->d_func()->eventDispatcher)
-        self->d_func()->eventDispatcher->flush();
-}
-#endif
-#endif
 
 /*!
     Constructs a Qt core application. Core applications are applications without
@@ -895,8 +871,10 @@ QCoreApplication::~QCoreApplication()
     } QT_CATCH (...) {
         // swallow the exception, since destructors shouldn't throw
     }
-    if (globalThreadPool)
+    if (globalThreadPool) {
         globalThreadPool->waitForDone();
+        delete globalThreadPool;
+    }
 #endif
 
 #ifndef QT_NO_QOBJECT
@@ -973,8 +951,6 @@ void QCoreApplication::setAttribute(Qt::ApplicationAttribute attribute, bool on)
     if (Q_UNLIKELY(QCoreApplicationPrivate::is_app_running)) {
 #endif
         switch (attribute) {
-            case Qt::AA_EnableHighDpiScaling:
-            case Qt::AA_DisableHighDpiScaling:
             case Qt::AA_PluginApplication:
             case Qt::AA_UseDesktopOpenGL:
             case Qt::AA_UseOpenGLES:
@@ -1031,20 +1007,6 @@ void QCoreApplication::setQuitLockEnabled(bool enabled)
     quitLockRefEnabled = enabled;
 }
 
-#if QT_DEPRECATED_SINCE(5, 6)
-/*!
-  \internal
-  \deprecated
-
-  This function is here to make it possible for Qt extensions to
-  hook into event notification without subclassing QApplication
-*/
-bool QCoreApplication::notifyInternal(QObject *receiver, QEvent *event)
-{
-    return notifyInternal2(receiver, event);
-}
-#endif
-
 /*!
   \internal
   \since 5.6
@@ -1088,7 +1050,7 @@ bool QCoreApplication::notifyInternal2(QObject *receiver, QEvent *event)
 bool QCoreApplication::forwardEvent(QObject *receiver, QEvent *event, QEvent *originatingEvent)
 {
     if (event && originatingEvent)
-        event->spont = originatingEvent->spont;
+        event->m_spont = originatingEvent->m_spont;
 
     return notifyInternal2(receiver, event);
 }
@@ -1266,11 +1228,13 @@ bool QCoreApplication::closingDown()
 
 
 /*!
-    Processes all pending events for the calling thread according to
-    the specified \a flags until there are no more events to process.
+    Processes some pending events for the calling thread according to
+    the specified \a flags.
 
-    You can call this function occasionally when your program is busy
-    performing a long operation (e.g. copying a file).
+    Use of this function is discouraged. Instead, prefer to move long
+    operations out of the GUI thread into an auxiliary one and to completely
+    avoid nested event loop processing. If event processing is really
+    necessary, consider using \l QEventLoop instead.
 
     In the event that you are running a local loop which calls this function
     continuously, without an event loop, the
@@ -1289,7 +1253,7 @@ bool QCoreApplication::closingDown()
 
     \threadsafe
 
-    \sa exec(), QTimer, QEventLoop::processEvents(), flush(), sendPostedEvents()
+    \sa exec(), QTimer, QEventLoop::processEvents(), sendPostedEvents()
 */
 void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)
 {
@@ -1306,13 +1270,18 @@ void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)
     milliseconds or until there are no more events to process,
     whichever is shorter.
 
-    You can call this function occasionally when your program is busy
-    doing a long operation (e.g. copying a file).
+    Use of this function is discouraged. Instead, prefer to move long
+    operations out of the GUI thread into an auxiliary one and to completely
+    avoid nested event loop processing. If event processing is really
+    necessary, consider using \l QEventLoop instead.
 
     Calling this function processes events only for the calling thread.
 
     \note Unlike the \l{QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)}{processEvents()}
     overload, this function also processes events that are posted while the function runs.
+
+    \note All events that were queued before the timeout will be processed,
+    however long it takes.
 
     \threadsafe
 
@@ -1320,7 +1289,7 @@ void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags)
 */
 void QCoreApplication::processEvents(QEventLoop::ProcessEventsFlags flags, int ms)
 {
-    // ### Qt 6: consider splitting this method into a public and a private
+    // ### TODO: consider splitting this method into a public and a private
     //           one, so that a user-invoked processEvents can be detected
     //           and handled properly.
     QThreadData *data = QThreadData::current();
@@ -1469,7 +1438,7 @@ bool QCoreApplication::sendEvent(QObject *receiver, QEvent *event)
     Q_TRACE(QCoreApplication_sendEvent, receiver, event, event->type());
 
     if (event)
-        event->spont = false;
+        event->m_spont = false;
     return notifyInternal2(receiver, event);
 }
 
@@ -1481,7 +1450,7 @@ bool QCoreApplication::sendSpontaneousEvent(QObject *receiver, QEvent *event)
     Q_TRACE(QCoreApplication_sendSpontaneousEvent, receiver, event, event->type());
 
     if (event)
-        event->spont = true;
+        event->m_spont = true;
     return notifyInternal2(receiver, event);
 }
 
@@ -1601,7 +1570,7 @@ void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
     Q_TRACE(QCoreApplication_postEvent_event_posted, receiver, event, event->type());
     data->postEventList.addEvent(QPostEvent(receiver, event, priority));
     eventDeleter.take();
-    event->posted = true;
+    event->m_posted = true;
     ++receiver->d_func()->postedEvents;
     data->canWait = false;
     locker.unlock();
@@ -1679,11 +1648,11 @@ bool QCoreApplication::compressEvent(QEvent *event, QObject *receiver, QPostEven
   \note This method must be called from the thread in which its QObject
   parameter, \a receiver, lives.
 
-  \sa flush(), postEvent()
+  \sa postEvent()
 */
 void QCoreApplication::sendPostedEvents(QObject *receiver, int event_type)
 {
-    // ### Qt 6: consider splitting this method into a public and a private
+    // ### TODO: consider splitting this method into a public and a private
     //           one, so that a user-invoked sendPostedEvents can be detected
     //           and handled properly.
     QThreadData *data = QThreadData::current();
@@ -1812,7 +1781,7 @@ void QCoreApplicationPrivate::sendPostedEvents(QObject *receiver, int event_type
 
         // first, we diddle the event so that we can deliver
         // it, and that no one will try to touch it later.
-        pe.event->posted = false;
+        pe.event->m_posted = false;
         QEvent *e = pe.event;
         QObject * r = pe.receiver;
 
@@ -1882,7 +1851,7 @@ void QCoreApplication::removePostedEvents(QObject *receiver, int eventType)
         if ((!receiver || pe.receiver == receiver)
             && (pe.event && (eventType == 0 || pe.event->type() == eventType))) {
             --pe.receiver->d_func()->postedEvents;
-            pe.event->posted = false;
+            pe.event->m_posted = false;
             events.append(pe.event);
             const_cast<QPostEvent &>(pe).event = nullptr;
         } else if (!data->postEventList.recursion) {
@@ -1919,7 +1888,7 @@ void QCoreApplication::removePostedEvents(QObject *receiver, int eventType)
 
 void QCoreApplicationPrivate::removePostedEvent(QEvent * event)
 {
-    if (!event || !event->posted)
+    if (!event || !event->m_posted)
         return;
 
     QThreadData *data = QThreadData::current();
@@ -1944,7 +1913,7 @@ void QCoreApplicationPrivate::removePostedEvent(QEvent * event)
                      pe.receiver->objectName().toLocal8Bit().data());
 #endif
             --pe.receiver->d_func()->postedEvents;
-            pe.event->posted = false;
+            pe.event->m_posted = false;
             delete pe.event;
             const_cast<QPostEvent &>(pe).event = nullptr;
             return;
@@ -1958,26 +1927,11 @@ void QCoreApplicationPrivate::removePostedEvent(QEvent * event)
 bool QCoreApplication::event(QEvent *e)
 {
     if (e->type() == QEvent::Quit) {
-        quit();
+        exit(0);
         return true;
     }
     return QObject::event(e);
 }
-
-/*! \enum QCoreApplication::Encoding
-    \obsolete
-
-    This enum type used to define the 8-bit encoding of character string
-    arguments to translate(). This enum is now obsolete and UTF-8 will be
-    used in all cases.
-
-    \value UnicodeUTF8   UTF-8.
-    \omitvalue Latin1
-    \omitvalue DefaultCodec \omit UTF-8. \endomit
-    \omitvalue CodecForTr
-
-    \sa QObject::tr(), QString::fromUtf8()
-*/
 
 void QCoreApplicationPrivate::ref()
 {
@@ -1997,12 +1951,18 @@ void QCoreApplicationPrivate::maybeQuit()
 }
 
 /*!
-    Tells the application to exit with return code 0 (success).
-    Equivalent to calling QCoreApplication::exit(0).
+    Asks the application to quit.
 
-    It's common to connect the QGuiApplication::lastWindowClosed() signal
-    to quit(), and you also often connect e.g. QAbstractButton::clicked() or
-    signals in QAction, QMenu, or QMenuBar to it.
+    The request may be ignored if the application prevents the quit,
+    for example if one of its windows can't be closed. The application
+    can affect this by handling the QEvent::Quit event on the application
+    level, or QEvent::Close events for the individual windows.
+
+    If the quit is not interrupted the application will exit with return
+    code 0 (success).
+
+    To exit the application without a chance of being interrupted, call
+    exit() directly.
 
     It's good practice to always connect signals to this slot using a
     \l{Qt::}{QueuedConnection}. If a signal connected (non-queued) to this slot
@@ -2015,12 +1975,26 @@ void QCoreApplicationPrivate::maybeQuit()
 
     \snippet code/src_corelib_kernel_qcoreapplication.cpp 1
 
-    \sa exit(), aboutToQuit(), QGuiApplication::lastWindowClosed()
+    \sa exit(), aboutToQuit()
 */
-
 void QCoreApplication::quit()
 {
-    exit(0);
+    if (!self)
+        return;
+
+    self->d_func()->quit();
+}
+
+void QCoreApplicationPrivate::quit()
+{
+    Q_Q(QCoreApplication);
+
+    if (QThread::currentThread() == mainThread()) {
+        QEvent quitEvent(QEvent::Quit);
+        QCoreApplication::sendEvent(q, &quitEvent);
+    } else {
+        QCoreApplication::postEvent(q, new QEvent(QEvent::Quit));
+    }
 }
 
 /*!
@@ -2213,11 +2187,6 @@ QString QCoreApplication::translate(const char *context, const char *sourceText,
     return result;
 }
 
-/*! \fn static QString QCoreApplication::translate(const char *context, const char *key, const char *disambiguation, Encoding encoding, int n = -1)
-
-  \obsolete
-*/
-
 // Declared in qglobal.h
 QString qtTrId(const char *id, int n)
 {
@@ -2238,8 +2207,8 @@ bool QCoreApplicationPrivate::isTranslatorInstalled(QTranslator *translator)
 QString QCoreApplication::translate(const char *context, const char *sourceText,
                                     const char *disambiguation, int n)
 {
-    Q_UNUSED(context)
-    Q_UNUSED(disambiguation)
+    Q_UNUSED(context);
+    Q_UNUSED(disambiguation);
     QString ret = QString::fromUtf8(sourceText);
     if (n >= 0)
         ret.replace(QLatin1String("%n"), QString::number(n));
@@ -2335,7 +2304,7 @@ QString QCoreApplication::applicationFilePath()
     return *QCoreApplicationPrivate::cachedApplicationFilePath;
 #elif defined(Q_OS_MAC)
     QString qAppFileName_str = qAppFileName();
-    if(!qAppFileName_str.isEmpty()) {
+    if (!qAppFileName_str.isEmpty()) {
         QFileInfo fi(qAppFileName_str);
         if (fi.exists()) {
             QCoreApplicationPrivate::setApplicationFilePath(fi.canonicalFilePath());
@@ -2445,32 +2414,46 @@ QStringList QCoreApplication::arguments()
         qWarning("QCoreApplication::arguments: Please instantiate the QApplication object first");
         return list;
     }
-    const int ac = self->d_func()->argc;
-    char ** const av = self->d_func()->argv;
-    list.reserve(ac);
-
-#if defined(Q_OS_WIN)
-    // On Windows, it is possible to pass Unicode arguments on
-    // the command line. To restore those, we split the command line
-    // and filter out arguments that were deleted by derived application
-    // classes by index.
-    QString cmdline = QString::fromWCharArray(GetCommandLine());
 
     const QCoreApplicationPrivate *d = self->d_func();
-    if (d->origArgv) {
-        const QStringList allArguments = qWinCmdArgs(cmdline);
-        Q_ASSERT(allArguments.size() == d->origArgc);
-        for (int i = 0; i < d->origArgc; ++i) {
-            if (contains(ac, av, d->origArgv[i]))
-                list.append(allArguments.at(i));
+
+    const int argc = d->argc;
+    char ** const argv = d->argv;
+    list.reserve(argc);
+
+#if defined(Q_OS_WIN)
+    const bool argsModifiedByUser = d->origArgv == nullptr;
+    if (!argsModifiedByUser) {
+        // On Windows, it is possible to pass Unicode arguments on
+        // the command line, but we don't implement any of the wide
+        // entry-points (wmain/wWinMain), so get the arguments from
+        // the Windows API instead of using argv. Note that we only
+        // do this when argv were not modified by the user in main().
+        QString cmdline = QString::fromWCharArray(GetCommandLine());
+        QStringList commandLineArguments = qWinCmdArgs(cmdline);
+
+        // Even if the user didn't modify argv before passing them
+        // on to QCoreApplication, derived QApplications might have.
+        // If that's the case argc will differ from origArgc.
+        if (argc != d->origArgc) {
+            // Note: On MingGW the arguments from GetCommandLine are
+            // not wildcard expanded (if wildcard expansion is enabled),
+            // as opposed to the arguments in argv. This means we can't
+            // compare commandLineArguments to argv/origArgc, but
+            // must remove elements by value, based on whether they
+            // were filtered out from argc.
+            for (int i = 0; i < d->origArgc; ++i) {
+                if (!contains(argc, argv, d->origArgv[i]))
+                    commandLineArguments.removeAll(QString::fromLocal8Bit(d->origArgv[i]));
+            }
         }
-        return list;
+
+        return commandLineArguments;
     } // Fall back to rebuilding from argv/argc when a modified argv was passed.
 #endif // defined(Q_OS_WIN)
 
-    for (int a = 0; a < ac; ++a) {
-        list << QString::fromLocal8Bit(av[a]);
-    }
+    for (int a = 0; a < argc; ++a)
+        list << QString::fromLocal8Bit(argv[a]);
 
     return list;
 }
@@ -2735,7 +2718,7 @@ QStringList QCoreApplication::libraryPathsLocked()
         }
 #endif // Q_OS_DARWIN
 
-        QString installPathPlugins =  QLibraryInfo::location(QLibraryInfo::PluginsPath);
+        QString installPathPlugins =  QLibraryInfo::path(QLibraryInfo::PluginsPath);
         if (QFile::exists(installPathPlugins)) {
             // Make sure we convert from backslashes to slashes.
             installPathPlugins = QDir(installPathPlugins).canonicalPath();
@@ -2754,9 +2737,10 @@ QStringList QCoreApplication::libraryPathsLocked()
 
 /*!
 
-    Sets the list of directories to search when loading libraries to
-    \a paths. All existing paths will be deleted and the path list
-    will consist of the paths given in \a paths.
+    Sets the list of directories to search when loading plugins with
+    QLibrary to \a paths. All existing paths will be deleted and the
+    path list will consist of the paths given in \a paths and the path
+    to the application.
 
     The library paths are reset to the default when an instance of
     QCoreApplication is destructed.
@@ -2934,29 +2918,6 @@ void QCoreApplication::removeNativeEventFilter(QAbstractNativeEventFilter *filte
 }
 
 /*!
-    \deprecated
-
-    This function returns \c true if there are pending events; otherwise
-    returns \c false. Pending events can be either from the window
-    system or posted events using postEvent().
-
-    \note this function is not thread-safe. It may only be called in the main
-    thread and only if there are no other threads running in the application
-    (including threads Qt starts for its own purposes).
-
-    \sa QAbstractEventDispatcher::hasPendingEvents()
-*/
-#if QT_DEPRECATED_SINCE(5, 3)
-bool QCoreApplication::hasPendingEvents()
-{
-    QAbstractEventDispatcher *eventDispatcher = QAbstractEventDispatcher::instance();
-    if (eventDispatcher)
-        return eventDispatcher->hasPendingEvents();
-    return false;
-}
-#endif
-
-/*!
     Returns a pointer to the event dispatcher object for the main thread. If no
     event dispatcher exists for the thread, this function returns \nullptr.
 */
@@ -3072,14 +3033,13 @@ void QCoreApplication::setEventDispatcher(QAbstractEventDispatcher *eventDispatc
     \macro Q_DECLARE_TR_FUNCTIONS(context)
     \relates QCoreApplication
 
-    The Q_DECLARE_TR_FUNCTIONS() macro declares and implements two
-    translation functions, \c tr() and \c trUtf8(), with these
-    signatures:
+    The Q_DECLARE_TR_FUNCTIONS() macro declares and implements the
+    translation function \c tr() with this signature:
 
     \snippet code/src_corelib_kernel_qcoreapplication.cpp 6
 
-    This macro is useful if you want to use QObject::tr() or
-    QObject::trUtf8() in classes that don't inherit from QObject.
+    This macro is useful if you want to use QObject::tr()  in classes
+    that don't inherit from QObject.
 
     Q_DECLARE_TR_FUNCTIONS() must appear at the very top of the
     class definition (before the first \c{public:} or \c{protected:}).
@@ -3090,7 +3050,7 @@ void QCoreApplication::setEventDispatcher(QAbstractEventDispatcher *eventDispatc
     The \a context parameter is normally the class name, but it can
     be any text.
 
-    \sa Q_OBJECT, QObject::tr(), QObject::trUtf8()
+    \sa Q_OBJECT, QObject::tr()
 */
 
 QT_END_NAMESPACE

@@ -6,8 +6,9 @@
 
 #### Libraries
 
+qt_find_package(WrapBrotli PROVIDED_TARGETS WrapBrotli::WrapBrotliDec MODULE_NAME network QMAKE_LIB brotli)
 qt_find_package(Libproxy PROVIDED_TARGETS PkgConfig::Libproxy MODULE_NAME network QMAKE_LIB libproxy)
-qt_find_package(WrapOpenSSLHeaders PROVIDED_TARGETS WrapOpenSSLHeaders::WrapOpenSSLHeaders MODULE_NAME network QMAKE_LIB openssl_headers)
+qt_find_package(WrapOpenSSLHeaders PROVIDED_TARGETS WrapOpenSSLHeaders::WrapOpenSSLHeaders MODULE_NAME network QMAKE_LIB openssl/nolink)
 # openssl_headers
 qt_config_compile_test(openssl_headers
     LIBRARIES
@@ -20,7 +21,7 @@ qt_config_compile_test(openssl_headers
 #  error OpenSSL >= 1.1.1 is required
 #endif
 #if !defined(OPENSSL_NO_EC) && !defined(SSL_CTRL_SET_CURVES)
-#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it's libressl which is unsupported
+#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it is libressl which is unsupported
 #endif
 int main(int argc, char **argv)
 {
@@ -45,7 +46,7 @@ qt_config_compile_test(openssl
 #  error OpenSSL >= 1.1.1 is required
 #endif
 #if !defined(OPENSSL_NO_EC) && !defined(SSL_CTRL_SET_CURVES)
-#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it's libressl which is unsupported
+#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it is libressl which is unsupported
 #endif
 int main(int argc, char **argv)
 {
@@ -254,7 +255,7 @@ qt_feature("libproxy" PRIVATE
 )
 qt_feature("linux-netlink" PRIVATE
     LABEL "Linux AF_NETLINK"
-    CONDITION LINUX AND TEST_linux_netlink
+    CONDITION LINUX AND NOT ANDROID AND TEST_linux_netlink
 )
 qt_feature("openssl" PRIVATE
     LABEL "OpenSSL"
@@ -279,13 +280,14 @@ qt_feature_definition("openssl-linked" "QT_LINKED_OPENSSL")
 qt_feature("securetransport" PUBLIC
     LABEL "SecureTransport"
     CONDITION APPLE AND ( INPUT_openssl STREQUAL '' OR INPUT_openssl STREQUAL 'no' )
-    DISABLE INPUT_securetransport STREQUAL 'no' OR INPUT_ssl STREQUAL 'no'
+    DISABLE INPUT_ssl STREQUAL 'no'
 )
 qt_feature_definition("securetransport" "QT_SECURETRANSPORT")
 qt_feature("schannel" PUBLIC
     LABEL "Schannel"
-    CONDITION INPUT_schannel STREQUAL 'yes' AND WIN32 AND ( INPUT_openssl STREQUAL '' OR INPUT_openssl STREQUAL 'no' )
-    DISABLE INPUT_schannel STREQUAL 'no' OR INPUT_ssl STREQUAL 'no'
+    AUTODETECT OFF
+    CONDITION WIN32 AND ( INPUT_openssl STREQUAL '' OR INPUT_openssl STREQUAL 'no' )
+    DISABLE INPUT_ssl STREQUAL 'no'
 )
 qt_feature_definition("schannel" "QT_SCHANNEL")
 qt_feature("ssl" PUBLIC
@@ -318,14 +320,6 @@ qt_feature_definition("sctp" "QT_NO_SCTP" NEGATE VALUE "1")
 qt_feature("system-proxies" PRIVATE
     LABEL "Use system proxies"
 )
-qt_feature("ftp" PUBLIC
-    SECTION "Networking"
-    LABEL "FTP"
-    PURPOSE "Provides support for the File Transfer Protocol in QNetworkAccessManager."
-    AUTODETECT OFF
-    CONDITION QT_FEATURE_textdate AND QT_FEATURE_regularexpression
-)
-qt_feature_definition("ftp" "QT_NO_FTP" NEGATE VALUE "1")
 qt_feature("http" PUBLIC
     SECTION "Networking"
     LABEL "HTTP"
@@ -366,6 +360,13 @@ qt_feature("networkdiskcache" PUBLIC
     CONDITION QT_FEATURE_temporaryfile
 )
 qt_feature_definition("networkdiskcache" "QT_NO_NETWORKDISKCACHE" NEGATE VALUE "1")
+qt_feature("brotli" PUBLIC
+    SECTION "Networking"
+    LABEL "Brotli Decompression Support"
+    PURPOSE "Support for downloading and decompressing resources compressed with Brotli through QNetworkAccessManager."
+    CONDITION WrapBrotli_FOUND
+)
+qt_feature_definition("brotli" "QT_NO_BROTLI" NEGATE VALUE "1")
 qt_feature("localserver" PUBLIC
     SECTION "Networking"
     LABEL "QLocalServer"
@@ -428,18 +429,13 @@ qt_configure_add_summary_entry(ARGS "openssl-linked")
 qt_configure_add_summary_entry(ARGS "opensslv11")
 qt_configure_add_summary_entry(ARGS "dtls")
 qt_configure_add_summary_entry(ARGS "ocsp")
-qt_configure_add_summary_entry(ARGS "ftp")
 qt_configure_add_summary_entry(ARGS "sctp")
 qt_configure_add_summary_entry(ARGS "system-proxies")
 qt_configure_add_summary_entry(ARGS "gssapi")
+qt_configure_add_summary_entry(ARGS "brotli")
 qt_configure_end_summary_section() # end of "Qt Network" section
 qt_configure_add_report_entry(
     TYPE NOTE
     MESSAGE "When linking against OpenSSL, you can override the default library names through OPENSSL_LIBS. For example: OPENSSL_LIBS='-L/opt/ssl/lib -lssl -lcrypto' ./configure -openssl-linked"
-    CONDITION NOT ANDROID AND QT_FEATURE_openssl_linked AND TEST_openssl.source NOT = 0 AND INPUT_openssl.prefix STREQUAL '' AND INPUT_openssl.libs STREQUAL '' AND INPUT_openssl.libs.debug STREQUAL '' OR FIXME
-)
-qt_configure_add_report_entry(
-    TYPE WARNING
-    MESSAGE "Some of libproxy's plugins may use incompatible Qt versions.  Some platforms and distributions ship libproxy with plugins, such as config_kde4.so, that are linked against old versions of Qt, and libproxy loads these plugins automatically when initialized. If Qt is not in a namespace, that loading causes a crash. Even if the systems on which you build and test have no such plugins, your users' systems may have them. We therefore recommend that you combine -libproxy with -qtnamespace when configuring Qt."
-    CONDITION QT_FEATURE_libproxy AND INPUT_qt_namespace STREQUAL ''
+    CONDITION NOT ANDROID AND QT_FEATURE_openssl_linked AND ( NOT TEST_openssl.source EQUAL 0 ) AND INPUT_openssl.prefix STREQUAL '' AND INPUT_openssl.libs STREQUAL '' AND INPUT_openssl.libs.debug STREQUAL '' OR FIXME
 )

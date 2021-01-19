@@ -59,12 +59,12 @@
 
 #include <QtCore/qatomic.h>
 #include <QtCore/qhash.h>
+#include <QtCore/qlist.h>
 #include <QtCore/qobject.h>
 #include <QtCore/qpointer.h>
 #include <QtCore/qreadwritelock.h>
 #include <QtCore/qstringlist.h>
 #include <QtCore/qvarlengtharray.h>
-#include <QtCore/qvector.h>
 
 #include "qdbus_symbols_p.h"
 
@@ -137,7 +137,7 @@ public:
         QString service, path, signature;
         QObject* obj;
         int midx;
-        QVector<int> params;
+        QList<QMetaType> params;
         ArgMatchRules argumentMatch;
         QByteArray matchRule;
     };
@@ -149,15 +149,15 @@ public:
 
     struct ObjectTreeNode
     {
-        typedef QVector<ObjectTreeNode> DataList;
+        typedef QList<ObjectTreeNode> DataList;
 
         inline ObjectTreeNode() : obj(nullptr), flags(0) { }
         inline ObjectTreeNode(const QString &n) // intentionally implicit
             : name(n), obj(nullptr), flags(0) { }
         inline bool operator<(const QString &other) const
             { return name < other; }
-        inline bool operator<(const QStringRef &other) const
-            { return QStringRef(&name) < other; }
+        inline bool operator<(QStringView other) const
+            { return name < other; }
         inline bool isActive() const
         { return obj || !children.isEmpty(); }
 
@@ -176,12 +176,12 @@ public:
     // typedefs
     typedef QMultiHash<qintptr, Watcher> WatcherHash;
     typedef QHash<int, DBusTimeout *> TimeoutHash;
-    typedef QVector<QDBusMessage> PendingMessageList;
+    typedef QList<QDBusMessage> PendingMessageList;
 
     typedef QMultiHash<QString, SignalHook> SignalHookHash;
     typedef QHash<QString, QDBusMetaObject* > MetaObjectHash;
     typedef QHash<QByteArray, int> MatchRefCountHash;
-    typedef QVector<QDBusPendingCallPrivate*> PendingCallList;
+    typedef QList<QDBusPendingCallPrivate *> PendingCallList;
 
     struct WatchedServiceData {
         WatchedServiceData() : refcount(0) {}
@@ -264,7 +264,7 @@ private:
     void sendInternal(QDBusPendingCallPrivate *pcall, void *msg, int timeout);
     void sendError(const QDBusMessage &msg, QDBusError::ErrorType code);
     void deliverCall(QObject *object, int flags, const QDBusMessage &msg,
-                     const QVector<int> &metaTypes, int slotIdx);
+                     const QList<QMetaType> &metaTypes, int slotIdx);
 
     SignalHookHash::Iterator removeSignalHookNoLock(SignalHookHash::Iterator it);
     void collectAllObjects(ObjectTreeNode &node, QSet<QObject *> &set);
@@ -276,6 +276,8 @@ private:
     void watchForDBusDisconnection();
 
     void _q_newConnection(QDBusConnectionPrivate *newConnection);
+
+    void handleAuthentication();
 
 protected:
     void timerEvent(QTimerEvent *e) override;
@@ -309,7 +311,11 @@ signals:
 
 public:
     QAtomicInt ref;
-    QDBusConnection::ConnectionCapabilities capabilities;
+    QAtomicInt capabilities;
+    QDBusConnection::ConnectionCapabilities connectionCapabilities() const
+    {
+        return (QDBusConnection::ConnectionCapabilities)capabilities.loadRelaxed();
+    }
     QString name;               // this connection's name
     QString baseService;        // this connection's base service
     QStringList serverConnectionNames;
@@ -342,10 +348,11 @@ public:
 
     bool anonymousAuthenticationAllowed;
     bool dispatchEnabled;               // protected by the dispatch lock, not the main lock
+    bool isAuthenticated;
 
 public:
     // static methods
-    static int findSlot(QObject *obj, const QByteArray &normalizedName, QVector<int> &params);
+    static int findSlot(QObject *obj, const QByteArray &normalizedName, QList<QMetaType> &params);
     static bool prepareHook(QDBusConnectionPrivate::SignalHook &hook, QString &key,
                             const QString &service,
                             const QString &path, const QString &interface, const QString &name,
@@ -354,7 +361,7 @@ public:
                             bool buildSignature);
     static DBusHandlerResult messageFilter(DBusConnection *, DBusMessage *, void *);
     static QDBusCallDeliveryEvent *prepareReply(QDBusConnectionPrivate *target, QObject *object,
-                                                int idx, const QVector<int> &metaTypes,
+                                                int idx, const QList<QMetaType> &metaTypes,
                                                 const QDBusMessage &msg);
     static void processFinishedCall(QDBusPendingCallPrivate *call);
 
@@ -367,9 +374,10 @@ public:
 };
 
 // in qdbusmisc.cpp
-extern int qDBusParametersForMethod(const QMetaMethod &mm, QVector<int> &metaTypes, QString &errorMsg);
-#endif // QT_BOOTSTRAPPED
-extern Q_DBUS_EXPORT int qDBusParametersForMethod(const QList<QByteArray> &parameters, QVector<int>& metaTypes, QString &errorMsg);
+extern int qDBusParametersForMethod(const QMetaMethod &mm, QList<QMetaType> &metaTypes, QString &errorMsg);
+#    endif // QT_BOOTSTRAPPED
+extern Q_DBUS_EXPORT int qDBusParametersForMethod(const QList<QByteArray> &parameters,
+                                                  QList<QMetaType> &metaTypes, QString &errorMsg);
 extern Q_DBUS_EXPORT bool qDBusCheckAsyncTag(const char *tag);
 #ifndef QT_BOOTSTRAPPED
 extern bool qDBusInterfaceInObject(QObject *obj, const QString &interface_name);

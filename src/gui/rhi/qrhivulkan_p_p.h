@@ -1,34 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Gui module
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -77,10 +80,16 @@ struct QVkBuffer : public QRhiBuffer
     void destroy() override;
     bool create() override;
     QRhiBuffer::NativeBuffer nativeBuffer() override;
+    char *beginFullDynamicBufferUpdateForCurrentFrame() override;
+    void endFullDynamicBufferUpdateForCurrentFrame() override;
 
     VkBuffer buffers[QVK_FRAMES_IN_FLIGHT];
     QVkAlloc allocations[QVK_FRAMES_IN_FLIGHT];
-    QVarLengthArray<QRhiResourceUpdateBatchPrivate::BufferOp, 16> pendingDynamicUpdates[QVK_FRAMES_IN_FLIGHT];
+    struct DynamicUpdate {
+        int offset;
+        QRhiBufferData data;
+    };
+    QVarLengthArray<DynamicUpdate, 16> pendingDynamicUpdates[QVK_FRAMES_IN_FLIGHT];
     VkBuffer stagingBuffers[QVK_FRAMES_IN_FLIGHT];
     QVkAlloc stagingAllocations[QVK_FRAMES_IN_FLIGHT];
     struct UsageState {
@@ -92,6 +101,8 @@ struct QVkBuffer : public QRhiBuffer
     uint generation = 0;
     friend class QRhiVulkan;
 };
+
+Q_DECLARE_TYPEINFO(QVkBuffer::DynamicUpdate, Q_RELOCATABLE_TYPE);
 
 struct QVkTexture;
 
@@ -241,6 +252,8 @@ struct QVkShaderResourceBindings : public QRhiShaderResourceBindings
     bool create() override;
 
     QVarLengthArray<QRhiShaderResourceBinding, 8> sortedBindings;
+    bool hasSlottedResource = false;
+    bool hasDynamicOffset = false;
     int poolIndex = -1;
     VkDescriptorSetLayout layout = VK_NULL_HANDLE;
     VkDescriptorSet descSets[QVK_FRAMES_IN_FLIGHT]; // multiple sets to support dynamic buffers
@@ -284,7 +297,7 @@ struct QVkShaderResourceBindings : public QRhiShaderResourceBindings
     friend class QRhiVulkan;
 };
 
-Q_DECLARE_TYPEINFO(QVkShaderResourceBindings::BoundResourceData, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QVkShaderResourceBindings::BoundResourceData, Q_RELOCATABLE_TYPE);
 
 struct QVkGraphicsPipeline : public QRhiGraphicsPipeline
 {
@@ -323,7 +336,6 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
     const QRhiNativeHandles *nativeHandles();
 
     VkCommandBuffer cb = VK_NULL_HANDLE; // primary
-    bool useSecondaryCb = false;
     QRhiVulkanCommandBufferNativeHandles nativeHandlesStruct;
 
     enum PassType {
@@ -334,10 +346,9 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
 
     void resetState() {
         recordingPass = NoPass;
+        passUsesSecondaryCb = false;
         currentTarget = nullptr;
-
-        secondaryCbs.clear();
-
+        activeSecondaryCbStack.clear();
         resetCommands();
         resetCachedState();
     }
@@ -359,6 +370,7 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
     }
 
     PassType recordingPass;
+    bool passUsesSecondaryCb;
     QRhiRenderTarget *currentTarget;
     QRhiGraphicsPipeline *currentGraphicsPipeline;
     QRhiComputePipeline *currentComputePipeline;
@@ -373,7 +385,7 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
     static const int VERTEX_INPUT_RESOURCE_SLOT_COUNT = 32;
     VkBuffer currentVertexBuffers[VERTEX_INPUT_RESOURCE_SLOT_COUNT];
     quint32 currentVertexOffsets[VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-    QVarLengthArray<VkCommandBuffer, 4> secondaryCbs;
+    QVarLengthArray<VkCommandBuffer, 4> activeSecondaryCbStack;
     bool inExternal;
 
     struct {
@@ -462,6 +474,7 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
             struct {
                 VkRenderPassBeginInfo desc;
                 int clearValueIndex;
+                bool useSecondaryCb;
             } beginRenderPass;
             struct {
             } endRenderPass;
@@ -533,12 +546,13 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
             } executeSecondary;
         } args;
     };
-    QVector<Command> commands;
+
+    QRhiBackendCommandList<Command> commands;
     QVarLengthArray<QRhiPassResourceTracker, 8> passResTrackers;
     int currentPassResTrackerIndex;
 
     void resetCommands() {
-        commands.clear();
+        commands.reset();
         resetPools();
 
         passResTrackers.clear();
@@ -570,8 +584,6 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
     friend class QRhiVulkan;
 };
 
-Q_DECLARE_TYPEINFO(QVkCommandBuffer::Command, Q_MOVABLE_TYPE);
-
 struct QVkSwapChain : public QRhiSwapChain
 {
     QVkSwapChain(QRhiImplementation *rhi);
@@ -601,7 +613,7 @@ struct QVkSwapChain : public QRhiSwapChain
     VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     QVkRenderBuffer *ds = nullptr;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
-    QVector<VkPresentModeKHR> supportedPresentationModes;
+    QVarLengthArray<VkPresentModeKHR, 8> supportedPresentationModes;
     VkDeviceMemory msaaImageMem = VK_NULL_HANDLE;
     QVkReferenceRenderTarget rtWrapper;
     QVkCommandBuffer cbWrapper;
@@ -628,10 +640,9 @@ struct QVkSwapChain : public QRhiSwapChain
         VkSemaphore drawSem = VK_NULL_HANDLE;
         bool imageAcquired = false;
         bool imageSemWaitable = false;
-        quint32 imageIndex = 0;
-        VkCommandBuffer cmdBuf = VK_NULL_HANDLE; // primary
         VkFence cmdFence = VK_NULL_HANDLE;
         bool cmdFenceWaitable = false;
+        VkCommandBuffer cmdBuf = VK_NULL_HANDLE; // primary
         int timestampQueryIndex = -1;
     } frameRes[QVK_FRAMES_IN_FLIGHT];
 
@@ -645,7 +656,7 @@ struct QVkSwapChain : public QRhiSwapChain
 class QRhiVulkan : public QRhiImplementation
 {
 public:
-    QRhiVulkan(QRhiVulkanInitParams *params, QRhiVulkanNativeHandles *importDevice = nullptr);
+    QRhiVulkan(QRhiVulkanInitParams *params, QRhiVulkanNativeHandles *importParams = nullptr);
 
     bool create(QRhi::Flags flags) override;
     void destroy() override;
@@ -688,7 +699,8 @@ public:
                    QRhiRenderTarget *rt,
                    const QColor &colorClearValue,
                    const QRhiDepthStencilClearValue &depthStencilClearValue,
-                   QRhiResourceUpdateBatch *resourceUpdates) override;
+                   QRhiResourceUpdateBatch *resourceUpdates,
+                   QRhiCommandBuffer::BeginPassFlags flags) override;
     void endPass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resourceUpdates) override;
 
     void setGraphicsPipeline(QRhiCommandBuffer *cb,
@@ -720,7 +732,9 @@ public:
     void debugMarkEnd(QRhiCommandBuffer *cb) override;
     void debugMarkMsg(QRhiCommandBuffer *cb, const QByteArray &msg) override;
 
-    void beginComputePass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resourceUpdates) override;
+    void beginComputePass(QRhiCommandBuffer *cb,
+                          QRhiResourceUpdateBatch *resourceUpdates,
+                          QRhiCommandBuffer::BeginPassFlags flags) override;
     void endComputePass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resourceUpdates) override;
     void setComputePipeline(QRhiCommandBuffer *cb, QRhiComputePipeline *ps) override;
     void dispatch(QRhiCommandBuffer *cb, int x, int y, int z) override;
@@ -729,7 +743,7 @@ public:
     void beginExternal(QRhiCommandBuffer *cb) override;
     void endExternal(QRhiCommandBuffer *cb) override;
 
-    QVector<int> supportedSampleCounts() const override;
+    QList<int> supportedSampleCounts() const override;
     int ubufAlignment() const override;
     bool isYUpInFramebuffer() const override;
     bool isYUpInNDC() const override;
@@ -739,6 +753,7 @@ public:
     bool isFeatureSupported(QRhi::Feature feature) const override;
     int resourceLimit(QRhi::ResourceLimit limit) const override;
     const QRhiNativeHandles *nativeHandles() override;
+    QRhiDriverInfo driverInfo() const override;
     void sendVMemStatsToProfiler() override;
     bool makeThreadLocalNativeContextCurrent() override;
     void releaseCachedResources() override;
@@ -773,7 +788,6 @@ public:
     void prepareNewFrame(QRhiCommandBuffer *cb);
     VkCommandBuffer startSecondaryCommandBuffer(QVkRenderTargetData *rtD = nullptr);
     void endAndEnqueueSecondaryCommandBuffer(VkCommandBuffer cb, QVkCommandBuffer *cbD);
-    void deferredReleaseSecondaryCommandBuffer(VkCommandBuffer cb);
     QRhi::FrameOpResult startPrimaryCommandBuffer(VkCommandBuffer *cb);
     QRhi::FrameOpResult endAndSubmitPrimaryCommandBuffer(VkCommandBuffer cb, VkFence cmdFence,
                                                          VkSemaphore *waitSem, VkSemaphore *signalSem);
@@ -807,6 +821,7 @@ public:
                               VkAccessFlags access, VkPipelineStageFlags stage);
     void trackedImageBarrier(QVkCommandBuffer *cbD, QVkTexture *texD,
                              VkImageLayout layout, VkAccessFlags access, VkPipelineStageFlags stage);
+    void depthStencilExplicitBarrier(QVkCommandBuffer *cbD, QVkRenderBuffer *rbD);
     void subresourceBarrier(QVkCommandBuffer *cbD, VkImage image,
                             VkImageLayout oldLayout, VkImageLayout newLayout,
                             VkAccessFlags srcAccess, VkAccessFlags dstAccess,
@@ -814,6 +829,7 @@ public:
                             int startLayer, int layerCount,
                             int startLevel, int levelCount);
     void updateShaderResourceBindings(QRhiShaderResourceBindings *srb, int descSetIdx = -1);
+    void ensureCommandPoolForNewFrame();
 
     QVulkanInstance *inst = nullptr;
     QWindow *maybeWindow = nullptr;
@@ -821,9 +837,9 @@ public:
     bool importedDevice = false;
     VkPhysicalDevice physDev = VK_NULL_HANDLE;
     VkDevice dev = VK_NULL_HANDLE;
-    bool importedCmdPool = false;
-    VkCommandPool cmdPool = VK_NULL_HANDLE;
+    VkCommandPool cmdPool[QVK_FRAMES_IN_FLIGHT] = {};
     int gfxQueueFamilyIdx = -1;
+    int gfxQueueIdx = 0;
     VkQueue gfxQueue = VK_NULL_HANDLE;
     bool hasCompute = false;
     quint32 timestampValidBits = 0;
@@ -837,6 +853,7 @@ public:
     VkDeviceSize texbufAlign;
     bool hasWideLines = false;
     bool deviceLost = false;
+    bool releaseCachedResourcesCalledBeforeFrameStart = false;
 
     bool debugMarkersAvailable = false;
     bool vertexAttribDivisorAvailable = false;
@@ -864,7 +881,8 @@ public:
         int refCount = 0;
         int allocedDescSets = 0;
     };
-    QVector<DescriptorPoolData> descriptorPools;
+    QVarLengthArray<DescriptorPoolData, 8> descriptorPools;
+    QVarLengthArray<VkCommandBuffer, 4> freeSecondaryCbs[QVK_FRAMES_IN_FLIGHT];
 
     VkQueryPool timestampQueryPool = VK_NULL_HANDLE;
     QBitArray timestampQueryPoolMap;
@@ -875,11 +893,21 @@ public:
     QVkSwapChain *currentSwapChain = nullptr;
     QSet<QVkSwapChain *> swapchains;
     QRhiVulkanNativeHandles nativeHandlesStruct;
+    QRhiDriverInfo driverInfoStruct;
 
     struct OffscreenFrame {
-        OffscreenFrame(QRhiImplementation *rhi) : cbWrapper(rhi) { }
+        OffscreenFrame(QRhiImplementation *rhi)
+        {
+            for (int i = 0; i < QVK_FRAMES_IN_FLIGHT; ++i)
+                cbWrapper[i] = new QVkCommandBuffer(rhi);
+        }
+        ~OffscreenFrame()
+        {
+            for (int i = 0; i < QVK_FRAMES_IN_FLIGHT; ++i)
+                delete cbWrapper[i];
+        }
         bool active = false;
-        QVkCommandBuffer cbWrapper;
+        QVkCommandBuffer *cbWrapper[QVK_FRAMES_IN_FLIGHT];
         VkFence cmdFence = VK_NULL_HANDLE;
     } ofr;
 
@@ -893,7 +921,7 @@ public:
         QSize pixelSize;
         QRhiTexture::Format format;
     };
-    QVector<TextureReadback> activeTextureReadbacks;
+    QVarLengthArray<TextureReadback, 2> activeTextureReadbacks;
     struct BufferReadback {
         int activeFrameSlot = -1;
         QRhiBufferReadbackResult *result;
@@ -901,7 +929,7 @@ public:
         VkBuffer stagingBuf;
         QVkAlloc stagingAlloc;
     };
-    QVector<BufferReadback> activeBufferReadbacks;
+    QVarLengthArray<BufferReadback, 2> activeBufferReadbacks;
 
     struct DeferredReleaseEntry {
         enum Type {
@@ -914,7 +942,7 @@ public:
             TextureRenderTarget,
             RenderPass,
             StagingBuffer,
-            CommandBuffer
+            SecondaryCommandBuffer
         };
         Type type;
         int lastActiveFrameSlot; // -1 if not used otherwise 0..FRAMES_IN_FLIGHT-1
@@ -963,16 +991,16 @@ public:
             } stagingBuffer;
             struct {
                 VkCommandBuffer cb;
-            } commandBuffer;
+            } secondaryCommandBuffer;
         };
     };
-    QVector<DeferredReleaseEntry> releaseQueue;
+    QList<DeferredReleaseEntry> releaseQueue;
 };
 
-Q_DECLARE_TYPEINFO(QRhiVulkan::DescriptorPoolData, Q_MOVABLE_TYPE);
-Q_DECLARE_TYPEINFO(QRhiVulkan::DeferredReleaseEntry, Q_MOVABLE_TYPE);
-Q_DECLARE_TYPEINFO(QRhiVulkan::TextureReadback, Q_MOVABLE_TYPE);
-Q_DECLARE_TYPEINFO(QRhiVulkan::BufferReadback, Q_MOVABLE_TYPE);
+Q_DECLARE_TYPEINFO(QRhiVulkan::DescriptorPoolData, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(QRhiVulkan::DeferredReleaseEntry, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(QRhiVulkan::TextureReadback, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(QRhiVulkan::BufferReadback, Q_RELOCATABLE_TYPE);
 
 QT_END_NAMESPACE
 

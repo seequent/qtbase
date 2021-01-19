@@ -60,7 +60,7 @@ def map_tests(test: str) -> Optional[str]:
         "c99": "c_std_99 IN_LIST CMAKE_C_COMPILE_FEATURES",
         "c11": "c_std_11 IN_LIST CMAKE_C_COMPILE_FEATURES",
         "x86SimdAlways": "ON",  # FIXME: Make this actually do a compile test.
-        "aesni": "TEST_subarch_aes",
+        "aesni": "TEST_subarch_aesni",
         "avx": "TEST_subarch_avx",
         "avx2": "TEST_subarch_avx2",
         "avx512f": "TEST_subarch_avx512f",
@@ -99,9 +99,9 @@ def map_tests(test: str) -> Optional[str]:
         "pdpid": "TEST_subarch_rdpid",
         "rdpid": "TEST_subarch_rdpid",
         "rdseed": "TEST_subarch_rdseed",
-        "rdrnd": "TEST_subarch_rdseed",  # FIXME: Is this the right thing?
+        "rdrnd": "TEST_subarch_rdrnd",
         "rtm": "TEST_subarch_rtm",
-        "shani": "TEST_subarch_sha",
+        "shani": "TEST_subarch_shani",
         "shstk": "TEST_subarch_shstk",
         "sse2": "TEST_subarch_sse2",
         "sse3": "TEST_subarch_sse3",
@@ -122,10 +122,7 @@ def map_tests(test: str) -> Optional[str]:
         "altivec": "TEST_subarch_altivec",
         "spe": "TEST_subarch_spe",
         "vsx": "TEST_subarch_vsx",
-        "posix-iconv": "TEST_posix_iconv",
-        "sun-iconv": "TEST_sun_iconv",
         "openssl11": '(OPENSSL_VERSION VERSION_GREATER_EQUAL "1.1.0")',
-        "reduce_exports": "CMAKE_CXX_COMPILE_OPTIONS_VISIBILITY",
         "libinput_axis_api": "ON",
         "xlib": "X11_FOUND",
         "wayland-scanner": "WaylandScanner_FOUND",
@@ -242,9 +239,11 @@ def parseLib(ctx, lib, data, cm_fh, cmake_find_packages_set):
                 if "condition" in use:
                     has_condition = True
                     indentation = "    "
-                    condition = map_condition(use['condition'])
+                    condition = map_condition(use["condition"])
                     cm_fh.write(f"if({condition})\n")
-                cm_fh.write(f"{indentation}qt_add_qmake_lib_dependency({newlib.soName} {use['lib']})\n")
+                cm_fh.write(
+                    f"{indentation}qt_add_qmake_lib_dependency({newlib.soName} {use['lib']})\n"
+                )
                 if has_condition:
                     cm_fh.write("endif()\n")
 
@@ -284,6 +283,8 @@ def map_condition(condition):
 
     # Turn foo != "bar" into (NOT foo STREQUAL 'bar')
     condition = re.sub(r"([^ ]+)\s*!=\s*('.*?')", "(! \\1 == \\2)", condition)
+    # Turn foo != 156 into (NOT foo EQUAL 156)
+    condition = re.sub(r"([^ ]+)\s*!=\s*([0-9]?)", "(! \\1 EQUAL \\2)", condition)
 
     condition = condition.replace("!", "NOT ")
     condition = condition.replace("&&", " AND ")
@@ -420,7 +421,6 @@ def parseInput(ctx, sinput, data, cm_fh):
         "c++std",
         "ccache",
         "commercial",
-        "compile-examples",
         "confirm-license",
         "dbus",
         "dbus-runtime",
@@ -586,7 +586,7 @@ qt_config_compile_test("{config_test_name}"
         if packages:
             packages_string = " ".join(packages)
             cm_fh.write(f"                   PACKAGES {packages_string}")
-        cm_fh.write(f")\n")
+        cm_fh.write(")\n")
 
 
 def write_compile_test(
@@ -768,13 +768,31 @@ def write_compile_test(
 #                "qmake": "unix:LIBS += -lpthread"
 #            }
 #        },
+
+
+def write_compiler_supports_flag_test(
+    ctx, name, details, data, cm_fh, manual_library_list=None, is_library_test=False
+):
+    cm_fh.write(f"qt_config_compiler_supports_flag_test({featureName(name)}\n")
+    cm_fh.write(lineify("LABEL", data.get("label", "")))
+    cm_fh.write(lineify("FLAG", data.get("flag", "")))
+    cm_fh.write(")\n\n")
+
+
+def write_linker_supports_flag_test(
+    ctx, name, details, data, cm_fh, manual_library_list=None, is_library_test=False
+):
+    cm_fh.write(f"qt_config_linker_supports_flag_test({featureName(name)}\n")
+    cm_fh.write(lineify("LABEL", data.get("label", "")))
+    cm_fh.write(lineify("FLAG", data.get("flag", "")))
+    cm_fh.write(")\n\n")
+
+
 def parseTest(ctx, test, data, cm_fh):
     skip_tests = {
         "c11",
         "c99",
         "gc_binaries",
-        "posix-iconv",
-        "sun-iconv",
         "precomile_header",
         "reduce_exports",
         "gc_binaries",
@@ -796,6 +814,26 @@ def parseTest(ctx, test, data, cm_fh):
             details = test
 
         write_compile_test(ctx, test, details, data, cm_fh)
+
+    if data["type"] == "compilerSupportsFlag":
+        knownTests.add(test)
+
+        if "test" in data:
+            details = data["test"]
+        else:
+            details = test
+
+        write_compiler_supports_flag_test(ctx, test, details, data, cm_fh)
+
+    if data["type"] == "linkerSupportsFlag":
+        knownTests.add(test)
+
+        if "test" in data:
+            details = data["test"]
+        else:
+            details = test
+
+        write_linker_supports_flag_test(ctx, test, details, data, cm_fh)
 
     elif data["type"] == "libclang":
         knownTests.add(test)
@@ -823,6 +861,15 @@ def parseTest(ctx, test, data, cm_fh):
         cm_fh.write(f'qt_config_compile_test_x86simd({test} "{label}")\n')
         cm_fh.write("\n")
 
+    elif data["type"] == "machineTuple":
+        knownTests.add(test)
+
+        label = data["label"]
+
+        cm_fh.write(f"# {test}\n")
+        cm_fh.write(f'qt_config_compile_test_machine_tuple("{label}")\n')
+        cm_fh.write("\n")
+
     #    "features": {
     #        "android-style-assets": {
     #            "label": "Android Style Assets",
@@ -841,10 +888,7 @@ def get_feature_mapping():
         "alloc_malloc_h": None,
         "alloc_stdlib_h": None,
         "build_all": None,
-        "ccache": {
-            "autoDetect": "1",
-            "condition": "QT_USE_CCACHE"
-        },
+        "ccache": {"autoDetect": "1", "condition": "QT_USE_CCACHE"},
         "compiler-flags": None,
         "cross_compile": {"condition": "CMAKE_CROSSCOMPILING"},
         "debug_and_release": {
@@ -852,60 +896,67 @@ def get_feature_mapping():
             "condition": "QT_GENERATOR_IS_MULTI_CONFIG",
         },
         "debug": {
-            "condition": "CMAKE_BUILD_TYPE STREQUAL Debug OR Debug IN_LIST CMAKE_CONFIGURATION_TYPES"
+            "autoDetect": "ON",
+            "condition": "CMAKE_BUILD_TYPE STREQUAL Debug OR Debug IN_LIST CMAKE_CONFIGURATION_TYPES",
         },
         "dlopen": {"condition": "UNIX"},
-        "enable_gdb_index": None,
-        "enable_new_dtags": None,
         "force_debug_info": {
             "autoDetect": "CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo OR RelWithDebInfo IN_LIST CMAKE_CONFIGURATION_TYPES"
         },
         "framework": {
             "condition": "APPLE AND BUILD_SHARED_LIBS AND NOT CMAKE_BUILD_TYPE STREQUAL Debug"
         },
-        "gc_binaries": None,
+        "gc_binaries": {"condition": "NOT QT_FEATURE_shared"},
         "gcc-sysroot": None,
         "gcov": None,
-        "gnu-libiconv": {
-            "condition": "NOT WIN32 AND NOT QNX AND NOT ANDROID AND NOT APPLE AND TEST_posix_iconv AND NOT TEST_iconv_needlib",
-            "enable": "TEST_posix_iconv AND NOT TEST_iconv_needlib",
-            "disable": "NOT TEST_posix_iconv OR TEST_iconv_needlib",
-        },
         "GNUmake": None,
         "host-dbus": None,
         "iconv": {
-            "condition": "NOT QT_FEATURE_icu AND QT_FEATURE_textcodec AND ( TEST_posix_iconv OR TEST_sun_iconv )"
+            "condition": "NOT QT_FEATURE_icu AND QT_FEATURE_textcodec AND NOT WIN32 AND NOT QNX AND NOT ANDROID AND NOT APPLE AND WrapIconv_FOUND",
         },
         "incredibuild_xge": None,
         "ltcg": {
-            "autoDetect": "1",
-            "condition": "CMAKE_INTERPROCEDURAL_OPTIMIZATION"
+            "autoDetect": "ON",
+            "cmakePrelude": """set(__qt_ltcg_detected FALSE)
+if(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    set(__qt_ltcg_detected TRUE)
+else()
+    foreach(config ${CMAKE_BUILD_TYPE} ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER "${config}" __qt_uc_config)
+        if(CMAKE_INTERPROCEDURAL_OPTIMIZATION_${__qt_uc_config})
+            set(__qt_ltcg_detected TRUE)
+            break()
+        endif()
+    endforeach()
+    unset(__qt_uc_config)
+endif()""",
+            "condition": "__qt_ltcg_detected",
         },
         "msvc_mp": None,
-        "optimize_debug": None,
-        "optimize_size": None,
         "simulator_and_device": {"condition": "UIKIT AND NOT QT_UIKIT_SDK"},
         "pkg-config": {"condition": "PKG_CONFIG_FOUND"},
-        "posix-libiconv": {
-            "condition": "NOT WIN32 AND NOT QNX AND NOT ANDROID AND NOT APPLE AND TEST_posix_iconv AND TEST_iconv_needlib",
-            "enable": "TEST_posix_iconv AND TEST_iconv_needlib",
-            "disable": "NOT TEST_posix_iconv OR NOT TEST_iconv_needlib",
-        },
         "precompile_header": {"condition": "BUILD_WITH_PCH"},
         "profile": None,
         "qmakeargs": None,
         "qpa_default_platform": None,  # Not a bool!
+        "qreal": {
+            "condition": 'DEFINED QT_COORD_TYPE AND NOT QT_COORD_TYPE STREQUAL "double"',
+            "output": [
+                {"type": "define", "name": "QT_COORD_TYPE", "value": "${QT_COORD_TYPE}",},
+                {
+                    "type": "define",
+                    "name": "QT_COORD_TYPE_STRING",
+                    "value": '\\"${QT_COORD_TYPE}\\"',
+                },
+            ],
+        },
+        "reduce_exports": {"condition": "NOT MSVC",},
         "release": None,
         "release_tools": None,
         "rpath": {
             "autoDetect": "1",
             "condition": "BUILD_SHARED_LIBS AND UNIX AND NOT WIN32 AND NOT ANDROID",
         },
-        "sanitize_address": None,  # sanitizer
-        "sanitize_memory": None,
-        "sanitizer": None,
-        "sanitize_thread": None,
-        "sanitize_undefined": None,
         "shared": {
             "condition": "BUILD_SHARED_LIBS",
             "output": [
@@ -924,16 +975,8 @@ def get_feature_mapping():
         "sql-sqlite": {"condition": "QT_FEATURE_datestring"},
         "stl": None,  # Do we really need to test for this in 2018?!
         "strip": None,
-        "sun-libiconv": {
-            "condition": "NOT WIN32 AND NOT QNX AND NOT ANDROID AND NOT APPLE AND TEST_sun_iconv",
-            "enable": "TEST_sun_iconv",
-            "disable": "NOT TEST_sun_iconv",
-        },
-        "tiff": {"condition": "QT_FEATURE_imageformatplugin AND TIFF_FOUND"},
-        "use_gold_linker": None,
         "verifyspec": None,  # qmake specific...
         "warnings_are_errors": None,  # FIXME: Do we need these?
-        "webp": {"condition": "QT_FEATURE_imageformatplugin AND WrapWebP_FOUND"},
         "xkbcommon-system": None,  # another system library, just named a bit different from the rest
     }
     return feature_mapping
@@ -970,6 +1013,8 @@ def parseFeature(ctx, feature, data, cm_fh):
     enable = map_condition(mapping.get("enable", data.get("enable", "")))
     disable = map_condition(mapping.get("disable", data.get("disable", "")))
     emitIf = map_condition(mapping.get("emitIf", data.get("emitIf", "")))
+    cmakePrelude = mapping.get("cmakePrelude", None)
+    cmakeEpilogue = mapping.get("cmakeEpilogue", None)
 
     for k in [k for k in data.keys() if k not in handled]:
         print(f"    XXXX UNHANDLED KEY {k} in feature description")
@@ -992,7 +1037,14 @@ def parseFeature(ctx, feature, data, cm_fh):
         if isinstance(o, dict):
             outputType = o["type"]
 
-        if outputType in ["varAssign", "varAppend", "varRemove"]:
+        if outputType in [
+            "varAssign",
+            "varAppend",
+            "varRemove",
+            "useBFDLinker",
+            "useGoldLinker",
+            "useLLDLinker",
+        ]:
             continue
         elif outputType == "define":
             publicDefine = True
@@ -1038,9 +1090,15 @@ def parseFeature(ctx, feature, data, cm_fh):
         labelAppend="",
         superFeature=None,
         autoDetect="",
+        cmakePrelude=None,
+        cmakeEpilogue=None,
     ):
         if comment:
             cm_fh.write(f"# {comment}\n")
+
+        if cmakePrelude is not None:
+            cm_fh.write(cmakePrelude)
+            cm_fh.write("\n")
 
         cm_fh.write(f'qt_feature("{name}"')
         if publicFeature:
@@ -1064,11 +1122,21 @@ def parseFeature(ctx, feature, data, cm_fh):
         cm_fh.write(lineify("EMIT_IF", emitIf, quote=False))
         cm_fh.write(")\n")
 
+        if cmakeEpilogue is not None:
+            cm_fh.write(cmakeEpilogue)
+            cm_fh.write("\n")
+
     # Write qt_feature() calls before any qt_feature_definition() calls
 
     # Default internal feature case.
     featureCalls = {}
-    featureCalls[feature] = {"name": feature, "labelAppend": "", "autoDetect": autoDetect}
+    featureCalls[feature] = {
+        "name": feature,
+        "labelAppend": "",
+        "autoDetect": autoDetect,
+        "cmakePrelude": cmakePrelude,
+        "cmakeEpilogue": cmakeEpilogue,
+    }
 
     # Go over all outputs to compute the number of features that have to be declared
     for o in output:
@@ -1224,7 +1292,7 @@ def processSummaryHelper(ctx, entries, cm_fh):
             entry_args_string = "".join(function_args)
             cm_fh.write(f"qt_configure_add_summary_entry(\n{entry_args_string})\n")
         elif "type" in entry and entry["type"] == "buildTypeAndConfig":
-            cm_fh.write(f"qt_configure_add_summary_build_type_and_config()\n")
+            cm_fh.write("qt_configure_add_summary_build_type_and_config()\n")
         elif "type" in entry and entry["type"] == "buildMode":
             message = entry["message"]
             cm_fh.write(f"qt_configure_add_summary_build_mode({message})\n")
@@ -1242,7 +1310,7 @@ def processSummaryHelper(ctx, entries, cm_fh):
 
 report_condition_mapping = {
     "(features.rpath || features.rpath_dir) && !features.shared": "(features.rpath || QT_EXTRA_RPATHS) && !features.shared",
-    "(features.rpath || features.rpath_dir) && var.QMAKE_LFLAGS_RPATH == ''": None
+    "(features.rpath || features.rpath_dir) && var.QMAKE_LFLAGS_RPATH == ''": None,
 }
 
 
@@ -1302,6 +1370,70 @@ def processReportHelper(ctx, entries, cm_fh):
             cm_fh.write(f"qt_configure_add_report_entry(\n{entry_args_string})\n")
         else:
             print(f"    XXXX UNHANDLED REPORT TYPE {entry}.")
+
+
+def parseCommandLineCustomHandler(ctx, data, cm_fh):
+    cm_fh.write(f"qt_commandline_custom({data})\n")
+
+
+def parseCommandLineOptions(ctx, data, cm_fh):
+    for key in data:
+        args = [key]
+        option = data[key]
+        if isinstance(option, str):
+            args += ["TYPE", option]
+        else:
+            if "type" in option:
+                args += ["TYPE", option["type"]]
+            if "name" in option:
+                args += ["NAME", option["name"]]
+            if "value" in option:
+                args += ["VALUE", option["value"]]
+            if "values" in option:
+                values = option["values"]
+                if isinstance(values, list):
+                    args += ["VALUES", " ".join(option["values"])]
+                else:
+                    args += ["MAPPING"]
+                    for lhs in values:
+                        args += [lhs, values[lhs]]
+
+        cm_fh.write(f"qt_commandline_option({' '.join(args)})\n")
+
+
+def parseCommandLinePrefixes(ctx, data, cm_fh):
+    for key in data:
+        cm_fh.write(f"qt_commandline_prefix({key} {data[key]})\n")
+
+
+def parseCommandLineAssignments(ctx, data, cm_fh):
+    for key in data:
+        cm_fh.write(f"qt_commandline_assignment({key} {data[key]})\n")
+
+
+def processCommandLine(ctx, data, cm_fh):
+    print("  commandline:")
+
+    if "subconfigs" in data:
+        for subconf in data["subconfigs"]:
+            cm_fh.write(f"qt_commandline_subconfig({subconf})\n")
+
+    if "commandline" not in data:
+        return
+
+    commandLine = data["commandline"]
+    if "custom" in commandLine:
+        print("    custom:")
+        parseCommandLineCustomHandler(ctx, commandLine["custom"], cm_fh)
+    if "options" in commandLine:
+        print("    options:")
+        parseCommandLineOptions(ctx, commandLine["options"], cm_fh)
+    if "prefix" in commandLine:
+        print("    prefix:")
+        parseCommandLinePrefixes(ctx, commandLine["prefix"], cm_fh)
+    if "assignments" in commandLine:
+        print("    assignments:")
+        parseCommandLineAssignments(ctx, commandLine["assignments"], cm_fh)
 
 
 def processInputs(ctx, data, cm_fh):
@@ -1367,16 +1499,43 @@ def processSubconfigs(path, ctx, data):
             processJson(subconfDir, subconfCtx, subconfData)
 
 
-def processJson(path, ctx, data):
+class special_cased_file:
+    def __init__(self, base_dir: str, file_name: str, skip_special_case_preservation: bool):
+        self.base_dir = base_dir
+        self.file_path = posixpath.join(base_dir, file_name)
+        self.gen_file_path = self.file_path + ".gen"
+        self.preserve_special_cases = not skip_special_case_preservation
+
+    def __enter__(self):
+        self.file = open(self.gen_file_path, "w")
+        if self.preserve_special_cases:
+            self.sc_handler = SpecialCaseHandler(
+                os.path.abspath(self.file_path),
+                os.path.abspath(self.gen_file_path),
+                os.path.abspath(self.base_dir),
+                debug=False,
+            )
+        return self.file
+
+    def __exit__(self, type, value, trace_back):
+        self.file.close()
+        if self.preserve_special_cases and self.sc_handler.handle_special_cases():
+            os.replace(self.gen_file_path, self.file_path)
+        else:
+            os.replace(self.gen_file_path, self.file_path)
+
+
+def processJson(path, ctx, data, skip_special_case_preservation=False):
     ctx["project_dir"] = path
     ctx["module"] = data.get("module", "global")
     ctx["test_dir"] = data.get("testDir", "config.tests")
 
     ctx = processFiles(ctx, data)
 
-    destination = posixpath.join(path, "configure.cmake")
-    generated_file = destination + '.gen'
-    with open(generated_file, "w") as cm_fh:
+    with special_cased_file(path, "qt_cmdline.cmake", skip_special_case_preservation) as cm_fh:
+        processCommandLine(ctx, data, cm_fh)
+
+    with special_cased_file(path, "configure.cmake", skip_special_case_preservation) as cm_fh:
         cm_fh.write("\n\n#### Inputs\n\n")
 
         processInputs(ctx, data, cm_fh)
@@ -1406,28 +1565,22 @@ def processJson(path, ctx, data):
     # do this late:
     processSubconfigs(path, ctx, data)
 
-    handler = SpecialCaseHandler(
-        os.path.abspath(destination),
-        os.path.abspath(generated_file),
-        os.path.abspath(path),
-        convertingProFiles=False,
-        debug=False,
-    )
-    if handler.handle_special_cases():
-        os.replace(generated_file, destination)
-
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         print("This scripts needs one directory to process!")
         quit(1)
+
+    skip_special_case_preservation = False
+    if len(sys.argv) > 2 and sys.argv[2] == "-s":
+        skip_special_case_preservation = True
 
     directory = sys.argv[1]
 
     print(f"Processing: {directory}.")
 
     data = readJsonFromDir(directory)
-    processJson(directory, {}, data)
+    processJson(directory, {}, data, skip_special_case_preservation=skip_special_case_preservation)
 
 
 if __name__ == "__main__":

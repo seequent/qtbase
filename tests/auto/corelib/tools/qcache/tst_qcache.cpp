@@ -26,7 +26,7 @@
 **
 ****************************************************************************/
 
-#include <QtTest/QtTest>
+#include <QTest>
 
 #include <qcache.h>
 
@@ -48,6 +48,8 @@ private slots:
     void take();
     void axioms_on_key_type();
     void largeCache();
+    void internalChainOrderAfterEntryUpdate();
+    void emplaceLowerCost();
 };
 
 
@@ -412,6 +414,35 @@ void tst_QCache::largeCache()
     }
     cache.clear();
     QVERIFY(cache.size() == 0);
+}
+
+// The internal chain could lose track of some objects.
+// Make sure it doesn't happen again.
+void tst_QCache::internalChainOrderAfterEntryUpdate()
+{
+    QCache<QString, int> cache;
+    cache.setMaxCost(20);
+    cache.insert(QString::number(1), new int, 1);
+    cache.insert(QString::number(2), new int, 1);
+    cache.insert(QString::number(1), new int, 1);
+    // If the chain is still 'in order' then setting maxCost == 0 should
+    // a. not crash, and
+    // b. remove all the elements in the QHash
+    cache.setMaxCost(0);
+    QCOMPARE(cache.size(), 0);
+}
+
+void tst_QCache::emplaceLowerCost()
+{
+    QCache<QString, int> cache;
+    cache.setMaxCost(5);
+    cache.insert("a", new int, 3); // insert high cost
+    cache.insert("a", new int, 1); // and then exchange it with a lower-cost object
+    QCOMPARE(cache.totalCost(), 1);
+    cache.remove("a"); // then remove the object
+    // The cache should now have a cost == 0 and be empty.
+    QCOMPARE(cache.totalCost(), 0);
+    QVERIFY(cache.isEmpty());
 }
 
 QTEST_APPLESS_MAIN(tst_QCache)

@@ -106,15 +106,18 @@ void QHttpNetworkHeaderPrivate::setHeaderField(const QByteArray &name, const QBy
     auto firstEqualsName = [&name](const QPair<QByteArray, QByteArray> &header) {
         return name.compare(header.first, Qt::CaseInsensitive) == 0;
     };
-    fields.erase(std::remove_if(fields.begin(), fields.end(),
-                                firstEqualsName),
-                 fields.end());
+    fields.removeIf(firstEqualsName);
     fields.append(qMakePair(name, data));
 }
 
 void QHttpNetworkHeaderPrivate::prependHeaderField(const QByteArray &name, const QByteArray &data)
 {
     fields.prepend(qMakePair(name, data));
+}
+
+void QHttpNetworkHeaderPrivate::clearHeaders()
+{
+    fields.clear();
 }
 
 bool QHttpNetworkHeaderPrivate::operator==(const QHttpNetworkHeaderPrivate &other) const

@@ -28,16 +28,15 @@
 #############################################################################
 """Parse CLDR data for QTimeZone use with MS-Windows
 
-Script to parse the CLDR supplemental/windowsZones.xml file and encode
-for use in QTimeZone.  See ``./cldr2qlocalexml.py`` for where to get
-the CLDR data.  Pass its common/ directory as first parameter to this
-script and the qtbase root directory as second parameter.  It shall
-update qtbase's src/corelib/time/qtimezoneprivate_data_p.h ready for
-use.
+Script to parse the CLDR common/supplemental/windowsZones.xml file and
+encode for use in QTimeZone.  See ``./cldr2qlocalexml.py`` for where
+to get the CLDR data.  Pass its root directory as first parameter to
+this script and the qtbase root directory as second parameter.  It
+shall update qtbase's src/corelib/time/qtimezoneprivate_data_p.h ready
+for use.
 """
 
 import os
-import re
 import datetime
 import textwrap
 
@@ -46,7 +45,7 @@ from cldr import CldrAccess
 
 ### Data that may need updates in response to new entries in the CLDR file ###
 
-# This script shall report the update you need, if this arises.
+# This script shall report the updates you need to make, if any arise.
 # However, you may need to research the relevant zone's standard offset.
 
 # List of currently known Windows IDs.
@@ -325,7 +324,7 @@ class ZoneIdWriter (SourceFileEditor):
         return windowsIdData, ianaIdData
 
 def usage(err, name, message=''):
-    err.write("""Usage: {} path/to/cldr/core/common path/to/qtbase
+    err.write("""Usage: {} path/to/cldr/root path/to/qtbase
 """.format(name)) # TODO: more interesting message
     if message:
         err.write('\n' + message + '\n')

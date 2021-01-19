@@ -27,7 +27,8 @@
 ****************************************************************************/
 
 
-#include <QtTest/QtTest>
+#include <QTest>
+#include <QSignalSpy>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QWindow>
 #include <QtGui/QScreen>
@@ -186,7 +187,7 @@ class DummyWindow : public QWindow
 public:
     DummyWindow() : m_focusObject(nullptr) {}
 
-    virtual QObject *focusObject() const
+    virtual QObject *focusObject() const override
     {
         return m_focusObject;
     }
@@ -353,14 +354,14 @@ void tst_QGuiApplication::abortQuitOnShow()
 class FocusChangeWindow: public QWindow
 {
 protected:
-    virtual bool event(QEvent *ev)
+    virtual bool event(QEvent *ev) override
     {
         if (ev->type() == QEvent::FocusAboutToChange)
             windowDuringFocusAboutToChange = qGuiApp->focusWindow();
         return QWindow::event(ev);
     }
 
-    virtual void focusOutEvent(QFocusEvent *)
+    virtual void focusOutEvent(QFocusEvent *) override
     {
         windowDuringFocusOut = qGuiApp->focusWindow();
     }
@@ -493,12 +494,12 @@ void tst_QGuiApplication::keyboardModifiers()
     QCOMPARE(QGuiApplication::keyboardModifiers(), Qt::ControlModifier);
 
     // touch events
-    QList<const QTouchDevice *> touchDevices = QTouchDevice::devices();
-    if (!touchDevices.isEmpty()) {
-        QTouchDevice *touchDevice = const_cast<QTouchDevice *>(touchDevices.first());
-        QTest::touchEvent(window.data(), touchDevice).press(1, center).release(1, center);
-        QCOMPARE(QGuiApplication::keyboardModifiers(), Qt::NoModifier);
-    }
+    QPointingDevice touchDevice(QLatin1String("test touchscreen"), 0,
+                                QInputDevice::DeviceType::TouchScreen, QPointingDevice::PointerType::Finger,
+                                QPointingDevice::Capability::Position, 10, 0);
+    QWindowSystemInterface::registerInputDevice(&touchDevice);
+    QTest::touchEvent(window.data(), &touchDevice).press(1, center).release(1, center);
+    QCOMPARE(QGuiApplication::keyboardModifiers(), Qt::NoModifier);
 
     window->close();
 }
@@ -510,7 +511,7 @@ void tst_QGuiApplication::keyboardModifiers()
 */
 static bool palettesMatch(const QPalette &actual, const QPalette &expected)
 {
-    if (actual.resolve() != expected.resolve())
+    if (actual.resolveMask() != expected.resolveMask())
         return false;
 
     for (int i = 0; i < QPalette::NColorGroups; i++) {
@@ -541,7 +542,7 @@ void tst_QGuiApplication::palette()
     QCOMPARE(QGuiApplication::palette(), QPalette());
 
     // The default application palette is not resolved
-    QVERIFY(!QGuiApplication::palette().resolve());
+    QVERIFY(!QGuiApplication::palette().resolveMask());
 
     QSignalSpy signalSpy(&app, SIGNAL(paletteChanged(QPalette)));
 
@@ -602,7 +603,7 @@ public:
     inline explicit BlockableWindow(QWindow *parent = nullptr)
         : QWindow(parent), blocked(false), leaves(0), enters(0) {}
 
-    bool event(QEvent *e)
+    bool event(QEvent *e) override
     {
         switch (e->type()) {
         case QEvent::WindowBlocked:
@@ -985,7 +986,7 @@ class TestPluginFactory : public QGenericPlugin
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QGenericPluginFactoryInterface" FILE "testplugin.json")
 public:
-    QObject* create(const QString &key, const QString &)
+    QObject* create(const QString &key, const QString &) override
     {
         if (key == "testplugin")
             return new TestPlugin;
@@ -1003,7 +1004,7 @@ public:
         : customEvents(0)
     {}
 
-    virtual void customEvent(QEvent *)
+    virtual void customEvent(QEvent *) override
     {
         customEvents++;
     }

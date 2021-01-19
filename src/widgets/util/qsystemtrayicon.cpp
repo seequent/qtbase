@@ -60,7 +60,6 @@
 #include "qstyle.h"
 #include "qgridlayout.h"
 #include "qapplication.h"
-#include <private/qdesktopwidget_p.h>
 #include "qbitmap.h"
 
 #include <private/qhighdpiscaling_p.h>
@@ -599,12 +598,15 @@ void QBalloonTip::resizeEvent(QResizeEvent *ev)
 void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
 {
     this->showArrow = showArrow;
-    QRect scr = QDesktopWidgetPrivate::screenGeometry(pos);
+    QScreen *screen = QGuiApplication::screenAt(pos);
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    QRect screenRect = screen->geometry();
     QSize sh = sizeHint();
     const int border = 1;
     const int ah = 18, ao = 18, aw = 18, rc = 7;
-    bool arrowAtTop = (pos.y() + sh.height() + ah < scr.height());
-    bool arrowAtLeft = (pos.x() + sh.width() - ao < scr.width());
+    bool arrowAtTop = (pos.y() + sh.height() + ah < screenRect.height());
+    bool arrowAtLeft = (pos.x() + sh.width() - ao < screenRect.width());
     setContentsMargins(border + 3,  border + (arrowAtTop ? ah : 0) + 2, border + 3, border + (arrowAtTop ? 0 : ah) + 2);
     updateGeometry();
     sh  = sizeHint();
@@ -630,14 +632,14 @@ void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
             path.lineTo(ml + ao, mt - ah);
             path.lineTo(ml + ao + aw, mt);
         }
-        move(qMax(pos.x() - ao, scr.left() + 2), pos.y());
+        move(qMax(pos.x() - ao, screenRect.left() + 2), pos.y());
     } else if (arrowAtTop && !arrowAtLeft) {
         if (showArrow) {
             path.lineTo(mr - ao - aw, mt);
             path.lineTo(mr - ao, mt - ah);
             path.lineTo(mr - ao, mt);
         }
-        move(qMin(pos.x() - sh.width() + ao, scr.right() - sh.width() - 2), pos.y());
+        move(qMin(pos.x() - sh.width() + ao, screenRect.right() - sh.width() - 2), pos.y());
     }
     path.lineTo(mr - rc, mt);
     path.arcTo(QRect(mr - rc*2, mt, rc*2, rc*2), 90, -90);
@@ -649,7 +651,7 @@ void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
             path.lineTo(mr - ao, mb + ah);
             path.lineTo(mr - ao - aw, mb);
         }
-        move(qMin(pos.x() - sh.width() + ao, scr.right() - sh.width() - 2),
+        move(qMin(pos.x() - sh.width() + ao, screenRect.right() - sh.width() - 2),
              pos.y() - sh.height());
     } else if (!arrowAtTop && arrowAtLeft) {
         if (showArrow) {
@@ -657,7 +659,7 @@ void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
             path.lineTo(ao, mb + ah);
             path.lineTo(ao, mb);
         }
-        move(qMax(pos.x() - ao, scr.x() + 2), pos.y() - sh.height());
+        move(qMax(pos.x() - ao, screenRect.x() + 2), pos.y() - sh.height());
     }
     path.lineTo(ml + rc, mb);
     path.arcTo(QRect(ml, mb - rc*2, rc*2, rc*2), -90, -90);
@@ -688,7 +690,7 @@ void QBalloonTip::balloon(const QPoint& pos, int msecs, bool showArrow)
 void QBalloonTip::mousePressEvent(QMouseEvent *e)
 {
     close();
-    if(e->button() == Qt::LeftButton)
+    if (e->button() == Qt::LeftButton)
         emit trayIcon->messageClicked();
 }
 
@@ -735,7 +737,7 @@ void QSystemTrayIconPrivate::addPlatformMenu(QMenu *menu) const
     // be higher than 3 levels.
     const auto actions = menu->actions();
     for (QAction *action : actions) {
-        QVector<QWidget*> associatedWidgets = action->associatedWidgets();
+        QList<QWidget *> associatedWidgets = action->associatedWidgets();
         if (action->menu())
             addPlatformMenu(action->menu());
     }
@@ -746,7 +748,7 @@ void QSystemTrayIconPrivate::addPlatformMenu(QMenu *menu) const
     if (platformMenu)
         menu->setPlatformMenu(platformMenu);
 #else
-    Q_UNUSED(menu)
+    Q_UNUSED(menu);
 #endif // QT_CONFIG(menu)
 }
 

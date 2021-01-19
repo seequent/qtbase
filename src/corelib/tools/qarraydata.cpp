@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2019 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Copyright (C) 2016 Intel Corporation.
 ** Contact: https://www.qt.io/licensing/
 **
@@ -43,6 +43,9 @@
 #include <QtCore/private/qtools_p.h>
 #include <QtCore/qmath.h>
 
+#include <QtCore/qbytearray.h>  // QBA::value_type
+#include <QtCore/qstring.h>  // QString::value_type
+
 #include <stdlib.h>
 
 QT_BEGIN_NAMESPACE
@@ -52,7 +55,7 @@ QT_BEGIN_NAMESPACE
  * containers to allocate memory and grow the memory block during append
  * operations.
  *
- * They take size_t parameters and return size_t so they will change sizes
+ * They take qsizetype parameters and return qsizetype so they will change sizes
  * according to the pointer width. However, knowing Qt containers store the
  * container size and element indexes in ints, these functions never return a
  * size larger than INT_MAX. This is done by casting the element count and
@@ -79,29 +82,21 @@ QT_BEGIN_NAMESPACE
     Both \a elementCount and \a headerSize can be zero, but \a elementSize
     cannot.
 
-    This function returns SIZE_MAX (~0) on overflow or if the memory block size
-    would not fit an int.
+    This function returns -1 on overflow or if the memory block size
+    would not fit a qsizetype.
 */
-size_t qCalculateBlockSize(size_t elementCount, size_t elementSize, size_t headerSize) noexcept
+qsizetype qCalculateBlockSize(qsizetype elementCount, qsizetype elementSize, qsizetype headerSize) noexcept
 {
-    unsigned count = unsigned(elementCount);
-    unsigned size = unsigned(elementSize);
-    unsigned header = unsigned(headerSize);
     Q_ASSERT(elementSize);
-    Q_ASSERT(size == elementSize);
-    Q_ASSERT(header == headerSize);
 
-    if (Q_UNLIKELY(count != elementCount))
-        return std::numeric_limits<size_t>::max();
+    size_t bytes;
+    if (Q_UNLIKELY(mul_overflow(size_t(elementSize), size_t(elementCount), &bytes)) ||
+            Q_UNLIKELY(add_overflow(bytes, size_t(headerSize), &bytes)))
+        return -1;
+    if (Q_UNLIKELY(qsizetype(bytes) < 0))
+        return -1;
 
-    unsigned bytes;
-    if (Q_UNLIKELY(mul_overflow(size, count, &bytes)) ||
-            Q_UNLIKELY(add_overflow(bytes, header, &bytes)))
-        return std::numeric_limits<size_t>::max();
-    if (Q_UNLIKELY(int(bytes) < 0))     // catches bytes >= 2GB
-        return std::numeric_limits<size_t>::max();
-
-    return bytes;
+    return qsizetype(bytes);
 }
 
 /*!
@@ -116,61 +111,60 @@ size_t qCalculateBlockSize(size_t elementCount, size_t elementSize, size_t heade
     Both \a elementCount and \a headerSize can be zero, but \a elementSize
     cannot.
 
-    This function returns SIZE_MAX (~0) on overflow or if the memory block size
-    would not fit an int.
+    This function returns -1 on overflow or if the memory block size
+    would not fit a qsizetype.
 
     \note The memory block may contain up to \a elementSize - 1 bytes more than
     needed.
 */
 CalculateGrowingBlockSizeResult
-qCalculateGrowingBlockSize(size_t elementCount, size_t elementSize, size_t headerSize) noexcept
+qCalculateGrowingBlockSize(qsizetype elementCount, qsizetype elementSize, qsizetype headerSize) noexcept
 {
     CalculateGrowingBlockSizeResult result = {
-        std::numeric_limits<size_t>::max(),std::numeric_limits<size_t>::max()
+        qsizetype(-1), qsizetype(-1)
     };
 
-    unsigned bytes = unsigned(qCalculateBlockSize(elementCount, elementSize, headerSize));
-    if (int(bytes) < 0)     // catches std::numeric_limits<size_t>::max()
+    qsizetype bytes = qCalculateBlockSize(elementCount, elementSize, headerSize);
+    if (bytes < 0)
         return result;
 
-    unsigned morebytes = qNextPowerOfTwo(bytes);
-    if (Q_UNLIKELY(int(morebytes) < 0)) {
-        // catches morebytes == 2GB
+    size_t morebytes = static_cast<size_t>(qNextPowerOfTwo(quint64(bytes)));
+    if (Q_UNLIKELY(qsizetype(morebytes) < 0)) {
         // grow by half the difference between bytes and morebytes
+        // this slows the growth and avoids trying to allocate exactly
+        // 2G of memory (on 32bit), something that many OSes can't deliver
         bytes += (morebytes - bytes) / 2;
     } else {
-        bytes = morebytes;
+        bytes = qsizetype(morebytes);
     }
 
-    result.elementCount = (bytes - unsigned(headerSize)) / unsigned(elementSize);
+    result.elementCount = (bytes - headerSize) / elementSize;
     result.size = result.elementCount * elementSize + headerSize;
     return result;
 }
 
-// End of qtools_p.h implementation
+/*!
+    \internal
 
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_GCC("-Wmissing-field-initializers")
+    Returns \a allocSize plus extra reserved bytes necessary to store '\0'.
+ */
+static inline qsizetype reserveExtraBytes(qsizetype allocSize)
+{
+    // We deal with QByteArray and QString only
+    constexpr qsizetype extra = qMax(sizeof(QByteArray::value_type), sizeof(QString::value_type));
+    if (Q_UNLIKELY(allocSize < 0))
+        return -1;
+    if (Q_UNLIKELY(add_overflow(allocSize, extra, &allocSize)))
+        return -1;
+    return allocSize;
+}
 
-const QArrayData QArrayData::shared_null[2] = {
-    { Q_BASIC_ATOMIC_INITIALIZER(-1), QArrayData::StaticDataFlags, 0 }, // shared null
-    /* zero initialized terminator */};
-
-static const QArrayData emptyNotNullShared[2] = {
-    { Q_BASIC_ATOMIC_INITIALIZER(-1), QArrayData::StaticDataFlags, 0 }, // shared empty
-    /* zero initialized terminator */};
-
-QT_WARNING_POP
-
-static const QArrayData &qt_array_empty = emptyNotNullShared[0];
-
-static inline size_t calculateBlockSize(size_t &capacity, size_t objectSize, size_t headerSize,
-                                        uint options)
+static inline qsizetype calculateBlockSize(qsizetype &capacity, qsizetype objectSize, qsizetype headerSize, QArrayData::AllocationOption option)
 {
     // Calculate the byte size
     // allocSize = objectSize * capacity + headerSize, but checked for overflow
     // plus padded to grow in size
-    if (options & QArrayData::GrowsForward) {
+    if (option == QArrayData::Grow) {
         auto r = qCalculateGrowingBlockSize(capacity, objectSize, headerSize);
         capacity = r.elementCount;
         return r.size;
@@ -179,105 +173,100 @@ static inline size_t calculateBlockSize(size_t &capacity, size_t objectSize, siz
     }
 }
 
-static QArrayData *allocateData(size_t allocSize, uint options)
+static QArrayData *allocateData(qsizetype allocSize)
 {
-    QArrayData *header = static_cast<QArrayData *>(::malloc(allocSize));
+    QArrayData *header = static_cast<QArrayData *>(::malloc(size_t(allocSize)));
     if (header) {
         header->ref_.storeRelaxed(1);
-        header->flags = options;
+        header->flags = 0;
         header->alloc = 0;
     }
     return header;
 }
 
-static QArrayData *reallocateData(QArrayData *header, size_t allocSize, uint options)
-{
-    header = static_cast<QArrayData *>(::realloc(header, allocSize));
-    if (header)
-        header->flags = options;
-    return header;
-}
-
-void *QArrayData::allocate(QArrayData **dptr, size_t objectSize, size_t alignment,
-        size_t capacity, ArrayOptions options) noexcept
+void *QArrayData::allocate(QArrayData **dptr, qsizetype objectSize, qsizetype alignment,
+        qsizetype capacity, QArrayData::AllocationOption option) noexcept
 {
     Q_ASSERT(dptr);
     // Alignment is a power of two
-    Q_ASSERT(alignment >= alignof(QArrayData)
+    Q_ASSERT(alignment >= qsizetype(alignof(QArrayData))
             && !(alignment & (alignment - 1)));
 
     if (capacity == 0) {
-        // optimization for empty headers
-        *dptr = const_cast<QArrayData *>(&qt_array_empty);
-        return sharedNullData();
+        *dptr = nullptr;
+        return nullptr;
     }
 
-    size_t headerSize = sizeof(QArrayData);
+    qsizetype headerSize = sizeof(QArrayData);
+    const qsizetype headerAlignment = alignof(QArrayData);
 
-    if (alignment > alignof(QArrayData)) {
+    if (alignment > headerAlignment) {
         // Allocate extra (alignment - Q_ALIGNOF(QArrayData)) padding bytes so we
         // can properly align the data array. This assumes malloc is able to
         // provide appropriate alignment for the header -- as it should!
-        headerSize += alignment - alignof(QArrayData);
+        headerSize += alignment - headerAlignment;
+    }
+    Q_ASSERT(headerSize > 0);
+
+    qsizetype allocSize = calculateBlockSize(capacity, objectSize, headerSize, option);
+    allocSize = reserveExtraBytes(allocSize);
+    if (Q_UNLIKELY(allocSize < 0)) {  // handle overflow. cannot allocate reliably
+        *dptr = nullptr;
+        return nullptr;
     }
 
-    if (headerSize > size_t(MaxAllocSize))
-        return nullptr;
-
-    size_t allocSize = calculateBlockSize(capacity, objectSize, headerSize, options);
-    options |= AllocatedDataType | MutableData;
-    options &= ~ImmutableHeader;
-    QArrayData *header = allocateData(allocSize, options);
-    quintptr data = 0;
+    QArrayData *header = allocateData(allocSize);
+    void *data = nullptr;
     if (header) {
         // find where offset should point to so that data() is aligned to alignment bytes
-        data = (quintptr(header) + sizeof(QArrayData) + alignment - 1)
-                & ~(alignment - 1);
-        header->alloc = uint(capacity);
+        data = QTypedArrayData<void>::dataStart(header, alignment);
+        header->alloc = qsizetype(capacity);
     }
 
     *dptr = header;
-    return reinterpret_cast<void *>(data);
-}
-
-QArrayData *QArrayData::prepareRawData(ArrayOptions options) Q_DECL_NOTHROW
-{
-    QArrayData *header = allocateData(sizeof(QArrayData), (options & ~DataTypeBits) | RawDataType);
-    if (header)
-        header->alloc = 0;
-    return header;
+    return data;
 }
 
 QPair<QArrayData *, void *>
 QArrayData::reallocateUnaligned(QArrayData *data, void *dataPointer,
-                                size_t objectSize, size_t capacity, ArrayOptions options) noexcept
+                                qsizetype objectSize, qsizetype capacity, AllocationOption option) noexcept
 {
-    Q_ASSERT(data);
-    Q_ASSERT(data->isMutable());
-    Q_ASSERT(!data->isShared());
+    Q_ASSERT(!data || !data->isShared());
 
-    size_t headerSize = sizeof(QArrayData);
-    size_t allocSize = calculateBlockSize(capacity, objectSize, headerSize, options);
-    qptrdiff offset = reinterpret_cast<char *>(dataPointer) - reinterpret_cast<char *>(data);
-    options |= AllocatedDataType | MutableData;
-    QArrayData *header = reallocateData(data, allocSize, options);
+    const qsizetype headerSize = sizeof(QArrayData);
+    qsizetype allocSize = calculateBlockSize(capacity, objectSize, headerSize, option);
+    if (Q_UNLIKELY(allocSize < 0))
+        return qMakePair<QArrayData *, void *>(nullptr, nullptr);
+
+    const qptrdiff offset = dataPointer
+            ? reinterpret_cast<char *>(dataPointer) - reinterpret_cast<char *>(data)
+            : headerSize;
+    Q_ASSERT(offset > 0);
+    Q_ASSERT(offset <= allocSize); // equals when all free space is at the beginning
+
+    allocSize = reserveExtraBytes(allocSize);
+    if (Q_UNLIKELY(allocSize < 0))  // handle overflow. cannot reallocate reliably
+        return qMakePair(data, dataPointer);
+
+    QArrayData *header = static_cast<QArrayData *>(::realloc(data, size_t(allocSize)));
     if (header) {
-        header->alloc = uint(capacity);
+        header->alloc = capacity;
         dataPointer = reinterpret_cast<char *>(header) + offset;
+    } else {
+        dataPointer = nullptr;
     }
     return qMakePair(static_cast<QArrayData *>(header), dataPointer);
 }
 
-void QArrayData::deallocate(QArrayData *data, size_t objectSize,
-        size_t alignment) noexcept
+void QArrayData::deallocate(QArrayData *data, qsizetype objectSize,
+        qsizetype alignment) noexcept
 {
     // Alignment is a power of two
-    Q_ASSERT(alignment >= alignof(QArrayData)
+    Q_ASSERT(alignment >= qsizetype(alignof(QArrayData))
             && !(alignment & (alignment - 1)));
-    Q_UNUSED(objectSize) Q_UNUSED(alignment)
+    Q_UNUSED(objectSize);
+    Q_UNUSED(alignment);
 
-    Q_ASSERT_X(data == nullptr || !data->isStatic(), "QArrayData::deallocate",
-               "Static data cannot be deleted");
     ::free(data);
 }
 

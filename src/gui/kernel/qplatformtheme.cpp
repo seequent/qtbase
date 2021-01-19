@@ -410,7 +410,7 @@ const QPalette *QPlatformTheme::palette(Palette type) const
 
 const QFont *QPlatformTheme::font(Font type) const
 {
-    Q_UNUSED(type)
+    Q_UNUSED(type);
     return nullptr;
 }
 
@@ -608,21 +608,6 @@ QIconEngine *QPlatformTheme::createIconEngine(const QString &iconName) const
     return new QIconLoaderEngine(iconName);
 }
 
-#if defined(Q_OS_MACX)
-static inline int maybeSwapShortcut(int shortcut)
-{
-    if (qApp->testAttribute(Qt::AA_MacDontSwapCtrlAndMeta)) {
-        uint oldshortcut = shortcut;
-        shortcut &= ~(Qt::CTRL | Qt::META);
-        if (oldshortcut & Qt::CTRL)
-            shortcut |= Qt::META;
-        if (oldshortcut & Qt::META)
-            shortcut |= Qt::CTRL;
-    }
-    return shortcut;
-}
-#endif
-
 #if QT_CONFIG(shortcut)
 // mixed-mode predicate: all of these overloads are actually needed (but not all for every compiler)
 struct ByStandardKey {
@@ -660,12 +645,8 @@ QList<QKeySequence> QPlatformTheme::keyBindings(QKeySequence::StandardKey key) c
         if (!(it->platform & platform))
             continue;
 
-        uint shortcut =
-#if defined(Q_OS_MACX)
-            maybeSwapShortcut(it->shortcut);
-#else
-            it->shortcut;
-#endif
+        uint shortcut = it->shortcut.toCombined();
+
         if (it->priority > 0)
             list.prepend(QKeySequence(shortcut));
         else
@@ -698,7 +679,7 @@ QString QPlatformTheme::standardButtonText(int button) const
 
 QKeySequence QPlatformTheme::standardButtonShortcut(int button) const
 {
-    Q_UNUSED(button)
+    Q_UNUSED(button);
     return QKeySequence();
 }
 #endif // QT_CONFIG(shortcut)

@@ -9,7 +9,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-set(INSTALL_EXAMPLEDIR "examples/dbus/remotecontrolledcar/controller")
+if(NOT DEFINED INSTALL_EXAMPLESDIR)
+  set(INSTALL_EXAMPLESDIR "examples")
+endif()
+
+set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/dbus/remotecontrolledcar/controller")
 
 find_package(Qt6 COMPONENTS Core)
 find_package(Qt6 COMPONENTS Gui)
@@ -23,10 +27,14 @@ qt6_add_dbus_interface(controller_SRCS
     car_interface
 )
 # special case end
-add_qt_gui_executable(controller
+qt_add_executable(controller
     controller.cpp controller.h controller.ui
     main.cpp
     ${controller_SRCS} # special case
+)
+set_target_properties(controller PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
 )
 target_link_libraries(controller PUBLIC
     Qt::Core
