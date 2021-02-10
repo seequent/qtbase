@@ -2673,35 +2673,10 @@ QPainterPath QPainter::clipPath() const
     }
 }
 
-/*
-LF-37399
-
-By rounding values to 7dp, we can prevent a special case where
-QPainterPath::intersect returns an empty clipPath when it should not,
-presumably caused by floating point errors.
-
-Seven decimal points was the deepest decimal point to produce the
-correct behaviour, anything above resulted in an incorrect clip path.
-
-An identical Qt bug raised can be found at https://bugreports.qt.io/browse/QTBUG-83102
-*/
-static void round_path_coordinates_to_7_dp(QPainterPath &path) {
-    qreal shifter = pow(10, 7);
-
-    for (int i = 0; i < path.elementCount(); i++) {
-        QPainterPath::Element coordinate = path.elementAt(i);
-        qreal x = qRound64(coordinate.x * shifter) / shifter;
-        qreal y = qRound64(coordinate.y * shifter) / shifter;
-        path.setElementPositionAt(i, x, y);
-    }
-}
 
 static QPainterPath pathClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
-    QPainterPath tempPath = info.path * matrix;
-
-    round_path_coordinates_to_7_dp(tempPath);
-    return tempPath;
+	return info.path * matrix;
 }
 
 static QPainterPath rectClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
@@ -2709,8 +2684,6 @@ static QPainterPath rectClipReplaceClip(const QTransform &matrix, const QPainter
     QPainterPath tempPath;
     tempPath.addRect(info.rect);
     tempPath = tempPath * matrix;
-
-    round_path_coordinates_to_7_dp(tempPath);
     return tempPath;
 }
 
@@ -2719,8 +2692,6 @@ static QPainterPath rectFClipReplaceClip(const QTransform &matrix, const QPainte
     QPainterPath tempPath;
     tempPath.addRect(info.rectf);
     tempPath = tempPath * matrix;
-
-    round_path_coordinates_to_7_dp(tempPath);
     return tempPath;
 }
 
@@ -2728,8 +2699,6 @@ static QPainterPath regionClipReplaceClip(const QTransform &matrix, const QPaint
 {
     QPainterPath tempPath;
     tempPath.addRegion(info.region * matrix);
-
-    round_path_coordinates_to_7_dp(tempPath);
     return tempPath;
 }
 
