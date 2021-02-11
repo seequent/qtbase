@@ -2676,7 +2676,7 @@ QPainterPath QPainter::clipPath() const
 
 static QPainterPath pathClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
 {
-	return info.path * matrix;
+    return info.path * matrix;
 }
 
 static QPainterPath rectClipReplaceClip(const QTransform &matrix, const QPainterClipInfo &info)
