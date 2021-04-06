@@ -120,7 +120,7 @@ public:
     void setCurrentQColor(const QColor &color);
     bool selectColor(const QColor &color);
     QColor grabScreenColor(const QPoint &p);
-    QColor grabScreenColor(const QPoint &screen_point, QScreen *screen);
+    QColor grabScreenColor(const QPoint &p, QScreen *screen);
 
     int currentAlpha() const;
     void setCurrentAlpha(int a);
