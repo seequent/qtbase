@@ -1574,20 +1574,20 @@ QColor QColorDialogPrivate::grabScreenColor(const QPoint &p)
 {
     // Get the screen at p if it exists.
     QScreen *screen = QGuiApplication::screenAt(p);
-    QScreen *primary_screen = QGuiApplication::primaryScreen();
+    QScreen *primaryScreen = QGuiApplication::primaryScreen();
 
-    if (!screen || screen == primary_screen)
+    if (!screen || screen == primaryScreen)
         // If no screen found then use primary. Origin is (0,0) so no need to shift.
-        return grabScreenColor(p, primary_screen);
+        return grabScreenColor(p, primaryScreen);
 
     // Get the origin of the current screen
     const QPoint origin = screen->geometry().topLeft();
 
     // Convert the logical global point to a logical screen point.
-    const QPoint screen_p = p - origin;
+    const QPoint screenPos = p - origin;
 
     // Use the shifted point to return the screen color
-    return grabScreenColor(screen_p, screen);
+    return grabScreenColor(screenPos, screen);
 }
 
 // Get the pixel color at the specified point p on the specified screen.
