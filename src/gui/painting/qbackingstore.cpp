@@ -249,8 +249,11 @@ void QBackingStore::flush(const QRegion &region, QWindow *window, const QPoint &
 
     Q_ASSERT(window == topLevelWindow || topLevelWindow->isAncestorOf(window, QWindow::ExcludeTransients));
 
-    handle()->flush(window, QHighDpi::toNativeLocalRegion(region, window),
-                                            QHighDpi::toNativeLocalPosition(offset, window));
+    // Scale the region relative to the top level window, so it avoids rounding errors when both
+    // offset and region would round up if scaled independently.
+    QPoint nativeOffset = QHighDpi::toNativeLocalPosition(offset, window);
+    QRegion nativeRegion = QHighDpi::toNativeLocalRegion(region.translated(offset), window);
+    handle()->flush(window, nativeRegion.translated(-nativeOffset), nativeOffset);
 }
 
 /*!
