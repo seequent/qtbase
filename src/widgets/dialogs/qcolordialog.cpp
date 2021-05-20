@@ -120,6 +120,7 @@ public:
     void setCurrentQColor(const QColor &color);
     bool selectColor(const QColor &color);
     QColor grabScreenColor(const QPoint &p);
+    QColor grabScreenColor(const QPoint &p, QScreen *screen);
 
     int currentAlpha() const;
     void setCurrentAlpha(int a);
@@ -1571,8 +1572,30 @@ bool QColorDialogPrivate::selectColor(const QColor &col)
 
 QColor QColorDialogPrivate::grabScreenColor(const QPoint &p)
 {
-    const QDesktopWidget *desktop = QApplication::desktop();
-    const QPixmap pixmap = QGuiApplication::primaryScreen()->grabWindow(desktop->winId(), p.x(), p.y(), 1, 1);
+    // Get the screen at p if it exists.
+    QScreen *screen = QGuiApplication::screenAt(p);
+    QScreen *primaryScreen = QGuiApplication::primaryScreen();
+
+    if (!screen || screen == primaryScreen)
+        // If no screen found then use primary. Origin is (0,0) so no need to shift.
+        return grabScreenColor(p, primaryScreen);
+
+    // Get the origin of the current screen
+    const QPoint origin = screen->geometry().topLeft();
+
+    // Convert the logical global point to a logical screen point.
+    const QPoint screenPos = p - origin;
+
+    // Use the shifted point to return the screen color
+    return grabScreenColor(screenPos, screen);
+}
+
+// Get the pixel color at the specified point p on the specified screen.
+// Use screen coordinates rather than global to get around scaling issues.
+QColor QColorDialogPrivate::grabScreenColor(const QPoint &p, QScreen *screen)
+{
+    // Get a 1x1 pixmap from the screen, id=0 refers to the screen.
+    const QPixmap pixmap = screen->grabWindow(0, p.x(), p.y(), 1, 1);
     QImage i = pixmap.toImage();
     return i.pixel(0, 0);
 }
