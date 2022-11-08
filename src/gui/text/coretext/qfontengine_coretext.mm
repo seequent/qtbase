@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qfontengine_coretext_p.h"
 
@@ -253,13 +217,15 @@ void QCoreTextFontEngine::init()
     };
 
     QCFType<CFDictionaryRef> allTraits = CTFontCopyTraits(ctfont);
-    fontDef.weight = QCoreTextFontEngine::qtWeightFromCFWeight(getTraitValue(allTraits, kCTFontWeightTrait));
     int slant = static_cast<int>(getTraitValue(allTraits, kCTFontSlantTrait) * 500 + 500);
     if (slant > 500 && !(traits & kCTFontItalicTrait))
         fontDef.style = QFont::StyleOblique;
 
     if (fontDef.weight >= QFont::Bold && !(traits & kCTFontBoldTrait) && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_BOLD"))
         synthesisFlags |= SynthesizedBold;
+    else
+        fontDef.weight = QCoreTextFontEngine::qtWeightFromCFWeight(getTraitValue(allTraits, kCTFontWeightTrait));
+
     if (fontDef.style != QFont::StyleNormal && !(traits & kCTFontItalicTrait) && !qEnvironmentVariableIsSet("QT_NO_SYNTHESIZED_ITALIC"))
         synthesisFlags |= SynthesizedItalic;
 
@@ -335,14 +301,6 @@ bool QCoreTextFontEngine::stringToCMap(const QChar *str, int len, QGlyphLayout *
     return true;
 }
 
-glyph_metrics_t QCoreTextFontEngine::boundingBox(const QGlyphLayout &glyphs)
-{
-    QFixed w;
-    for (int i = 0; i < glyphs.numGlyphs; ++i)
-        w += glyphs.effectiveAdvance(i);
-    return glyph_metrics_t(0, -(ascent()), w - lastRightBearing(glyphs), ascent()+descent(), w, 0);
-}
-
 glyph_metrics_t QCoreTextFontEngine::boundingBox(glyph_t glyph)
 {
     glyph_metrics_t ret;
@@ -369,7 +327,7 @@ void QCoreTextFontEngine::initializeHeightMetrics() const
     m_descent = QFixed::fromReal(CTFontGetDescent(ctfont));
     m_leading = QFixed::fromReal(CTFontGetLeading(ctfont));
 
-    QFontEngine::initializeHeightMetrics();
+    m_heightMetricsQueried = true;
 }
 
 QFixed QCoreTextFontEngine::capHeight() const
@@ -404,6 +362,7 @@ bool QCoreTextFontEngine::hasColorGlyphs() const
     return glyphFormat == QFontEngine::Format_ARGB;
 }
 
+Q_GUI_EXPORT extern bool qt_scaleForTransform(const QTransform &transform, qreal *scale); // qtransform.cpp
 void QCoreTextFontEngine::draw(CGContextRef ctx, qreal x, qreal y, const QTextItemInt &ti, int paintDeviceHeight)
 {
     QVarLengthArray<QFixedPoint> positions;
@@ -420,7 +379,8 @@ void QCoreTextFontEngine::draw(CGContextRef ctx, qreal x, qreal y, const QTextIt
 
     CGAffineTransform cgMatrix = CGAffineTransformMake(1, 0, 0, -1, 0, -paintDeviceHeight);
 
-    CGAffineTransformConcat(cgMatrix, oldTextMatrix);
+    // FIXME: Should we include the old matrix here? If so we need to assign it.
+    Q_UNUSED(CGAffineTransformConcat(cgMatrix, oldTextMatrix));
 
     if (synthesisFlags & QFontEngine::SynthesizedItalic)
         cgMatrix = CGAffineTransformConcat(cgMatrix, CGAffineTransformMake(1, 0, -SYNTHETIC_ITALIC_SKEW, 1, 0, 0));
@@ -447,7 +407,15 @@ void QCoreTextFontEngine::draw(CGContextRef ctx, qreal x, qreal y, const QTextIt
     CTFontDrawGlyphs(ctfont, cgGlyphs.data(), cgPositions.data(), glyphs.size(), ctx);
 
     if (synthesisFlags & QFontEngine::SynthesizedBold) {
-        CGContextSetTextPosition(ctx, positions[0].x.toReal() + 0.5 * lineThickness().toReal(),
+        QTransform matrix(cgMatrix.a, cgMatrix.b, cgMatrix.c, cgMatrix.d, cgMatrix.tx, cgMatrix.ty);
+
+        qreal boldOffset = 0.5 * lineThickness().toReal();
+        qreal scale;
+        qt_scaleForTransform(matrix, &scale);
+        boldOffset *= scale;
+
+        CGContextSetTextPosition(ctx,
+                                 positions[0].x.toReal() + boldOffset,
                                  positions[0].y.toReal());
         CTFontDrawGlyphs(ctfont, cgGlyphs.data(), cgPositions.data(), glyphs.size(), ctx);
     }
@@ -531,13 +499,17 @@ static void qcoretextfontengine_scaleMetrics(glyph_metrics_t &br, const QTransfo
     }
 }
 
-glyph_metrics_t QCoreTextFontEngine::alphaMapBoundingBox(glyph_t glyph, QFixed subPixelPosition, const QTransform &matrix, GlyphFormat format)
+glyph_metrics_t QCoreTextFontEngine::alphaMapBoundingBox(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &matrix, GlyphFormat format)
 {
     if (matrix.type() > QTransform::TxScale)
         return QFontEngine::alphaMapBoundingBox(glyph, subPixelPosition, matrix, format);
 
     glyph_metrics_t br = boundingBox(glyph);
-    qcoretextfontengine_scaleMetrics(br, matrix);
+
+    QTransform xform = matrix;
+    if (fontDef.stretch != 100 && fontDef.stretch != QFont::AnyStretch)
+        xform.scale(fontDef.stretch / 100.0, 1.0);
+    qcoretextfontengine_scaleMetrics(br, xform);
 
     // Normalize width and height
     if (br.width < 0)
@@ -713,7 +685,7 @@ qreal QCoreTextFontEngine::fontSmoothingGamma()
     return 2.0;
 }
 
-QImage QCoreTextFontEngine::imageForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &matrix, const QColor &color)
+QImage QCoreTextFontEngine::imageForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &matrix, const QColor &color)
 {
     glyph_metrics_t br = alphaMapBoundingBox(glyph, subPixelPosition, matrix, glyphFormat);
 
@@ -773,8 +745,9 @@ QImage QCoreTextFontEngine::imageForGlyph(glyph_t glyph, QFixed subPixelPosition
         cgMatrix = CGAffineTransformConcat(cgMatrix, CGAffineTransformMakeScale(matrix.m11(), matrix.m22()));
 
     CGGlyph cgGlyph = glyph;
-    qreal pos_x = -br.x.truncate() + subPixelPosition.toReal();
-    qreal pos_y = im.height() + br.y.toReal();
+
+    qreal pos_x = -br.x.truncate() + subPixelPosition.x.toReal();
+    qreal pos_y = im.height() + br.y.toReal() - subPixelPosition.y.toReal();
 
     if (!hasColorGlyphs()) {
         CGContextSetTextMatrix(ctx, cgMatrix);
@@ -789,7 +762,13 @@ QImage QCoreTextFontEngine::imageForGlyph(glyph_t glyph, QFixed subPixelPosition
         CTFontDrawGlyphs(ctfont, &cgGlyph, &CGPointZero, 1, ctx);
 
         if (synthesisFlags & QFontEngine::SynthesizedBold) {
-            CGContextSetTextPosition(ctx, pos_x + 0.5 * lineThickness().toReal(), pos_y);
+            qreal boldOffset = 0.5 * lineThickness().toReal();
+
+            qreal scale;
+            qt_scaleForTransform(matrix, &scale);
+            boldOffset *= scale;
+
+            CGContextSetTextPosition(ctx, pos_x + boldOffset, pos_y);
             CTFontDrawGlyphs(ctfont, &cgGlyph, &CGPointZero, 1, ctx);
         }
     } else {
@@ -817,12 +796,12 @@ QImage QCoreTextFontEngine::imageForGlyph(glyph_t glyph, QFixed subPixelPosition
     return im;
 }
 
-QImage QCoreTextFontEngine::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition)
+QImage QCoreTextFontEngine::alphaMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition)
 {
     return alphaMapForGlyph(glyph, subPixelPosition, QTransform());
 }
 
-QImage QCoreTextFontEngine::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &x)
+QImage QCoreTextFontEngine::alphaMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &x)
 {
     if (x.type() > QTransform::TxScale)
         return QFontEngine::alphaMapForGlyph(glyph, subPixelPosition, x);
@@ -844,7 +823,7 @@ QImage QCoreTextFontEngine::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosit
     return alphaMap;
 }
 
-QImage QCoreTextFontEngine::alphaRGBMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &x)
+QImage QCoreTextFontEngine::alphaRGBMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &x)
 {
     if (x.type() > QTransform::TxScale)
         return QFontEngine::alphaRGBMapForGlyph(glyph, subPixelPosition, x);
@@ -852,7 +831,7 @@ QImage QCoreTextFontEngine::alphaRGBMapForGlyph(glyph_t glyph, QFixed subPixelPo
     return imageForGlyph(glyph, subPixelPosition, x);
 }
 
-QImage QCoreTextFontEngine::bitmapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t, const QColor &color)
+QImage QCoreTextFontEngine::bitmapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &t, const QColor &color)
 {
     if (t.type() > QTransform::TxScale)
         return QFontEngine::bitmapForGlyph(glyph, subPixelPosition, t, color);
@@ -881,8 +860,9 @@ void QCoreTextFontEngine::loadAdvancesForGlyphs(QVarLengthArray<CGGlyph> &cgGlyp
     QVarLengthArray<CGSize> advances(numGlyphs);
     CTFontGetAdvancesForGlyphs(ctfont, kCTFontOrientationHorizontal, cgGlyphs.data(), advances.data(), numGlyphs);
 
+    qreal stretch = fontDef.stretch != QFont::AnyStretch ? fontDef.stretch / 100.0 : 1.0;
     for (int i = 0; i < numGlyphs; ++i)
-        glyphs->advances[i] = QFixed::fromReal(advances[i].width);
+        glyphs->advances[i] = QFixed::fromReal(advances[i].width * stretch);
 }
 
 QFontEngine::FaceId QCoreTextFontEngine::faceId() const

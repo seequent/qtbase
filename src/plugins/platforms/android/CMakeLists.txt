@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from android.pro.
 
 #####################################################################
@@ -7,11 +10,11 @@ qt_find_package(EGL) # special case
 
 qt_internal_add_plugin(QAndroidIntegrationPlugin
     OUTPUT_NAME qtforandroid
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES android # special case
     SOURCES
         androidcontentfileengine.cpp androidcontentfileengine.h
-        androiddeadlockprotector.cpp androiddeadlockprotector.h
+        androiddeadlockprotector.h
         androidjniaccessibility.cpp androidjniaccessibility.h
         androidjniclipboard.cpp androidjniclipboard.h
         androidjniinput.cpp androidjniinput.h
@@ -45,8 +48,8 @@ qt_internal_add_plugin(QAndroidIntegrationPlugin
         QT_USE_QSTRINGBUILDER
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${QT_SOURCE_TREE}/src/3rdparty/android
-    PUBLIC_LIBRARIES
+        ${QtBase_SOURCE_DIR}/src/3rdparty/android
+    LIBRARIES
         EGL::EGL
         Qt::Core
         Qt::CorePrivate

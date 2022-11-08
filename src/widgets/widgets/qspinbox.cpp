@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <private/qabstractspinbox_p.h>
 #include <qspinbox.h>
@@ -50,6 +14,8 @@
 #include <float.h>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 //#define QSPINBOX_QSBDEBUG
 #ifdef QSPINBOX_QSBDEBUG
@@ -518,7 +484,7 @@ QString QSpinBox::textFromValue(int value) const
     QString str;
 
     if (d->displayIntegerBase != 10) {
-        const QLatin1String prefix = value < 0 ? QLatin1String("-") : QLatin1String();
+        const auto prefix = value < 0 ? "-"_L1 : ""_L1;
         str = prefix + QString::number(qAbs(value), d->displayIntegerBase);
     } else {
         str = locale().toString(value);
@@ -977,9 +943,8 @@ void QDoubleSpinBox::setDecimals(int decimals)
     This virtual function is used by the spin box whenever it needs to
     display the given \a value. The default implementation returns a string
     containing \a value printed using QWidget::locale().toString(\a value,
-    QLatin1Char('f'), decimals()) and will remove the thousand
-    separator unless setGroupSeparatorShown() is set. Reimplementations may
-    return anything.
+    \c u'f', decimals()) and will remove the thousand separator unless
+    setGroupSeparatorShown() is set. Reimplementations may return anything.
 
     Note: QDoubleSpinBox does not call this function for
     specialValueText() and that neither prefix() nor suffix() should
@@ -1127,11 +1092,11 @@ QVariant QSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
     int num = min;
 
     if (max != min && (copy.isEmpty()
-                       || (min < 0 && copy == QLatin1String("-"))
-                       || (max >= 0 && copy == QLatin1String("+")))) {
+                       || (min < 0 && copy == "-"_L1)
+                       || (max >= 0 && copy == "+"_L1))) {
         state = QValidator::Intermediate;
         QSBDEBUG() << __FILE__ << __LINE__<< "num is set to" << num;
-    } else if (copy.startsWith(QLatin1Char('-')) && min >= 0) {
+    } else if (copy.startsWith(u'-') && min >= 0) {
         state = QValidator::Invalid; // special-case -0 will be interpreted as 0 and thus not be invalid with a range from 0-100
     } else {
         bool ok = false;
@@ -1281,24 +1246,25 @@ QVariant QDoubleSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
     const bool minus = min <= 0;
 
     const QString group(locale.groupSeparator());
-    const uint groupUcs = (group.size() > 1 && group.at(0).isHighSurrogate()
-                           ? QChar::surrogateToUcs4(group.at(0), group.at(1))
-                           : group.at(0).unicode());
+    const uint groupUcs = (group.isEmpty() ? 0 :
+                           (group.size() > 1 && group.at(0).isHighSurrogate()
+                            ? QChar::surrogateToUcs4(group.at(0), group.at(1))
+                            : group.at(0).unicode()));
     switch (len) {
     case 0:
         state = max != min ? QValidator::Intermediate : QValidator::Invalid;
         goto end;
     case 1:
         if (copy.at(0) == locale.decimalPoint()
-            || (plus && copy.at(0) == QLatin1Char('+'))
-            || (minus && copy.at(0) == QLatin1Char('-'))) {
+            || (plus && copy.at(0) == u'+')
+            || (minus && copy.at(0) == u'-')) {
             state = QValidator::Intermediate;
             goto end;
         }
         break;
     case 2:
         if (copy.at(1) == locale.decimalPoint()
-            && ((plus && copy.at(0) == QLatin1Char('+')) || (minus && copy.at(0) == QLatin1Char('-')))) {
+            && ((plus && copy.at(0) == u'+') || (minus && copy.at(0) == u'-'))) {
             state = QValidator::Intermediate;
             goto end;
         }
@@ -1306,7 +1272,7 @@ QVariant QDoubleSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
     default: break;
     }
 
-    if (copy.at(0) == locale.groupSeparator()) {
+    if (groupUcs && copy.startsWith(group)) {
         QSBDEBUG() << __FILE__ << __LINE__<< "state is set to Invalid";
         state = QValidator::Invalid;
         goto end;
@@ -1322,8 +1288,9 @@ QVariant QDoubleSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
                 state = QValidator::Invalid;
                 goto end;
             }
-            for (int i=dec + 1; i<copy.size(); ++i) {
-                if (copy.at(i).isSpace() || copy.at(i) == locale.groupSeparator()) {
+            for (int i = dec + 1; i < copy.size(); ++i) {
+                if (copy.at(i).isSpace()
+                    || (groupUcs && QStringView{copy}.sliced(i).startsWith(group))) {
                     QSBDEBUG() << __FILE__ << __LINE__<< "state is set to Invalid";
                     state = QValidator::Invalid;
                     goto end;
@@ -1331,10 +1298,11 @@ QVariant QDoubleSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
             }
         } else {
             const QChar last = copy.back();
-            const bool groupEnd = copy.endsWith(group);
+            const bool groupEnd = groupUcs && copy.endsWith(group);
             const QStringView head(copy.constData(), groupEnd ? len - group.size() : len - 1);
             const QChar secondLast = head.back();
-            if ((groupEnd || last.isSpace()) && (head.endsWith(group) || secondLast.isSpace())) {
+            if ((groupEnd || last.isSpace())
+                && ((groupUcs && head.endsWith(group)) || secondLast.isSpace())) {
                 state = QValidator::Invalid;
                 QSBDEBUG() << __FILE__ << __LINE__<< "state is set to Invalid";
                 goto end;
@@ -1353,7 +1321,7 @@ QVariant QDoubleSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
 
         if (!ok) {
             if (QChar::isPrint(groupUcs)) {
-                if (max < 1000 && min > -1000 && copy.contains(group)) {
+                if (max < 1000 && min > -1000 && groupUcs && copy.contains(group)) {
                     state = QValidator::Invalid;
                     QSBDEBUG() << __FILE__ << __LINE__<< "state is set to Invalid";
                     goto end;
@@ -1361,7 +1329,7 @@ QVariant QDoubleSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
 
                 const int len = copy.size();
                 for (int i = 0; i < len - 1;) {
-                    if (QStringView(copy).mid(i).startsWith(group)) {
+                    if (groupUcs && QStringView{copy}.sliced(i).startsWith(group)) {
                         if (QStringView(copy).mid(i + group.size()).startsWith(group)) {
                             QSBDEBUG() << __FILE__ << __LINE__<< "state is set to Invalid";
                             state = QValidator::Invalid;
@@ -1374,7 +1342,8 @@ QVariant QDoubleSpinBoxPrivate::validateAndInterpret(QString &input, int &pos,
                 }
 
                 QString copy2 = copy;
-                copy2.remove(group);
+                if (groupUcs)
+                    copy2.remove(group);
                 num = locale.toDouble(copy2, &ok);
                 QSBDEBUG() << group << num << copy2 << ok;
 

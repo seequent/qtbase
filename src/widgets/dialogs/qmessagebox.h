@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QMESSAGEBOX_H
 #define QMESSAGEBOX_H
@@ -65,7 +29,8 @@ class Q_WIDGETS_EXPORT QMessageBox : public QDialog
     Q_PROPERTY(QString detailedText READ detailedText WRITE setDetailedText)
 #endif
     Q_PROPERTY(QString informativeText READ informativeText WRITE setInformativeText)
-    Q_PROPERTY(Qt::TextInteractionFlags textInteractionFlags READ textInteractionFlags WRITE setTextInteractionFlags)
+    Q_PROPERTY(Qt::TextInteractionFlags textInteractionFlags READ textInteractionFlags
+               WRITE setTextInteractionFlags)
 
 public:
     enum Icon {
@@ -127,7 +92,9 @@ public:
         FlagMask           = 0x00000300,        // obsolete
         ButtonMask         = ~FlagMask          // obsolete
     };
-    typedef StandardButton Button;  // obsolete
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    typedef StandardButton Button;
+#endif
 
     Q_DECLARE_FLAGS(StandardButtons, StandardButton)
     Q_FLAG(StandardButtons)
@@ -185,28 +152,59 @@ public:
     static StandardButton information(QWidget *parent, const QString &title,
          const QString &text, StandardButtons buttons = Ok,
          StandardButton defaultButton = NoButton);
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0) // needed as long as we have int overloads
+    inline static StandardButton information(QWidget *parent, const QString &title,
+                                  const QString& text,
+                                  StandardButton button0, StandardButton button1 = NoButton)
+    { return information(parent, title, text, StandardButtons(button0), button1); }
+#endif
+
     static StandardButton question(QWidget *parent, const QString &title,
          const QString &text, StandardButtons buttons = StandardButtons(Yes | No),
          StandardButton defaultButton = NoButton);
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    inline static int question(QWidget *parent, const QString &title,
+                               const QString& text,
+                               StandardButton button0, StandardButton button1)
+    { return question(parent, title, text, StandardButtons(button0), button1); }
+#endif
+
     static StandardButton warning(QWidget *parent, const QString &title,
          const QString &text, StandardButtons buttons = Ok,
          StandardButton defaultButton = NoButton);
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    inline static int warning(QWidget *parent, const QString &title,
+                              const QString& text,
+                              StandardButton button0, StandardButton button1)
+    { return warning(parent, title, text, StandardButtons(button0), button1); }
+#endif
+
     static StandardButton critical(QWidget *parent, const QString &title,
          const QString &text, StandardButtons buttons = Ok,
          StandardButton defaultButton = NoButton);
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    inline static int critical(QWidget *parent, const QString &title,
+                               const QString& text,
+                               StandardButton button0, StandardButton button1)
+    { return critical(parent, title, text, StandardButtons(button0), button1); }
+#endif
+
     static void about(QWidget *parent, const QString &title, const QString &text);
     static void aboutQt(QWidget *parent, const QString &title = QString());
 
+#if QT_DEPRECATED_SINCE(6,2)
     // the following functions are obsolete:
-
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     QMessageBox(const QString &title, const QString &text, Icon icon,
                   int button0, int button1, int button2,
                   QWidget *parent = nullptr,
                   Qt::WindowFlags f = Qt::Dialog | Qt::MSWindowsFixedSizeDialogHint);
 
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int information(QWidget *parent, const QString &title,
                            const QString& text,
                            int button0, int button1 = 0, int button2 = 0);
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int information(QWidget *parent, const QString &title,
                            const QString& text,
                            const QString& button0Text,
@@ -214,14 +212,12 @@ public:
                            const QString& button2Text = QString(),
                            int defaultButtonNumber = 0,
                            int escapeButtonNumber = -1);
-    inline static StandardButton information(QWidget *parent, const QString &title,
-                                  const QString& text,
-                                  StandardButton button0, StandardButton button1 = NoButton)
-    { return information(parent, title, text, StandardButtons(button0), button1); }
 
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int question(QWidget *parent, const QString &title,
                         const QString& text,
                         int button0, int button1 = 0, int button2 = 0);
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int question(QWidget *parent, const QString &title,
                         const QString& text,
                         const QString& button0Text,
@@ -229,14 +225,12 @@ public:
                         const QString& button2Text = QString(),
                         int defaultButtonNumber = 0,
                         int escapeButtonNumber = -1);
-    inline static int question(QWidget *parent, const QString &title,
-                               const QString& text,
-                               StandardButton button0, StandardButton button1)
-    { return question(parent, title, text, StandardButtons(button0), button1); }
 
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int warning(QWidget *parent, const QString &title,
                        const QString& text,
                        int button0, int button1, int button2 = 0);
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int warning(QWidget *parent, const QString &title,
                        const QString& text,
                        const QString& button0Text,
@@ -244,14 +238,12 @@ public:
                        const QString& button2Text = QString(),
                        int defaultButtonNumber = 0,
                        int escapeButtonNumber = -1);
-    inline static int warning(QWidget *parent, const QString &title,
-                              const QString& text,
-                              StandardButton button0, StandardButton button1)
-    { return warning(parent, title, text, StandardButtons(button0), button1); }
 
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int critical(QWidget *parent, const QString &title,
                         const QString& text,
                         int button0, int button1, int button2 = 0);
+    QT_DEPRECATED_VERSION_X_6_2("Use the overload taking StandardButtons instead.")
     static int critical(QWidget *parent, const QString &title,
                         const QString& text,
                         const QString& button0Text,
@@ -259,13 +251,12 @@ public:
                         const QString& button2Text = QString(),
                         int defaultButtonNumber = 0,
                         int escapeButtonNumber = -1);
-    inline static int critical(QWidget *parent, const QString &title,
-                               const QString& text,
-                               StandardButton button0, StandardButton button1)
-    { return critical(parent, title, text, StandardButtons(button0), button1); }
 
+    QT_DEPRECATED_VERSION_X_6_2("Use button() and QPushButton::text() instead.")
     QString buttonText(int button) const;
+    QT_DEPRECATED_VERSION_X_6_2("Use addButton() instead.")
     void setButtonText(int button, const QString &text);
+#endif
 
     QString informativeText() const;
     void setInformativeText(const QString &text);
@@ -278,13 +269,15 @@ public:
     void setWindowTitle(const QString &title);
     void setWindowModality(Qt::WindowModality windowModality);
 
-
+#if QT_DEPRECATED_SINCE(6,2)
+    QT_DEPRECATED_VERSION_X_6_2("Use QStyle::standardIcon() instead.")
     static QPixmap standardIcon(Icon icon);
+#endif
 
 Q_SIGNALS:
     void buttonClicked(QAbstractButton *button);
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
 public Q_SLOTS:
     int exec() override;
 #endif

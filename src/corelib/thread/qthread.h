@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2017 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2017 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QTHREAD_H
 #define QTHREAD_H
@@ -48,6 +12,10 @@
 #if QT_CONFIG(cxx11_future)
 #  include <future> // for std::async
 #  include <functional> // for std::invoke; no guard needed as it's a C++98 header
+#endif
+// internal compiler error with mingw 8.1
+#if defined(Q_CC_MSVC) && defined(Q_PROCESSOR_X86)
+#include <intrin.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -95,15 +63,13 @@ public:
     void setStackSize(uint stackSize);
     uint stackSize() const;
 
-    void exit(int retcode = 0);
-
     QAbstractEventDispatcher *eventDispatcher() const;
     void setEventDispatcher(QAbstractEventDispatcher *eventDispatcher);
 
     bool event(QEvent *event) override;
     int loopLevel() const;
 
-#if QT_CONFIG(cxx11_future) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(cxx11_future) || defined(Q_QDOC)
     template <typename Function, typename... Args>
     [[nodiscard]] static QThread *create(Function &&f, Args &&... args);
 #endif
@@ -111,13 +77,14 @@ public:
 public Q_SLOTS:
     void start(Priority = InheritPriority);
     void terminate();
+    void exit(int retcode = 0);
     void quit();
 
 public:
     bool wait(QDeadlineTimer deadline = QDeadlineTimer(QDeadlineTimer::Forever));
     bool wait(unsigned long time)
     {
-        if (time == std::numeric_limits<unsigned long>::max())
+        if (time == (std::numeric_limits<unsigned long>::max)())
             return wait(QDeadlineTimer(QDeadlineTimer::Forever));
         return wait(QDeadlineTimer(time));
     }
@@ -178,23 +145,47 @@ QThread *QThread::create(Function &&f, Args &&... args)
     value for anything. In Qt we use the handle to check if threads are identical,
     for which the TCB is sufficient.
 
-    So we use the fastest possible way, rathern than spend time on returning
+    So we use the fastest possible way, rather than spend time on returning
     some pseudo-interoperable value.
 */
 inline Qt::HANDLE QThread::currentThreadId() noexcept
 {
+    // define is undefed if we have to fall back to currentThreadIdImpl
+#define QT_HAS_FAST_CURRENT_THREAD_ID
     Qt::HANDLE tid; // typedef to void*
     static_assert(sizeof(tid) == sizeof(void*));
     // See https://akkadia.org/drepper/tls.pdf for x86 ABI
-#if defined(Q_PROCESSOR_X86_32) && defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID) // x86 32-bit always uses GS
-    __asm__("movl %%gs:0, %0" : "=r" (tid) : : );
+#if defined(Q_PROCESSOR_X86_32) && ((defined(Q_OS_LINUX) && defined(__GLIBC__)) || defined(Q_OS_FREEBSD)) // x86 32-bit always uses GS
+    __asm__("movl %%gs:%c1, %0" : "=r" (tid) : "i" (2 * sizeof(void*)) : );
 #elif defined(Q_PROCESSOR_X86_64) && defined(Q_OS_DARWIN64)
     // 64bit macOS uses GS, see https://github.com/apple/darwin-xnu/blob/master/libsyscall/os/tsd.h
     __asm__("movq %%gs:0, %0" : "=r" (tid) : : );
-#elif defined(Q_PROCESSOR_X86_64) && (defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)) && !defined(Q_OS_ANDROID)
+#elif defined(Q_PROCESSOR_X86_64) && ((defined(Q_OS_LINUX) && defined(__GLIBC__)) || defined(Q_OS_FREEBSD))
     // x86_64 Linux, BSD uses FS
-    __asm__("movq %%fs:0, %0" : "=r" (tid) : : );
+    __asm__("movq %%fs:%c1, %0" : "=r" (tid) : "i" (2 * sizeof(void*)) : );
+#elif defined(Q_PROCESSOR_X86_64) && defined(Q_OS_WIN)
+    // See https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
+    // First get the pointer to the TIB
+    quint8 *tib;
+# if defined(Q_CC_MINGW) // internal compiler error when using the intrinsics
+    __asm__("movq %%gs:0x30, %0" : "=r" (tib) : :);
+# else
+    tib = reinterpret_cast<quint8 *>(__readgsqword(0x30));
+# endif
+    // Then read the thread ID
+    tid = *reinterpret_cast<Qt::HANDLE *>(tib + 0x48);
+#elif defined(Q_PROCESSOR_X86_32) && defined(Q_OS_WIN)
+    // First get the pointer to the TIB
+    quint8 *tib;
+# if defined(Q_CC_MINGW) // internal compiler error when using the intrinsics
+    __asm__("movl %%fs:0x18, %0" : "=r" (tib) : :);
+# else
+    tib = reinterpret_cast<quint8 *>(__readfsdword(0x18));
+# endif
+    // Then read the thread ID
+    tid = *reinterpret_cast<Qt::HANDLE *>(tib + 0x24);
 #else
+#undef QT_HAS_FAST_CURRENT_THREAD_ID
     tid = currentThreadIdImpl();
 #endif
     return tid;

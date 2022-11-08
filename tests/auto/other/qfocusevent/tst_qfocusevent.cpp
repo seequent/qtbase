@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -40,6 +15,8 @@
 
 #include <qpa/qplatformintegration.h>
 #include <private/qguiapplication_p.h>
+
+#include <QtWidgets/private/qapplication_p.h>
 
 QT_FORWARD_DECLARE_CLASS(QWidget)
 
@@ -137,7 +114,7 @@ void tst_QFocusEvent::initWidget()
 {
     // On X11 we have to ensure the event was processed before doing any checking, on Windows
     // this is processed straight away.
-    QApplication::setActiveWindow(testFocusWidget);
+    QApplicationPrivate::setActiveWindow(testFocusWidget);
     childFocusWidgetOne->setFocus(); // The first lineedit should have focus
     QVERIFY(QTest::qWaitForWindowActive(testFocusWidget));
     QTRY_VERIFY(childFocusWidgetOne->hasFocus());
@@ -335,7 +312,7 @@ void tst_QFocusEvent::checkReason_ActiveWindow()
     QVERIFY(QTest::qWaitForWindowExposed(d));
 
     d->activateWindow(); // ### CDE
-    QApplication::setActiveWindow(d);
+    QApplicationPrivate::setActiveWindow(d);
     QVERIFY(QTest::qWaitForWindowActive(d));
 
     QTRY_VERIFY(childFocusWidgetOne->focusOutEventRecieved);
@@ -344,7 +321,7 @@ void tst_QFocusEvent::checkReason_ActiveWindow()
 #if defined(Q_OS_WIN)
     if (QSysInfo::kernelVersion() == "10.0.15063") {
         // Activate window of testFocusWidget, focus in that window goes to childFocusWidgetOne
-        QWARN("Windows 10 Creators Update (10.0.15063) requires explicit activateWindow()");
+        qWarning("Windows 10 Creators Update (10.0.15063) requires explicit activateWindow()");
         testFocusWidget->activateWindow();
     }
 #endif
@@ -359,7 +336,7 @@ void tst_QFocusEvent::checkReason_ActiveWindow()
     if (!QGuiApplication::platformName().compare(QLatin1String("offscreen"), Qt::CaseInsensitive)
         || !QGuiApplication::platformName().compare(QLatin1String("minimal"), Qt::CaseInsensitive)) {
         // Activate window of testFocusWidget, focus in that window goes to childFocusWidgetOne
-        QWARN("Platforms offscreen and minimal require explicit activateWindow()");
+        qWarning("Platforms offscreen and minimal require explicit activateWindow()");
         testFocusWidget->activateWindow();
     }
 
@@ -369,6 +346,42 @@ void tst_QFocusEvent::checkReason_ActiveWindow()
     QVERIFY( childFocusWidgetOne->hasFocus() );
     QVERIFY( childFocusWidgetOne->focusInEventRecieved );
     QCOMPARE( childFocusWidgetOne->focusInEventReason, (int)Qt::ActiveWindowFocusReason);
+
+    const bool windowActivationReasonFail =
+        QGuiApplication::platformName().toLower() == "minimal";
+
+    struct Window : public QWindow
+    {
+        Qt::FocusReason lastReason = Qt::NoFocusReason;
+    protected:
+        void focusInEvent(QFocusEvent *event) override
+        {
+            lastReason = event->reason();
+        }
+        void focusOutEvent(QFocusEvent *event) override
+        {
+            lastReason = event->reason();
+        }
+    };
+
+    Window window;
+    window.show();
+    window.requestActivate();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+
+    if (windowActivationReasonFail)
+        QEXPECT_FAIL("", "Platform doesn't set window activation reason for QWindow", Continue);
+    QCOMPARE(window.lastReason, Qt::ActiveWindowFocusReason);
+    window.lastReason = Qt::NoFocusReason;
+
+    Window window2;
+    window2.show();
+    window2.requestActivate();
+    QVERIFY(QTest::qWaitForWindowActive(&window2));
+
+    if (windowActivationReasonFail)
+        QEXPECT_FAIL("", "Platform doesn't set window activation reason for QWindow", Continue);
+    QCOMPARE(window.lastReason, Qt::ActiveWindowFocusReason);
 }
 
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generate a qt_lib_XXX.pri file.
 #
 # This file is to be used in CMake script mode with the following variables set:
@@ -7,6 +10,7 @@
 # LIBRARY_SUFFIXES: list of known library extensions, e.g. .so;.a on Linux
 # LIBRARY_PREFIXES: list of known library prefies, e.g. the "lib" in "libz" on on Linux
 # LINK_LIBRARY_FLAG: flag used to link a shared library to an executable, e.g. -l on UNIX
+# IMPLICIT_LINK_DIRECTORIES: list of implicit linker search paths
 #
 # QMAKE_LIBS_XXX values are split into QMAKE_LIBS_XXX_DEBUG and QMAKE_LIBS_XXX_RELEASE if
 # debug_and_release was detected. The CMake configuration "Debug" is considered for the _DEBUG
@@ -15,6 +19,7 @@
 # The library values are transformed from an absolute path into link flags
 # aka from "/usr/lib/x86_64-linux-gnu/libcups.so" to "-lcups".
 
+cmake_policy(SET CMP0007 NEW)
 cmake_policy(SET CMP0057 NEW)
 
 # Create a qmake-style list from the passed arguments and store it in ${out_var}.

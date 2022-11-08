@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qflatmap.pro.
 
 #####################################################################
@@ -7,6 +10,6 @@
 qt_internal_add_test(tst_qflatmap
     SOURCES
         tst_qflatmap.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
 )

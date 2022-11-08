@@ -14,7 +14,7 @@ instructions:
               equals_property: target.os
             - condition: property
               property: target.osVersion
-              equals_value: QEMU
+              in_values: [QEMU, QNX_710, IOS_ANY]
             - condition: property
               property: features
               contains_value: AndroidTestRun
@@ -22,7 +22,3 @@ instructions:
       condition: property
       property: features
       contains_value: DisableTests
-
-  - type: EnvironmentVariable
-    variableName: Dummy
-    variableValue: dummy

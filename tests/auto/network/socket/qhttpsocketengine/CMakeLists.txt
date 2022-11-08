@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qhttpsocketengine.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -11,9 +14,7 @@ endif()
 qt_internal_add_test(tst_qhttpsocketengine
     SOURCES
         tst_qhttpsocketengine.cpp
-    INCLUDE_DIRECTORIES
-        ${QT_SOURCE_TREE}/src/network
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
     QT_TEST_SERVER_LIST "squid" "danted" "cyrus" "apache2" # special case
@@ -30,6 +31,6 @@ qt_internal_add_test(tst_qhttpsocketengine
 # QT_TEST_SERVER_LIST = "squid" "danted" "cyrus" "apache2"
 
 qt_internal_extend_target(tst_qhttpsocketengine CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ws2_32
 )

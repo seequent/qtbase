@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Given "/usr/lib/x86_64-linux-gnu/libcups.so"
 # Returns "cups" or an empty string if the file is not an absolute library path.
 # Aka it strips the "lib" prefix, the .so extension and the base path.
@@ -6,11 +9,12 @@ function(qt_get_library_name_without_prefix_and_suffix out_var file_path)
     if(IS_ABSOLUTE "${file_path}")
         get_filename_component(basename "${file_path}" NAME_WE)
         get_filename_component(ext "${file_path}" EXT)
+        string(TOLOWER "${ext}" ext_lower)
         foreach(libsuffix ${LIBRARY_SUFFIXES})
             # Handle weird prefix extensions like in the case of
             # "/usr/lib/x86_64-linux-gnu/libglib-2.0.so"
             # it's ".0.so".
-            if(ext MATCHES "^(\\.[0-9]+)*${libsuffix}(\\.[0-9]+)*")
+            if(ext_lower MATCHES "^(\\.[0-9]+)*${libsuffix}(\\.[0-9]+)*")
                 set(is_linkable_library TRUE)
                 set(weird_numbered_extension "${CMAKE_MATCH_1}")
                 break()
@@ -64,6 +68,14 @@ function(qt_transform_absolute_library_paths_to_link_flags out_var library_path_
     foreach(library_path ${library_path_list})
         qt_get_library_with_link_flag(lib_name_with_link_flag "${library_path}")
         if(lib_name_with_link_flag)
+            string(TOLOWER "${IMPLICIT_LINK_DIRECTORIES}" IMPLICIT_LINK_DIRECTORIES_LOWER)
+            get_filename_component(dir "${library_path}" DIRECTORY)
+            string(TOLOWER "${dir}" dir_lower)
+            # If library_path isn't in default link directories, we should add it to link flags.
+            list(FIND IMPLICIT_LINK_DIRECTORIES_LOWER "${dir_lower}" index)
+            if(${index} EQUAL -1)
+                list(APPEND out_list "-L\"${dir}\"")
+            endif()
             list(APPEND out_list "${lib_name_with_link_flag}")
         else()
             list(APPEND out_list "${library_path}")

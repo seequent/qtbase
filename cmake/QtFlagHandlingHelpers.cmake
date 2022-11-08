@@ -1,56 +1,107 @@
-function(qt_internal_add_linker_version_script target)
-    qt_parse_all_arguments(arg "qt_internal_add_linker" "INTERNAL" "" "PRIVATE_HEADERS" ${ARGN})
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-    if (TEST_ld_version_script)
-        if (arg_INTERNAL)
-            set(contents "Qt_${PROJECT_VERSION_MAJOR}_PRIVATE_API { *; };")
-        else()
-            set(contents "Qt_${PROJECT_VERSION_MAJOR}_PRIVATE_API {\n    qt_private_api_tag*;\n")
+# This function generates LD version script for the target and uses it in the target linker line.
+# Function has two modes dependending on the specified arguments.
+# Arguments:
+#    PRIVATE_HEADERS specifies the list of header files that are used to generate
+#       Qt_<version>_PRIVATE_API section. Requires perl.
+#    PRIVATE_CONTENT_FILE specifies the pre-cooked content of Qt_<version>_PRIVATE_API section.
+#       Requires the content file available at build time.
+function(qt_internal_add_linker_version_script target)
+    if(WASM)
+        return()
+    endif()
+
+    qt_parse_all_arguments(arg "qt_internal_add_linker_version_script"
+        ""
+        "PRIVATE_CONTENT_FILE"
+        "PRIVATE_HEADERS"
+        ${ARGN}
+    )
+
+    if(arg_PRIVATE_CONTENT_FILE AND arg_PRIVATE_HEADERS)
+        message(FATAL_ERROR "Both PRIVATE_CONTENT_FILE and PRIVATE_HEADERS are specified.")
+    endif()
+
+    if(TEST_ld_version_script)
+        set(contents "Qt_${PROJECT_VERSION_MAJOR}_PRIVATE_API {\n    qt_private_api_tag*;\n")
+        if(arg_PRIVATE_HEADERS)
             foreach(ph ${arg_PRIVATE_HEADERS})
                 string(APPEND contents "    @FILE:${ph}@\n")
             endforeach()
-            string(APPEND contents "};\n")
-            set(current "Qt_${PROJECT_VERSION_MAJOR}")
-            if (QT_NAMESPACE STREQUAL "")
-                set(tag_symbol "qt_version_tag")
-            else()
-                set(tag_symbol "qt_version_tag_${QT_NAMESPACE}")
-            endif()
-            string(APPEND contents "${current} { *; };\n")
-
-            foreach(minor_version RANGE ${PROJECT_VERSION_MINOR})
-                set(previous "${current}")
-                set(current "Qt_${PROJECT_VERSION_MAJOR}.${minor_version}")
-                if (minor_version EQUAL ${PROJECT_VERSION_MINOR})
-                   string(APPEND contents "${current} { ${tag_symbol}; } ${previous};\n")
-                else()
-                   string(APPEND contents "${current} {} ${previous};\n")
-                endif()
-            endforeach()
-
-            set(infile "${CMAKE_CURRENT_BINARY_DIR}/${target}.version.in")
-            set(outfile "${CMAKE_CURRENT_BINARY_DIR}/${target}.version")
-
-            file(GENERATE OUTPUT "${infile}" CONTENT "${contents}")
-
-            qt_ensure_perl()
-
-            add_custom_command(TARGET "${target}" PRE_LINK
-                COMMAND "${HOST_PERL}" "${QT_MKSPECS_DIR}/features/data/unix/findclasslist.pl" < "${infile}" > "${outfile}"
-                BYPRODUCTS "${outfile}" DEPENDS "${infile}"
-                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-                COMMENT "Generating version linker script"
-            )
-            target_link_options("${target}" PRIVATE "-Wl,--version-script,${outfile}")
+        else()
+            string(APPEND contents "@PRIVATE_CONTENT@")
         endif()
+        string(APPEND contents "};\n")
+        set(current "Qt_${PROJECT_VERSION_MAJOR}")
+        if (QT_NAMESPACE STREQUAL "")
+            set(tag_symbol "qt_version_tag")
+        else()
+            set(tag_symbol "qt_version_tag_${QT_NAMESPACE}")
+        endif()
+        string(APPEND contents "${current} { *; };\n")
+
+        foreach(minor_version RANGE ${PROJECT_VERSION_MINOR})
+            set(previous "${current}")
+            set(current "Qt_${PROJECT_VERSION_MAJOR}.${minor_version}")
+            if (minor_version EQUAL ${PROJECT_VERSION_MINOR})
+                string(APPEND contents "${current} { ${tag_symbol}; } ${previous};\n")
+            else()
+                string(APPEND contents "${current} {} ${previous};\n")
+            endif()
+        endforeach()
+
+        set(infile "${CMAKE_CURRENT_BINARY_DIR}/${target}.version.in")
+        set(outfile "${CMAKE_CURRENT_BINARY_DIR}/${target}.version")
+
+        file(GENERATE OUTPUT "${infile}" CONTENT "${contents}")
+
+        if(arg_PRIVATE_HEADERS)
+            qt_ensure_perl()
+            set(generator_command "${HOST_PERL}"
+                "${QT_MKSPECS_DIR}/features/data/unix/findclasslist.pl"
+                "<" "${infile}" ">" "${outfile}"
+            )
+            set(generator_dependencies
+                "${infile}"
+                "${QT_MKSPECS_DIR}/features/data/unix/findclasslist.pl"
+            )
+        else()
+            if(NOT arg_PRIVATE_CONTENT_FILE)
+                set(arg_PRIVATE_CONTENT_FILE "")
+            endif()
+            set(generator_command ${CMAKE_COMMAND}
+                "-DIN_FILE=${infile}"
+                "-DPRIVATE_CONTENT_FILE=${arg_PRIVATE_CONTENT_FILE}"
+                "-DOUT_FILE=${outfile}"
+                -P "${QT_CMAKE_DIR}/QtGenerateVersionScript.cmake"
+            )
+            set(generator_dependencies
+                "${arg_PRIVATE_CONTENT_FILE}"
+                "${QT_CMAKE_DIR}/QtGenerateVersionScript.cmake"
+            )
+        endif()
+
+        add_custom_command(
+            OUTPUT "${outfile}"
+            COMMAND ${generator_command}
+            DEPENDS ${generator_dependencies}
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMENT "Generating version linker script for target ${target}"
+            VERBATIM
+        )
+        add_custom_target(${target}_version_script DEPENDS ${outfile})
+        add_dependencies(${target} ${target}_version_script)
+        target_link_options(${target} PRIVATE "-Wl,--version-script,${outfile}")
     endif()
 endfunction()
 
 function(qt_internal_add_link_flags_no_undefined target)
-    if (NOT QT_BUILD_SHARED_LIBS)
+    if (NOT QT_BUILD_SHARED_LIBS OR WASM)
         return()
     endif()
-    if (GCC OR CLANG)
+    if ((GCC OR CLANG) AND NOT MSVC)
         if(CLANG AND QT_FEATURE_sanitizer)
             return()
         endif()
@@ -92,7 +143,7 @@ function(qt_internal_apply_gc_binaries target visibility)
         message(FATAL_ERROR "Visibitily setting must be one of PRIVATE, INTERFACE or PUBLIC.")
     endif()
 
-    if ((GCC OR CLANG) AND NOT EMSCRIPTEN AND NOT UIKIT AND NOT MSVC)
+    if ((GCC OR CLANG) AND NOT WASM AND NOT UIKIT AND NOT MSVC)
         if(APPLE)
             set(gc_sections_flag "-Wl,-dead_strip")
         elseif(SOLARIS)
@@ -105,7 +156,7 @@ function(qt_internal_apply_gc_binaries target visibility)
         target_link_options("${target}" ${visibility} "${gc_sections_flag}")
     endif()
 
-    if((GCC OR CLANG OR ICC) AND NOT EMSCRIPTEN AND NOT UIKIT AND NOT MSVC)
+    if((GCC OR CLANG) AND NOT WASM AND NOT UIKIT AND NOT MSVC)
         set(split_sections_flags "-ffunction-sections" "-fdata-sections")
     endif()
     if(split_sections_flags)
@@ -133,39 +184,56 @@ function(qt_internal_apply_intel_cet target visibility)
 endfunction()
 
 function(qt_internal_library_deprecation_level result)
-    if(WIN32)
-        # On Windows, due to the way DLLs work, we need to export all functions,
-        # including the inlines
-        list(APPEND deprecations "QT_DISABLE_DEPRECATED_BEFORE=0x040800")
+    # QT_DISABLE_DEPRECATED_UP_TO controls which version we use as a cut-off
+    # compiling in to the library. E.g. if it is set to QT_VERSION then no
+    # code which was deprecated before QT_VERSION will be compiled in.
+    if (NOT DEFINED QT_DISABLE_DEPRECATED_UP_TO)
+        if(WIN32)
+            # On Windows, due to the way DLLs work, we need to export all functions,
+            # including the inlines
+            list(APPEND deprecations "QT_DISABLE_DEPRECATED_UP_TO=0x040800")
+        else()
+            # On other platforms, Qt's own compilation does need to compile the Qt 5.0 API
+            list(APPEND deprecations "QT_DISABLE_DEPRECATED_UP_TO=0x050000")
+        endif()
     else()
-        # On other platforms, Qt's own compilation goes needs to compile the Qt 5.0 API
-        list(APPEND deprecations "QT_DISABLE_DEPRECATED_BEFORE=0x050000")
+        list(APPEND deprecations "QT_DISABLE_DEPRECATED_UP_TO=${QT_DISABLE_DEPRECATED_UP_TO}")
     endif()
-    list(APPEND deprecations "QT_DEPRECATED_WARNINGS_SINCE=0x060000")
+    # QT_WARN_DEPRECATED_UP_TO controls the upper-bound of deprecation
+    # warnings that are emitted. E.g. if it is set to 0x060500 then all use of
+    # things deprecated in or before 6.5.0 will be warned against.
+    list(APPEND deprecations "QT_WARN_DEPRECATED_UP_TO=0x070000")
     set("${result}" "${deprecations}" PARENT_SCOPE)
 endfunction()
 
-# Sets the exceptions flags for the given target
-function(qt_internal_set_no_exceptions_flags target)
-    target_compile_definitions("${target}" PRIVATE "QT_NO_EXCEPTIONS")
-    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-        set(_flag "/wd4530" "/wd4577")
-    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-        set(_flag "-fno-exceptions")
-    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
-        set(_flag "-fno-exceptions")
-    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-        if (MSVC)
-            set(_flag "/wd4530" "/wd4577")
-        else()
-            set(_flag "-fno-exceptions")
+# Sets the exceptions flags for the given target according to exceptions_on
+function(qt_internal_set_exceptions_flags target exceptions_on)
+    set(_defs "")
+    set(_flag "")
+    if(exceptions_on)
+        if(MSVC)
+            set(_flag "/EHsc")
+            if((MSVC_VERSION GREATER_EQUAL 1929) AND NOT CLANG)
+                set(_flag ${_flag} "/d2FH4")
+            endif()
         endif()
-    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
-        set(_flag "-fno-exceptions")
+    else()
+        set(_defs "QT_NO_EXCEPTIONS")
+        if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+            set(_flag "/EHs-c-" "/wd4530" "/wd4577")
+        elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU|AppleClang|InteLLLVM")
+            set(_flag "-fno-exceptions")
+        elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+            if (MSVC)
+                set(_flag "/EHs-c-" "/wd4530" "/wd4577")
+            else()
+                set(_flag "-fno-exceptions")
+            endif()
+        endif()
     endif()
-    if (_flag)
-        target_compile_options("${target}" PRIVATE ${_flag})
-    endif()
+
+    target_compile_definitions("${target}" PRIVATE ${_defs})
+    target_compile_options("${target}" PRIVATE ${_flag})
 endfunction()
 
 function(qt_skip_warnings_are_errors target)
@@ -208,17 +276,17 @@ endfunction()
 
 function(qt_set_language_standards)
     ## Use the latest standard the compiler supports (same as qt_common.prf)
-    if (QT_FEATURE_cxx2a)
+    if (QT_FEATURE_cxx2b)
+        set(CMAKE_CXX_STANDARD 23 PARENT_SCOPE)
+    elseif (QT_FEATURE_cxx20)
         set(CMAKE_CXX_STANDARD 20 PARENT_SCOPE)
     else()
         set(CMAKE_CXX_STANDARD 17 PARENT_SCOPE)
     endif()
+    set(CMAKE_CXX_STANDARD_REQUIRED ON PARENT_SCOPE)
 
-    if (c_std_11 IN_LIST CMAKE_C_COMPILE_FEATURES)
-        set(CMAKE_C_STANDARD 11 PARENT_SCOPE)
-    elseif (c_std_99 IN_LIST CMAKE_C_COMPILE_FEATURES)
-        set(CMAKE_C_STANDARD 99 PARENT_SCOPE)
-    endif()
+    set(CMAKE_C_STANDARD 11 PARENT_SCOPE)
+    set(CMAKE_C_STANDARD_REQUIRED ON PARENT_SCOPE)
 endfunction()
 
 function(qt_set_language_standards_interface_compile_features target)
@@ -231,8 +299,9 @@ endfunction()
 function(qt_set_msvc_cplusplus_options target visibility)
     # For MSVC we need to explicitly pass -Zc:__cplusplus to get correct __cplusplus.
     # Check qt_config_compile_test for more info.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION GREATER_EQUAL 1913)
-        target_compile_options("${target}" ${visibility} "-Zc:__cplusplus" "-permissive-")
+    if(MSVC AND MSVC_VERSION GREATER_EQUAL 1913)
+        set(flags "-Zc:__cplusplus" "-permissive-")
+        target_compile_options("${target}" ${visibility} "$<$<COMPILE_LANGUAGE:CXX>:${flags}>")
     endif()
 endfunction()
 
@@ -240,15 +309,26 @@ function(qt_enable_utf8_sources target)
     set(utf8_flags "")
     if(MSVC)
         list(APPEND utf8_flags "-utf-8")
-    elseif(WIN32 AND ICC)
-        list(APPEND utf8_flags "-Qoption,cpp,--unicode_source_kind,UTF-8")
     endif()
 
     if(utf8_flags)
         # Allow opting out by specifying the QT_NO_UTF8_SOURCE target property.
-        set(genex_condition "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_NO_UTF8_SOURCE>>>")
+        set(opt_out_condition "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_NO_UTF8_SOURCE>>>")
+        # Only set the compiler option for C and C++.
+        set(language_condition "$<COMPILE_LANGUAGE:C,CXX>")
+        # Compose the full condition.
+        set(genex_condition "$<AND:${opt_out_condition},${language_condition}>")
         set(utf8_flags "$<${genex_condition}:${utf8_flags}>")
         target_compile_options("${target}" INTERFACE "${utf8_flags}")
+    endif()
+endfunction()
+
+function(qt_internal_enable_unicode_defines)
+    if(WIN32)
+        set(no_unicode_condition
+            "$<NOT:$<BOOL:$<TARGET_PROPERTY:QT_NO_UNICODE_DEFINES>>>")
+        target_compile_definitions(Platform
+            INTERFACE "$<${no_unicode_condition}:UNICODE;_UNICODE>")
     endif()
 endfunction()
 
@@ -347,7 +427,7 @@ endfunction()
 function(qt_internal_get_enabled_languages_for_flag_manipulation out_var)
     # Limit flag modification to c-like code. We don't want to accidentally add incompatible
     # flags to MSVC's RC or Swift.
-    set(languages_to_process C CXX OBJC OBJCXX)
+    set(languages_to_process ASM C CXX OBJC OBJCXX)
     get_property(globally_enabled_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
     set(enabled_languages "")
     foreach(lang ${languages_to_process})
@@ -398,11 +478,17 @@ endfunction()
 
 # Helper function used to update compiler and linker flags further below
 function(qt_internal_remove_flags_impl flag_var_name flag_values IN_CACHE)
+    cmake_parse_arguments(arg "REGEX" "" "" ${ARGN})
+    set(replace_type REPLACE)
+    if(arg_REGEX)
+        list(PREPEND replace_type REGEX)
+    endif()
+
     # This must come before cache variable modification because setting the
     # cache variable with FORCE will overwrite the non-cache variable in this
     # function scope, but we need to use the original value before that change.
     foreach(flag_value IN LISTS flag_values)
-        string(REPLACE "${flag_value}" "" ${flag_var_name} "${${flag_var_name}}")
+        string(${replace_type} "${flag_value}" " " ${flag_var_name} "${${flag_var_name}}")
     endforeach()
     string(STRIP "${${flag_var_name}}" ${flag_var_name})
     set(${flag_var_name} "${${flag_var_name}}" PARENT_SCOPE)
@@ -414,7 +500,7 @@ function(qt_internal_remove_flags_impl flag_var_name flag_values IN_CACHE)
         # Work exclusively on cache variable value only.
         set(mod_flags $CACHE{${flag_var_name}})
         foreach(flag_value IN LISTS flag_values)
-            string(REPLACE "${flag_value}" "" mod_flags "${mod_flags}")
+            string(${replace_type} "${flag_value}" " " mod_flags "${mod_flags}")
         endforeach()
         string(STRIP "${mod_flags}" mod_flags)
         get_property(help_text CACHE ${flag_var_name} PROPERTY HELPSTRING)
@@ -480,6 +566,65 @@ function(qt_internal_remove_known_optimization_flags)
         foreach(config ${configs})
             set(flag_var_name "CMAKE_${lang}_FLAGS_${config}")
             qt_internal_remove_flags_impl(${flag_var_name} "${flag_values}" "${arg_IN_CACHE}")
+            set(${flag_var_name} "${${flag_var_name}}" PARENT_SCOPE)
+        endforeach()
+    endforeach()
+endfunction()
+
+# Removes specified flags from CMAKE_<LANGUAGES>_FLAGS[_CONFIGS] variables
+#
+# IN_CACHE enables flags removal from CACHE
+# CONFIGS list of configurations that need to clear flags. Clears all configs by default if not
+# specified.
+# LANGUAGES list of LANGUAGES that need clear flags. Clears all languages by default if not
+# specified.
+# REGEX enables the flag processing as a regular expression.
+function(qt_internal_remove_compiler_flags flags)
+    qt_parse_all_arguments(arg
+        "qt_internal_remove_compiler_flags"
+        "IN_CACHE;REGEX"
+        ""
+        "CONFIGS;LANGUAGES"
+        ${ARGN}
+    )
+
+    if("${flags}" STREQUAL "")
+        message(WARNING "qt_internal_remove_compiler_flags was called without any flags specified.")
+        return()
+    endif()
+
+    if(arg_LANGUAGES)
+        set(languages "${arg_LANGUAGES}")
+    else()
+        qt_internal_get_enabled_languages_for_flag_manipulation(languages)
+    endif()
+
+    if(arg_CONFIGS)
+        set(configs "${arg_CONFIGS}")
+    else()
+        message(FATAL_ERROR
+                "You must specify at least one configuration for which to remove the flags.")
+    endif()
+
+    if(arg_REGEX)
+        list(APPEND extra_options "REGEX")
+    endif()
+
+    foreach(lang ${languages})
+        set(flag_var_name "CMAKE_${lang}_FLAGS")
+        qt_internal_remove_flags_impl(${flag_var_name}
+            "${flags}"
+            "${arg_IN_CACHE}"
+            ${extra_options}
+        )
+        set(${flag_var_name} "${${flag_var_name}}" PARENT_SCOPE)
+        foreach(config ${configs})
+            set(flag_var_name "CMAKE_${lang}_FLAGS_${config}")
+            qt_internal_remove_flags_impl(${flag_var_name}
+                "${flags}"
+                "${arg_IN_CACHE}"
+                ${extra_options}
+            )
             set(${flag_var_name} "${${flag_var_name}}" PARENT_SCOPE)
         endforeach()
     endforeach()
@@ -593,13 +738,27 @@ function(qt_internal_add_optimize_full_flags)
         ""
         ${ARGN})
 
+    # QT_USE_DEFAULT_CMAKE_OPTIMIZATION_FLAGS disables forced full optimization.
+    if(QT_USE_DEFAULT_CMAKE_OPTIMIZATION_FLAGS)
+        return()
+    endif()
+
+    # Assume that FEATURE_optimize_full has higher priority. But if FEATURE_optimize_full is OFF,
+    # flags are set by FEATURE_optimize_size should remain unchanged.
+    if(QT_FEATURE_optimize_size AND NOT QT_FEATURE_optimize_full)
+        return()
+    endif()
+
     set(args "")
     if(arg_IN_CACHE)
         list(APPEND args IN_CACHE)
     endif()
 
     qt_internal_get_enabled_languages_for_flag_manipulation(enabled_languages)
-    set(configs RELEASE RELWITHDEBINFO MINSIZEREL)
+    set(configs RELEASE RELWITHDEBINFO)
+    if(QT_FEATURE_optimize_full) # Assume that FEATURE_optimize_full has higher priority.
+        list(APPEND configs MINSIZEREL)
+    endif()
 
     qt_internal_remove_known_optimization_flags(${args} CONFIGS ${configs})
 
@@ -846,8 +1005,9 @@ function(qt_internal_set_up_config_optimizations_like_in_qmake)
         qt_internal_add_linker_flags(
                 FLAGS "${flag_value}"
                 CONFIGS RELEASE RELWITHDEBINFO MINSIZEREL
-                TYPES EXE SHARED # when linking static libraries, link.exe can't recognize this parameter, clang-cl will error out.
+                TYPES EXE SHARED MODULE # when linking static libraries, link.exe can't recognize this parameter, clang-cl will error out.
                 IN_CACHE)
+        qt_internal_remove_compiler_flags("(^| )/EH[scra-]*( |$)" LANGUAGES CXX CONFIGS ${configs} IN_CACHE REGEX)
     endif()
 
     # Allow opting into generating debug info in object files with a fake feature.

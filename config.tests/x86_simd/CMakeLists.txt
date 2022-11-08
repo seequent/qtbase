@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.14.0)
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
+cmake_minimum_required(VERSION 3.16)
 project(x86_simd LANGUAGES CXX)
 
 include(../../cmake/QtPlatformSupport.cmake)

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qlineedit.h"
 #include "qlineedit_p.h"
@@ -51,7 +15,7 @@
 #  include "qwidgetaction.h"
 #endif
 #include "qclipboard.h"
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
 #include "qaccessible.h"
 #endif
 #ifndef QT_NO_IM
@@ -84,6 +48,18 @@ int QLineEditPrivate::xToPos(int x, QTextLine::CursorPosition betweenOrOn) const
     QRect cr = adjustedContentsRect();
     x-= cr.x() - hscroll + horizontalMargin;
     return control->xToPos(x, betweenOrOn);
+}
+
+QString QLineEditPrivate::textBeforeCursor(int curPos) const
+{
+    const QString &text = control->text();
+    return text.mid(0, curPos);
+}
+
+QString QLineEditPrivate::textAfterCursor(int curPos) const
+{
+    const QString &text = control->text();
+    return text.mid(curPos);
 }
 
 bool QLineEditPrivate::inSelection(int x) const
@@ -167,7 +143,7 @@ void QLineEditPrivate::_q_selectionChanged()
     }
 
     emit q->selectionChanged();
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
     QAccessibleTextSelectionEvent ev(q, control->selectionStart(), control->selectionEnd());
     ev.setCursorPosition(control->cursorPosition());
     QAccessible::updateAccessibility(&ev);
@@ -303,7 +279,7 @@ bool QLineEditPrivate::sendMouseEventToInputContext( QMouseEvent *e )
     if ( control->composeMode() ) {
         int tmp_cursor = xToPos(e->position().toPoint().x());
         int mousePos = tmp_cursor - control->cursor();
-        if ( mousePos < 0 || mousePos > control->preeditAreaText().length() )
+        if ( mousePos < 0 || mousePos > control->preeditAreaText().size() )
             mousePos = -1;
 
         if (mousePos >= 0) {
@@ -406,8 +382,9 @@ void QLineEditIconButton::setHideWithText(bool hide)
 
 void QLineEditIconButton::onAnimationFinished()
 {
-    if (shouldHideWithText() && isVisible() && !m_wasHidden) {
+    if (shouldHideWithText() && isVisible() && m_fadingOut) {
         hide();
+        m_fadingOut = false;
 
         // Invalidate previous geometry to take into account new size of side widgets
         if (auto le = lineEditPrivate())
@@ -417,7 +394,7 @@ void QLineEditIconButton::onAnimationFinished()
 
 void QLineEditIconButton::animateShow(bool visible)
 {
-    m_wasHidden = visible;
+    m_fadingOut = !visible;
 
     if (shouldHideWithText() && !isVisible()) {
         show();
@@ -479,7 +456,7 @@ void QLineEditPrivate::_q_clearButtonClicked()
     Q_Q(QLineEdit);
     if (!q->text().isEmpty()) {
         q->clear();
-        emit q->textEdited(QString());
+        _q_textEdited(QString());
     }
 }
 
@@ -495,8 +472,8 @@ QLineEditPrivate::SideWidgetParameters QLineEditPrivate::sideWidgetParameters() 
 {
     Q_Q(const QLineEdit);
     SideWidgetParameters result;
-    result.iconSize = q->style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, q);
-    result.margin = result.iconSize / 4;
+    result.iconSize = q->style()->pixelMetric(QStyle::PM_LineEditIconSize, nullptr, q);
+    result.margin = q->style()->pixelMetric(QStyle::PM_LineEditIconMargin, nullptr, q);
     result.widgetWidth = result.iconSize + 6;
     result.widgetHeight = result.iconSize + 2;
     return result;
@@ -667,10 +644,18 @@ static int effectiveTextMargin(int defaultMargin, const QLineEditPrivate::SideWi
     if (widgets.empty())
         return defaultMargin;
 
-    return defaultMargin + (parameters.margin + parameters.widgetWidth) *
-           int(std::count_if(widgets.begin(), widgets.end(),
+    const auto visibleSideWidgetCount = std::count_if(widgets.begin(), widgets.end(),
                              [](const QLineEditPrivate::SideWidgetEntry &e) {
-                                 return e.widget->isVisibleTo(e.widget->parentWidget()); }));
+#if QT_CONFIG(animation)
+        // a button that's fading out doesn't get any space
+        if (auto* iconButton = qobject_cast<QLineEditIconButton*>(e.widget))
+            return iconButton->needsSpace();
+
+#endif
+        return e.widget->isVisibleTo(e.widget->parentWidget());
+    });
+
+    return defaultMargin + (parameters.margin + parameters.widgetWidth) * visibleSideWidgetCount;
 }
 
 QMargins QLineEditPrivate::effectiveTextMargins() const

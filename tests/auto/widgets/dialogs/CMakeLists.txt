@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from dialogs.pro.
 
 add_subdirectory(qcolordialog)
@@ -8,9 +11,9 @@ add_subdirectory(qfontdialog)
 add_subdirectory(qinputdialog)
 add_subdirectory(qprogressdialog)
 add_subdirectory(qwizard)
-# QTBUG-87671 # special case
+add_subdirectory(qfiledialog)
+# QTBUG-101217, qmessagebox hangs on Android
 if(NOT ANDROID)
-    add_subdirectory(qfiledialog)
     add_subdirectory(qmessagebox)
 endif()
 if(QT_FEATURE_private_tests)

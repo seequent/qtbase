@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QSignalSpy>
@@ -51,7 +26,6 @@ private slots:
     void relatedMetaObject();
     void staticMetacall();
     void copyMetaObject();
-    void serialize();
     void removeNotifySignal();
 
     void usage_signal();
@@ -67,6 +41,8 @@ private slots:
     void propertyMetaType();
 
     void cleanupTestCase();
+
+    void ownMetaTypeNoProperties();
 
 private:
     static bool checkForSideEffects
@@ -98,7 +74,7 @@ class SomethingOfEverything : public QObject
     Q_PROPERTY(SomethingFlagEnum fprop READ fprop)
     Q_PROPERTY(QLocale::Language language READ language)
     Q_ENUMS(SomethingEnum)
-    Q_FLAGS(SomethingFlagEnum)
+    Q_FLAGS(SomethingFlag)
 public:
     Q_INVOKABLE SomethingOfEverything() {}
     ~SomethingOfEverything() {}
@@ -114,6 +90,7 @@ public:
         XYZ = 1,
         UVW = 8
     };
+    Q_DECLARE_FLAGS(SomethingFlag, SomethingFlagEnum)
 
     Q_INVOKABLE Q_SCRIPTABLE void method1() {}
 
@@ -1026,55 +1003,6 @@ void tst_QMetaObjectBuilder::copyMetaObject()
     QVERIFY2(compared, qPrintable(compared.details));
 }
 
-// Serialize and deserialize a meta object and check that
-// it round-trips to the exact same value.
-void tst_QMetaObjectBuilder::serialize()
-{
-    // Full QMetaObjectBuilder
-    {
-    QMetaObjectBuilder builder(&SomethingOfEverything::staticMetaObject);
-    QMetaObject *meta = builder.toMetaObject();
-    dynamicMetaObjectsPendingFree.push_back(meta);
-
-    QByteArray data;
-    QDataStream stream(&data, QIODevice::WriteOnly | QIODevice::Append);
-    builder.serialize(stream);
-
-    QMetaObjectBuilder builder2;
-    QDataStream stream2(data);
-    QMap<QByteArray, const QMetaObject *> references;
-    references.insert(QByteArray("QLocale"), &QLocale::staticMetaObject);
-    builder2.deserialize(stream2, references);
-    builder2.setStaticMetacallFunction(builder.staticMetacallFunction());
-    QMetaObject *meta2 = builder2.toMetaObject();
-    dynamicMetaObjectsPendingFree.push_back(meta2);
-
-    auto compared = sameMetaObject(meta, meta2);
-    QVERIFY2(compared, qPrintable(compared.details));
-    }
-
-    // Partial QMetaObjectBuilder
-    {
-    QMetaObjectBuilder builder;
-    builder.setClassName("Test");
-    builder.addProperty("foo", "int");
-
-    QByteArray data;
-    QDataStream stream(&data, QIODevice::WriteOnly | QIODevice::Append);
-    builder.serialize(stream);
-
-    QMetaObjectBuilder builder2;
-    QDataStream stream2(data);
-    builder2.deserialize(stream2, QMap<QByteArray, const QMetaObject *>());
-
-    QCOMPARE(builder.superClass(), builder2.superClass());
-    QCOMPARE(builder.className(), builder2.className());
-    QCOMPARE(builder.propertyCount(), builder2.propertyCount());
-    QCOMPARE(builder.property(0).name(), builder2.property(0).name());
-    QCOMPARE(builder.property(0).type(), builder2.property(0).type());
-    }
-}
-
 // Check that removing a method updates notify signals appropriately
 void tst_QMetaObjectBuilder::removeNotifySignal()
 {
@@ -1531,9 +1459,7 @@ int TestObject::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
         if (_id < ownMethodCount)
             qt_static_metacall(this, _c, _id, _a);
         _id -= ownMethodCount;
-    }
-#ifndef QT_NO_PROPERTIES
-      else if (_c == QMetaObject::ReadProperty) {
+    } else if (_c == QMetaObject::ReadProperty) {
         void *_v = _a[0];
         switch (_id) {
         case 0: *reinterpret_cast< int*>(_v) = intProp(); break;
@@ -1556,7 +1482,6 @@ int TestObject::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     } else if (_c == QMetaObject::ResetProperty) {
         _id -= ownPropertyCount;
     }
-#endif // QT_NO_PROPERTIES
     return _id;
 }
 
@@ -1574,8 +1499,8 @@ void tst_QMetaObjectBuilder::usage_signal()
 
     QSignalSpy propChangedSpy(testObject.data(), &TestObject::intPropChanged);
     testObject->emitIntPropChanged();
-    QCOMPARE(propChangedSpy.count(), 1);
-    QCOMPARE(propChangedSpy.at(0).count(), 1);
+    QCOMPARE(propChangedSpy.size(), 1);
+    QCOMPARE(propChangedSpy.at(0).size(), 1);
     QCOMPARE(propChangedSpy.at(0).at(0).toInt(), testObject->intProp());
 }
 
@@ -1590,7 +1515,7 @@ void tst_QMetaObjectBuilder::usage_property()
     QSignalSpy propChangedSpy(testObject.data(), &TestObject::intPropChanged);
     QVERIFY(testObject->intProp() != 123);
     testObject->setProperty("intProp", 123);
-    QCOMPARE(propChangedSpy.count(), 1);
+    QCOMPARE(propChangedSpy.size(), 1);
     prop = testObject->property("intProp");
     QCOMPARE(prop.metaType(), QMetaType(QMetaType::Int));
     QCOMPARE(prop.toInt(), 123);
@@ -1691,21 +1616,33 @@ void tst_QMetaObjectBuilder::classNameFirstInStringData()
 }
 
 struct MyFoo {};
+struct myParameter {};
 
 void tst_QMetaObjectBuilder::propertyMetaType()
 {
+    qRegisterMetaType<myParameter>();
     QMetaType meta = QMetaType::fromType<MyFoo>();
     auto metaId = meta.id();
     QMetaObjectBuilder builder;
     builder.setClassName("Test");
-    builder.addProperty("test", "MyFoo");
+    builder.addProperty("myParameter", "MyFoo");
     auto mo = builder.toMetaObject();
 
-    QMetaProperty metaProp = mo->property(mo->indexOfProperty("test"));
+    QMetaProperty metaProp = mo->property(mo->indexOfProperty("myParameter"));
     QCOMPARE(metaProp.typeName(), meta.name());
     QCOMPARE(metaProp.typeId(), metaId);
     QCOMPARE(metaProp.metaType(), meta);
     free(mo);
+}
+
+void tst_QMetaObjectBuilder::ownMetaTypeNoProperties()
+{
+    QMetaObjectBuilder builder;
+    builder.setClassName("NoProperties");
+    auto mo = builder.toMetaObject();
+    auto cleanup = qScopeGuard([&](){ free(mo); });
+    // own metatype should be invalid, as the dynamic metaobject has not been registered
+    QVERIFY(!mo->metaType().isValid());// should not crash
 }
 
 void tst_QMetaObjectBuilder::cleanupTestCase()

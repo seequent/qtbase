@@ -1,19 +1,23 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from nsphotolibrarysupport.pro.
 
 #####################################################################
 ## QIosOptionalPlugin_NSPhotoLibrary Plugin:
 #####################################################################
 
-qt_internal_add_plugin(QIosOptionalPlugin_NSPhotoLibrary
+qt_internal_add_plugin(QIosOptionalPlugin_NSPhotoLibraryPlugin
     OUTPUT_NAME qiosnsphotolibrarysupport
-    TYPE platforms/darwin
+    PLUGIN_TYPE platforms/darwin
+    CLASS_NAME QIosOptionalPlugin_NSPhotoLibrary
     DEFAULT_IF FALSE
     SOURCES
         plugin.mm
         qiosfileengineassetslibrary.h qiosfileengineassetslibrary.mm
         qiosfileenginefactory.h
         qiosimagepickercontroller.h qiosimagepickercontroller.mm
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ${FWAssetsLibrary}
         ${FWFoundation}
         ${FWUIKit}
@@ -23,7 +27,7 @@ qt_internal_add_plugin(QIosOptionalPlugin_NSPhotoLibrary
 )
 
 # special case begin
-set_target_properties(QIosOptionalPlugin_NSPhotoLibrary
+set_target_properties(QIosOptionalPlugin_NSPhotoLibraryPlugin
     PROPERTIES
         DISABLE_PRECOMPILE_HEADERS ON
 )

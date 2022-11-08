@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QDATASTREAM_H
 #define QDATASTREAM_H
@@ -51,7 +15,9 @@
 
 QT_BEGIN_NAMESPACE
 
+#if QT_CORE_REMOVED_SINCE(6, 3)
 class qfloat16;
+#endif
 class QByteArray;
 class QIODevice;
 
@@ -98,8 +64,12 @@ public:
         Qt_5_15 = Qt_5_14,
         Qt_6_0 = 20,
         Qt_6_1 = Qt_6_0,
-        Qt_DefaultCompiledVersion = Qt_6_1
-#if QT_VERSION >= 0x060200
+        Qt_6_2 = Qt_6_0,
+        Qt_6_3 = Qt_6_0,
+        Qt_6_4 = Qt_6_0,
+        Qt_6_5 = Qt_6_0,
+        Qt_DefaultCompiledVersion = Qt_6_5
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
 #error Add the datastream version for this Qt version and update Qt_DefaultCompiledVersion
 #endif
     };
@@ -157,7 +127,9 @@ public:
     QDataStream &operator>>(std::nullptr_t &ptr) { ptr = nullptr; return *this; }
 
     QDataStream &operator>>(bool &i);
+#if QT_CORE_REMOVED_SINCE(6, 3)
     QDataStream &operator>>(qfloat16 &f);
+#endif
     QDataStream &operator>>(float &f);
     QDataStream &operator>>(double &f);
     QDataStream &operator>>(char *&str);
@@ -175,7 +147,9 @@ public:
     QDataStream &operator<<(quint64 i);
     QDataStream &operator<<(std::nullptr_t) { return *this; }
     QDataStream &operator<<(bool i);
+#if QT_CORE_REMOVED_SINCE(6, 3)
     QDataStream &operator<<(qfloat16 f);
+#endif
     QDataStream &operator<<(float f);
     QDataStream &operator<<(double f);
     QDataStream &operator<<(const char *str);
@@ -350,9 +324,16 @@ QDataStream &writeAssociativeMultiContainer(QDataStream &s, const Container &c)
 template<typename ...T>
 using QDataStreamIfHasOStreamOperators =
     std::enable_if_t<std::conjunction_v<QTypeTraits::has_ostream_operator<QDataStream, T>...>, QDataStream &>;
+template<typename Container, typename ...T>
+using QDataStreamIfHasOStreamOperatorsContainer =
+    std::enable_if_t<std::conjunction_v<QTypeTraits::has_ostream_operator_container<QDataStream, Container, T>...>, QDataStream &>;
+
 template<typename ...T>
 using QDataStreamIfHasIStreamOperators =
     std::enable_if_t<std::conjunction_v<QTypeTraits::has_istream_operator<QDataStream, T>...>, QDataStream &>;
+template<typename Container, typename ...T>
+using QDataStreamIfHasIStreamOperatorsContainer =
+    std::enable_if_t<std::conjunction_v<QTypeTraits::has_istream_operator_container<QDataStream, Container, T>...>, QDataStream &>;
 
 /*****************************************************************************
   QDataStream inline functions
@@ -423,80 +404,81 @@ typename std::enable_if_t<std::is_enum<T>::value, QDataStream &>
 operator>>(QDataStream &s, T &t)
 { return s >> reinterpret_cast<typename std::underlying_type<T>::type &>(t); }
 
+#ifndef Q_QDOC
+
 template<typename T>
-inline QDataStreamIfHasIStreamOperators<T> operator>>(QDataStream &s, QList<T> &v)
+inline QDataStreamIfHasIStreamOperatorsContainer<QList<T>, T> operator>>(QDataStream &s, QList<T> &v)
 {
     return QtPrivate::readArrayBasedContainer(s, v);
 }
 
 template<typename T>
-inline QDataStreamIfHasOStreamOperators<T> operator<<(QDataStream &s, const QList<T> &v)
+inline QDataStreamIfHasOStreamOperatorsContainer<QList<T>, T> operator<<(QDataStream &s, const QList<T> &v)
 {
     return QtPrivate::writeSequentialContainer(s, v);
 }
 
 template <typename T>
-inline QDataStreamIfHasIStreamOperators<T> operator>>(QDataStream &s, QSet<T> &set)
+inline QDataStreamIfHasIStreamOperatorsContainer<QSet<T>, T> operator>>(QDataStream &s, QSet<T> &set)
 {
     return QtPrivate::readListBasedContainer(s, set);
 }
 
 template <typename T>
-inline QDataStreamIfHasOStreamOperators<T> operator<<(QDataStream &s, const QSet<T> &set)
+inline QDataStreamIfHasOStreamOperatorsContainer<QSet<T>, T> operator<<(QDataStream &s, const QSet<T> &set)
 {
     return QtPrivate::writeSequentialContainer(s, set);
 }
 
 template <class Key, class T>
-inline QDataStreamIfHasIStreamOperators<Key, T> operator>>(QDataStream &s, QHash<Key, T> &hash)
+inline QDataStreamIfHasIStreamOperatorsContainer<QHash<Key, T>, Key, T> operator>>(QDataStream &s, QHash<Key, T> &hash)
 {
     return QtPrivate::readAssociativeContainer(s, hash);
 }
 
 template <class Key, class T>
 
-inline QDataStreamIfHasOStreamOperators<Key, T> operator<<(QDataStream &s, const QHash<Key, T> &hash)
+inline QDataStreamIfHasOStreamOperatorsContainer<QHash<Key, T>, Key, T> operator<<(QDataStream &s, const QHash<Key, T> &hash)
 {
     return QtPrivate::writeAssociativeContainer(s, hash);
 }
 
 template <class Key, class T>
-inline QDataStreamIfHasIStreamOperators<Key, T> operator>>(QDataStream &s, QMultiHash<Key, T> &hash)
+inline QDataStreamIfHasIStreamOperatorsContainer<QMultiHash<Key, T>, Key, T> operator>>(QDataStream &s, QMultiHash<Key, T> &hash)
 {
     return QtPrivate::readAssociativeContainer(s, hash);
 }
 
 template <class Key, class T>
-inline QDataStreamIfHasOStreamOperators<Key, T> operator<<(QDataStream &s, const QMultiHash<Key, T> &hash)
+inline QDataStreamIfHasOStreamOperatorsContainer<QMultiHash<Key, T>, Key, T> operator<<(QDataStream &s, const QMultiHash<Key, T> &hash)
 {
     return QtPrivate::writeAssociativeMultiContainer(s, hash);
 }
 
 template <class Key, class T>
-inline QDataStreamIfHasIStreamOperators<Key, T> operator>>(QDataStream &s, QMap<Key, T> &map)
+inline QDataStreamIfHasIStreamOperatorsContainer<QMap<Key, T>, Key, T> operator>>(QDataStream &s, QMap<Key, T> &map)
 {
     return QtPrivate::readAssociativeContainer(s, map);
 }
 
 template <class Key, class T>
-inline QDataStreamIfHasOStreamOperators<Key, T> operator<<(QDataStream &s, const QMap<Key, T> &map)
+inline QDataStreamIfHasOStreamOperatorsContainer<QMap<Key, T>, Key, T> operator<<(QDataStream &s, const QMap<Key, T> &map)
 {
     return QtPrivate::writeAssociativeContainer(s, map);
 }
 
 template <class Key, class T>
-inline QDataStreamIfHasIStreamOperators<Key, T> operator>>(QDataStream &s, QMultiMap<Key, T> &map)
+inline QDataStreamIfHasIStreamOperatorsContainer<QMultiMap<Key, T>, Key, T> operator>>(QDataStream &s, QMultiMap<Key, T> &map)
 {
     return QtPrivate::readAssociativeContainer(s, map);
 }
 
 template <class Key, class T>
-inline QDataStreamIfHasOStreamOperators<Key, T> operator<<(QDataStream &s, const QMultiMap<Key, T> &map)
+inline QDataStreamIfHasOStreamOperatorsContainer<QMultiMap<Key, T>, Key, T> operator<<(QDataStream &s, const QMultiMap<Key, T> &map)
 {
     return QtPrivate::writeAssociativeMultiContainer(s, map);
 }
 
-#ifndef QT_NO_DATASTREAM
 template <class T1, class T2>
 inline QDataStreamIfHasIStreamOperators<T1, T2> operator>>(QDataStream& s, std::pair<T1, T2> &p)
 {
@@ -510,7 +492,52 @@ inline QDataStreamIfHasOStreamOperators<T1, T2> operator<<(QDataStream& s, const
     s << p.first << p.second;
     return s;
 }
-#endif
+
+#else
+
+template <class T>
+QDataStream &operator>>(QDataStream &s, QList<T> &l);
+
+template <class T>
+QDataStream &operator<<(QDataStream &s, const QList<T> &l);
+
+template <class T>
+QDataStream &operator>>(QDataStream &s, QSet<T> &set);
+
+template <class T>
+QDataStream &operator<<(QDataStream &s, const QSet<T> &set);
+
+template <class Key, class T>
+QDataStream &operator>>(QDataStream &s, QHash<Key, T> &hash);
+
+template <class Key, class T>
+QDataStream &operator<<(QDataStream &s, const QHash<Key, T> &hash);
+
+template <class Key, class T>
+QDataStream &operator>>(QDataStream &s, QMultiHash<Key, T> &hash);
+
+template <class Key, class T>
+QDataStream &operator<<(QDataStream &s, const QMultiHash<Key, T> &hash);
+
+template <class Key, class T>
+QDataStream &operator>>(QDataStream &s, QMap<Key, T> &map);
+
+template <class Key, class T>
+QDataStream &operator<<(QDataStream &s, const QMap<Key, T> &map);
+
+template <class Key, class T>
+QDataStream &operator>>(QDataStream &s, QMultiMap<Key, T> &map);
+
+template <class Key, class T>
+QDataStream &operator<<(QDataStream &s, const QMultiMap<Key, T> &map);
+
+template <class T1, class T2>
+QDataStream &operator>>(QDataStream& s, std::pair<T1, T2> &p);
+
+template <class T1, class T2>
+QDataStream &operator<<(QDataStream& s, const std::pair<T1, T2> &p);
+
+#endif // Q_QDOC
 
 inline QDataStream &operator>>(QDataStream &s, QKeyCombination &combination)
 {

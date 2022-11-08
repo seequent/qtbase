@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qxcbnativeinterface.h"
 
@@ -118,7 +82,7 @@ void *QXcbNativeInterface::nativeResourceForIntegration(const QByteArray &resour
     case RootWindow:
         result = rootWindow();
         break;
-    case Display:
+    case XDisplay:
         result = display();
         break;
     case AtspiBus:
@@ -155,7 +119,7 @@ void *QXcbNativeInterface::nativeResourceForScreen(const QByteArray &resourceStr
 
     const QXcbScreen *xcbScreen = static_cast<QXcbScreen *>(screen->handle());
     switch (resourceType(lowerCaseResource)) {
-    case Display:
+    case XDisplay:
 #if QT_CONFIG(xcb_xlib)
         result = xcbScreen->connection()->xlib_display();
 #endif
@@ -203,7 +167,7 @@ void *QXcbNativeInterface::nativeResourceForWindow(const QByteArray &resourceStr
         return result;
 
     switch (resourceType(lowerCaseResource)) {
-    case Display:
+    case XDisplay:
         result = displayForWindow(window);
         break;
     case Connection:
@@ -365,18 +329,17 @@ void *QXcbNativeInterface::rootWindow()
     return nullptr;
 }
 
-void *QXcbNativeInterface::display()
+Display *QXcbNativeInterface::display() const
 {
 #if QT_CONFIG(xcb_xlib)
     QXcbIntegration *integration = QXcbIntegration::instance();
-    QXcbConnection *connection = integration->connection();
-    if (connection)
-        return connection->xlib_display();
+    if (QXcbConnection *connection = integration->connection())
+        return reinterpret_cast<Display *>(connection->xlib_display());
 #endif
     return nullptr;
 }
 
-void *QXcbNativeInterface::connection()
+xcb_connection_t *QXcbNativeInterface::connection() const
 {
     QXcbIntegration *integration = QXcbIntegration::instance();
     return integration->connection()->xcb_connection();
@@ -614,7 +577,7 @@ static void dumpNativeWindowsRecursion(const QXcbConnection *connection, xcb_win
     const int oldFieldWidth = str.fieldWidth();
     const QChar oldPadChar =str.padChar();
     str.setFieldWidth(8);
-    str.setPadChar(QLatin1Char('0'));
+    str.setPadChar(u'0');
     str << Qt::hex << window;
     str.setFieldWidth(oldFieldWidth);
     str.setPadChar(oldPadChar);
@@ -654,3 +617,5 @@ QString QXcbNativeInterface::dumpNativeWindows(WId root) const
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qxcbnativeinterface.cpp"

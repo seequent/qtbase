@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QMETAOBJECT_H
 #define QMETAOBJECT_H
@@ -77,9 +41,11 @@ public:
     int methodIndex() const;
     int relativeMethodIndex() const;
     int revision() const;
+    bool isConst() const;
 
     inline const QMetaObject *enclosingMetaObject() const { return mobj; }
 
+#if QT_VERSION <= QT_VERSION_CHECK(7, 0, 0)
     bool invoke(QObject *object,
                 Qt::ConnectionType connectionType,
                 QGenericReturnArgument returnValue,
@@ -111,7 +77,7 @@ public:
     }
     inline bool invoke(QObject *object,
                        Qt::ConnectionType connectionType,
-                       QGenericArgument val0 = QGenericArgument(nullptr),
+                       QGenericArgument val0,
                        QGenericArgument val1 = QGenericArgument(),
                        QGenericArgument val2 = QGenericArgument(),
                        QGenericArgument val3 = QGenericArgument(),
@@ -126,7 +92,7 @@ public:
                       val0, val1, val2, val3, val4, val5, val6, val7, val8, val9);
     }
     inline bool invoke(QObject *object,
-                       QGenericArgument val0 = QGenericArgument(nullptr),
+                       QGenericArgument val0,
                        QGenericArgument val1 = QGenericArgument(),
                        QGenericArgument val2 = QGenericArgument(),
                        QGenericArgument val3 = QGenericArgument(),
@@ -153,7 +119,7 @@ public:
                         QGenericArgument val8 = QGenericArgument(),
                         QGenericArgument val9 = QGenericArgument()) const;
     inline bool invokeOnGadget(void *gadget,
-                               QGenericArgument val0 = QGenericArgument(nullptr),
+                               QGenericArgument val0,
                                QGenericArgument val1 = QGenericArgument(),
                                QGenericArgument val2 = QGenericArgument(),
                                QGenericArgument val3 = QGenericArgument(),
@@ -166,6 +132,78 @@ public:
     {
         return invokeOnGadget(gadget, QGenericReturnArgument(),
                               val0, val1, val2, val3, val4, val5, val6, val7, val8, val9);
+    }
+#endif
+
+    template <typename... Args>
+#ifdef Q_QDOC
+    bool
+#else
+    QtPrivate::Invoke::IfNotOldStyleArgs<bool, Args...>
+#endif
+    invoke(QObject *obj, Qt::ConnectionType c, QMetaMethodReturnArgument r,
+           Args &&... arguments) const
+    {
+        auto h = QtPrivate::invokeMethodHelper(r, std::forward<Args>(arguments)...);
+        return invokeImpl(*this, obj, c, h.parameterCount(), h.parameters.data(),
+                          h.typeNames.data(), h.metaTypes.data());
+    }
+
+    template <typename... Args>
+#ifdef Q_QDOC
+    bool
+#else
+    QtPrivate::Invoke::IfNotOldStyleArgs<bool, Args...>
+#endif
+    invoke(QObject *obj, Qt::ConnectionType c, Args &&... arguments) const
+    {
+        return invoke(obj, c, QMetaMethodReturnArgument{}, std::forward<Args>(arguments)...);
+    }
+
+    template <typename... Args>
+#ifdef Q_QDOC
+    bool
+#else
+    QtPrivate::Invoke::IfNotOldStyleArgs<bool, Args...>
+#endif
+    invoke(QObject *obj, QMetaMethodReturnArgument r, Args &&... arguments) const
+    {
+        return invoke(obj, Qt::AutoConnection, r, std::forward<Args>(arguments)...);
+    }
+
+    template <typename... Args>
+#ifdef Q_QDOC
+    bool
+#else
+    QtPrivate::Invoke::IfNotOldStyleArgs<bool, Args...>
+#endif
+    invoke(QObject *obj, Args &&... arguments) const
+    {
+        return invoke(obj, Qt::AutoConnection, std::forward<Args>(arguments)...);
+    }
+
+    template <typename... Args>
+#ifdef Q_QDOC
+    bool
+#else
+    QtPrivate::Invoke::IfNotOldStyleArgs<bool, Args...>
+#endif
+    invokeOnGadget(void *gadget, QMetaMethodReturnArgument r, Args &&... arguments) const
+    {
+        auto h = QtPrivate::invokeMethodHelper(r, std::forward<Args>(arguments)...);
+        return invokeImpl(*this, gadget, Qt::ConnectionType(-1), h.parameterCount(),
+                          h.parameters.data(), h.typeNames.data(), h.metaTypes.data());
+    }
+
+    template <typename... Args>
+#ifdef Q_QDOC
+    bool
+#else
+    QtPrivate::Invoke::IfNotOldStyleArgs<bool, Args...>
+#endif
+    invokeOnGadget(void *gadget, Args &&... arguments) const
+    {
+        return invokeOnGadget(gadget, QMetaMethodReturnArgument{}, std::forward<Args>(arguments)...);
     }
 
     inline bool isValid() const { return mobj != nullptr; }
@@ -181,10 +219,14 @@ public:
     }
 
 private:
+    static bool invokeImpl(QMetaMethod self, void *target, Qt::ConnectionType, qsizetype paramCount,
+                           const void *const *parameters, const char *const *typeNames,
+                           const QtPrivate::QMetaTypeInterface *const *metaTypes);
     static QMetaMethod fromSignalImpl(const QMetaObject *, void **);
     static QMetaMethod fromRelativeMethodIndex(const QMetaObject *mobj, int index);
     static QMetaMethod fromRelativeConstructorIndex(const QMetaObject *mobj, int index);
 
+protected:
     struct Data {
         enum { Size = 6 };
 
@@ -204,7 +246,6 @@ private:
 
     const QMetaObject *mobj;
     Data data;
-    friend class QMetaMethodPrivate;
     friend struct QMetaObject;
     friend struct QMetaObjectPrivate;
     friend class QObject;
@@ -331,7 +372,10 @@ public:
     inline const QMetaObject *enclosingMetaObject() const { return mobj; }
 
 private:
+#if QT_DEPRECATED_SINCE(6, 4)
+    QT_DEPRECATED_VERSION_X_6_4("obsolete, simply returns typeId()")
     int registerPropertyType() const;
+#endif
 
     struct Data {
         enum { Size = 5 };

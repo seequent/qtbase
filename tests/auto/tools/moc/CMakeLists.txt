@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # special case skip regeneration
 # Generated from moc.pro.
 
@@ -13,6 +16,7 @@ set(JSON_HEADERS
         cxx11-enums.h
         cxx11-explicit-override-control.h
         cxx11-final-classes.h
+        cxx11-trailing-return.h
         cxx17-namespaces.h
         dir-in-include-path.h
         escapes-in-string-literals.h
@@ -77,18 +81,18 @@ qt_internal_add_test(tst_moc
     EXCEPTIONS
 )
 
-qt_internal_extend_target(tst_moc PUBLIC_LIBRARIES Qt::CorePrivate)
+qt_internal_extend_target(tst_moc LIBRARIES Qt::CorePrivate)
 
 qt_internal_extend_target(tst_moc CONDITION CMAKE_CROSSCOMPILING
     DEFINES
         MOC_CROSS_COMPILED
 )
 
-if (UNIX AND (CLANG OR GCC OR ICC))
+if (UNIX AND (CLANG OR GCC OR QCC))
     qt_wrap_cpp(os9_moc os9-newlines.h)
 endif()
 
-qt_internal_extend_target(tst_moc CONDITION UNIX AND (CLANG OR GCC OR ICC)
+qt_internal_extend_target(tst_moc CONDITION UNIX AND (CLANG OR GCC OR QCC)
     SOURCES
         os9-newlines.h
         win-newlines.h
@@ -101,22 +105,22 @@ qt_internal_extend_target(tst_moc CONDITION CLANG OR GCC
 )
 
 qt_internal_extend_target(tst_moc CONDITION TARGET Qt::DBus
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::DBus
 )
 
 qt_internal_extend_target(tst_moc CONDITION TARGET Qt::Concurrent
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Concurrent
 )
 
 qt_internal_extend_target(tst_moc CONDITION TARGET Qt::Network
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Network
 )
 
 qt_internal_extend_target(tst_moc CONDITION TARGET Qt::Sql
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Sql
 )
 
@@ -141,4 +145,11 @@ add_custom_command(TARGET tst_moc
         -o "allmocs.json"
         --collect-json  "@${moc_json_out}"
     COMMENT "Running moc with --collect-json"
+    VERBATIM
+)
+
+# Add dependencies that are implicitly used inside the test
+add_dependencies(tst_moc
+    Qt::qtpaths
+    Qt::moc
 )

@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// Copyright (C) 2021 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QT_BOOTSTRAPPED
 #include <qcoreapplication.h>
@@ -50,7 +14,7 @@
 
 //#define PARSER_DEBUG
 #ifdef PARSER_DEBUG
-static int indent = 0;
+Q_CONSTINIT static int indent = 0;
 #define BEGIN qDebug() << QByteArray(4*indent++, ' ').constData() << "pos=" << current
 #define END --indent
 #define DEBUG qDebug() << QByteArray(4*indent, ' ').constData()
@@ -193,7 +157,7 @@ QString QJsonParseError::errorString() const
 #ifndef QT_BOOTSTRAPPED
     return QCoreApplication::translate("QJsonParseError", sz);
 #else
-    return QLatin1String(sz);
+    return QLatin1StringView(sz);
 #endif
 }
 
@@ -379,10 +343,42 @@ error:
     return QCborValue();
 }
 
+// We need to retain the _last_ value for any duplicate keys and we need to deref containers.
+// Therefore the manual implementation of std::unique().
+template<typename Iterator, typename Compare, typename Assign>
+static Iterator customAssigningUniqueLast(Iterator first, Iterator last,
+                                          Compare compare, Assign assign)
+{
+    first = std::adjacent_find(first, last, compare);
+    if (first == last)
+        return last;
+
+    // After adjacent_find, we know that *first and *(first+1) compare equal,
+    // and that first+1 != last.
+    Iterator result = first++;
+    Q_ASSERT(compare(*result, *first));
+    assign(*result, *first);
+    Q_ASSERT(first != last);
+
+    while (++first != last) {
+        if (!compare(*result, *first))
+            ++result;
+
+        // Due to adjacent_find above, we know that we've at least eliminated one element.
+        // Therefore we have to move each further element across the gap.
+        Q_ASSERT(result != first);
+
+        // We have to overwrite each element we want to eliminate, to deref() the container.
+        // Therefore we don't try to optimize the number of assignments here.
+        assign(*result, *first);
+    }
+
+    return ++result;
+}
+
 static void sortContainer(QCborContainerPrivate *container)
 {
     using Forward = QJsonPrivate::KeyIterator;
-    using Reverse = std::reverse_iterator<Forward>;
     using Value = Forward::value_type;
 
     auto compare = [container](const Value &a, const Value &b)
@@ -413,24 +409,35 @@ static void sortContainer(QCborContainerPrivate *container)
             if (bKey.flags & QtCbor::Element::StringIsUtf16)
                 return QCborContainerPrivate::compareUtf8(aData, bData->asStringView());
 
-            // We're missing an explicit UTF-8 to UTF-8 comparison in Qt, but
-            // UTF-8 to UTF-8 comparison retains simple byte ordering, so we'll
-            // abuse the Latin-1 comparison function.
-            return QtPrivate::compareStrings(aData->asLatin1(), bData->asLatin1());
+            return QtPrivate::compareStrings(aData->asUtf8StringView(), bData->asUtf8StringView());
         }
     };
 
-    std::sort(Forward(container->elements.begin()), Forward(container->elements.end()),
-              [&compare](const Value &a, const Value &b) { return compare(a, b) < 0; });
+    // The elements' containers are owned by the outer container, not by the elements themselves.
+    auto move = [](Forward::reference target, Forward::reference source)
+    {
+        QtCbor::Element &targetValue = target.value();
 
-    // We need to retain the _last_ value for any duplicate keys. Therefore the reverse dance here.
-    auto it = std::unique(Reverse(container->elements.end()), Reverse(container->elements.begin()),
-                          [&compare](const Value &a, const Value &b) {
-        return compare(a, b) == 0;
-    }).base().elementsIterator();
+        // If the target has a container, deref it before overwriting, so that we don't leak.
+        if (targetValue.flags & QtCbor::Element::IsContainer)
+            targetValue.container->deref();
 
-    // The erase from beginning is expensive but hopefully rare.
-    container->elements.erase(container->elements.begin(), it);
+        // Do not move, so that we can clear the value afterwards.
+        target = source;
+
+        // Clear the source value, so that we don't store the same container twice.
+        source.value() = QtCbor::Element();
+    };
+
+    std::stable_sort(
+                Forward(container->elements.begin()), Forward(container->elements.end()),
+                [&compare](const Value &a, const Value &b) { return compare(a, b) < 0; });
+
+    Forward result = customAssigningUniqueLast(
+                Forward(container->elements.begin()),  Forward(container->elements.end()),
+                [&compare](const Value &a, const Value &b) { return compare(a, b) == 0; }, move);
+
+    container->elements.erase(result.elementsIterator(), container->elements.end());
 }
 
 
@@ -545,7 +552,7 @@ bool Parser::parseArray()
         }
     }
 
-    DEBUG << "size =" << (container ? container->elements.length() : 0);
+    DEBUG << "size =" << (container ? container->elements.size() : 0);
     END;
 
     --nestingLevel;
@@ -766,7 +773,7 @@ bool Parser::parseNumber()
 
         unescaped = %x20-21 / %x23-5B / %x5D-10FFFF
  */
-static inline bool addHexDigit(char digit, uint *result)
+static inline bool addHexDigit(char digit, char32_t *result)
 {
     *result <<= 4;
     if (digit >= '0' && digit <= '9')
@@ -780,14 +787,14 @@ static inline bool addHexDigit(char digit, uint *result)
     return true;
 }
 
-static inline bool scanEscapeSequence(const char *&json, const char *end, uint *ch)
+static inline bool scanEscapeSequence(const char *&json, const char *end, char32_t *ch)
 {
     ++json;
     if (json >= end)
         return false;
 
     DEBUG << "scan escape" << (char)*json;
-    uint escaped = *json++;
+    uchar escaped = *json++;
     switch (escaped) {
     case '"':
         *ch = '"'; break;
@@ -825,7 +832,7 @@ static inline bool scanEscapeSequence(const char *&json, const char *end, uint *
     return true;
 }
 
-static inline bool scanUtf8Char(const char *&json, const char *end, uint *result)
+static inline bool scanUtf8Char(const char *&json, const char *end, char32_t *result)
 {
     const auto *usrc = reinterpret_cast<const uchar *>(json);
     const auto *uend = reinterpret_cast<const uchar *>(end);
@@ -848,7 +855,7 @@ bool Parser::parseString()
     bool isUtf8 = true;
     bool isAscii = true;
     while (json < end) {
-        uint ch = 0;
+        char32_t ch = 0;
         if (*json == '"')
             break;
         if (*json == '\\') {
@@ -890,7 +897,7 @@ bool Parser::parseString()
 
     QString ucs4;
     while (json < end) {
-        uint ch = 0;
+        char32_t ch = 0;
         if (*json == '"')
             break;
         else if (*json == '\\') {
@@ -913,7 +920,7 @@ bool Parser::parseString()
         return false;
     }
 
-    container->appendByteData(reinterpret_cast<const char *>(ucs4.utf16()), ucs4.size() * 2,
+    container->appendByteData(reinterpret_cast<const char *>(ucs4.constData()), ucs4.size() * 2,
                               QCborValue::String, QtCbor::Element::StringIsUtf16);
     END;
     return true;

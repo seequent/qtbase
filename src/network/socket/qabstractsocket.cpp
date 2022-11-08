@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtNetwork module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 //#define QABSTRACTSOCKET_DEBUG
 
@@ -430,7 +394,7 @@
 
     \value DontShareAddress Bind the address and port exclusively, so that
     no other services are allowed to rebind. By passing this option to
-    QAbstractSocket::bind(), you are guaranteed that on successs, your service
+    QAbstractSocket::bind(), you are guaranteed that on success, your service
     is the only one that listens to the address and port. No services are
     allowed to rebind, even if they pass ReuseAddressHint. This option
     provides more security than ShareAddress, but on certain operating
@@ -483,6 +447,7 @@
 
 #ifdef QABSTRACTSOCKET_DEBUG
 #include <qdebug.h>
+#include <private/qdebug_p.h>
 #endif
 
 #include <time.h>
@@ -499,43 +464,12 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
+QT_IMPL_METATYPE_EXTERN_TAGGED(QAbstractSocket::SocketState, QAbstractSocket__SocketState)
+QT_IMPL_METATYPE_EXTERN_TAGGED(QAbstractSocket::SocketError, QAbstractSocket__SocketError)
+
 static const int DefaultConnectTimeout = 30000;
-
-#if defined QABSTRACTSOCKET_DEBUG
-QT_BEGIN_INCLUDE_NAMESPACE
-#include <qstring.h>
-#include <ctype.h>
-QT_END_INCLUDE_NAMESPACE
-
-/*
-    Returns a human readable representation of the first \a len
-    characters in \a data.
-*/
-static QByteArray qt_prettyDebug(const char *data, int len, int maxLength)
-{
-    if (!data) return "(null)";
-    QByteArray out;
-    for (int i = 0; i < qMin(len, maxLength); ++i) {
-        char c = data[i];
-        if (isprint(int(uchar(c)))) {
-            out += c;
-        } else switch (c) {
-        case '\n': out += "\\n"; break;
-        case '\r': out += "\\r"; break;
-        case '\t': out += "\\t"; break;
-        default:
-            QString tmp;
-            tmp.sprintf("\\%o", c);
-            out += tmp.toLatin1();
-        }
-    }
-
-    if (len < maxLength)
-        out += "...";
-
-    return out;
-}
-#endif
 
 static bool isProxyError(QAbstractSocket::SocketError error)
 {
@@ -557,25 +491,6 @@ static bool isProxyError(QAbstractSocket::SocketError error)
     Constructs a QAbstractSocketPrivate. Initializes all members.
 */
 QAbstractSocketPrivate::QAbstractSocketPrivate()
-    : emittedReadyRead(false),
-      emittedBytesWritten(false),
-      abortCalled(false),
-      pendingClose(false),
-      pauseMode(QAbstractSocket::PauseNever),
-      port(0),
-      localPort(0),
-      peerPort(0),
-      socketEngine(nullptr),
-      cachedSocketDescriptor(-1),
-      readBufferMaxSize(0),
-      isBuffered(false),
-      hasPendingData(false),
-      connectTimer(nullptr),
-      hostLookupId(-1),
-      socketType(QAbstractSocket::UnknownSocketType),
-      state(QAbstractSocket::UnconnectedState),
-      socketError(QAbstractSocket::UnknownSocketError),
-      preferredNetworkLayerProtocol(QAbstractSocket::UnknownNetworkLayerProtocol)
 {
     writeBufferChunkSize = QABSTRACTSOCKET_BUFFERSIZE;
 }
@@ -627,14 +542,14 @@ bool QAbstractSocketPrivate::initSocketLayer(QAbstractSocket::NetworkLayerProtoc
     Q_Q(QAbstractSocket);
 #if defined (QABSTRACTSOCKET_DEBUG)
     QString typeStr;
-    if (q->socketType() == QAbstractSocket::TcpSocket) typeStr = QLatin1String("TcpSocket");
-    else if (q->socketType() == QAbstractSocket::UdpSocket) typeStr = QLatin1String("UdpSocket");
-    else if (q->socketType() == QAbstractSocket::SctpSocket) typeStr = QLatin1String("SctpSocket");
-    else typeStr = QLatin1String("UnknownSocketType");
+    if (q->socketType() == QAbstractSocket::TcpSocket) typeStr = "TcpSocket"_L1;
+    else if (q->socketType() == QAbstractSocket::UdpSocket) typeStr = "UdpSocket"_L1;
+    else if (q->socketType() == QAbstractSocket::SctpSocket) typeStr = "SctpSocket"_L1;
+    else typeStr = "UnknownSocketType"_L1;
     QString protocolStr;
-    if (protocol == QAbstractSocket::IPv4Protocol) protocolStr = QLatin1String("IPv4Protocol");
-    else if (protocol == QAbstractSocket::IPv6Protocol) protocolStr = QLatin1String("IPv6Protocol");
-    else protocolStr = QLatin1String("UnknownNetworkLayerProtocol");
+    if (protocol == QAbstractSocket::IPv4Protocol) protocolStr = "IPv4Protocol"_L1;
+    else if (protocol == QAbstractSocket::IPv6Protocol) protocolStr = "IPv6Protocol"_L1;
+    else protocolStr = "UnknownNetworkLayerProtocol"_L1;
 #endif
 
     resetSocketLayer();
@@ -921,7 +836,7 @@ void QAbstractSocketPrivate::resolveProxy(const QString &hostname, quint16 port)
     }
 
     // return the first that we can use
-    for (const QNetworkProxy &p : qAsConst(proxies)) {
+    for (const QNetworkProxy &p : std::as_const(proxies)) {
         if (socketType == QAbstractSocket::UdpSocket &&
             (p.capabilities() & QNetworkProxy::UdpTunnelingCapability) == 0)
             continue;
@@ -1020,12 +935,12 @@ void QAbstractSocketPrivate::_q_startConnecting(const QHostInfo &hostInfo)
 
 
 #if defined(QABSTRACTSOCKET_DEBUG)
-    QString s = QLatin1String("{");
+    QString s = "{"_L1;
     for (int i = 0; i < addresses.count(); ++i) {
-        if (i != 0) s += QLatin1String(", ");
+        if (i != 0) s += ", "_L1;
         s += addresses.at(i).toString();
     }
-    s += QLatin1Char('}');
+    s += u'}';
     qDebug("QAbstractSocketPrivate::_q_startConnecting(hostInfo == %s)", s.toLatin1().constData());
 #endif
 
@@ -1381,12 +1296,29 @@ void QAbstractSocketPrivate::pauseSocketNotifiers(QAbstractSocket *socket)
     QAbstractSocketEngine *socketEngine = socket->d_func()->socketEngine;
     if (!socketEngine)
         return;
-    socket->d_func()->prePauseReadSocketNotifierState = socketEngine->isReadNotificationEnabled();
-    socket->d_func()->prePauseWriteSocketNotifierState = socketEngine->isWriteNotificationEnabled();
-    socket->d_func()->prePauseExceptionSocketNotifierState = socketEngine->isExceptionNotificationEnabled();
-    socketEngine->setReadNotificationEnabled(false);
-    socketEngine->setWriteNotificationEnabled(false);
-    socketEngine->setExceptionNotificationEnabled(false);
+    bool read = socketEngine->isReadNotificationEnabled();
+    bool write = socketEngine->isWriteNotificationEnabled();
+    bool except = socketEngine->isExceptionNotificationEnabled();
+
+#ifdef QABSTRACTSOCKET_DEBUG
+    qDebug() << socketEngine->socketDescriptor()
+             << "pause notifiers, storing 'true' states, currently read:" << read
+             << "write:" << write << "except:" << except;
+#endif
+    // We do this if-check to avoid accidentally overwriting any previously stored state
+    // It will reset to false once the socket is re-enabled.
+    if (read) {
+        socket->d_func()->prePauseReadSocketNotifierState = true;
+        socketEngine->setReadNotificationEnabled(false);
+    }
+    if (write) {
+        socket->d_func()->prePauseWriteSocketNotifierState = true;
+        socketEngine->setWriteNotificationEnabled(false);
+    }
+    if (except) {
+        socket->d_func()->prePauseExceptionSocketNotifierState = true;
+        socketEngine->setExceptionNotificationEnabled(false);
+    }
 }
 
 void QAbstractSocketPrivate::resumeSocketNotifiers(QAbstractSocket *socket)
@@ -1394,9 +1326,19 @@ void QAbstractSocketPrivate::resumeSocketNotifiers(QAbstractSocket *socket)
     QAbstractSocketEngine *socketEngine = socket->d_func()->socketEngine;
     if (!socketEngine)
         return;
-    socketEngine->setReadNotificationEnabled(socket->d_func()->prePauseReadSocketNotifierState);
-    socketEngine->setWriteNotificationEnabled(socket->d_func()->prePauseWriteSocketNotifierState);
-    socketEngine->setExceptionNotificationEnabled(socket->d_func()->prePauseExceptionSocketNotifierState);
+    QAbstractSocketPrivate *priv = socket->d_func();
+#ifdef QABSTRACTSOCKET_DEBUG
+    qDebug() << socketEngine->socketDescriptor()
+             << "Maybe resume notifiers, read:" << priv->prePauseReadSocketNotifierState
+             << "write:" << priv->prePauseWriteSocketNotifierState
+             << "exception:" << priv->prePauseExceptionSocketNotifierState;
+#endif
+    if (std::exchange(priv->prePauseReadSocketNotifierState, false))
+        socketEngine->setReadNotificationEnabled(true);
+    if (std::exchange(priv->prePauseWriteSocketNotifierState, false))
+        socketEngine->setWriteNotificationEnabled(true);
+    if (std::exchange(priv->prePauseExceptionSocketNotifierState, false))
+        socketEngine->setExceptionNotificationEnabled(true);
 }
 
 QAbstractSocketEngine* QAbstractSocketPrivate::getSocketEngine(QAbstractSocket *socket)
@@ -1604,6 +1546,19 @@ bool QAbstractSocketPrivate::bind(const QHostAddress &address, quint16 port, QAb
 }
 
 /*!
+    \fn bool QAbstractSocket::bind(QHostAddress::SpecialAddress addr, quint16 port, BindMode mode)
+    \since 6.2
+    \overload
+
+    Binds to the special address \a addr on port \a port, using the BindMode \a
+    mode.
+
+    By default, the socket is bound using the DefaultForPlatform BindMode.
+    If a port is not specified, a random port is chosen.
+*/
+
+/*!
+    \fn bool QAbstractSocket::bind(quint16 port, BindMode mode)
     \since 5.0
     \overload
 
@@ -1612,10 +1567,12 @@ bool QAbstractSocketPrivate::bind(const QHostAddress &address, quint16 port, QAb
     By default, the socket is bound using the DefaultForPlatform BindMode.
     If a port is not specified, a random port is chosen.
 */
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
 bool QAbstractSocket::bind(quint16 port, BindMode mode)
 {
     return bind(QHostAddress::Any, port, mode);
 }
+#endif
 
 /*!
     Returns \c true if the socket is valid and ready for use; otherwise
@@ -1958,8 +1915,9 @@ bool QAbstractSocket::setSocketDescriptor(qintptr socketDescriptor, SocketState 
     \since 4.6
     Sets the given \a option to the value described by \a value.
 
-    \note On Windows Runtime, QAbstractSocket::KeepAliveOption must be set
-    before the socket is connected.
+    \note Since the options are set on an internal socket the options
+    only apply if the socket has been created. This is only guaranteed to
+    have happened after a call to bind(), or when connected() has been emitted.
 
     \sa socketOption()
 */
@@ -2197,6 +2155,7 @@ bool QAbstractSocket::waitForReadyRead(int msecs)
     do {
         if (state() != ConnectedState && state() != BoundState)
             return false;
+        Q_ASSERT(d->socketEngine);
 
         bool readyToRead = false;
         bool readyToWrite = false;
@@ -2443,9 +2402,8 @@ qint64 QAbstractSocket::readData(char *data, qint64 maxSize)
     }
 
 #if defined (QABSTRACTSOCKET_DEBUG)
-    qDebug("QAbstractSocket::readData(%p \"%s\", %lli) == %lld [engine]",
-           data, qt_prettyDebug(data, 32, readBytes).data(), maxSize,
-           readBytes);
+    qDebug("QAbstractSocket::readData(%p \"%s\", %lli) == %lld [engine]", data,
+           QtDebugUtils::toPrintable(data, readBytes, 32).constData(), maxSize, readBytes);
 #endif
     return readBytes;
 }
@@ -2483,8 +2441,7 @@ qint64 QAbstractSocket::writeData(const char *data, qint64 size)
 
 #if defined (QABSTRACTSOCKET_DEBUG)
         qDebug("QAbstractSocket::writeData(%p \"%s\", %lli) == %lli", data,
-               qt_prettyDebug(data, qMin((int)size, 32), size).data(),
-               size, written);
+               QtDebugUtils::toPrintable(data, size, 32).constData(), size, written);
 #endif
         return written; // written = actually written + what has been buffered
     } else if (!d->isBuffered && d->socketType != TcpSocket) {
@@ -2495,8 +2452,7 @@ qint64 QAbstractSocket::writeData(const char *data, qint64 size)
 
 #if defined (QABSTRACTSOCKET_DEBUG)
     qDebug("QAbstractSocket::writeData(%p \"%s\", %lli) == %lli", data,
-           qt_prettyDebug(data, qMin((int)size, 32), size).data(),
-           size, written);
+           QtDebugUtils::toPrintable(data, size, 32).constData(), size, written);
 #endif
         if (written >= 0)
             d->emitBytesWritten(written);
@@ -2517,8 +2473,7 @@ qint64 QAbstractSocket::writeData(const char *data, qint64 size)
 
 #if defined (QABSTRACTSOCKET_DEBUG)
     qDebug("QAbstractSocket::writeData(%p \"%s\", %lli) == %lli", data,
-           qt_prettyDebug(data, qMin((int)size, 32), size).data(),
-           size, written);
+           QtDebugUtils::toPrintable(data, size, 32).constData(), size, written);
 #endif
     return written;
 }

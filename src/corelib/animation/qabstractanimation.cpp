@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 /*!
     \class QAbstractAnimation
@@ -149,7 +113,6 @@
 #include "qabstractanimation_p.h"
 
 #include <QtCore/qmath.h>
-#include <QtCore/qthreadstorage.h>
 #include <QtCore/qcoreevent.h>
 #include <QtCore/qpointer.h>
 #include <QtCore/qscopedvaluerollback.h>
@@ -214,12 +177,10 @@ typedef QList<QAbstractAnimation*>::ConstIterator AnimationListConstIt;
     QUnifiedTimer drives animations indirectly, via QAbstractAnimationTimer.
 */
 
-Q_GLOBAL_STATIC(QThreadStorage<QUnifiedTimer *>, unifiedTimer)
-
 QUnifiedTimer::QUnifiedTimer() :
     QObject(), defaultDriver(this), lastTick(0), timingInterval(DEFAULT_TIMER_INTERVAL),
     currentAnimationIdx(0), insideTick(false), insideRestart(false), consistentTiming(false), slowMode(false),
-    startTimersPending(false), stopTimerPending(false),
+    startTimersPending(false), stopTimerPending(false), allowNegativeDelta(false),
     slowdownFactor(5.0f), profilerCallback(nullptr),
     driverStartTime(0), temporalDrift(0)
 {
@@ -227,15 +188,18 @@ QUnifiedTimer::QUnifiedTimer() :
     driver = &defaultDriver;
 }
 
+QUnifiedTimer::~QUnifiedTimer()
+    = default;
 
 QUnifiedTimer *QUnifiedTimer::instance(bool create)
 {
     QUnifiedTimer *inst;
-    if (create && !unifiedTimer()->hasLocalData()) {
+    static thread_local std::unique_ptr<QUnifiedTimer> unifiedTimer;
+    if (create && !unifiedTimer) {
         inst = new QUnifiedTimer;
-        unifiedTimer()->setLocalData(inst);
+        unifiedTimer.reset(inst);
     } else {
-        inst = unifiedTimer() ? unifiedTimer()->localData() : nullptr;
+        inst = unifiedTimer.get();
     }
     return inst;
 }
@@ -315,11 +279,11 @@ void QUnifiedTimer::updateAnimationTimers()
     //  when the CPU load is high
     //* it might happen in some cases that the delta is negative because the animation driver
     //  advances faster than time.elapsed()
-    if (delta > 0) {
+    if (delta != 0 && (allowNegativeDelta || delta > 0)) {
         QScopedValueRollback<bool> guard(insideTick, true);
         if (profilerCallback)
             profilerCallback(delta);
-        for (currentAnimationIdx = 0; currentAnimationIdx < animationTimers.count(); ++currentAnimationIdx) {
+        for (currentAnimationIdx = 0; currentAnimationIdx < animationTimers.size(); ++currentAnimationIdx) {
             QAbstractAnimationTimer *animation = animationTimers.at(currentAnimationIdx);
             animation->updateAnimationsTime(delta);
         }
@@ -330,7 +294,7 @@ void QUnifiedTimer::updateAnimationTimers()
 int QUnifiedTimer::runningAnimationCount()
 {
     int count = 0;
-    for (int i = 0; i < animationTimers.count(); ++i)
+    for (int i = 0; i < animationTimers.size(); ++i)
         count += animationTimers.at(i)->runningAnimationCount();
     return count;
 }
@@ -345,7 +309,7 @@ void QUnifiedTimer::localRestart()
     if (insideRestart)
         return;
 
-    if (!pausedAnimationTimers.isEmpty() && (animationTimers.count() + animationTimersToStart.count() == pausedAnimationTimers.count())) {
+    if (!pausedAnimationTimers.isEmpty() && (animationTimers.size() + animationTimersToStart.size() == pausedAnimationTimers.size())) {
         driver->stop();
         int closestTimeToFinish = closestPausedAnimationTimerTimeToFinish();
         // use a precise timer if the pause will be short
@@ -363,7 +327,7 @@ void QUnifiedTimer::restart()
 {
     {
         QScopedValueRollback<bool> guard(insideRestart, true);
-        for (int i = 0; i < animationTimers.count(); ++i)
+        for (int i = 0; i < animationTimers.size(); ++i)
             animationTimers.at(i)->restartAnimationTimer();
     }
 
@@ -517,6 +481,8 @@ void QUnifiedTimer::installAnimationDriver(QAnimationDriver *d)
     if (running)
         stopAnimationDriver();
     driver = d;
+    if (driver)
+        allowNegativeDelta = driver->property("allowNegativeDelta").toBool();
     if (running)
         startAnimationDriver();
 }
@@ -532,6 +498,7 @@ void QUnifiedTimer::uninstallAnimationDriver(QAnimationDriver *d)
     if (running)
         stopAnimationDriver();
     driver = &defaultDriver;
+    allowNegativeDelta = false;
     if (running)
         startAnimationDriver();
 }
@@ -545,10 +512,6 @@ bool QUnifiedTimer::canUninstallAnimationDriver(QAnimationDriver *d)
     return d == driver && driver != &defaultDriver;
 }
 
-#if QT_CONFIG(thread)
-Q_GLOBAL_STATIC(QThreadStorage<QAnimationTimer *>, animationTimer)
-#endif
-
 QAnimationTimer::QAnimationTimer() :
     QAbstractAnimationTimer(), lastTick(0),
     currentAnimationIdx(0), insideTick(false),
@@ -557,15 +520,19 @@ QAnimationTimer::QAnimationTimer() :
 {
 }
 
+QAnimationTimer::~QAnimationTimer()
+    = default;
+
 QAnimationTimer *QAnimationTimer::instance(bool create)
 {
     QAnimationTimer *inst;
 #if QT_CONFIG(thread)
-    if (create && !animationTimer()->hasLocalData()) {
+    static thread_local std::unique_ptr<QAnimationTimer> animationTimer;
+    if (create && !animationTimer) {
         inst = new QAnimationTimer;
-        animationTimer()->setLocalData(inst);
+        animationTimer.reset(inst);
     } else {
-        inst = animationTimer() ? animationTimer()->localData() : nullptr;
+        inst = animationTimer.get();
     }
 #else
     Q_UNUSED(create);
@@ -601,7 +568,7 @@ void QAnimationTimer::updateAnimationsTime(qint64 delta)
     //when the CPU load is high
     if (delta) {
         QScopedValueRollback<bool> guard(insideTick, true);
-        for (currentAnimationIdx = 0; currentAnimationIdx < animations.count(); ++currentAnimationIdx) {
+        for (currentAnimationIdx = 0; currentAnimationIdx < animations.size(); ++currentAnimationIdx) {
             QAbstractAnimation *animation = animations.at(currentAnimationIdx);
             int elapsed = QAbstractAnimationPrivate::get(animation)->totalCurrentTime
                           + (animation->direction() == QAbstractAnimation::Forward ? delta : -delta);
@@ -792,7 +759,7 @@ void QAnimationDriver::advanceAnimation()
 
 
 /*!
-    Advances the animation. This function should be continously called
+    Advances the animation. This function should be continuously called
     by the driver while the animation is running.
  */
 
@@ -893,6 +860,9 @@ QDefaultAnimationDriver::QDefaultAnimationDriver(QUnifiedTimer *timer)
     connect(this, SIGNAL(stopped()), this, SLOT(stopTimer()));
 }
 
+QDefaultAnimationDriver::~QDefaultAnimationDriver()
+    = default;
+
 void QDefaultAnimationDriver::timerEvent(QTimerEvent *e)
 {
     Q_ASSERT(e->timerId() == m_timer.timerId());
@@ -911,7 +881,22 @@ void QDefaultAnimationDriver::stopTimer()
     m_timer.stop();
 }
 
+QAnimationDriverPrivate::QAnimationDriverPrivate()
+    = default;
 
+QAnimationDriverPrivate::~QAnimationDriverPrivate()
+    = default;
+
+QAbstractAnimationTimer::QAbstractAnimationTimer()
+    = default;
+
+QAbstractAnimationTimer::~QAbstractAnimationTimer()
+    = default;
+
+QAbstractAnimationPrivate::QAbstractAnimationPrivate()
+    = default;
+
+QAbstractAnimationPrivate::~QAbstractAnimationPrivate() { }
 
 void QAbstractAnimationPrivate::setState(QAbstractAnimation::State newState)
 {
@@ -930,14 +915,17 @@ void QAbstractAnimationPrivate::setState(QAbstractAnimation::State newState)
     // check if we should Rewind
     if ((newState == QAbstractAnimation::Paused || newState == QAbstractAnimation::Running)
         && oldState == QAbstractAnimation::Stopped) {
+            const int oldTotalCurrentTime = totalCurrentTime;
             //here we reset the time if needed
             //we don't call setCurrentTime because this might change the way the animation
             //behaves: changing the state or changing the current value
             totalCurrentTime = currentTime = (direction == QAbstractAnimation::Forward) ?
                 0 : (loopCount == -1 ? q->duration() : q->totalDuration());
+            if (totalCurrentTime != oldTotalCurrentTime)
+                totalCurrentTime.notify();
     }
 
-    state = newState;
+    state.setValueBypassingBindings(newState);
     QPointer<QAbstractAnimation> guard(q);
 
     //(un)registration of the animation must always happen before calls to
@@ -957,6 +945,7 @@ void QAbstractAnimationPrivate::setState(QAbstractAnimation::State newState)
         return;
 
     // Notify state change
+    state.notify();
     emit q->stateChanged(newState, oldState);
     if (!guard || newState != state) //this is to be safe if updateState changes the state
         return;
@@ -1028,6 +1017,7 @@ QAbstractAnimation::~QAbstractAnimation()
     if (d->state != Stopped) {
         QAbstractAnimation::State oldState = d->state;
         d->state = Stopped;
+        d->state.notify();
         emit stateChanged(d->state, oldState);
         if (oldState == QAbstractAnimation::Running)
             QAnimationTimer::unregisterAnimation(this);
@@ -1043,11 +1033,22 @@ QAbstractAnimation::~QAbstractAnimation()
     This property describes the current state of the animation. When the
     animation state changes, QAbstractAnimation emits the stateChanged()
     signal.
+
+    \note State updates might cause updates of the currentTime property,
+    which, in turn, can cancel its bindings. So be careful when setting
+    bindings to the currentTime property, when you expect the state of the
+    animation to change.
 */
 QAbstractAnimation::State QAbstractAnimation::state() const
 {
     Q_D(const QAbstractAnimation);
     return d->state;
+}
+
+QBindable<QAbstractAnimation::State> QAbstractAnimation::bindableState() const
+{
+    Q_D(const QAbstractAnimation);
+    return &d->state;
 }
 
 /*!
@@ -1115,9 +1116,13 @@ QAbstractAnimation::Direction QAbstractAnimation::direction() const
 void QAbstractAnimation::setDirection(Direction direction)
 {
     Q_D(QAbstractAnimation);
-    if (d->direction == direction)
+    if (d->direction == direction) {
+        d->direction.removeBindingUnlessInWrapper();
         return;
+    }
 
+    Qt::beginPropertyUpdateGroup();
+    const int oldCurrentLoop = d->currentLoop;
     if (state() == Stopped) {
         if (direction == Backward) {
             d->currentTime = duration();
@@ -1140,7 +1145,16 @@ void QAbstractAnimation::setDirection(Direction direction)
         // needed to update the timer interval in case of a pause animation
         QAnimationTimer::updateAnimationTimer();
 
-    emit directionChanged(direction);
+    if (d->currentLoop != oldCurrentLoop)
+        d->currentLoop.notify();
+    d->direction.notify();
+    Qt::endPropertyUpdateGroup();
+}
+
+QBindable<QAbstractAnimation::Direction> QAbstractAnimation::bindableDirection()
+{
+    Q_D(QAbstractAnimation);
+    return &d->direction;
 }
 
 /*!
@@ -1175,6 +1189,12 @@ void QAbstractAnimation::setLoopCount(int loopCount)
     d->loopCount = loopCount;
 }
 
+QBindable<int> QAbstractAnimation::bindableLoopCount()
+{
+    Q_D(QAbstractAnimation);
+    return &d->loopCount;
+}
+
 /*!
     \property QAbstractAnimation::currentLoop
     \brief the current loop of the animation
@@ -1192,6 +1212,12 @@ int QAbstractAnimation::currentLoop() const
 {
     Q_D(const QAbstractAnimation);
     return d->currentLoop;
+}
+
+QBindable<int> QAbstractAnimation::bindableCurrentLoop() const
+{
+    Q_D(const QAbstractAnimation);
+    return &d->currentLoop;
 }
 
 /*!
@@ -1252,6 +1278,10 @@ int QAbstractAnimation::currentLoopTime() const
 
     The animation's current time starts at 0, and ends at totalDuration().
 
+    \note You can bind other properties to currentTime, but it is not
+    recommended setting bindings to it. As animation progresses, the currentTime
+    is updated automatically, which cancels its bindings.
+
     \sa loopCount, currentLoopTime()
  */
 int QAbstractAnimation::currentTime() const
@@ -1259,6 +1289,13 @@ int QAbstractAnimation::currentTime() const
     Q_D(const QAbstractAnimation);
     return d->totalCurrentTime;
 }
+
+QBindable<int> QAbstractAnimation::bindableCurrentTime()
+{
+    Q_D(QAbstractAnimation);
+    return &d->totalCurrentTime;
+}
+
 void QAbstractAnimation::setCurrentTime(int msecs)
 {
     Q_D(QAbstractAnimation);
@@ -1269,6 +1306,8 @@ void QAbstractAnimation::setCurrentTime(int msecs)
     int totalDura = dura <= 0 ? dura : ((d->loopCount < 0) ? -1 : dura * d->loopCount);
     if (totalDura != -1)
         msecs = qMin(totalDura, msecs);
+
+    const int oldCurrentTime = d->totalCurrentTime;
     d->totalCurrentTime = msecs;
 
     // Update new values.
@@ -1284,14 +1323,20 @@ void QAbstractAnimation::setCurrentTime(int msecs)
         } else {
             d->currentTime = (dura <= 0) ? msecs : ((msecs - 1) % dura) + 1;
             if (d->currentTime == dura)
-                --d->currentLoop;
+                d->currentLoop = d->currentLoop - 1;
         }
     }
 
     updateCurrentTime(d->currentTime);
     if (d->currentLoop != oldLoop)
-        emit currentLoopChanged(d->currentLoop);
+        d->currentLoop.notify();
 
+    /* Notify before calling stop: As seen in tst_QSequentialAnimationGroup::clear
+     * we might delete the animation when stop is called. Thus after stop no member
+     * of the object must be used anymore.
+     */
+    if (oldCurrentTime != d->totalCurrentTime)
+        d->totalCurrentTime.notify();
     // All animations are responsible for stopping the animation when their
     // own end state is reached; in this case the animation is time driven,
     // and has reached the end.

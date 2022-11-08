@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qlayout.pro.
 
 #####################################################################
@@ -12,7 +15,7 @@ qt_internal_add_manual_test(qlayout
         main.cpp
         mainwindow.cpp mainwindow.h
         vbwidget.cpp vbwidget.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

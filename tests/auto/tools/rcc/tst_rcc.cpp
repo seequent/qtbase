@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2012 Giuseppe D'Angelo <dangelog@gmail.com>
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2012 Giuseppe D'Angelo <dangelog@gmail.com>
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QLibraryInfo>
@@ -104,7 +79,7 @@ private:
 
 void tst_rcc::initTestCase()
 {
-    m_rcc = QLibraryInfo::path(QLibraryInfo::BinariesPath) + QLatin1String("/rcc");
+    m_rcc = QLibraryInfo::path(QLibraryInfo::LibraryExecutablesPath) + QLatin1String("/rcc");
 
     m_dataPath = QFINDTESTDATA("data");
     QVERIFY(!m_dataPath.isEmpty());
@@ -181,10 +156,8 @@ static QStringList readLinesFromFile(const QString &fileName,
     QFile file(fileName);
 
     bool ok = file.open(QIODevice::ReadOnly | QIODevice::Text);
-    if (!ok) {
-        QWARN(qPrintable(QString::fromLatin1("Could not open testdata file %1: %2")
-                         .arg(fileName, file.errorString())));
-    }
+    if (!ok)
+        qWarning() << "Could not open testdata file" << fileName << ":" << file.errorString();
 
     return QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'), splitBehavior);
 }
@@ -274,8 +247,7 @@ void tst_rcc::binary_data()
     QDirIterator iter(dataPath, QStringList() << QLatin1String("*.qrc"));
     while (iter.hasNext())
     {
-        iter.next();
-        QFileInfo qrcFileInfo = iter.fileInfo();
+        QFileInfo qrcFileInfo = iter.nextFileInfo();
         QString absoluteBaseName = QFileInfo(qrcFileInfo.absolutePath(), qrcFileInfo.baseName()).absoluteFilePath();
         QString rccFileName = absoluteBaseName + QLatin1String(".rcc");
 

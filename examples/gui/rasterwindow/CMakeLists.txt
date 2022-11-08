@@ -1,36 +1,29 @@
-# Generated from rasterwindow.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.16)
 project(rasterwindow LANGUAGES CXX)
 
-find_package(Qt6 COMPONENTS Widgets) # special case: add
-
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
 
 if(NOT DEFINED INSTALL_EXAMPLESDIR)
-  set(INSTALL_EXAMPLESDIR "examples")
+    set(INSTALL_EXAMPLESDIR "examples")
 endif()
 
 set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/gui/rasterwindow")
 
-find_package(Qt6 COMPONENTS Core)
-find_package(Qt6 COMPONENTS Gui)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 
 qt_add_executable(rasterwindow
     main.cpp
     rasterwindow.cpp rasterwindow.h
 )
+
 set_target_properties(rasterwindow PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
-target_include_directories(rasterwindow PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
+
 target_link_libraries(rasterwindow PUBLIC
     Qt::Core
     Qt::Gui

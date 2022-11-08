@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QWINDOWSFONTENGINEDIRECTWRITE_H
 #define QWINDOWSFONTENGINEDIRECTWRITE_H
@@ -71,7 +35,7 @@ QT_BEGIN_NAMESPACE
 
 class QWindowsFontEngineData;
 
-class QWindowsFontEngineDirectWrite : public QFontEngine
+class Q_GUI_EXPORT QWindowsFontEngineDirectWrite : public QFontEngine
 {
     Q_DISABLE_COPY_MOVE(QWindowsFontEngineDirectWrite)
 public:
@@ -97,7 +61,7 @@ public:
 
     glyph_metrics_t boundingBox(const QGlyphLayout &glyphs) override;
     glyph_metrics_t boundingBox(glyph_t g) override;
-    glyph_metrics_t alphaMapBoundingBox(glyph_t glyph, QFixed,
+    glyph_metrics_t alphaMapBoundingBox(glyph_t glyph, const QFixedPoint&,
                                         const QTransform &matrix, GlyphFormat) override;
 
     QFixed capHeight() const override;
@@ -105,12 +69,21 @@ public:
     qreal maxCharWidth() const override;
     FaceId faceId() const override;
 
-    bool supportsSubPixelPositions() const override;
+    bool supportsHorizontalSubPixelPositions() const override;
 
-    QImage alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition) override;
-    QImage alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t) override;
-    QImage alphaRGBMapForGlyph(glyph_t t, QFixed subPixelPosition, const QTransform &xform) override;
-    QImage bitmapForGlyph(glyph_t, QFixed subPixelPosition, const QTransform &t, const QColor &color) override;
+    HFONT createHFONT() const;
+
+    QImage alphaMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition) override;
+    QImage alphaMapForGlyph(glyph_t glyph,
+                            const QFixedPoint &subPixelPosition,
+                            const QTransform &t) override;
+    QImage alphaRGBMapForGlyph(glyph_t t,
+                               const QFixedPoint &subPixelPosition,
+                               const QTransform &xform) override;
+    QImage bitmapForGlyph(glyph_t,
+                          const QFixedPoint &subPixelPosition,
+                          const QTransform &t,
+                          const QColor &color) override;
 
     QFontEngine *cloneWithSize(qreal pixelSize) const override;
     Qt::HANDLE handle() const override;
@@ -125,8 +98,15 @@ public:
 
     void initializeHeightMetrics() const override;
 
+    Properties properties() const override;
+    void getUnscaledGlyph(glyph_t glyph, QPainterPath *path, glyph_metrics_t *metrics) override;
+
 private:
-    QImage imageForGlyph(glyph_t t, QFixed subPixelPosition, int margin, const QTransform &xform, const QColor &color = QColor());
+    QImage imageForGlyph(glyph_t t,
+                         const QFixedPoint &subPixelPosition,
+                         int margin,
+                         const QTransform &xform,
+                         const QColor &color = QColor());
     void collectMetrics();
     void renderGlyphRun(QImage *destination, float r, float g, float b, float a, IDWriteGlyphRunAnalysis *glyphAnalysis, const QRect &boundingRect);
     static QString filenameFromFontFile(IDWriteFontFile *fontFile);

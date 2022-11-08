@@ -1,14 +1,17 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from instancing.pro.
 
 #####################################################################
 ## instancing Binary:
 #####################################################################
 
-qt_internal_add_manual_test(instancing
+qt_internal_add_manual_test(tst_manual_instancing
     GUI
     SOURCES
         instancing.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::GuiPrivate
 )
@@ -19,7 +22,7 @@ set(instancing_resource_files
     "inst.vert.qsb"
 )
 
-qt_internal_add_resource(instancing "instancing"
+qt_internal_add_resource(tst_manual_instancing "instancing"
     PREFIX
         "/"
     FILES

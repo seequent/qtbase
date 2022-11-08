@@ -1,18 +1,15 @@
-# Generated from qsortfilterproxymodel_regularexpression.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## tst_qsortfilterproxymodel_regularexpression Test:
 #####################################################################
 
-qt_internal_add_test(tst_qsortfilterproxymodel_regularexpression
+qt_internal_add_test(tst_qsfpm_regex
     SOURCES
-        ../../../other/qabstractitemmodelutils/dynamictreemodel.cpp ../../../other/qabstractitemmodelutils/dynamictreemodel.h
-        ../qsortfilterproxymodel_common/tst_qsortfilterproxymodel.cpp ../qsortfilterproxymodel_common/tst_qsortfilterproxymodel.h
         tst_qsortfilterproxymodel_regularexpression.cpp
     INCLUDE_DIRECTORIES
         ../../../other/qabstractitemmodelutils
-        ../qsortfilterproxymodel_common
-    PUBLIC_LIBRARIES
-        Qt::Gui
-        Qt::Widgets
+    LIBRARIES
+        Qt::TestPrivate
 )

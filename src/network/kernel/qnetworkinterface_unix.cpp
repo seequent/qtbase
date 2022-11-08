@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtNetwork module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qbytearray.h"
 #include "qset.h"
@@ -111,10 +75,15 @@ uint QNetworkInterfaceManager::interfaceIndexFromName(const QString &name)
 
     uint id = 0;
     if (qt_safe_ioctl(socket, SIOCGIFINDEX, &req) >= 0)
+#  if QT_CONFIG(ifr_index)
+        id = req.ifr_index;
+#  else
         id = req.ifr_ifindex;
+#  endif
     qt_safe_close(socket);
     return id;
 #else
+    Q_UNUSED(name);
     return 0;
 #endif
 }
@@ -130,7 +99,11 @@ QString QNetworkInterfaceManager::interfaceNameFromIndex(uint index)
     int socket = qt_safe_socket(AF_INET, SOCK_STREAM, 0);
     if (socket >= 0) {
         memset(&req, 0, sizeof(ifreq));
+#  if QT_CONFIG(ifr_index)
+        req.ifr_index = index;
+#  else
         req.ifr_ifindex = index;
+#  endif
 
         if (qt_safe_ioctl(socket, SIOCGIFNAME, &req) >= 0) {
             qt_safe_close(socket);
@@ -216,7 +189,7 @@ static QNetworkInterfacePrivate *findInterface(int socket, QList<QNetworkInterfa
     // Get the interface index
 #  ifdef SIOCGIFINDEX
     if (qt_safe_ioctl(socket, SIOCGIFINDEX, &req) >= 0)
-#    if defined(Q_OS_HAIKU)
+#    if QT_CONFIG(ifr_index)
         ifindex = req.ifr_index;
 #    else
         ifindex = req.ifr_ifindex;
@@ -234,10 +207,11 @@ static QNetworkInterfacePrivate *findInterface(int socket, QList<QNetworkInterfa
             break;
         }
 #else
+    Q_UNUSED(socket);
     // Search by name
     QList<QNetworkInterfacePrivate *>::Iterator if_it = interfaces.begin();
     for ( ; if_it != interfaces.end(); ++if_it)
-        if ((*if_it)->name == QLatin1String(req.ifr_name)) {
+        if ((*if_it)->name == QLatin1StringView(req.ifr_name)) {
             // existing interface
             iface = *if_it;
             break;
@@ -408,10 +382,7 @@ QT_BEGIN_INCLUDE_NAMESPACE
 #  include <net/if_dl.h>
 #if defined(QT_PLATFORM_UIKIT)
 #  include "qnetworkinterface_uikit_p.h"
-#if !defined(QT_WATCHOS_OUTDATED_SDK_WORKAROUND)
-// TODO: remove it as soon as SDK is updated on CI!!!
 #  include <net/if_types.h>
-#endif
 #else
 #  include <net/if_media.h>
 #  include <net/if_types.h>
@@ -617,7 +588,7 @@ static QList<QNetworkInterfacePrivate *> interfaceListing()
     interfaces = createInterfaces(interfaceListing);
     for (ifaddrs *ptr = interfaceListing; ptr; ptr = ptr->ifa_next) {
         // Find the interface
-        QLatin1String name(ptr->ifa_name);
+        QLatin1StringView name(ptr->ifa_name);
         QNetworkInterfacePrivate *iface = nullptr;
         QList<QNetworkInterfacePrivate *>::Iterator if_it = interfaces.begin();
         for ( ; if_it != interfaces.end(); ++if_it)

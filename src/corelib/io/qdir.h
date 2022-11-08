@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QDIR_H
 #define QDIR_H
@@ -102,7 +66,7 @@ public:
     QDir(const QString &path = QString());
     QDir(const QString &path, const QString &nameFilter,
          SortFlags sort = SortFlags(Name | IgnoreCase), Filters filter = AllEntries);
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     QDir(const std::filesystem::path &path);
     QDir(const std::filesystem::path &path, const QString &nameFilter,
          SortFlags sort = SortFlags(Name | IgnoreCase), Filters filter = AllEntries);
@@ -124,10 +88,10 @@ public:
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(QDir)
 
     void swap(QDir &other) noexcept
-    { qSwap(d_ptr, other.d_ptr); }
+    { d_ptr.swap(other.d_ptr); }
 
     void setPath(const QString &path);
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     void setPath(const std::filesystem::path &path);
 #elif QT_CONFIG(cxx17_filesystem)
     template<typename T, QtPrivate::ForceFilesystemPath<T> = 0>
@@ -139,7 +103,7 @@ public:
     QString path() const;
     QString absolutePath() const;
     QString canonicalPath() const;
-#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_QDOC)
     std::filesystem::path filesystemPath() const
     { return QtPrivate::toFilesystemPath(path()); }
     std::filesystem::path filesystemAbsolutePath() const
@@ -148,9 +112,10 @@ public:
     { return QtPrivate::toFilesystemPath(canonicalPath()); }
 #endif // QT_CONFIG(cxx17_filesystem)
 
+#ifndef QT_BOOTSTRAPPED
     static void setSearchPaths(const QString &prefix, const QStringList &searchPaths);
     static void addSearchPath(const QString &prefix, const QString &path);
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     static void addSearchPath(const QString &prefix, const std::filesystem::path &path);
 #elif QT_CONFIG(cxx17_filesystem)
     template<typename T, QtPrivate::ForceFilesystemPath<T> = 0>
@@ -160,6 +125,7 @@ public:
     }
 #endif // QT_CONFIG(cxx17_filesystem)
     static QStringList searchPaths(const QString &prefix);
+#endif // QT_BOOTSTRAPPED
 
     QString dirName() const;
     QString filePath(const QString &fileName) const;
@@ -180,10 +146,16 @@ public:
     SortFlags sorting() const;
     void setSorting(SortFlags sort);
 
+#if QT_CORE_REMOVED_SINCE(6, 5)
     uint count() const;
+#endif
+    qsizetype count(QT6_DECL_NEW_OVERLOAD) const;
     bool isEmpty(Filters filters = Filters(AllEntries | NoDotAndDotDot)) const;
 
+#if QT_CORE_REMOVED_SINCE(6, 5) && QT_POINTER_SIZE != 4
     QString operator[](int) const;
+#endif
+    QString operator[](qsizetype) const;
 
     static QStringList nameFiltersFromString(const QString &nameFilter);
 
@@ -196,6 +168,7 @@ public:
                                 SortFlags sort = NoSort) const;
 
     bool mkdir(const QString &dirName) const;
+    bool mkdir(const QString &dirName, QFile::Permissions permissions) const;
     bool rmdir(const QString &dirName) const;
     bool mkpath(const QString &dirPath) const;
     bool rmpath(const QString &dirPath) const;
@@ -224,18 +197,18 @@ public:
     constexpr static inline QChar listSeparator() noexcept
     {
 #if defined(Q_OS_WIN)
-        return QLatin1Char(';');
+        return u';';
 #else
-        return QLatin1Char(':');
+        return u':';
 #endif
     }
 
     static QChar separator()
     {
 #if defined(Q_OS_WIN)
-        return QLatin1Char('\\');
+        return u'\\';
 #else
-        return QLatin1Char('/');
+        return u'/';
 #endif
     }
 

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 // Do not include anything in this file. We are being #included with
 // a bunch of defines that may break other legitimate code.
@@ -72,6 +47,36 @@ template <> QByteArray toQByteArray(const QByteArray &b) { return b; }
 template <> QByteArray toQByteArray(char * const &p) { return p; }
 template <size_t N> QByteArray toQByteArray(const char (&a)[N]) { return a; }
 template <> QByteArray toQByteArray(const char &c) { return QByteArray(&c, 1); }
+
+template <typename String, typename Separator>
+void checkItWorksWithFreeSpaceAtBegin(const String &chunk, const Separator &separator)
+{
+    // GIVEN: a String with freeSpaceAtBegin() and less than chunk.size() freeSpaceAtEnd()
+    String str;
+
+    int prepends = 0;
+    const int max_prepends = 10;
+    while (str.data_ptr().freeSpaceAtBegin() < chunk.size() && prepends++ < max_prepends)
+        str.prepend(chunk);
+    QVERIFY(prepends < max_prepends);
+
+    int appends = 0;
+    const int max_appends = 100;
+    while (str.data_ptr().freeSpaceAtEnd() >= chunk.size() && appends++ < max_appends)
+        str.append(chunk);
+    QVERIFY(appends < max_appends);
+
+    QVERIFY(str.capacity() - str.size() >= chunk.size());
+    QVERIFY(str.data_ptr().freeSpaceAtEnd() < chunk.size());
+
+    // WHEN: adding a QStringBuilder expression which exceeds freeSpaceAtEnd()
+    str += separator P chunk;
+
+    // THEN: it doesn't crash (QTBUG-99330)
+    const String expected = chunk.repeated(prepends + appends) + separator + chunk;
+    QCOMPARE(str, expected);
+}
+
 
 void runScenario()
 {
@@ -305,6 +310,10 @@ void runScenario()
         QCOMPARE(r, ba);
         r = zero P ba;
         QCOMPARE(r, ba);
+
+        QByteArrayView qbav = LITERAL;
+        superba = qbav P qbav P LITERAL;
+        QCOMPARE(superba, QByteArray(LITERAL LITERAL LITERAL));
     }
 
     //operator QString  +=
@@ -325,6 +334,16 @@ void runScenario()
         QCOMPARE(str2, str2_e);
     }
 
+    checkItWorksWithFreeSpaceAtBegin(QString::fromUtf8(UTF8_LITERAL),
+                                 #ifdef QT_NO_CAST_FROM_ASCII
+                                     QLatin1String("1234")
+                                 #else
+                                     "1234"
+                                 #endif
+                                     );
+    if (QTest::currentTestFailed())
+        return;
+
     //operator QByteArray  +=
     {
         QByteArray ba = UTF8_LITERAL;
@@ -336,14 +355,9 @@ void runScenario()
         QByteArray ba2 = withZero;
         ba2 += ba2 P withZero;
         QCOMPARE(ba2, QByteArray(withZero + withZero + withZero));
-
-        // With space allocated in front, mirroring what happens with QHttpMultiPart in QNAM
-        QByteArray byteArray;
-        byteArray.reserve(70);
-        byteArray.insert(0, "multipart/");
-        byteArray.insert(byteArray.size(), "mixed");
-        byteArray += "; boundary=\"" P QByteArray(30, 'o') P '"';
-        QCOMPARE(byteArray, "multipart/mixed; boundary=\"oooooooooooooooooooooooooooooo\"");
     }
 
+    checkItWorksWithFreeSpaceAtBegin(QByteArray(UTF8_LITERAL), "1234");
+    if (QTest::currentTestFailed())
+        return;
 }

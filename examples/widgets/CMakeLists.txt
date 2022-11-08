@@ -1,4 +1,5 @@
-# Generated from widgets.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 if(NOT TARGET Qt::Widgets)
     return()
@@ -9,7 +10,7 @@ endif()
 add_subdirectory(desktop)
 add_subdirectory(dialogs)
 add_subdirectory(effects)
-add_subdirectory(gallery)
+qt_internal_add_example(gallery)
 add_subdirectory(gestures)
 add_subdirectory(graphicsview)
 add_subdirectory(itemviews)
@@ -24,9 +25,9 @@ add_subdirectory(widgets)
 if(QT_FEATURE_draganddrop)
     add_subdirectory(draganddrop)
 endif()
-if(QT_FEATURE_cursor) # special case
+if(QT_FEATURE_cursor)
     add_subdirectory(mainwindows)
 endif()
 if(QT_FEATURE_opengl AND TARGET Qt::Gui)
-    add_subdirectory(windowcontainer)
+    qt_internal_add_example(windowcontainer)
 endif()

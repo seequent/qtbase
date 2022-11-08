@@ -1,23 +1,30 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # The whole file is written manually.
-# special case skip regeneration
 
 include(../../../../src/testlib/selfcover.cmake)
 
 # ------------- Test runner -------------
+
+# Resources:
+
+file(GLOB qmake_expected_files_resource_files RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "expected_*")
+foreach(file IN LISTS qmake_expected_files_resource_files)
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
+endforeach()
 
 qt_internal_add_test(tst_selftests
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/"
     EXCEPTIONS
     CATCH
     SOURCES
-        ../../../shared/emulationdetector.h
         tst_selftests.cpp
         catch.cpp
-    INCLUDE_DIRECTORIES
-        ../../../shared
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::TestPrivate
-    # special case begin
+    TESTDATA ${qmake_expected_files_resource_files}
+    BUILTIN_TESTDATA
     # These lines need to be commented out as they need to be enabled
     # COMPILE_OPTIONS
     #   conditionally
@@ -27,43 +34,12 @@ qt_internal_add_test(tst_selftests
     #   --cs-mcdc
     # LINK_OPTIONS
     #   "$$COVERAGE_OPTIONS"
-    # special case end
 )
-
-file(GLOB resource_glob_0 RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "expected_*")
-foreach(file IN LISTS resource_glob_0)
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/${file}" PROPERTIES QT_RESOURCE_ALIAS "${file}")
-endforeach()
-
-# Resources:
-set(qmake_expected_files_resource_files
-    ${resource_glob_0}
-)
-
-qt_internal_add_resource(tst_selftests "qmake_expected_files"
-    PREFIX
-        "/"
-    BASE
-        "${CMAKE_CURRENT_SOURCE_DIR}" # special case
-    FILES
-        ${qmake_expected_files_resource_files}
-)
-
-
-## Scopes:
-#####################################################################
-
-#### Keys ignored in scope 5:.:.:test.pro:NOT ANDROID AND for(file,SUBPROGRAMS):
-# TEST_HELPER_INSTALLS = "../$${file}/$${file}"
-
-#### Keys ignored in scope 7:.:..:../selftests.pri:TARGET Qt::Gui:
-# SUBPROGRAMS = "keyboard" "mouse"
 
 qt_internal_apply_testlib_coverage_options(tst_selftests)
 
 # ------------- Sub tests -------------
 
-# special case begin
 set(subprograms
     assert
     badxml
@@ -83,9 +59,12 @@ set(subprograms
     deleteLater
     deleteLater_noApp
     differentexec
+    eventloop
     exceptionthrow
     expectfail
+    extendedcompare
     failcleanup
+    failcleanuptestcase
     faildatatype
     failfetchtype
     failinit
@@ -94,6 +73,7 @@ set(subprograms
     findtestdata
     float
     globaldata
+    junit
     longstring
     maxwarnings
     multiexec
@@ -107,6 +87,7 @@ set(subprograms
     singleskip
     skip
     skipcleanup
+    skipcleanuptestcase
     skipinit
     skipinitdata
     sleep
@@ -119,7 +100,6 @@ set(subprograms
     verifyexceptionthrown
     warnings
     watchdog
-    xunit
 )
 
 if(TARGET Qt::Gui)
@@ -129,25 +109,18 @@ if(TARGET Qt::Gui)
     )
 endif()
 
+# Ensure uniform location info between release and debug builds
+add_definitions(-DQT_MESSAGELOGCONTEXT)
+
 foreach(subprogram IN LISTS subprograms)
     add_subdirectory(${subprogram})
+    if(QT_FEATURE_process)
+        add_dependencies(tst_selftests ${subprogram})
+    endif()
 endforeach()
 
 list(JOIN subprograms " " subprograms)
 qt_internal_extend_target(tst_selftests
     DEFINES
-        SUBPROGRAMS=${subprograms}
+        $<$<COMPILE_LANGUAGE:CXX>:SUBPROGRAMS=${subprograms}>
 )
-# special case end
-
-#### Keys ignored in scope 1:.:.:test.pro:<TRUE>:
-# CONFIG = "testcase"
-# expected_files.base = "$$PWD/.."
-# expected_files.files = "$$files$$PWD/../expected_*"
-
-## Scopes:
-#####################################################################
-
-#### Keys ignored in scope 5:.:.:test.pro:NOT ANDROID AND for(file,SUBPROGRAMS):
-# TEST_HELPER_INSTALLS = "../$${file}/$${file}"
-# special case end

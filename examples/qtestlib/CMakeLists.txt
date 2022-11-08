@@ -1,10 +1,11 @@
-# Generated from qtestlib.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 if(NOT TARGET Qt::Widgets)
     return()
 endif()
-add_subdirectory(tutorial1)
-add_subdirectory(tutorial2)
-add_subdirectory(tutorial3)
-add_subdirectory(tutorial4)
-add_subdirectory(tutorial5)
+qt_internal_add_example(tutorial1)
+qt_internal_add_example(tutorial2)
+qt_internal_add_example(tutorial3)
+qt_internal_add_example(tutorial4)
+qt_internal_add_example(tutorial5)

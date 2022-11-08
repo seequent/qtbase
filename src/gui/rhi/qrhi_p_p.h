@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Qt Gui module
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QRHI_P_H
 #define QRHI_P_H
@@ -52,17 +16,17 @@
 //
 
 #include "qrhi_p.h"
-#include "qrhiprofiler_p_p.h"
 #include <QBitArray>
 #include <QAtomicInt>
+#include <QElapsedTimer>
 #include <QLoggingCategory>
+#include <QtCore/qset.h>
+#include <QtCore/qvarlengtharray.h>
 
 QT_BEGIN_NAMESPACE
 
 #define QRHI_RES(t, x) static_cast<t *>(x)
 #define QRHI_RES_RHI(t) t *rhiD = static_cast<t *>(m_rhi)
-#define QRHI_PROF QRhiProfilerPrivate *rhiP = m_rhi->profilerPrivateOrNull()
-#define QRHI_PROF_F(f) for (bool qrhip_enabled = rhiP != nullptr; qrhip_enabled; qrhip_enabled = false) rhiP->f
 
 Q_DECLARE_LOGGING_CATEGORY(QRHI_LOG_INFO)
 
@@ -79,7 +43,7 @@ public:
     virtual QRhiShaderResourceBindings *createShaderResourceBindings() = 0;
     virtual QRhiBuffer *createBuffer(QRhiBuffer::Type type,
                                      QRhiBuffer::UsageFlags usage,
-                                     int size) = 0;
+                                     quint32 size) = 0;
     virtual QRhiRenderBuffer *createRenderBuffer(QRhiRenderBuffer::Type type,
                                                  const QSize &pixelSize,
                                                  int sampleCount,
@@ -87,6 +51,8 @@ public:
                                                  QRhiTexture::Format backingFormatHint) = 0;
     virtual QRhiTexture *createTexture(QRhiTexture::Format format,
                                        const QSize &pixelSize,
+                                       int depth,
+                                       int arraySize,
                                        int sampleCount,
                                        QRhiTexture::Flags flags) = 0;
     virtual QRhiSampler *createSampler(QRhiSampler::Filter magFilter,
@@ -166,26 +132,20 @@ public:
     virtual int resourceLimit(QRhi::ResourceLimit limit) const = 0;
     virtual const QRhiNativeHandles *nativeHandles() = 0;
     virtual QRhiDriverInfo driverInfo() const = 0;
-    virtual void sendVMemStatsToProfiler() = 0;
+    virtual QRhiStats statistics() = 0;
     virtual bool makeThreadLocalNativeContextCurrent() = 0;
     virtual void releaseCachedResources() = 0;
     virtual bool isDeviceLost() const = 0;
+
+    virtual QByteArray pipelineCacheData() = 0;
+    virtual void setPipelineCacheData(const QByteArray &data) = 0;
 
     bool isCompressedFormat(QRhiTexture::Format format) const;
     void compressedFormatInfo(QRhiTexture::Format format, const QSize &size,
                               quint32 *bpl, quint32 *byteSize,
                               QSize *blockDim) const;
     void textureFormatInfo(QRhiTexture::Format format, const QSize &size,
-                           quint32 *bpl, quint32 *byteSize) const;
-    quint32 approxByteSizeForTexture(QRhiTexture::Format format, const QSize &baseSize,
-                                     int mipCount, int layerCount);
-
-    QRhiProfilerPrivate *profilerPrivateOrNull()
-    {
-        // return null when QRhi::EnableProfiling was not set
-        QRhiProfilerPrivate *p = QRhiProfilerPrivate::get(&profiler);
-        return p->rhiDWhenEnabled ? p : nullptr;
-    }
+                           quint32 *bpl, quint32 *byteSize, quint32 *bytesPerPixel) const;
 
     // only really care about resources that own native graphics resources underneath
     void registerResource(QRhiResource *res)
@@ -216,9 +176,49 @@ public:
         cleanupCallbacks.append(callback);
     }
 
+    void addGpuFrameTimeCallback(const QRhi::GpuFrameTimeCallback &callback)
+    {
+        gpuFrameTimeCallbacks.append(callback);
+    }
+
+    bool hasGpuFrameTimeCallback() const
+    {
+        return !gpuFrameTimeCallbacks.isEmpty();
+    }
+
+    void runGpuFrameTimeCallbacks(float t)
+    {
+        for (const QRhi::GpuFrameTimeCallback &f : std::as_const(gpuFrameTimeCallbacks))
+            f(t);
+    }
+
     bool sanityCheckGraphicsPipeline(QRhiGraphicsPipeline *ps);
     bool sanityCheckShaderResourceBindings(QRhiShaderResourceBindings *srb);
     void updateLayoutDesc(QRhiShaderResourceBindings *srb);
+
+    quint32 pipelineCacheRhiId() const
+    {
+        const quint32 ver = (QT_VERSION_MAJOR << 16) | (QT_VERSION_MINOR << 8) | (QT_VERSION_PATCH);
+        return (quint32(implType) << 24) | ver;
+    }
+
+    void pipelineCreationStart()
+    {
+        pipelineCreationTimer.start();
+    }
+
+    void pipelineCreationEnd()
+    {
+        accumulatedPipelineCreationTime += pipelineCreationTimer.elapsed();
+    }
+
+    qint64 totalPipelineCreationTime() const
+    {
+        return accumulatedPipelineCreationTime;
+    }
+
+    QRhiVertexInputAttribute::Format shaderDescVariableFormatToVertexInputFormat(QShaderDescription::VariableType type) const;
+    quint32 byteSizePerVertexForVertexInputFormat(QRhiVertexInputAttribute::Format format) const;
 
     QRhi *q;
 
@@ -231,19 +231,27 @@ public:
 private:
     QRhi::Implementation implType;
     QThread *implThread;
-    QRhiProfiler profiler;
     QVarLengthArray<QRhiResourceUpdateBatch *, 4> resUpdPool;
     quint64 resUpdPoolMap = 0;
     int lastResUpdIdx = -1;
     QSet<QRhiResource *> resources;
     QSet<QRhiResource *> pendingDeleteResources;
     QVarLengthArray<QRhi::CleanupCallback, 4> cleanupCallbacks;
+    QVarLengthArray<QRhi::GpuFrameTimeCallback, 4> gpuFrameTimeCallbacks;
+    QElapsedTimer pipelineCreationTimer;
+    qint64 accumulatedPipelineCreationTime = 0;
 
     friend class QRhi;
     friend class QRhiResourceUpdateBatchPrivate;
 };
 
-template<typename T, size_t N>
+enum QRhiTargetRectBoundMode
+{
+    UnBounded,
+    Bounded
+};
+
+template<QRhiTargetRectBoundMode boundingMode, typename T, size_t N>
 bool qrhi_toTopLeftRenderTargetRect(const QSize &outputSize, const std::array<T, N> &r,
                                     T *x, T *y, T *w, T *h)
 {
@@ -254,7 +262,7 @@ bool qrhi_toTopLeftRenderTargetRect(const QSize &outputSize, const std::array<T,
     // or height. We must handle all other input gracefully, clamping to a zero
     // width or height rect in the worst case, and ensuring the resulting rect
     // is inside the rendertarget's bounds because some APIs' validation/debug
-    // layers are allergic to out of bounds scissor or viewport rects.
+    // layers are allergic to out of bounds scissor rects.
 
     const T outputWidth = outputSize.width();
     const T outputHeight = outputSize.height();
@@ -266,20 +274,23 @@ bool qrhi_toTopLeftRenderTargetRect(const QSize &outputSize, const std::array<T,
 
     *x = r[0];
     *y = outputHeight - (r[1] + inputHeight);
+    *w = inputWidth;
+    *h = inputHeight;
 
-    const T widthOffset = *x < 0 ? -*x : 0;
-    const T heightOffset = *y < 0 ? -*y : 0;
-    *w = *x < outputWidth ? qMax<T>(0, inputWidth - widthOffset) : 0;
-    *h = *y < outputHeight ? qMax<T>(0, inputHeight - heightOffset) : 0;
+    if (boundingMode == Bounded) {
+        const T widthOffset = *x < 0 ? -*x : 0;
+        const T heightOffset = *y < 0 ? -*y : 0;
+        *w = *x < outputWidth ? qMax<T>(0, inputWidth - widthOffset) : 0;
+        *h = *y < outputHeight ? qMax<T>(0, inputHeight - heightOffset) : 0;
 
-    *x = qBound<T>(0, *x, outputWidth - 1);
-    *y = qBound<T>(0, *y, outputHeight - 1);
+        *x = qBound<T>(0, *x, outputWidth - 1);
+        *y = qBound<T>(0, *y, outputHeight - 1);
 
-    if (*x + *w > outputWidth)
-        *w = qMax<T>(0, outputWidth - *x);
-    if (*y + *h > outputHeight)
-        *h = qMax<T>(0, outputHeight - *y);
-
+        if (*x + *w > outputWidth)
+            *w = qMax<T>(0, outputWidth - *x);
+        if (*y + *h > outputHeight)
+            *h = qMax<T>(0, outputHeight - *y);
+    }
     return true;
 }
 
@@ -289,10 +300,10 @@ struct QRhiBufferDataPrivate
     QRhiBufferDataPrivate() { }
     ~QRhiBufferDataPrivate() { delete[] largeData; }
     int ref = 1;
-    int size = 0;
-    int largeAlloc = 0;
+    quint32 size = 0;
+    quint32 largeAlloc = 0;
     char *largeData = nullptr;
-    static constexpr int SMALL_DATA_SIZE = 1024;
+    static constexpr quint32 SMALL_DATA_SIZE = 1024;
     char data[SMALL_DATA_SIZE];
 };
 
@@ -327,11 +338,11 @@ public:
     {
         return d->size <= QRhiBufferDataPrivate::SMALL_DATA_SIZE ? d->data : d->largeData;
     }
-    int size() const
+    quint32 size() const
     {
         return d->size;
     }
-    void assign(const char *s, int size)
+    void assign(const char *s, quint32 size)
     {
         if (!d) {
             d = new QRhiBufferDataPrivate;
@@ -368,12 +379,12 @@ public:
         };
         Type type;
         QRhiBuffer *buf;
-        int offset;
+        quint32 offset;
         QRhiBufferData data;
-        int readSize;
+        quint32 readSize;
         QRhiBufferReadbackResult *result;
 
-        static BufferOp dynamicUpdate(QRhiBuffer *buf, int offset, int size, const void *data)
+        static BufferOp dynamicUpdate(QRhiBuffer *buf, quint32 offset, quint32 size, const void *data)
         {
             BufferOp op = {};
             op.type = DynamicUpdate;
@@ -384,7 +395,7 @@ public:
             return op;
         }
 
-        static void changeToDynamicUpdate(BufferOp *op, QRhiBuffer *buf, int offset, int size, const void *data)
+        static void changeToDynamicUpdate(BufferOp *op, QRhiBuffer *buf, quint32 offset, quint32 size, const void *data)
         {
             op->type = DynamicUpdate;
             op->buf = buf;
@@ -393,7 +404,7 @@ public:
             op->data.assign(reinterpret_cast<const char *>(data), effectiveSize);
         }
 
-        static BufferOp staticUpload(QRhiBuffer *buf, int offset, int size, const void *data)
+        static BufferOp staticUpload(QRhiBuffer *buf, quint32 offset, quint32 size, const void *data)
         {
             BufferOp op = {};
             op.type = StaticUpload;
@@ -404,7 +415,7 @@ public:
             return op;
         }
 
-        static void changeToStaticUpload(BufferOp *op, QRhiBuffer *buf, int offset, int size, const void *data)
+        static void changeToStaticUpload(BufferOp *op, QRhiBuffer *buf, quint32 offset, quint32 size, const void *data)
         {
             op->type = StaticUpload;
             op->buf = buf;
@@ -413,7 +424,7 @@ public:
             op->data.assign(reinterpret_cast<const char *>(data), effectiveSize);
         }
 
-        static BufferOp read(QRhiBuffer *buf, int offset, int size, QRhiBufferReadbackResult *result)
+        static BufferOp read(QRhiBuffer *buf, quint32 offset, quint32 size, QRhiBufferReadbackResult *result)
         {
             BufferOp op = {};
             op.type = Read;
@@ -438,7 +449,8 @@ public:
         // In the backend this can then end up, where applicable, as a
         // single, batched copy operation with only one set of barriers.
         // This helps when doing for example glyph cache fills.
-        QList<QRhiTextureSubresourceUploadDescription> subresDesc[QRhi::MAX_LAYERS][QRhi::MAX_LEVELS];
+        using MipLevelUploadList = std::array<QVector<QRhiTextureSubresourceUploadDescription>, QRhi::MAX_MIP_LEVELS>;
+        QVarLengthArray<MipLevelUploadList, 6> subresDesc;
         QRhiTexture *src;
         QRhiTextureCopyDescription desc;
         QRhiReadbackDescription rb;
@@ -449,6 +461,12 @@ public:
             TextureOp op = {};
             op.type = Upload;
             op.dst = tex;
+            int maxLayer = -1;
+            for (auto it = desc.cbeginEntries(), itEnd = desc.cendEntries(); it != itEnd; ++it) {
+                if (it->layer() > maxLayer)
+                    maxLayer = it->layer();
+            }
+            op.subresDesc.resize(maxLayer + 1);
             for (auto it = desc.cbeginEntries(), itEnd = desc.cendEntries(); it != itEnd; ++it)
                 op.subresDesc[it->layer()][it->level()].append(it->description());
             return op;
@@ -501,9 +519,6 @@ public:
 
     static QRhiResourceUpdateBatchPrivate *get(QRhiResourceUpdateBatch *b) { return b->d; }
 };
-
-Q_DECLARE_TYPEINFO(QRhiResourceUpdateBatchPrivate::BufferOp, Q_RELOCATABLE_TYPE);
-Q_DECLARE_TYPEINFO(QRhiResourceUpdateBatchPrivate::TextureOp, Q_RELOCATABLE_TYPE);
 
 template<typename T>
 struct QRhiBatchedBindings
@@ -591,8 +606,11 @@ public:
     enum BufferStage {
         BufVertexInputStage,
         BufVertexStage,
+        BufTCStage,
+        BufTEStage,
         BufFragmentStage,
-        BufComputeStage
+        BufComputeStage,
+        BufGeometryStage
     };
 
     enum BufferAccess {
@@ -609,10 +627,13 @@ public:
 
     enum TextureStage {
         TexVertexStage,
+        TexTCStage,
+        TexTEStage,
         TexFragmentStage,
         TexColorOutputStage,
         TexDepthOutputStage,
-        TexComputeStage
+        TexComputeStage,
+        TexGeometryStage
     };
 
     enum TextureAccess {
@@ -690,6 +711,83 @@ private:
     int a = 0;
     int p = 0;
 };
+
+struct QRhiRenderTargetAttachmentTracker
+{
+    struct ResId { quint64 id; uint generation; };
+    using ResIdList = QVarLengthArray<ResId, 8 * 2 + 1>; // color, resolve, ds
+
+    template<typename TexType, typename RenderBufferType>
+    static void updateResIdList(const QRhiTextureRenderTargetDescription &desc, ResIdList *dst);
+
+    template<typename TexType, typename RenderBufferType>
+    static bool isUpToDate(const QRhiTextureRenderTargetDescription &desc, const ResIdList &currentResIdList);
+};
+
+inline bool operator==(const QRhiRenderTargetAttachmentTracker::ResId &a, const QRhiRenderTargetAttachmentTracker::ResId &b)
+{
+    return a.id == b.id && a.generation == b.generation;
+}
+
+inline bool operator!=(const QRhiRenderTargetAttachmentTracker::ResId &a, const QRhiRenderTargetAttachmentTracker::ResId &b)
+{
+    return !(a == b);
+}
+
+template<typename TexType, typename RenderBufferType>
+void QRhiRenderTargetAttachmentTracker::updateResIdList(const QRhiTextureRenderTargetDescription &desc, ResIdList *dst)
+{
+    const quintptr colorAttCount = desc.cendColorAttachments() - desc.cbeginColorAttachments();
+    const bool hasDepthStencil = desc.depthStencilBuffer() || desc.depthTexture();
+    dst->resize(colorAttCount * 2 + (hasDepthStencil ? 1 : 0));
+    int n = 0;
+    for (auto it = desc.cbeginColorAttachments(), itEnd = desc.cendColorAttachments(); it != itEnd; ++it, ++n) {
+        const QRhiColorAttachment &colorAtt(*it);
+        if (colorAtt.texture()) {
+            TexType *texD = QRHI_RES(TexType, colorAtt.texture());
+            (*dst)[n] = { texD->globalResourceId(), texD->generation };
+        } else if (colorAtt.renderBuffer()) {
+            RenderBufferType *rbD = QRHI_RES(RenderBufferType, colorAtt.renderBuffer());
+            (*dst)[n] = { rbD->globalResourceId(), rbD->generation };
+        } else {
+            (*dst)[n] = { 0, 0 };
+        }
+        ++n;
+        if (colorAtt.resolveTexture()) {
+            TexType *texD = QRHI_RES(TexType, colorAtt.resolveTexture());
+            (*dst)[n] = { texD->globalResourceId(), texD->generation };
+        } else {
+            (*dst)[n] = { 0, 0 };
+        }
+    }
+    if (hasDepthStencil) {
+        if (desc.depthTexture()) {
+            TexType *depthTexD = QRHI_RES(TexType, desc.depthTexture());
+            (*dst)[n] = { depthTexD->globalResourceId(), depthTexD->generation };
+        } else if (desc.depthStencilBuffer()) {
+            RenderBufferType *depthRbD = QRHI_RES(RenderBufferType, desc.depthStencilBuffer());
+            (*dst)[n] = { depthRbD->globalResourceId(), depthRbD->generation };
+        } else {
+            (*dst)[n] = { 0, 0 };
+        }
+    }
+}
+
+template<typename TexType, typename RenderBufferType>
+bool QRhiRenderTargetAttachmentTracker::isUpToDate(const QRhiTextureRenderTargetDescription &desc, const ResIdList &currentResIdList)
+{
+    // Just as setShaderResources() recognizes if an srb's referenced
+    // resources have been rebuilt (got a create() since the srb's
+    // create()), we should do the same for the textures and renderbuffers
+    // referenced from the rendertarget. It is not uncommon that a texture
+    // or ds buffer gets resized due to following a window size in some
+    // form, which involves a create() on them. It is then nice if the
+    // render target auto-rebuilds in beginPass().
+
+    ResIdList resIdList;
+    updateResIdList<TexType, RenderBufferType>(desc, &resIdList);
+    return resIdList == currentResIdList;
+}
 
 QT_END_NAMESPACE
 

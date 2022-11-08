@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qcoreapplication.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -20,7 +23,7 @@ qt_internal_add_test(tst_qcoreapplication
     VERSION ${target_version} # special case
     SOURCES
         tst_qcoreapplication.cpp tst_qcoreapplication.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
 )
 
@@ -30,6 +33,11 @@ if (APPLE)
     set_property(TARGET tst_qcoreapplication PROPERTY PROPERTY MACOSX_BUNDLE TRUE)
 endif()
 # special case end
+
+if (ANDROID)
+    set_property(TARGET tst_qcoreapplication PROPERTY QT_ANDROID_VERSION_NAME ${target_version})
+endif()
+
 
 #### Keys ignored in scope 1:.:.:qcoreapplication.pro:<TRUE>:
 # QMAKE_INFO_PLIST = "$$PWD/Info.plist"

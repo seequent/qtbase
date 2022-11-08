@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from xcb_glx.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QXcbGlxIntegrationPlugin
     OUTPUT_NAME qxcb-glx-integration
-    TYPE xcbglintegrations
+    PLUGIN_TYPE xcbglintegrations
     SOURCES
         qglxintegration.cpp qglxintegration.h
         qxcbglxintegration.cpp qxcbglxintegration.h
@@ -18,7 +21,7 @@ qt_internal_add_plugin(QXcbGlxIntegrationPlugin
     INCLUDE_DIRECTORIES
         ..
         ../..
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui
@@ -30,12 +33,12 @@ qt_internal_add_plugin(QXcbGlxIntegrationPlugin
 #####################################################################
 
 qt_internal_extend_target(QXcbGlxIntegrationPlugin CONDITION QT_FEATURE_xcb_glx
-    PUBLIC_LIBRARIES
+    LIBRARIES
         XCB::GLX
 )
 
 qt_internal_extend_target(QXcbGlxIntegrationPlugin
     CONDITION QT_FEATURE_dlopen AND QT_BUILD_SHARED_LIBS
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ${CMAKE_DL_LIBS}
 )

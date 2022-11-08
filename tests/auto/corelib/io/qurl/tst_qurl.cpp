@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <qurl.h>
 #include <QtCore/QDebug>
@@ -37,6 +12,10 @@
 
 #include <qfileinfo.h>
 #include <qmap.h>
+
+#include <QtTest/private/qemulationdetector_p.h>
+
+using namespace Qt::StringLiterals;
 
 Q_DECLARE_METATYPE(QUrl::FormattingOptions)
 
@@ -1111,7 +1090,7 @@ void tst_QUrl::toAndFromStringList()
     QFETCH(QStringList, strings);
 
     const QList<QUrl> urls = QUrl::fromStringList(strings);
-    QCOMPARE(urls.count(), strings.count());
+    QCOMPARE(urls.size(), strings.size());
     const QStringList converted = QUrl::toStringList(urls);
     QCOMPARE(converted, strings);
 }
@@ -1327,10 +1306,17 @@ void tst_QUrl::fromLocalFile_data()
                 << QString(suffix);
 #ifdef Q_OS_WIN32
         // debackslashification only happens on Windows
+        QString suffixWithBackslashes(suffix);
+        suffixWithBackslashes.replace('/', '\\');
+
         QTest::addRow("windows-backslash-unc-%s", pathDescription)
-                << QString(QString("//somehost") + suffix).replace('/', '\\')
+                << QString(QString("\\\\somehost") + suffixWithBackslashes)
                 << QString("file://somehost") + suffix
                 << QString(suffix);
+        QTest::addRow("windows-backslash-extlen-%s", pathDescription)
+                << QString(QString("\\\\?") + suffixWithBackslashes)
+                << QString("file:////%3F") + suffix
+                << QString("//?") + suffix;
 #endif
         QTest::addRow("windows-extlen-%s", pathDescription)
                 << QString("//?") + suffix
@@ -1862,8 +1848,8 @@ void tst_QUrl::ipvfuture_data()
     QTest::newRow("non-hex-version") << "x://[vz.1234]" << false;
 
     QTest::newRow("digit-ver") << "x://[v7.1]" << true << "x://[v7.1]";
-    QTest::newRow("lowercase-hex-ver") << "x://[va.1]" << true << "x://[vA.1]";
-    QTest::newRow("lowercase-hex-ver") << "x://[vA.1]" << true << "x://[vA.1]";
+    QTest::newRow("lowercase-hex-ver-lower") << "x://[va.1]" << true << "x://[vA.1]";
+    QTest::newRow("lowercase-hex-ver-upper") << "x://[vA.1]" << true << "x://[vA.1]";
 
     QTest::newRow("data-digits") << "x://[v7.1234]" << true << "x://[v7.1234]";
     QTest::newRow("data-unreserved") << "x://[v7.hello~-WORLD_.com]" << true << "x://[v7.hello~-WORLD_.com]";
@@ -2075,8 +2061,9 @@ void tst_QUrl::hasQuery()
 
 void tst_QUrl::nameprep()
 {
-    QUrl url(QString::fromUtf8("http://www.fu""\xc3""\x9f""ball.de/"));
-    QCOMPARE(url.toString(), QString::fromLatin1("http://www.fussball.de/"));
+    // U+FB01 LATIN SMALL LIGATURE FI
+    QUrl url(u"http://www.\uFB01le.de/"_s);
+    QCOMPARE(url.toString(), QStringLiteral(u"http://www.file.de/"));
 }
 
 void tst_QUrl::isValid()
@@ -2139,14 +2126,15 @@ void tst_QUrl::isValid()
     }
 
     {
-        QUrl url = QUrl::fromEncoded("foo://%f0%9f%93%99.example.la/g");
+        // U+1F100 DIGIT ZERO FULL STOP
+        QUrl url = QUrl::fromEncoded("foo://%f0%9f%84%80.example.la/g");
         QVERIFY(!url.isValid());
         QVERIFY(url.toString().isEmpty());
         QCOMPARE(url.path(), QString("/g"));
-        url.setHost("%f0%9f%93%99.example.la/");
+        url.setHost("%f0%9f%84%80.example.la/");
         QVERIFY(!url.isValid());
         QVERIFY(url.toString().isEmpty());
-        url.setHost("\xf0\x9f\x93\x99.example.la/");
+        url.setHost("\xf0\x9f\x84\x80.example.la/");
         QVERIFY(!url.isValid());
         QVERIFY(url.toString().isEmpty());
         QVERIFY2(url.errorString().contains("Invalid hostname"),
@@ -3181,8 +3169,10 @@ void tst_QUrl::fromUserInput_data()
     QTest::newRow("misc-1") << "user:pass@domain.com" << authUrl;
 
     // FTP with double slashes in path
-    QTest::newRow("ftp-double-slash-1") << "ftp.example.com//path" << QUrl("ftp://ftp.example.com/%2Fpath");
-    QTest::newRow("ftp-double-slash-1") << "ftp://ftp.example.com//path" << QUrl("ftp://ftp.example.com/%2Fpath");
+    QTest::newRow("ftp-double-slash-no-scheme")
+        << "ftp.example.com//path" << QUrl("ftp://ftp.example.com/%2Fpath");
+    QTest::newRow("ftp-double-slash-scheme")
+        << "ftp://ftp.example.com//path" << QUrl("ftp://ftp.example.com/%2Fpath");
 }
 
 void tst_QUrl::fromUserInput()
@@ -4124,6 +4114,8 @@ void tst_QUrl::testThreadingHelper()
 
 void tst_QUrl::testThreading()
 {
+    if (QTestPrivate::isRunningArmOnX86())
+        QSKIP("This test fails in QEMU and looks like because of a data race, QTBUG-93176");
     s_urlStorage = new UrlStorage;
     QThreadPool::globalInstance()->setMaxThreadCount(100);
     QFutureSynchronizer<void> sync;

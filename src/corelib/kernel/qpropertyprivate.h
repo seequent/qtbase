@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QPROPERTYPRIVATE_H
 #define QPROPERTYPRIVATE_H
@@ -44,9 +8,9 @@
 //  W A R N I N G
 //  -------------
 //
-// This file is not part of the Qt API.  It exists for the convenience
-// of qapplication_*.cpp, qwidget*.cpp and qfiledialog.cpp.  This header
-// file may change from version to version without notice, or even be removed.
+// This file is not part of the Qt API.  It exists purely as an
+// implementation detail.  This header file may change from version to
+// version without notice, or even be removed.
 //
 // We mean it.
 //
@@ -54,10 +18,19 @@
 #include <QtCore/qglobal.h>
 #include <QtCore/qtaggedpointer.h>
 #include <QtCore/qmetatype.h>
+#include <QtCore/qcontainerfwd.h>
 
 #include <functional>
 
 QT_BEGIN_NAMESPACE
+
+class QBindingStorage;
+
+template<typename Class, typename T, auto Offset, auto Setter, auto Signal, auto Getter>
+class QObjectCompatProperty;
+
+struct QBindingObserverPtr;
+using PendingBindingObserverList = QVarLengthArray<QBindingObserverPtr>;
 
 namespace QtPrivate {
 // QPropertyBindingPrivatePtr operates on a RefCountingMixin solely so that we can inline
@@ -69,6 +42,7 @@ struct RefCounted {
 };
 }
 
+class QQmlPropertyBinding;
 class QPropertyBindingPrivate;
 class QPropertyBindingPrivatePtr
 {
@@ -108,14 +82,14 @@ public:
         reset(o);
         return *this;
     }
-    QPropertyBindingPrivatePtr(QPropertyBindingPrivatePtr &&o) noexcept : d(qExchange(o.d, nullptr)) {}
+    QPropertyBindingPrivatePtr(QPropertyBindingPrivatePtr &&o) noexcept : d(std::exchange(o.d, nullptr)) {}
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QPropertyBindingPrivatePtr)
 
     operator bool () const noexcept { return d != nullptr; }
     bool operator!() const noexcept { return d == nullptr; }
 
     void swap(QPropertyBindingPrivatePtr &other) noexcept
-    { qSwap(d, other.d); }
+    { qt_ptr_swap(d, other.d); }
 
     friend bool operator==(const QPropertyBindingPrivatePtr &p1, const QPropertyBindingPrivatePtr &p2) noexcept
     { return p1.d == p2.d; }
@@ -142,10 +116,11 @@ private:
     QtPrivate::RefCounted *d;
 };
 
-
 class QUntypedPropertyBinding;
 class QPropertyBindingPrivate;
 struct QPropertyBindingDataPointer;
+class QPropertyObserver;
+struct QPropertyObserverPointer;
 
 class QUntypedPropertyData
 {
@@ -157,8 +132,32 @@ public:
 template <typename T>
 class QPropertyData;
 
+// Used for grouped property evaluations
+namespace QtPrivate {
+class QPropertyBindingData;
+}
+struct QPropertyDelayedNotifications;
+struct QPropertyProxyBindingData
+{
+    // acts as QPropertyBindingData::d_ptr
+    quintptr d_ptr;
+    /*
+        The two members below store the original binding data and property
+        data pointer of the property which gets proxied.
+        They are set in QPropertyDelayedNotifications::addProperty
+    */
+    const QtPrivate::QPropertyBindingData *originalBindingData;
+    QUntypedPropertyData *propertyData;
+};
+
 namespace QtPrivate {
 struct BindingEvaluationState;
+
+/*  used in BindingFunctionVTable::createFor; on all other compilers, void would work, but on
+    MSVC this causes C2182 when compiling in C++20 mode. As we only need to provide some default
+    value which gets ignored, we introduce this dummy type.
+*/
+struct MSVCWorkAround {};
 
 struct BindingFunctionVTable
 {
@@ -170,7 +169,7 @@ struct BindingFunctionVTable
     const MoveCtrFn moveConstruct;
     const qsizetype size;
 
-    template<typename Callable, typename PropertyType=void>
+    template<typename Callable, typename PropertyType=MSVCWorkAround>
     static constexpr BindingFunctionVTable createFor()
     {
         static_assert (alignof(Callable) <= alignof(std::max_align_t), "Bindings do not support overaligned functors!");
@@ -181,7 +180,7 @@ struct BindingFunctionVTable
                     static_assert (std::is_invocable_r_v<bool, Callable, QMetaType, QUntypedPropertyData *> );
                     auto untypedEvaluationFunction = static_cast<Callable *>(f);
                     return std::invoke(*untypedEvaluationFunction, metaType, dataPtr);
-                } else {
+                } else if constexpr (!std::is_same_v<PropertyType, MSVCWorkAround>) {
                     Q_UNUSED(metaType);
                     QPropertyData<PropertyType> *propertyPtr = static_cast<QPropertyData<PropertyType> *>(dataPtr);
                     // That is allowed by POSIX even if Callable is a function pointer
@@ -193,6 +192,9 @@ struct BindingFunctionVTable
                     }
                     propertyPtr->setValueBypassingBindings(std::move(newValue));
                     return true;
+                } else {
+                    // Our code will never instantiate this
+                    Q_UNREACHABLE_RETURN(false);
                 }
             },
             /*destroy*/[](void *f){ static_cast<Callable *>(f)->~Callable(); },
@@ -204,7 +206,7 @@ struct BindingFunctionVTable
     }
 };
 
-template<typename Callable, typename PropertyType=void>
+template<typename Callable, typename PropertyType=MSVCWorkAround>
 inline constexpr BindingFunctionVTable bindingFunctionVTable = BindingFunctionVTable::createFor<Callable, PropertyType>();
 
 
@@ -217,12 +219,28 @@ struct QPropertyBindingFunction {
 using QPropertyObserverCallback = void (*)(QUntypedPropertyData *);
 using QPropertyBindingWrapper = bool(*)(QMetaType, QUntypedPropertyData *dataPtr, QPropertyBindingFunction);
 
+/*!
+    \internal
+    A property normally consists of the actual property value and metadata for the binding system.
+    QPropertyBindingData is the latter part. It stores a pointer to either
+    - a (potentially empty) linked list of notifiers, in case there is no binding set,
+    - an actual QUntypedPropertyBinding when the property has a binding,
+    - or a pointer to QPropertyProxyBindingData when notifications occur inside a grouped update.
+
+    \sa QPropertyDelayedNotifications, beginPropertyUpdateGroup
+ */
 class Q_CORE_EXPORT QPropertyBindingData
 {
     // Mutable because the address of the observer of the currently evaluating binding is stored here, for
     // notification later when the value changes.
     mutable quintptr d_ptr = 0;
     friend struct QT_PREPEND_NAMESPACE(QPropertyBindingDataPointer);
+    friend class QT_PREPEND_NAMESPACE(QQmlPropertyBinding);
+    friend struct QT_PREPEND_NAMESPACE(QPropertyDelayedNotifications);
+
+    template<typename Class, typename T, auto Offset, auto Setter, auto Signal, auto Getter>
+    friend class QT_PREPEND_NAMESPACE(QObjectCompatProperty);
+
     Q_DISABLE_COPY(QPropertyBindingData)
 public:
     QPropertyBindingData() = default;
@@ -230,9 +248,13 @@ public:
     QPropertyBindingData &operator=(QPropertyBindingData &&other) = delete;
     ~QPropertyBindingData();
 
-    static inline constexpr quintptr BindingBit = 0x1; // Is d_ptr pointing to a binding (1) or list of notifiers (0)?
+    // Is d_ptr pointing to a binding (1) or list of notifiers (0)?
+    static inline constexpr quintptr BindingBit = 0x1;
+    // Is d_ptr pointing to QPropertyProxyBindingData (1) or to an actual binding/list of notifiers?
+    static inline constexpr quintptr DelayedNotificationBit = 0x2;
 
     bool hasBinding() const { return d_ptr & BindingBit; }
+    bool isNotificationDelayed() const { return d_ptr & DelayedNotificationBit; }
 
     QUntypedPropertyBinding setBinding(const QUntypedPropertyBinding &newBinding,
                                        QUntypedPropertyData *propertyDataPtr,
@@ -241,14 +263,14 @@ public:
 
     QPropertyBindingPrivate *binding() const
     {
-        if (d_ptr & BindingBit)
-            return reinterpret_cast<QPropertyBindingPrivate*>(d_ptr - BindingBit);
+        quintptr dd = d();
+        if (dd & BindingBit)
+            return reinterpret_cast<QPropertyBindingPrivate*>(dd - BindingBit);
         return nullptr;
 
     }
 
-    void evaluateIfDirty(const QUntypedPropertyData *property) const;
-    void markDirty();
+    void evaluateIfDirty(const QUntypedPropertyData *) const; // ### Kept for BC reasons, unused
 
     void removeBinding()
     {
@@ -264,9 +286,35 @@ public:
     }
     void registerWithCurrentlyEvaluatingBinding() const;
     void notifyObservers(QUntypedPropertyData *propertyDataPtr) const;
+    void notifyObservers(QUntypedPropertyData *propertyDataPtr, QBindingStorage *storage) const;
 private:
+    /*!
+        \internal
+        Returns a reference to d_ptr, except when d_ptr points to a proxy.
+        In that case, a reference to proxy->d_ptr is returned instead.
+
+        To properly support proxying, direct access to d_ptr only occurs when
+        - a function actually deals with proxying (e.g.
+          QPropertyDelayedNotifications::addProperty),
+        - only the tag value is accessed (e.g. hasBinding) or
+        - inside a constructor.
+     */
+    quintptr &d_ref() const
+    {
+        quintptr &d = d_ptr;
+        if (isNotificationDelayed())
+            return reinterpret_cast<QPropertyProxyBindingData *>(d_ptr & ~(BindingBit|DelayedNotificationBit))->d_ptr;
+        return d;
+    }
+    quintptr d() const { return d_ref(); }
     void registerWithCurrentlyEvaluatingBinding_helper(BindingEvaluationState *currentBinding) const;
     void removeBinding_helper();
+
+    enum NotificationResult { Delayed, Evaluated };
+    NotificationResult notifyObserver_helper(
+            QUntypedPropertyData *propertyDataPtr, QBindingStorage *storage,
+            QPropertyObserverPointer observer,
+            PendingBindingObserverList &bindingObservers) const;
 };
 
 template <typename T, typename Tag>

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -83,6 +58,10 @@ private:
 #define SIZE(x, y, z) \
     ((size == QStyleHelper::SizeLarge) ? (x) : (size == QStyleHelper::SizeSmall) ? (y) : (z))
 
+static bool bigSurOrAbove() {
+    return QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSBigSur;
+}
+
 void tst_QMacStyle::sizeHints_data()
 {
     QTest::addColumn<QStyleHelper::WidgetSizePolicy>("size");
@@ -133,7 +112,7 @@ void tst_QMacStyle::sizeHints()
     QCOMPARE(sh(&comboBox3).height(), SIZE(32, -1, -1));
 
     QSlider slider1(Qt::Horizontal, &w);
-    QCOMPARE(sh(&slider1).height(), SIZE(15, 12, 10));
+    QCOMPARE(sh(&slider1).height(), SIZE(bigSurOrAbove() ? 18 : 15, 12, 10));
 
     slider1.setTickPosition(QSlider::TicksAbove);
     QCOMPARE(sh(&slider1).height(), SIZE(24, 17, 16));  // Builder
@@ -142,7 +121,7 @@ void tst_QMacStyle::sizeHints()
     QCOMPARE(sh(&slider1).height(), SIZE(24, 17, 16));  // Builder
 
     slider1.setTickPosition(QSlider::TicksBothSides);
-    QVERIFY(sh(&slider1).height() > SIZE(15, 12, 10));  // common sense
+    QVERIFY(sh(&slider1).height() > SIZE(bigSurOrAbove() ? 18 : 15, 12, 10));  // common sense
 
     QPushButton ok1("OK", &w);
     QPushButton cancel1("Cancel", &w);

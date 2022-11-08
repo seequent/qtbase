@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qcursor.h"
 
@@ -150,7 +114,7 @@ QT_BEGIN_NAMESPACE
          \li Qt::DragLinkCursor      \li \c dnd-link or \c link
     \endtable
 
-    \sa QWidget, {fowler}{GUI Design Handbook: Cursors}
+    \sa QWidget
 */
 
 /*!
@@ -251,7 +215,8 @@ void QCursor::setPos(QScreen *screen, int x, int y)
 {
     if (screen) {
         if (QPlatformCursor *cursor = screen->handle()->cursor()) {
-            const QPoint devicePos = QHighDpi::toNativePixels(QPoint(x, y), screen);
+            const QPoint pos(x, y);
+            const QPoint devicePos = QHighDpi::toNativePixels(pos, screen->virtualSiblingAt(pos));
             // Need to check, since some X servers generate null mouse move
             // events, causing looping in applications which call setPos() on
             // every mouse move event.
@@ -325,7 +290,7 @@ QDataStream &operator<<(QDataStream &s, const QCursor &c)
         if (isPixmap)
             s << c.pixmap();
         else
-            s << c.bitmap(Qt::ReturnByValue) << c.mask(Qt::ReturnByValue);
+            s << c.bitmap() << c.mask();
         s << c.hotSpot();
     }
     return s;
@@ -527,8 +492,7 @@ bool operator==(const QCursor &lhs, const QCursor &rhs) noexcept
 */
 
 /*!
-    Returns the cursor shape identifier. The return value is one of
-    the \l Qt::CursorShape enum values (cast to an int).
+    Returns the cursor shape identifier.
 
     \sa setShape()
 */
@@ -566,7 +530,7 @@ void QCursor::setShape(Qt::CursorShape shape)
 /*!
     \fn QBitmap QCursor::bitmap(Qt::ReturnByValueConstant) const
     \since 5.15
-    \obsolete Use the overload without argument instead.
+    \deprecated Use the overload without argument instead.
 
     Returns the cursor bitmap, or a null bitmap if it is one of the
     standard cursors.
@@ -593,7 +557,7 @@ QBitmap QCursor::bitmap() const
 /*!
     \fn QBitmap QCursor::mask(Qt::ReturnByValueConstant) const
     \since 5.15
-    \obsolete Use the overload without argument instead.
+    \deprecated Use the overload without argument instead.
 
     Returns the cursor bitmap mask, or a null bitmap if it is one of the
     standard cursors.

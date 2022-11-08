@@ -1,31 +1,6 @@
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-::
 :: Copyright (C) 2016 The Qt Company Ltd.
 :: Copyright (C) 2016 Intel Corporation.
-:: Contact: https://www.qt.io/licensing/
-::
-:: This file is part of the tools applications of the Qt Toolkit.
-::
-:: $QT_BEGIN_LICENSE:GPL-EXCEPT$
-:: Commercial License Usage
-:: Licensees holding valid commercial Qt licenses may use this file in
-:: accordance with the commercial license agreement provided with the
-:: Software or, alternatively, in accordance with the terms contained in
-:: a written agreement between you and The Qt Company. For licensing terms
-:: and conditions see https://www.qt.io/terms-conditions. For further
-:: information use the contact form at https://www.qt.io/contact-us.
-::
-:: GNU General Public License Usage
-:: Alternatively, this file may be used under the terms of the GNU
-:: General Public License version 3 as published by the Free Software
-:: Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-:: included in the packaging of this file. Please review the following
-:: information to ensure the GNU General Public License requirements will
-:: be met: https://www.gnu.org/licenses/gpl-3.0.html.
-::
-:: $QT_END_LICENSE$
-::
-:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+:: SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 @echo off
 setlocal ENABLEDELAYEDEXPANSION ENABLEEXTENSIONS
@@ -53,10 +28,6 @@ echo ERROR: You cannot configure qtbase separately within a top-level build. >&2
 exit /b 1
 :wastoplevel
 
-set SYNCQT=
-set PLATFORM=
-set MAKE=
-set CMAKE=true
 call :doargs %ARGS%
 if errorlevel 1 exit /b
 goto doneargs
@@ -74,12 +45,6 @@ goto doneargs
 
     if /i "%~1" == "-redo" goto redo
     if /i "%~1" == "--redo" goto redo
-
-    if /i "%~1" == "-cmake" goto cmake
-    if /i "%~1" == "--cmake" goto cmake
-
-    if /i "%~1" == "-qmake" goto qmake
-    if /i "%~1" == "--qmake" goto qmake
 
 :nextarg
     shift
@@ -108,20 +73,14 @@ goto doneargs
     echo No config.opt present - cannot redo configuration. >&2
     exit /b 1
 
-:cmake
-    goto nextarg
-
-:qmake
-    echo ERROR: You cannot configure Qt 6 with qmake anymore. >&2
-    exit /b 1
-
 :doneargs
 
 cd "%TOPQTDIR%"
 
 rem Write config.opt if we're not currently -redo'ing
-if "%rargs%" == "" (
-    cmake -DOUT_FILE=config.opt -DIGNORE_ARGS=-top-level -P "%QTSRC%\cmake\QtWriteArgsFile.cmake" %*
+if "!rargs!" == "" (
+    echo.%*>config.opt.in
+    cmake -DIN_FILE=config.opt.in -DOUT_FILE=config.opt -DIGNORE_ARGS=-top-level -P "%QTSRC%\cmake\QtWriteArgsFile.cmake"
 )
 
 rem Launch CMake-based configure

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Qt Gui module
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QRHIGLES2_P_H
 #define QRHIGLES2_P_H
@@ -55,7 +19,11 @@
 #include "qrhi_p_p.h"
 #include "qshaderdescription_p.h"
 #include <qopengl.h>
-#include <QSurface>
+#include <QByteArray>
+#include <QWindow>
+#include <QPointer>
+#include <QtCore/private/qduplicatetracker_p.h>
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 
@@ -63,7 +31,7 @@ class QOpenGLExtensions;
 
 struct QGles2Buffer : public QRhiBuffer
 {
-    QGles2Buffer(QRhiImplementation *rhi, Type type, UsageFlags usage, int size);
+    QGles2Buffer(QRhiImplementation *rhi, Type type, UsageFlags usage, quint32 size);
     ~QGles2Buffer();
     void destroy() override;
     bool create() override;
@@ -71,10 +39,10 @@ struct QGles2Buffer : public QRhiBuffer
     char *beginFullDynamicBufferUpdateForCurrentFrame() override;
     void endFullDynamicBufferUpdateForCurrentFrame() override;
 
-    int nonZeroSize = 0;
+    quint32 nonZeroSize = 0;
     GLuint buffer = 0;
     GLenum targetForDataOps;
-    char *data = nullptr;
+    QByteArray data;
     enum Access {
         AccessNone,
         AccessVertex,
@@ -100,11 +68,14 @@ struct QGles2RenderBuffer : public QRhiRenderBuffer
     ~QGles2RenderBuffer();
     void destroy() override;
     bool create() override;
+    bool createFrom(NativeRenderBuffer src) override;
     QRhiTexture::Format backingFormat() const override;
 
     GLuint renderbuffer = 0;
     GLuint stencilRenderbuffer = 0; // when packed depth-stencil not supported
     int samples;
+    bool owns = true;
+    uint generation = 0;
     friend class QRhiGles2;
 };
 
@@ -114,6 +85,7 @@ struct QGles2SamplerData
     GLenum glmagfilter = 0;
     GLenum glwraps = 0;
     GLenum glwrapt = 0;
+    GLenum glwrapr = 0;
     GLenum gltexcomparefunc = 0;
 };
 
@@ -123,6 +95,7 @@ inline bool operator==(const QGles2SamplerData &a, const QGles2SamplerData &b)
             && a.glmagfilter == b.glmagfilter
             && a.glwraps == b.glwraps
             && a.glwrapt == b.glwrapt
+            && a.glwrapr == b.glwrapr
             && a.gltexcomparefunc == b.gltexcomparefunc;
 }
 
@@ -133,8 +106,8 @@ inline bool operator!=(const QGles2SamplerData &a, const QGles2SamplerData &b)
 
 struct QGles2Texture : public QRhiTexture
 {
-    QGles2Texture(QRhiImplementation *rhi, Format format, const QSize &pixelSize,
-                  int sampleCount, Flags flags);
+    QGles2Texture(QRhiImplementation *rhi, Format format, const QSize &pixelSize, int depth,
+                  int arraySize, int sampleCount, Flags flags);
     ~QGles2Texture();
     void destroy() override;
     bool create() override;
@@ -152,7 +125,7 @@ struct QGles2Texture : public QRhiTexture
     GLenum gltype;
     QGles2SamplerData samplerState;
     bool specified = false;
-    bool compressedAtlasBuilt = false;
+    bool zeroInitialized = false;
     int mipLevelCount = 0;
 
     enum Access {
@@ -193,11 +166,15 @@ struct QGles2RenderPassDescriptor : public QRhiRenderPassDescriptor
     ~QGles2RenderPassDescriptor();
     void destroy() override;
     bool isCompatible(const QRhiRenderPassDescriptor *other) const override;
+    QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() const override;
+    QVector<quint32> serializedFormat() const override;
 };
 
 struct QGles2RenderTargetData
 {
     QGles2RenderTargetData(QRhiImplementation *) { }
+
+    bool isValid() const { return rp != nullptr; }
 
     QGles2RenderPassDescriptor *rp = nullptr;
     QSize pixelSize;
@@ -206,12 +183,14 @@ struct QGles2RenderTargetData
     int colorAttCount = 0;
     int dsAttCount = 0;
     bool srgbUpdateAndBlend = false;
+    QRhiRenderTargetAttachmentTracker::ResIdList currentResIdList;
+    std::optional<QRhiSwapChain::StereoTargetBuffer> stereoTarget;
 };
 
-struct QGles2ReferenceRenderTarget : public QRhiRenderTarget
+struct QGles2SwapChainRenderTarget : public QRhiSwapChainRenderTarget
 {
-    QGles2ReferenceRenderTarget(QRhiImplementation *rhi);
-    ~QGles2ReferenceRenderTarget();
+    QGles2SwapChainRenderTarget(QRhiImplementation *rhi, QRhiSwapChain *swapchain);
+    ~QGles2SwapChainRenderTarget();
     void destroy() override;
 
     QSize pixelSize() const override;
@@ -245,6 +224,7 @@ struct QGles2ShaderResourceBindings : public QRhiShaderResourceBindings
     ~QGles2ShaderResourceBindings();
     void destroy() override;
     bool create() override;
+    void updateResources(UpdateFlags flags) override;
 
     bool hasDynamicOffset = false;
     uint generation = 0;
@@ -256,8 +236,8 @@ struct QGles2UniformDescription
     QShaderDescription::VariableType type;
     int glslLocation;
     int binding;
-    uint offset;
-    int size;
+    quint32 offset;
+    quint32 size;
     int arrayDim;
 };
 
@@ -266,7 +246,9 @@ Q_DECLARE_TYPEINFO(QGles2UniformDescription, Q_RELOCATABLE_TYPE);
 struct QGles2SamplerDescription
 {
     int glslLocation;
-    int binding;
+    int combinedBinding;
+    int tbinding;
+    int sbinding;
 };
 
 Q_DECLARE_TYPEINFO(QGles2SamplerDescription, Q_RELOCATABLE_TYPE);
@@ -293,6 +275,8 @@ struct QGles2GraphicsPipeline : public QRhiGraphicsPipeline
     QGles2UniformDescriptionVector uniforms;
     QGles2SamplerDescriptionVector samplers;
     QGles2UniformState uniformState[QGles2UniformState::MAX_TRACKED_LOCATION + 1];
+    QRhiShaderResourceBindings *currentSrb = nullptr;
+    uint currentSrbGeneration = 0;
     uint generation = 0;
     friend class QRhiGles2;
 };
@@ -308,6 +292,8 @@ struct QGles2ComputePipeline : public QRhiComputePipeline
     QGles2UniformDescriptionVector uniforms;
     QGles2SamplerDescriptionVector samplers;
     QGles2UniformState uniformState[QGles2UniformState::MAX_TRACKED_LOCATION + 1];
+    QRhiShaderResourceBindings *currentSrb = nullptr;
+    uint currentSrbGeneration = 0;
     uint generation = 0;
     friend class QRhiGles2;
 };
@@ -417,6 +403,8 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
                 GLuint fbo;
                 bool srgb;
                 int colorAttCount;
+                bool stereo;
+                QRhiSwapChain::StereoTargetBuffer stereoTarget;
             } bindFramebuffer;
             struct {
                 GLenum target;
@@ -433,17 +421,20 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
                 int size;
             } getBufferSubData;
             struct {
+                GLenum srcTarget;
                 GLenum srcFaceTarget;
                 GLuint srcTexture;
                 int srcLevel;
                 int srcX;
                 int srcY;
+                int srcZ;
                 GLenum dstTarget;
                 GLuint dstTexture;
                 GLenum dstFaceTarget;
                 int dstLevel;
                 int dstX;
                 int dstY;
+                int dstZ;
                 int w;
                 int h;
             } copyTex;
@@ -455,6 +446,7 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
                 QRhiTexture::Format format;
                 GLenum readTarget;
                 int level;
+                int slice3D;
             } readPixels;
             struct {
                 GLenum target;
@@ -463,11 +455,13 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
                 int level;
                 int dx;
                 int dy;
+                int dz;
                 int w;
                 int h;
                 GLenum glformat;
                 GLenum gltype;
                 int rowStartAlign;
+                int rowLength;
                 const void *data; // must come from retainImage()
             } subImage;
             struct {
@@ -478,6 +472,7 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
                 GLenum glintformat;
                 int w;
                 int h;
+                int depth;
                 int size;
                 const void *data; // must come from retainData()
             } compressedImage;
@@ -488,6 +483,7 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
                 int level;
                 int dx;
                 int dy;
+                int dz;
                 int w;
                 int h;
                 GLenum glintformat;
@@ -501,6 +497,7 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
                 GLenum target;
                 GLuint texture;
                 int dstLevel;
+                int dstLayer;
             } blitFromRb;
             struct {
                 GLenum target;
@@ -575,6 +572,8 @@ struct QGles2CommandBuffer : public QRhiCommandBuffer
         float polyOffsetFactor;
         float polyOffsetUnits;
         float lineWidth;
+        int cpCount;
+        GLenum polygonMode;
         void reset() { valid = false; }
         struct {
             // not part of QRhiGraphicsPipeline but used by setGraphicsPipeline()
@@ -697,15 +696,21 @@ struct QGles2SwapChain : public QRhiSwapChain
 
     QRhiCommandBuffer *currentFrameCommandBuffer() override;
     QRhiRenderTarget *currentFrameRenderTarget() override;
+    QRhiRenderTarget *currentFrameRenderTarget(StereoTargetBuffer targetBuffer) override;
 
     QSize surfacePixelSize() override;
+    bool isFormatSupported(Format f) override;
 
     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
     bool createOrResize() override;
 
+    void initSwapChainRenderTarget(QGles2SwapChainRenderTarget *rt);
+
     QSurface *surface = nullptr;
     QSize pixelSize;
-    QGles2ReferenceRenderTarget rt;
+    QGles2SwapChainRenderTarget rt;
+    QGles2SwapChainRenderTarget rtLeft;
+    QGles2SwapChainRenderTarget rtRight;
     QGles2CommandBuffer cb;
     int frameCount = 0;
 };
@@ -723,7 +728,7 @@ public:
     QRhiShaderResourceBindings *createShaderResourceBindings() override;
     QRhiBuffer *createBuffer(QRhiBuffer::Type type,
                              QRhiBuffer::UsageFlags usage,
-                             int size) override;
+                             quint32 size) override;
     QRhiRenderBuffer *createRenderBuffer(QRhiRenderBuffer::Type type,
                                          const QSize &pixelSize,
                                          int sampleCount,
@@ -731,6 +736,8 @@ public:
                                          QRhiTexture::Format backingFormatHint) override;
     QRhiTexture *createTexture(QRhiTexture::Format format,
                                const QSize &pixelSize,
+                               int depth,
+                               int arraySize,
                                int sampleCount,
                                QRhiTexture::Flags flags) override;
     QRhiSampler *createSampler(QRhiSampler::Filter magFilter,
@@ -811,12 +818,16 @@ public:
     int resourceLimit(QRhi::ResourceLimit limit) const override;
     const QRhiNativeHandles *nativeHandles() override;
     QRhiDriverInfo driverInfo() const override;
-    void sendVMemStatsToProfiler() override;
+    QRhiStats statistics() override;
     bool makeThreadLocalNativeContextCurrent() override;
     void releaseCachedResources() override;
     bool isDeviceLost() const override;
 
+    QByteArray pipelineCacheData() override;
+    void setPipelineCacheData(const QByteArray &data) override;
+
     bool ensureContext(QSurface *surface = nullptr) const;
+    QSurface *evaluateFallbackSurface() const;
     void executeDeferredReleases();
     void trackedBufferBarrier(QGles2CommandBuffer *cbD, QGles2Buffer *bufD, QGles2Buffer::Access access);
     void trackedImageBarrier(QGles2CommandBuffer *cbD, QGles2Texture *texD, QGles2Texture::Access access);
@@ -833,6 +844,9 @@ public:
                                 QRhiPassResourceTracker::TextureStage stage);
     void executeCommandBuffer(QRhiCommandBuffer *cb);
     void executeBindGraphicsPipeline(QGles2CommandBuffer *cbD, QGles2GraphicsPipeline *psD);
+    void bindCombinedSampler(QGles2CommandBuffer *cbD, QGles2Texture *texD, QGles2Sampler *samplerD,
+                             void *ps, uint psGeneration, int glslLocation,
+                             int *texUnit, bool *activeTexUnitAltered);
     void bindShaderResources(QGles2CommandBuffer *cbD,
                              QRhiGraphicsPipeline *maybeGraphicsPs, QRhiComputePipeline *maybeComputePs,
                              QRhiShaderResourceBindings *srb,
@@ -841,39 +855,47 @@ public:
                                                    bool *wantsColorClear = nullptr, bool *wantsDsClear = nullptr);
     void enqueueBarriersForPass(QGles2CommandBuffer *cbD);
     int effectiveSampleCount(int sampleCount) const;
-    QByteArray shaderSource(const QRhiShaderStage &shaderStage, int *glslVersion);
-    bool compileShader(GLuint program, const QRhiShaderStage &shaderStage, int *glslVersion);
+    QByteArray shaderSource(const QRhiShaderStage &shaderStage, QShaderVersion *shaderVersion);
+    bool compileShader(GLuint program, const QRhiShaderStage &shaderStage, QShaderVersion *shaderVersion);
     bool linkProgram(GLuint program);
     void registerUniformIfActive(const QShaderDescription::BlockVariable &var,
                                  const QByteArray &namePrefix, int binding, int baseOffset,
                                  GLuint program,
-                                 QSet<int> *activeUniformLocations,
+                                 QDuplicateTracker<int, 256> *activeUniformLocations,
                                  QGles2UniformDescriptionVector *dst);
     void gatherUniforms(GLuint program, const QShaderDescription::UniformBlock &ub,
-                        QSet<int> *activeUniformLocations, QGles2UniformDescriptionVector *dst);
+                        QDuplicateTracker<int, 256> *activeUniformLocations, QGles2UniformDescriptionVector *dst);
     void gatherSamplers(GLuint program, const QShaderDescription::InOutVariable &v,
                         QGles2SamplerDescriptionVector *dst);
+    void gatherGeneratedSamplers(GLuint program,
+                                 const QShader::SeparateToCombinedImageSamplerMapping &mapping,
+                                 QGles2SamplerDescriptionVector *dst);
+    void sanityCheckVertexFragmentInterface(const QShaderDescription &vsDesc, const QShaderDescription &fsDesc);
     bool isProgramBinaryDiskCacheEnabled() const;
 
-    enum DiskCacheResult {
-        DiskCacheHit,
-        DiskCacheMiss,
-        DiskCacheError
+    enum ProgramCacheResult {
+        ProgramCacheHit,
+        ProgramCacheMiss,
+        ProgramCacheError
     };
-    DiskCacheResult tryLoadFromDiskCache(const QRhiShaderStage *stages,
-                                         int stageCount,
-                                         GLuint program,
-                                         const QVector<QShaderDescription::InOutVariable> &inputVars,
-                                         QByteArray *cacheKey);
+    ProgramCacheResult tryLoadFromDiskOrPipelineCache(const QRhiShaderStage *stages,
+                                                      int stageCount,
+                                                      GLuint program,
+                                                      const QVector<QShaderDescription::InOutVariable> &inputVars,
+                                                      QByteArray *cacheKey);
     void trySaveToDiskCache(GLuint program, const QByteArray &cacheKey);
+    void trySaveToPipelineCache(GLuint program, const QByteArray &cacheKey, bool force = false);
 
+    QRhi::Flags rhiFlags;
     QOpenGLContext *ctx = nullptr;
     bool importedContext = false;
     QSurfaceFormat requestedFormat;
     QSurface *fallbackSurface = nullptr;
-    QWindow *maybeWindow = nullptr;
-    mutable bool needsMakeCurrent = false;
+    QPointer<QWindow> maybeWindow = nullptr;
+    QOpenGLContext *maybeShareContext = nullptr;
+    mutable bool needsMakeCurrentDueToSwap = false;
     QOpenGLExtensions *f = nullptr;
+    void (QOPENGLF_APIENTRYP glPolygonMode) (GLenum, GLenum) = nullptr;
     uint vao = 0;
     struct Caps {
         Caps()
@@ -882,11 +904,15 @@ public:
               maxTextureSize(2048),
               maxDrawBuffers(4),
               maxSamples(16),
+              maxTextureArraySize(0),
               maxThreadGroupsPerDimension(0),
               maxThreadsPerThreadGroup(0),
               maxThreadGroupsX(0),
               maxThreadGroupsY(0),
               maxThreadGroupsZ(0),
+              maxUniformVectors(4096),
+              maxVertexInputs(8),
+              maxVertexOutputs(8),
               msaaRenderBuffer(false),
               multisampledTexture(false),
               npotTextureFull(true),
@@ -897,6 +923,7 @@ public:
               r8Format(false),
               r16Format(false),
               floatFormats(false),
+              rgb10Formats(false),
               depthTexture(false),
               packedDepthStencil(false),
               needsDepthStencilCombinedAttach(false),
@@ -914,18 +941,26 @@ public:
               nonBaseLevelFramebufferTexture(false),
               texelFetch(false),
               intAttributes(true),
-              screenSpaceDerivatives(false)
+              screenSpaceDerivatives(false),
+              programBinary(false),
+              texture3D(false),
+              tessellation(false),
+              geometryShader(false)
         { }
         int ctxMajor;
         int ctxMinor;
         int maxTextureSize;
         int maxDrawBuffers;
         int maxSamples;
+        int maxTextureArraySize;
         int maxThreadGroupsPerDimension;
         int maxThreadsPerThreadGroup;
         int maxThreadGroupsX;
         int maxThreadGroupsY;
         int maxThreadGroupsZ;
+        int maxUniformVectors;
+        int maxVertexInputs;
+        int maxVertexOutputs;
         // Multisample fb and blit are supported (GLES 3.0 or OpenGL 3.x). Not
         // the same as multisample textures!
         uint msaaRenderBuffer : 1;
@@ -938,6 +973,7 @@ public:
         uint r8Format : 1;
         uint r16Format : 1;
         uint floatFormats : 1;
+        uint rgb10Formats : 1;
         uint depthTexture : 1;
         uint packedDepthStencil : 1;
         uint needsDepthStencilCombinedAttach : 1;
@@ -956,9 +992,13 @@ public:
         uint texelFetch : 1;
         uint intAttributes : 1;
         uint screenSpaceDerivatives : 1;
+        uint programBinary : 1;
+        uint texture3D : 1;
+        uint tessellation : 1;
+        uint geometryShader : 1;
     } caps;
     QGles2SwapChain *currentSwapChain = nullptr;
-    QList<GLint> supportedCompressedFormats;
+    QSet<GLint> supportedCompressedFormats;
     mutable QList<int> supportedSampleCountList;
     QRhiGles2NativeHandles nativeHandlesStruct;
     QRhiDriverInfo driverInfoStruct;
@@ -1001,6 +1041,12 @@ public:
     } ofr;
 
     QHash<QRhiShaderStage, uint> m_shaderCache;
+
+    struct PipelineCacheData {
+        quint32 format;
+        QByteArray data;
+    };
+    QHash<QByteArray, PipelineCacheData> m_pipelineCache;
 };
 
 Q_DECLARE_TYPEINFO(QRhiGles2::DeferredReleaseEntry, Q_RELOCATABLE_TYPE);

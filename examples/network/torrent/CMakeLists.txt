@@ -1,31 +1,26 @@
-# Generated from torrent.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.16)
 project(torrent LANGUAGES CXX)
 
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 if(NOT DEFINED INSTALL_EXAMPLESDIR)
-  set(INSTALL_EXAMPLESDIR "examples")
+    set(INSTALL_EXAMPLESDIR "examples")
 endif()
 
 set(INSTALL_EXAMPLEDIR "${INSTALL_EXAMPLESDIR}/network/torrent")
 
-find_package(Qt6 COMPONENTS Core)
-find_package(Qt6 COMPONENTS Gui)
-find_package(Qt6 COMPONENTS Network)
-find_package(Qt6 COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Network Widgets)
 
 qt_add_executable(torrent
     addtorrentdialog.cpp addtorrentdialog.h
+    addtorrentform.ui
     bencodeparser.cpp bencodeparser.h
     connectionmanager.cpp connectionmanager.h
     filemanager.cpp filemanager.h
-    forms/addtorrentform.ui
     main.cpp
     mainwindow.cpp mainwindow.h
     metainfo.cpp metainfo.h
@@ -35,18 +30,18 @@ qt_add_executable(torrent
     torrentserver.cpp torrentserver.h
     trackerclient.cpp trackerclient.h
 )
+
 set_target_properties(torrent PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
-target_include_directories(torrent PUBLIC forms) # special case
+
 target_link_libraries(torrent PUBLIC
     Qt::Core
     Qt::Gui
     Qt::Network
     Qt::Widgets
 )
-
 
 # Resources:
 set(icons_resource_files
@@ -60,7 +55,7 @@ set(icons_resource_files
     "icons/player_stop.png"
 )
 
-qt6_add_resources(torrent "icons"
+qt_add_resources(torrent "icons"
     PREFIX
         "/"
     FILES

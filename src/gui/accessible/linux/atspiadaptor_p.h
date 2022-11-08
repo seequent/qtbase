@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 
 #ifndef ATSPIADAPTOR_H
@@ -67,7 +31,6 @@ QT_REQUIRE_CONFIG(accessibility);
 QT_BEGIN_NAMESPACE
 
 class QAccessibleInterface;
-class QSpiAccessibleInterface;
 class QSpiApplicationAdaptor;
 
 
@@ -84,8 +47,6 @@ public:
     bool handleMessage(const QDBusMessage &message, const QDBusConnection &connection) override;
     void notify(QAccessibleEvent *event);
 
-    void init();
-    void checkInitializedAndEnabled();
 public Q_SLOTS:
     void eventListenerRegistered(const QString &bus, const QString &path);
     void eventListenerDeregistered(const QString &bus, const QString &path);
@@ -114,6 +75,7 @@ private:
     bool editableTextInterface(QAccessibleInterface *interface, const QString &function, const QDBusMessage &message, const QDBusConnection &connection);
     bool valueInterface(QAccessibleInterface *interface, const QString &function, const QDBusMessage &message, const QDBusConnection &connection);
     bool tableInterface(QAccessibleInterface *interface, const QString &function, const QDBusMessage &message, const QDBusConnection &connection);
+    bool tableCellInterface(QAccessibleInterface *interface, const QString &function, const QDBusMessage &message, const QDBusConnection &connection);
 
     void sendReply(const QDBusConnection &connection, const QDBusMessage &message, const QVariant &argument) const;
 
@@ -130,17 +92,21 @@ private:
 
     // component helper functions
     static QRect getExtents(QAccessibleInterface *interface, uint coordType);
-    static QRect translateRectToWindowCoordinates(QAccessibleInterface *interface, const QRect &rect);
+    static bool isValidCoordType(uint coordType);
+    static QRect translateFromScreenCoordinates(QAccessibleInterface *interface, const QRect &rect, uint targetCoordType);
+    static QPoint translateToScreenCoordinates(QAccessibleInterface *interface, const QPoint &pos, uint fromCoordType);
 
     // action helper functions
     QSpiActionArray getActions(QAccessibleInterface *interface) const;
 
     // text helper functions
     QVariantList getAttributes(QAccessibleInterface *, int offset, bool includeDefaults) const;
-    QVariantList getAttributeValue(QAccessibleInterface *, int offset, const QString &attributeName) const;
+    QString getAttributeValue(QAccessibleInterface *, int offset, const QString &attributeName) const;
     QList<QVariant> getCharacterExtents(QAccessibleInterface *, int offset, uint coordType) const;
     QList<QVariant> getRangeExtents(QAccessibleInterface *, int startOffset, int endOffset, uint coordType) const;
-    QAccessible::TextBoundaryType qAccessibleBoundaryType(int atspiTextBoundaryType) const;
+    static QAccessible::TextBoundaryType qAccessibleBoundaryTypeFromAtspiBoundaryType(int atspiTextBoundaryType);
+    static bool isValidAtspiTextGranularity(uint coordType);
+    static QAccessible::TextBoundaryType qAccessibleBoundaryTypeFromAtspiTextGranularity(uint atspiTextGranularity);
     static bool inheritsQAction(QObject *object);
 
     // private vars

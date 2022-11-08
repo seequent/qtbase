@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 /*!
     \class QMultiMap
@@ -241,12 +205,12 @@
 */
 
 /*! \fn template <class Key, class T> std::multimap<Key, T> QMultiMap<Key, T>::toStdMap() const
-    \obsolete Use toStdMultiMap() instead.
+    \deprecated Use toStdMultiMap() instead.
 
     Returns an STL multi map equivalent to this QMultiMap.
 */
 
-/*! \fn template <class Key, class T> std::multimap<Key, T> QMultiMap<Key, T>::toStdMultiMap() const
+/*! \fn template <class Key, class T> std::multimap<Key, T> QMultiMap<Key, T>::toStdMultiMap() const &
 
     Returns an STL multi map equivalent to this QMultiMap.
 */
@@ -693,11 +657,32 @@
     \sa constKeyValueBegin()
 */
 
+/*! \fn template <class Key, class T> auto QMultiMap<Key, T>::asKeyValueRange() &
+    \fn template <class Key, class T> auto QMultiMap<Key, T>::asKeyValueRange() const &
+    \fn template <class Key, class T> auto QMultiMap<Key, T>::asKeyValueRange() &&
+    \fn template <class Key, class T> auto QMultiMap<Key, T>::asKeyValueRange() const &&
+    \since 6.4
+
+    Returns a range object that allows iteration over this multi map as
+    key/value pairs. For instance, this range object can be used in a
+    range-based for loop, in combination with a structured binding declaration:
+
+    \snippet code/src_corelib_tools_qmultimap.cpp 26
+
+    Note that both the key and the value obtained this way are
+    references to the ones in the multi map. Specifically, mutating the value
+    will modify the map itself.
+
+    \sa QKeyValueIterator
+*/
+
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::iterator QMultiMap<Key, T>::erase(const_iterator pos)
 
     Removes the (key, value) pair pointed to by the iterator \a pos
     from the multi map, and returns an iterator to the next item in the
     map.
+
+    \note The iterator \a pos must be valid and dereferenceable.
 
     \sa remove()
 */
@@ -709,6 +694,8 @@
     [\a first, \a last) from the multi map.
     Returns an iterator to the item in the multi map following the last
     removed element.
+
+    \note The range \c {[first, last)} \e must be a valid range in \c {*this}.
 
     \sa remove()
 */
@@ -858,13 +845,13 @@
 
 #if QT_DEPRECATED_SINCE(6, 0)
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::iterator QMultiMap<Key, T>::insertMulti(const Key &key, const T &value)
-    \obsolete Use insert() instead.
+    \deprecated Use insert() instead.
 
     Inserts a new item with the key \a key and a value of \a value, and returns an iterator pointing to the new item.
 */
 
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::iterator QMultiMap<Key, T>::insertMulti(const_iterator pos, const Key &key, const T &value)
-    \obsolete Use insert() instead.
+    \deprecated Use insert() instead.
     \overload
 
     Inserts a new item with the key \a key and value \a value and with hint \a pos
@@ -873,14 +860,14 @@
 
 /*! \fn template <class Key, class T> void QMultiMap<Key, T>::insert(const QMultiMap<Key, T> &map)
     \since 5.15
-    \obsolete Use unite() instead.
+    \deprecated Use unite() instead.
 
     Inserts all the items in \a map into this map.
 */
 
 /*! \fn template <class Key, class T> void QMultiMap<Key, T>::insert(QMultiMap<Key, T> &&map)
     \since 5.15
-    \obsolete Use unite() instead.
+    \deprecated Use unite() instead.
     \overload
 
     Moves all the items from \a map into this map.
@@ -1155,7 +1142,7 @@
 
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::iterator &QMultiMap<Key, T>::iterator::operator++()
 
-    The prefix ++ operator (\c{++i}) advances the iterator to the
+    The prefix \c{++} operator (\c{++i}) advances the iterator to the
     next item in the multi map and returns an iterator to the new current
     item.
 
@@ -1168,14 +1155,14 @@
 
     \overload
 
-    The postfix ++ operator (\c{i++}) advances the iterator to the
+    The postfix \c{++} operator (\c{i++}) advances the iterator to the
     next item in the multi map and returns an iterator to the previously
     current item.
 */
 
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::iterator &QMultiMap<Key, T>::iterator::operator--()
 
-    The prefix -- operator (\c{--i}) makes the preceding item
+    The prefix \c{--} operator (\c{--i}) makes the preceding item
     current and returns an iterator pointing to the new current item.
 
     Calling this function on QMultiMap::begin() leads to undefined
@@ -1188,9 +1175,27 @@
 
     \overload
 
-    The postfix -- operator (\c{i--}) makes the preceding item
+    The postfix \c{--} operator (\c{i--}) makes the preceding item
     current and returns an iterator pointing to the previously
     current item.
+*/
+
+/*!
+    //! friends
+    \fn [qmultimap-op-it-plus-step] template <class Key, class T> typename QMultiMap<Key, T>::iterator QMultiMap<Key, T>::iterator::operator+(QMultiMap<Key, T>::iterator, difference_type n)
+    \fn [qmultimap-op-step-plus-it] template <class Key, class T> QMultiMap<Key, T>::iterator QMultiMap<Key, T>::iterator::operator+(difference_type n, QMultiMap<Key, T>::iterator)
+    \fn [qmultimap-op-it-minus-step] template <class Key, class T> QMultiMap<Key, T>::iterator QMultiMap<Key, T>::iterator::operator-(QMultiMap<Key, T>::iterator, difference_type n)
+    \fn [qmultimap-op-step-minus-it] template <class Key, class T> QMultiMap<Key, T>::iterator QMultiMap<Key, T>::iterator::operator-(difference_type n, QMultiMap<Key, T>::iterator)
+
+    //! members
+    \fn template <class Key, class T> typename QMultiMap<Key, T>::iterator QMultiMap<Key, T>::iterator::operator+=(QMultiMap<Key, T>::iterator::difference_type n)
+    \fn template <class Key, class T> typename QMultiMap<Key, T>::iterator QMultiMap<Key, T>::iterator::operator-=(QMultiMap<Key, T>::iterator::difference_type n)
+
+    \deprecated [6.2] Use \c{std::next}, \c{std::prev} or \c{std::advance} instead.
+
+    Move an iterator by \e{n} positions. These operations can be
+    expensive for large values of \e{n}; QMultiMap iterators are not
+    random access.
 */
 
 /*! \class QMultiMap::const_iterator
@@ -1311,7 +1316,7 @@
 
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::const_iterator &QMultiMap<Key, T>::const_iterator::operator++()
 
-    The prefix ++ operator (\c{++i}) advances the iterator to the
+    The prefix \c{++} operator (\c{++i}) advances the iterator to the
     next item in the map and returns an iterator to the new current
     item.
 
@@ -1324,14 +1329,14 @@
 
     \overload
 
-    The postfix ++ operator (\c{i++}) advances the iterator to the
+    The postfix \c{++} operator (\c{i++}) advances the iterator to the
     next item in the map and returns an iterator to the previously
     current item.
 */
 
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::const_iterator &QMultiMap<Key, T>::const_iterator::operator--()
 
-    The prefix -- operator (\c{--i}) makes the preceding item
+    The prefix \c{--} operator (\c{--i}) makes the preceding item
     current and returns an iterator pointing to the new current item.
 
     Calling this function on QMultiMap::begin() leads to undefined
@@ -1344,9 +1349,27 @@
 
     \overload
 
-    The postfix -- operator (\c{i--}) makes the preceding item
+    The postfix \c{--} operator (\c{i--}) makes the preceding item
     current and returns an iterator pointing to the previously
     current item.
+*/
+
+/*!
+    //! friends
+    \fn [qmultimap-op-it-plus-step-const] template <class Key, class T> typename QMultiMap<Key, T>::const_iterator QMultiMap<Key, T>::const_iterator::operator+(QMultiMap<Key, T>::const_iterator, difference_type n)
+    \fn [qmultimap-op-step-plus-it-const] template <class Key, class T> QMultiMap<Key, T>::const_iterator QMultiMap<Key, T>::const_iterator::operator+(difference_type n, QMultiMap<Key, T>::const_iterator)
+    \fn [qmultimap-op-it-minus-step-const] template <class Key, class T> QMultiMap<Key, T>::const_iterator QMultiMap<Key, T>::const_iterator::operator-(QMultiMap<Key, T>::const_iterator, difference_type n)
+    \fn [qmultimap-op-step-minus-it-const] template <class Key, class T> QMultiMap<Key, T>::const_iterator QMultiMap<Key, T>::const_iterator::operator-(difference_type n, QMultiMap<Key, T>::const_iterator)
+
+    //! members
+    \fn template <class Key, class T> typename QMultiMap<Key, T>::const_iterator QMultiMap<Key, T>::const_iterator::operator+=(QMultiMap<Key, T>::const_iterator::difference_type n)
+    \fn template <class Key, class T> typename QMultiMap<Key, T>::const_iterator QMultiMap<Key, T>::const_iterator::operator-=(QMultiMap<Key, T>::const_iterator::difference_type n)
+
+    \deprecated [6.2] Use \c{std::next}, \c{std::prev} or \c{std::advance} instead.
+
+    Move an iterator by \e{n} positions. These operations can be
+    expensive for large values of \e{n}. QMultiMap iterators are not
+    random access.
 */
 
 /*! \class QMultiMap::key_iterator
@@ -1435,7 +1458,7 @@
 /*!
     \fn template <class Key, class T> QMultiMap<Key, T>::key_iterator &QMultiMap<Key, T>::key_iterator::operator++()
 
-    The prefix ++ operator (\c{++i}) advances the iterator to the
+    The prefix \c{++} operator (\c{++i}) advances the iterator to the
     next item in the hash and returns an iterator to the new current
     item.
 
@@ -1448,14 +1471,14 @@
 
     \overload
 
-    The postfix ++ operator (\c{i++}) advances the iterator to the
+    The postfix \c{++} operator (\c{i++}) advances the iterator to the
     next item in the hash and returns an iterator to the previous
     item.
 */
 
 /*! \fn template <class Key, class T> QMultiMap<Key, T>::key_iterator &QMultiMap<Key, T>::key_iterator::operator--()
 
-    The prefix -- operator (\c{--i}) makes the preceding item
+    The prefix \c{--} operator (\c{--i}) makes the preceding item
     current and returns an iterator pointing to the new current item.
 
     Calling this function on QMultiMap::keyBegin() leads to undefined
@@ -1468,7 +1491,7 @@
 
     \overload
 
-    The postfix -- operator (\c{i--}) makes the preceding item
+    The postfix \c{--} operator (\c{i--}) makes the preceding item
     current and returns an iterator pointing to the previous
     item.
 */

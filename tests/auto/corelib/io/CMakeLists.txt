@@ -1,4 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from io.pro.
+# There is no mounted filesystem for IO testing on INTEGRITY yet.
+if(INTEGRITY)
+    return()
+endif()
 
 if(QT_FEATURE_private_tests)
     add_subdirectory(qabstractfileengine)
@@ -18,18 +25,23 @@ add_subdirectory(qloggingcategory)
 add_subdirectory(qnodebug)
 add_subdirectory(qsavefile)
 add_subdirectory(qstandardpaths)
-add_subdirectory(qstorageinfo)
+if(NOT QNX)
+    add_subdirectory(qstorageinfo)
+endif()
 add_subdirectory(qtemporarydir)
 add_subdirectory(qtemporaryfile)
 add_subdirectory(qurlquery)
+add_subdirectory(qurluts46)
 if(TARGET Qt::Concurrent)
-    add_subdirectory(qdebug)
+    if(NOT INTEGRITY)
+        add_subdirectory(qdebug)
+    endif()
     add_subdirectory(qlockfile)
     add_subdirectory(qurl)
 endif()
 if(NOT ANDROID)
     add_subdirectory(qdir)
-    # add_subdirectory(qresourceengine) # special case needs fixes
+    add_subdirectory(qresourceengine)
 endif()
 if(QT_FEATURE_private_tests OR UNIX)
     add_subdirectory(qfilesystementry)
@@ -42,12 +54,7 @@ if(TARGET Qt::Network)
     add_subdirectory(qiodevice)
 endif()
 if(QT_FEATURE_process AND TARGET Qt::Network AND NOT ANDROID)
-    # special case begin
-    # QTBUG-85287: Hangs on qemu armv7 config
-    if(NOT CMAKE_CROSSCOMPILING)
-        add_subdirectory(qprocess)
-    endif()
-    # special case end
+    add_subdirectory(qprocess)
 endif()
 if(QT_FEATURE_process)
     add_subdirectory(qprocess-noapplication)

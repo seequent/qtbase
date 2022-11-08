@@ -1,104 +1,120 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QVARIANT_H
 #define QVARIANT_H
 
 #include <QtCore/qatomic.h>
-#include <QtCore/qbytearray.h>
-#include <QtCore/qlist.h>
+#include <QtCore/qcontainerfwd.h>
 #include <QtCore/qmetatype.h>
-#include <QtCore/qmap.h>
-#include <QtCore/qhash.h>
-#include <QtCore/qstring.h>
-#include <QtCore/qstringlist.h>
-#include <QtCore/qobject.h>
 #ifndef QT_NO_DEBUG_STREAM
 #include <QtCore/qdebug.h>
 #endif
-#ifndef QT_BOOTSTRAPPED
-#include <QtCore/qbytearraylist.h>
-#endif
 #include <memory>
 #include <type_traits>
-
-#if __has_include(<variant>) && __cplusplus >= 201703L
 #include <variant>
-#elif defined(Q_CLANG_QDOC)
-namespace std { template<typename...> struct variant; }
+#if !defined(QT_LEAN_HEADERS) || QT_LEAN_HEADERS < 1
+#  include <QtCore/qlist.h>
+#  include <QtCore/qstringlist.h>
+#  include <QtCore/qbytearraylist.h>
+#  include <QtCore/qhash.h>
+#  include <QtCore/qmap.h>
+#  include <QtCore/qobject.h>
 #endif
 
 QT_BEGIN_NAMESPACE
-
 
 class QBitArray;
 class QDataStream;
 class QDate;
 class QDateTime;
-#if QT_CONFIG(easingcurve)
 class QEasingCurve;
-#endif
 class QLine;
 class QLineF;
 class QLocale;
-class QTransform;
-class QTime;
+class QModelIndex;
+class QPersistentModelIndex;
 class QPoint;
 class QPointF;
-class QSize;
-class QSizeF;
 class QRect;
 class QRectF;
-#if QT_CONFIG(regularexpression)
 class QRegularExpression;
-#endif // QT_CONFIG(regularexpression)
+class QSize;
+class QSizeF;
 class QTextFormat;
 class QTextLength;
+class QTime;
+class QTransform;
 class QUrl;
 class QVariant;
 
 template<typename T>
 inline T qvariant_cast(const QVariant &);
 
+template<> constexpr inline bool qIsRelocatable<QVariant> = true;
 class Q_CORE_EXPORT QVariant
 {
- public:
+    struct CborValueStandIn { qint64 n; void *c; int t; };
+public:
+    struct PrivateShared
+    {
+    private:
+        inline PrivateShared() : ref(1) { }
+    public:
+        static PrivateShared *create(size_t size, size_t align);
+        static void free(PrivateShared *p);
+
+        alignas(8) QAtomicInt ref;
+        int offset;
+
+        const void *data() const { return reinterpret_cast<const uchar *>(this) + offset; }
+        void *data() { return reinterpret_cast<uchar *>(this) + offset; }
+    };
+    struct Private
+    {
+        static constexpr size_t MaxInternalSize = 3 * sizeof(void *);
+        template <size_t S> static constexpr bool FitsInInternalSize = S <= MaxInternalSize;
+        template<typename T> static constexpr bool CanUseInternalSpace =
+                (QTypeInfo<T>::isRelocatable && FitsInInternalSize<sizeof(T)> && alignof(T) <= alignof(double));
+        static constexpr bool canUseInternalSpace(const QtPrivate::QMetaTypeInterface *type)
+        {
+            Q_ASSERT(type);
+            return QMetaType::TypeFlags(type->flags) & QMetaType::RelocatableType &&
+                   size_t(type->size) <= MaxInternalSize && size_t(type->alignment) <= alignof(double);
+        }
+
+        union
+        {
+            uchar data[MaxInternalSize] = {};
+            PrivateShared *shared;
+            double _forAlignment; // we want an 8byte alignment on 32bit systems as well
+        } data;
+        quintptr is_shared : 1;
+        quintptr is_null : 1;
+        quintptr packedType : sizeof(QMetaType) * 8 - 2;
+
+        constexpr Private() noexcept : is_shared(false), is_null(true), packedType(0) {}
+        explicit Private(const QtPrivate::QMetaTypeInterface *iface) noexcept;
+        template <typename T> explicit Private(std::piecewise_construct_t, const T &t);
+
+        const void *storage() const
+        { return is_shared ? data.shared->data() : &data.data; }
+
+        // determine internal storage at compile time
+        template<typename T> const T &get() const
+        { return *static_cast<const T *>(CanUseInternalSpace<T> ? &data.data : data.shared->data()); }
+
+        inline const QtPrivate::QMetaTypeInterface *typeInterface() const
+        {
+            return reinterpret_cast<const QtPrivate::QMetaTypeInterface *>(packedType << 2);
+        }
+
+        inline QMetaType type() const
+        {
+            return QMetaType(typeInterface());
+        }
+    };
+
 #if QT_DEPRECATED_SINCE(6, 0)
     enum QT_DEPRECATED_VERSION_X_6_0("Use QMetaType::Type instead.") Type
     {
@@ -180,32 +196,71 @@ class Q_CORE_EXPORT QVariant
     explicit QVariant(QMetaType type, const void *copy = nullptr);
     QVariant(const QVariant &other);
 
-    QVariant(int i);
-    QVariant(uint ui);
-    QVariant(qlonglong ll);
-    QVariant(qulonglong ull);
-    QVariant(bool b);
-    QVariant(double d);
-    QVariant(float f);
+    // primitives
+    QVariant(int i) noexcept;
+    QVariant(uint ui) noexcept;
+    QVariant(qlonglong ll) noexcept;
+    QVariant(qulonglong ull) noexcept;
+    QVariant(bool b) noexcept;
+    QVariant(double d) noexcept;
+    QVariant(float f) noexcept;
+
+    // trivial, trivially-copyable or COW
+    QVariant(QChar qchar) noexcept;
+    QVariant(QDate date) noexcept;
+    QVariant(QTime time) noexcept;
+    QVariant(const QBitArray &bitarray) noexcept;
+    QVariant(const QByteArray &bytearray) noexcept;
+    QVariant(const QDateTime &datetime) noexcept;
+    QVariant(const QHash<QString, QVariant> &hash) noexcept;
+    QVariant(const QJsonArray &jsonArray) noexcept;
+    QVariant(const QJsonObject &jsonObject) noexcept;
+    QVariant(const QList<QVariant> &list) noexcept;
+    QVariant(const QLocale &locale) noexcept;
+    QVariant(const QMap<QString, QVariant> &map) noexcept;
+    QVariant(const QRegularExpression &re) noexcept;
+    QVariant(const QString &string) noexcept;
+    QVariant(const QStringList &stringlist) noexcept;
+    QVariant(const QUrl &url) noexcept;
+
+    // conditionally noexcept trivial or trivially-copyable
+    // (most of these are noexcept on 64-bit)
+    QVariant(const QJsonValue &jsonValue) noexcept(Private::FitsInInternalSize<sizeof(CborValueStandIn)>);
+    QVariant(const QModelIndex &modelIndex) noexcept(Private::FitsInInternalSize<8 + 2 * sizeof(quintptr)>);
+    QVariant(QUuid uuid) noexcept(Private::FitsInInternalSize<16>);
+#ifndef QT_NO_GEOM_VARIANT
+    QVariant(QSize size) noexcept;
+    QVariant(QSizeF size) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 2>);
+    QVariant(QPoint pt) noexcept;
+    QVariant(QPointF pt) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 2>);
+    QVariant(QLine line) noexcept(Private::FitsInInternalSize<sizeof(int) * 4>);
+    QVariant(QLineF line) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 4>);
+    QVariant(QRect rect) noexcept(Private::FitsInInternalSize<sizeof(int) * 4>);
+    QVariant(QRectF rect) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 4>);
+#endif
+
+    // not noexcept
+    QVariant(const QEasingCurve &easing) noexcept(false);
+    QVariant(const QJsonDocument &jsonDocument) noexcept(false);
+    QVariant(const QPersistentModelIndex &modelIndex) noexcept(false);
+
 #ifndef QT_NO_CAST_FROM_ASCII
-    QT_ASCII_CAST_WARN QVariant(const char *str)
+    QT_ASCII_CAST_WARN QVariant(const char *str) noexcept(false)
         : QVariant(QString::fromUtf8(str))
     {}
 #endif
+    QVariant(QLatin1StringView string) noexcept(false); // converts to QString
 
-    QVariant(const QByteArray &bytearray);
-    QVariant(const QBitArray &bitarray);
-    QVariant(const QString &string);
-    QVariant(QLatin1String string);
-    QVariant(const QStringList &stringlist);
-    QVariant(QChar qchar);
-    QVariant(QDate date);
-    QVariant(QTime time);
-    QVariant(const QDateTime &datetime);
-    QVariant(const QList<QVariant> &list);
-    QVariant(const QMap<QString, QVariant> &map);
-    QVariant(const QHash<QString, QVariant> &hash);
-#ifndef QT_NO_GEOM_VARIANT
+#if !defined(Q_CC_GHS)
+    // GHS has an ICE with this code; use the simplified version below
+    template <typename T,
+              std::enable_if_t<std::disjunction_v<std::is_pointer<T>, std::is_member_pointer<T>>, bool> = false>
+    QVariant(T) = delete;
+#else
+    QVariant(const volatile void *) = delete;
+#endif
+
+#if QT_CORE_REMOVED_SINCE(6, 5)
     QVariant(const QSize &size);
     QVariant(const QSizeF &size);
     QVariant(const QPoint &pt);
@@ -214,25 +269,7 @@ class Q_CORE_EXPORT QVariant
     QVariant(const QLineF &line);
     QVariant(const QRect &rect);
     QVariant(const QRectF &rect);
-#endif
-    QVariant(const QLocale &locale);
-#if QT_CONFIG(regularexpression)
-    QVariant(const QRegularExpression &re);
-#endif // QT_CONFIG(regularexpression)
-#if QT_CONFIG(easingcurve)
-    QVariant(const QEasingCurve &easing);
-#endif
     QVariant(const QUuid &uuid);
-#ifndef QT_BOOTSTRAPPED
-    QVariant(const QUrl &url);
-    QVariant(const QJsonValue &jsonValue);
-    QVariant(const QJsonObject &jsonObject);
-    QVariant(const QJsonArray &jsonArray);
-    QVariant(const QJsonDocument &jsonDocument);
-#endif // QT_BOOTSTRAPPED
-#if QT_CONFIG(itemmodel)
-    QVariant(const QModelIndex &modelIndex);
-    QVariant(const QPersistentModelIndex &modelIndex);
 #endif
 
     QVariant& operator=(const QVariant &other);
@@ -240,7 +277,7 @@ class Q_CORE_EXPORT QVariant
     { other.d = Private(); }
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QVariant)
 
-    inline void swap(QVariant &other) noexcept { qSwap(d, other.d); }
+    inline void swap(QVariant &other) noexcept { std::swap(d, other.d); }
 
     int userType() const { return typeId(); }
     int typeId() const { return metaType().id(); }
@@ -333,10 +370,10 @@ class Q_CORE_EXPORT QVariant
     explicit QVariant(Type type)
         : QVariant(QMetaType(int(type)))
     {}
-    QT_DEPRECATED_VERSION_X_6_0("Use metaType().")
+    QT_DEPRECATED_VERSION_X_6_0("Use typeId() or metaType().")
     Type type() const
     {
-        int type = d.typeId();
+        int type = d.type().id();
         return type >= QMetaType::User ? UserType : static_cast<Type>(type);
     }
     QT_DEPRECATED_VERSION_6_0
@@ -392,17 +429,19 @@ class Q_CORE_EXPORT QVariant
     }
 
     template<typename T>
-#ifndef Q_CLANG_QDOC
-    static inline auto fromValue(const T &value) ->
-    std::enable_if_t<std::is_copy_constructible_v<T>, QVariant>
+#ifndef Q_QDOC
+    static inline auto fromValue(const T &value)
+        noexcept(std::is_nothrow_copy_constructible_v<T> && Private::CanUseInternalSpace<T>)
+        -> std::enable_if_t<std::is_copy_constructible_v<T> && std::is_destructible_v<T>, QVariant>
 #else
     static inline QVariant fromValue(const T &value)
 #endif
     {
+        if constexpr (std::is_null_pointer_v<T>)
+            return QVariant(QMetaType::fromType<std::nullptr_t>());
         return QVariant(QMetaType::fromType<T>(), std::addressof(value));
     }
 
-#if (__has_include(<variant>) && __cplusplus >= 201703L) || defined(Q_CLANG_QDOC)
     template<typename... Types>
     static inline QVariant fromStdVariant(const std::variant<Types...> &value)
     {
@@ -410,7 +449,6 @@ class Q_CORE_EXPORT QVariant
             return QVariant();
         return std::visit([](const auto &arg) { return fromValue(arg); }, value);
     }
-#endif
 
     template<typename T>
     bool canConvert() const
@@ -420,98 +458,6 @@ class Q_CORE_EXPORT QVariant
     bool canView() const
     { return canView(QMetaType::fromType<T>()); }
 
-public:
-    struct PrivateShared
-    {
-    private:
-        inline PrivateShared() : ref(1) { }
-    public:
-        static PrivateShared *create(QMetaType type)
-        {
-            size_t size = type.sizeOf();
-            size_t align = type.alignOf();
-
-            size += sizeof(PrivateShared);
-            if (align > sizeof(PrivateShared)) {
-                // The alignment is larger than the alignment we can guarantee for the pointer
-                // directly following PrivateShared, so we need to allocate some additional
-                // memory to be able to fit the object into the available memory with suitable
-                // alignment.
-                size += align - sizeof(PrivateShared);
-            }
-            void *data = operator new(size);
-            auto *ps = new (data) QVariant::PrivateShared();
-            ps->offset = int(((quintptr(ps) + sizeof(PrivateShared) + align - 1) & ~(align - 1)) - quintptr(ps));
-            return ps;
-        }
-        static void free(PrivateShared *p)
-        {
-            p->~PrivateShared();
-            operator delete(p);
-        }
-
-        alignas(8) QAtomicInt ref;
-        int offset;
-
-        const void *data() const
-        { return reinterpret_cast<const unsigned char *>(this) + offset; }
-        void *data()
-        { return reinterpret_cast<unsigned char *>(this) + offset; }
-    };
-    struct Private
-    {
-        static constexpr size_t MaxInternalSize = 3*sizeof(void *);
-        template<typename T>
-        static constexpr bool CanUseInternalSpace = (QTypeInfo<T>::isRelocatable && sizeof(T) <= MaxInternalSize && alignof(T) <= alignof(double));
-        static constexpr bool canUseInternalSpace(QMetaType type)
-        {
-            return type.flags() & QMetaType::RelocatableType &&
-                   size_t(type.sizeOf()) <= MaxInternalSize && size_t(type.alignOf()) <= alignof(double);
-        }
-
-        union
-        {
-            uchar data[MaxInternalSize] = {};
-            PrivateShared *shared;
-            double _forAlignment; // we want an 8byte alignment on 32bit systems as well
-        } data;
-        quintptr is_shared : 1;
-        quintptr is_null : 1;
-        quintptr packedType : sizeof(QMetaType) * 8 - 2;
-
-        Private() noexcept : is_shared(false), is_null(true), packedType(0) {}
-        explicit Private(QMetaType type) noexcept : is_shared(false), is_null(false)
-        {
-            quintptr mt = quintptr(type.d_ptr);
-            Q_ASSERT((mt & 0x3) == 0);
-            packedType = mt >> 2;
-        }
-        explicit Private(int type) noexcept : Private(QMetaType(type)) {}
-
-        const void *storage() const
-        { return is_shared ? data.shared->data() : &data.data; }
-
-        const void *internalStorage() const
-        { Q_ASSERT(is_shared); return &data.data; }
-
-        // determine internal storage at compile time
-        template<typename T>
-        const T &get() const
-        { return *static_cast<const T *>(storage()); }
-        template<typename T>
-        void set(const T &t)
-        { *static_cast<T *>(CanUseInternalSpace<T> ? &data.data : data.shared->data()) = t; }
-
-        inline QMetaType type() const
-        {
-            return QMetaType(reinterpret_cast<QtPrivate::QMetaTypeInterface *>(packedType << 2));
-        }
-        inline int typeId() const
-        {
-            return type().id();
-        }
-    };
- public:
     static QPartialOrdering compare(const QVariant &lhs, const QVariant &rhs);
 
 private:
@@ -531,6 +477,7 @@ private:
 protected:
     Private d;
     void create(int type, const void *copy);
+    void create(QMetaType type, const void *copy);
     bool equals(const QVariant &other) const;
     bool convert(int type, void *ptr) const;
     bool view(int type, void *ptr);
@@ -546,7 +493,7 @@ private:
     // int variant, so delete this constructor:
     QVariant(QMetaType::Type) = delete;
 
-    // These constructors don't create QVariants of the type associcated
+    // These constructors don't create QVariants of the type associated
     // with the enum, as expected, but they would create a QVariant of
     // type int with the value of the enum value.
     // Use QVariant v = QColor(Qt::red) instead of QVariant v = Qt::red for
@@ -571,13 +518,11 @@ inline QVariant QVariant::fromValue(const QVariant &value)
     return value;
 }
 
-#if __has_include(<variant>) && __cplusplus >= 201703L
 template<>
-inline QVariant QVariant::fromValue(const std::monostate &)
+inline QVariant QVariant::fromValue(const std::monostate &) noexcept
 {
     return QVariant();
 }
-#endif
 
 inline bool QVariant::isValid() const
 {
@@ -613,7 +558,8 @@ QT_WARNING_POP
 inline bool QVariant::isDetached() const
 { return !d.is_shared || d.data.shared->ref.loadRelaxed() == 1; }
 
-Q_DECLARE_SHARED(QVariant)
+inline void swap(QVariant &value1, QVariant &value2) noexcept
+{ value1.swap(value2); }
 
 #ifndef QT_MOC
 
@@ -657,6 +603,7 @@ namespace QtPrivate {
 class Q_CORE_EXPORT QVariantTypeCoercer
 {
 public:
+    // ### Qt7: Pass QMetaType as value rather than const ref.
     const void *convert(const QVariant &value, const QMetaType &type);
     const void *coerce(const QVariant &value, const QMetaType &type);
 

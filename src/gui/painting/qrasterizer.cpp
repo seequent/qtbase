@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qrasterizer_p.h"
 
@@ -657,19 +621,22 @@ static QScFixed intersectPixelFP(int x, QScFixed top, QScFixed bottom, QScFixed 
     QScFixed rightX = IntToQScFixed(x) + QScFixedFactor;
 
     QScFixed leftIntersectY, rightIntersectY;
-    if (slope > 0) {
-        leftIntersectY = top + QScFixedMultiply(leftX - leftIntersectX, invSlope);
-        rightIntersectY = leftIntersectY + invSlope;
-    } else {
-        leftIntersectY = top + QScFixedMultiply(leftX - rightIntersectX, invSlope);
-        rightIntersectY = leftIntersectY + invSlope;
-    }
+    auto computeIntersectY = [&]() {
+        if (slope > 0) {
+            leftIntersectY = top + QScFixedMultiply(leftX - leftIntersectX, invSlope);
+            rightIntersectY = leftIntersectY + invSlope;
+        } else {
+            leftIntersectY = top + QScFixedMultiply(leftX - rightIntersectX, invSlope);
+            rightIntersectY = leftIntersectY + invSlope;
+        }
+    };
 
     if (leftIntersectX >= leftX && rightIntersectX <= rightX) {
         return QScFixedMultiply(bottom - top, leftIntersectX - leftX + ((rightIntersectX - leftIntersectX) >> 1));
     } else if (leftIntersectX >= rightX) {
         return bottom - top;
     } else if (leftIntersectX >= leftX) {
+        computeIntersectY();
         if (slope > 0) {
             return (bottom - top) - QScFixedFastMultiply((rightX - leftIntersectX) >> 1, rightIntersectY - top);
         } else {
@@ -678,12 +645,14 @@ static QScFixed intersectPixelFP(int x, QScFixed top, QScFixed bottom, QScFixed 
     } else if (rightIntersectX <= leftX) {
         return 0;
     } else if (rightIntersectX <= rightX) {
+        computeIntersectY();
         if (slope > 0) {
             return QScFixedFastMultiply((rightIntersectX - leftX) >> 1, bottom - leftIntersectY);
         } else {
             return QScFixedFastMultiply((rightIntersectX - leftX) >> 1, leftIntersectY - top);
         }
     } else {
+        computeIntersectY();
         if (slope > 0) {
             return (bottom - rightIntersectY) + ((rightIntersectY - leftIntersectY) >> 1);
         } else {
@@ -739,6 +708,63 @@ static inline QScFixed qSafeFloatToQScFixed(qreal x)
     return QScFixed(tmp);
 }
 
+// returns true if the whole line gets clipped away
+static inline bool qClipLine(QPointF *pt1, QPointF *pt2, const QRectF &clip)
+{
+    qreal &x1 = pt1->rx();
+    qreal &y1 = pt1->ry();
+    qreal &x2 = pt2->rx();
+    qreal &y2 = pt2->ry();
+
+    if (!qIsFinite(x1) || !qIsFinite(y1) || !qIsFinite(x2) || !qIsFinite(y2))
+        return true;
+
+    const qreal xmin = clip.left();
+    const qreal xmax = clip.right();
+    const qreal ymin = clip.top();
+    const qreal ymax = clip.bottom();
+
+    if (x1 < xmin) {
+        if (x2 <= xmin)
+            return true;
+        y1 += (y2 - y1) / (x2 - x1) * (xmin - x1);
+        x1 = xmin;
+    } else if (x1 > xmax) {
+        if (x2 >= xmax)
+            return true;
+        y1 += (y2 - y1) / (x2 - x1) * (xmax - x1);
+        x1 = xmax;
+    }
+    if (x2 < xmin) {
+        y2 += (y2 - y1) / (x2 - x1) * (xmin - x2);
+        x2 = xmin;
+    } else if (x2 > xmax) {
+        y2 += (y2 - y1) / (x2 - x1) * (xmax - x2);
+        x2 = xmax;
+    }
+
+    if (y1 < ymin) {
+        if (y2 <= ymin)
+            return true;
+        x1 += (x2 - x1) / (y2 - y1) * (ymin - y1);
+        y1 = ymin;
+    } else if (y1 > ymax) {
+        if (y2 >= ymax)
+            return true;
+        x1 += (x2 - x1) / (y2 - y1) * (ymax - y1);
+        y1 = ymax;
+    }
+    if (y2 < ymin) {
+        x2 += (x2 - x1) / (y2 - y1) * (ymin - y2);
+        y2 = ymin;
+    } else if (y2 > ymax) {
+        x2 += (x2 - x1) / (y2 - y1) * (ymax - y2);
+        y2 = ymax;
+    }
+
+    return false;
+}
+
 void QRasterizer::rasterizeLine(const QPointF &a, const QPointF &b, qreal width, bool squareCap)
 {
     if (a == b || !(width > 0.0) || d->clipRect.isEmpty())
@@ -755,42 +781,8 @@ void QRasterizer::rasterizeLine(const QPointF &a, const QPointF &b, qreal width,
 
     QPointF offs = QPointF(qAbs(b.y() - a.y()), qAbs(b.x() - a.x())) * width * 0.5;
     const QRectF clip(d->clipRect.topLeft() - offs, d->clipRect.bottomRight() + QPoint(1, 1) + offs);
-
-    if (!clip.contains(pa) || !clip.contains(pb)) {
-        qreal t1 = 0;
-        qreal t2 = 1;
-
-        const qreal o[2] = { pa.x(), pa.y() };
-        const qreal d[2] = { pb.x() - pa.x(), pb.y() - pa.y() };
-
-        const qreal low[2] = { clip.left(), clip.top() };
-        const qreal high[2] = { clip.right(), clip.bottom() };
-
-        for (int i = 0; i < 2; ++i) {
-            if (d[i] == 0) {
-                if (o[i] <= low[i] || o[i] >= high[i])
-                    return;
-                continue;
-            }
-            const qreal d_inv = 1 / d[i];
-            qreal t_low = (low[i] - o[i]) * d_inv;
-            qreal t_high = (high[i] - o[i]) * d_inv;
-            if (t_low > t_high)
-                qSwap(t_low, t_high);
-            if (t1 < t_low)
-                t1 = t_low;
-            if (t2 > t_high)
-                t2 = t_high;
-            if (t1 >= t2)
-                return;
-        }
-
-        QPointF npa = pa + (pb - pa) * t1;
-        QPointF npb = pa + (pb - pa) * t2;
-
-        pa = npa;
-        pb = npb;
-    }
+    if (qClipLine(&pa, &pb, clip))
+        return;
 
     {
         // old delta
@@ -859,7 +851,7 @@ void QRasterizer::rasterizeLine(const QPointF &a, const QPointF &b, qreal width,
                 if (leftWidth == QScFixedFactor)
                     coverage[0] = rightWidth * 255;
                 else
-                    coverage[0] = (leftWidth + rightWidth) * 255;
+                    coverage[0] = (rightWidth + leftWidth - QScFixedFactor) * 255;
                 x[0] = iLeft;
                 len[0] = 1;
             } else {
@@ -1072,26 +1064,26 @@ void QRasterizer::rasterizeLine(const QPointF &a, const QPointF &b, qreal width,
                 while (x <= leftMax) {
                     QScFixed excluded = 0;
 
-                    if (yFP <= iLeftFP)
+                    if (yFP <= iLeftFP && rowBottomLeft > rowTop)
                         excluded += intersectPixelFP(x, rowTop, rowBottomLeft,
                                                      bottomLeftIntersectAf, topLeftIntersectAf,
                                                      topLeftSlopeFP, invTopLeftSlopeFP);
-                    if (yFP >= iLeftFP)
+                    if (yFP >= iLeftFP && rowBottom > rowTopLeft)
                         excluded += intersectPixelFP(x, rowTopLeft, rowBottom,
                                                      topLeftIntersectBf, bottomLeftIntersectBf,
                                                      bottomLeftSlopeFP, invBottomLeftSlopeFP);
-
                     if (x >= rightMin) {
-                        if (yFP <= iRightFP)
+                        if (yFP <= iRightFP && rowBottomRight > rowTop)
                             excluded += (rowBottomRight - rowTop) - intersectPixelFP(x, rowTop, rowBottomRight,
                                                                                      topRightIntersectAf, bottomRightIntersectAf,
                                                                                      topRightSlopeFP, invTopRightSlopeFP);
-                        if (yFP >= iRightFP)
+                        if (yFP >= iRightFP && rowBottom > rowTopRight)
                             excluded += (rowBottom - rowTopRight) - intersectPixelFP(x, rowTopRight, rowBottom,
                                                                                      bottomRightIntersectBf, topRightIntersectBf,
                                                                                      bottomRightSlopeFP, invBottomRightSlopeFP);
                     }
 
+                    Q_ASSERT(excluded >= 0 && excluded <= rowHeight);
                     QScFixed coverage = rowHeight - excluded;
                     buffer.addSpan(x, 1, QScFixedToInt(yFP),
                                    QScFixedToInt(255 * coverage));
@@ -1104,15 +1096,16 @@ void QRasterizer::rasterizeLine(const QPointF &a, const QPointF &b, qreal width,
                 }
                 while (x <= rightMax) {
                     QScFixed excluded = 0;
-                    if (yFP <= iRightFP)
+                    if (yFP <= iRightFP && rowBottomRight > rowTop)
                         excluded += (rowBottomRight - rowTop) - intersectPixelFP(x, rowTop, rowBottomRight,
                                                                                  topRightIntersectAf, bottomRightIntersectAf,
                                                                                  topRightSlopeFP, invTopRightSlopeFP);
-                    if (yFP >= iRightFP)
+                    if (yFP >= iRightFP && rowBottom > rowTopRight)
                         excluded += (rowBottom - rowTopRight) - intersectPixelFP(x, rowTopRight, rowBottom,
                                                                                  bottomRightIntersectBf, topRightIntersectBf,
                                                                                  bottomRightSlopeFP, invBottomRightSlopeFP);
 
+                    Q_ASSERT(excluded >= 0 && excluded <= rowHeight);
                     QScFixed coverage = rowHeight - excluded;
                     buffer.addSpan(x, 1, QScFixedToInt(yFP),
                                    QScFixedToInt(255 * coverage));

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from tuiotouch.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QTuioTouchPlugin
     OUTPUT_NAME qtuiotouchplugin
-    TYPE generic
+    PLUGIN_TYPE generic
     DEFAULT_IF FALSE
     SOURCES
         main.cpp
@@ -17,7 +20,7 @@ qt_internal_add_plugin(QTuioTouchPlugin
         qtuiotoken_p.h
     DEFINES
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui

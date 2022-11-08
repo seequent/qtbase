@@ -1,37 +1,14 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QImageReader>
 #include <QBuffer>
 #include <QStandardPaths>
+#include <QPainter>
+#if QT_CONFIG(process)
 #include <QProcess>
-
+#endif
 #include <qicon.h>
 #include <qiconengine.h>
 
@@ -57,6 +34,7 @@ private slots:
     void detach();
     void addFile();
     void pixmap();
+    void paint();
     void availableSizes();
     void name();
     void streamAvailableSizes_data();
@@ -143,8 +121,8 @@ void tst_QIcon::actualSize()
 
     auto expectedDeviceSize = [](QSize deviceIndependentExpectedSize, QSize maxSourceImageSize) -> QSize {
         qreal dpr = qApp->devicePixelRatio();
-        return QSize(qMin(int(deviceIndependentExpectedSize.width() * dpr), maxSourceImageSize.width()),
-                     qMin(int(deviceIndependentExpectedSize.height() * dpr), maxSourceImageSize.height()));
+        return QSize(qMin(qRound(deviceIndependentExpectedSize.width() * dpr), maxSourceImageSize.width()),
+                     qMin(qRound(deviceIndependentExpectedSize.height() * dpr), maxSourceImageSize.height()));
     };
 
     QSize sourceSize = QImage(source).size();
@@ -409,6 +387,9 @@ void tst_QIcon::detach()
 
 void tst_QIcon::addFile()
 {
+    if (qApp->devicePixelRatio() != int(qApp->devicePixelRatio()))
+        QSKIP("Test is not ready for non integer devicePixelRatio", QTest::SkipAll);
+
     QIcon icon;
     icon.addFile(QLatin1String(":/styles/commonstyle/images/standardbutton-open-16.png"));
     icon.addFile(QLatin1String(":/styles/commonstyle/images/standardbutton-open-32.png"));
@@ -460,6 +441,52 @@ void tst_QIcon::pixmap()
     QVERIFY(icon.pixmap(QSize(16, 16)).size().width() >= 16);
     QVERIFY(icon.pixmap(QSize(16, 16), 1).size().width() == 16);
     QVERIFY(icon.pixmap(QSize(16, 16), -1).size().width() >= 16);
+}
+
+void tst_QIcon::paint()
+{
+    QImage img16_1x(16, 16, QImage::Format_ARGB32);
+    img16_1x.fill(qRgb(0, 0, 0xff));
+    img16_1x.setDevicePixelRatio(1.);
+
+    QImage img16_2x(32, 32, QImage::Format_ARGB32);
+    img16_2x.fill(qRgb(0, 0xff, 0xff));
+    img16_2x.setDevicePixelRatio(2.);
+
+    QImage img32_1x(32, 32, QImage::Format_ARGB32);
+    img32_1x.fill(qRgb(0xff, 0, 0));
+    img32_1x.setDevicePixelRatio(1.);
+
+    QImage img32_2x(64, 64, QImage::Format_ARGB32);
+    img32_2x.fill(qRgb(0x0, 0xff, 0));
+    img32_2x.setDevicePixelRatio(2.);
+
+    QIcon icon;
+    icon.addPixmap(QPixmap::fromImage(img16_1x));
+    icon.addPixmap(QPixmap::fromImage(img16_2x));
+    icon.addPixmap(QPixmap::fromImage(img32_1x));
+    icon.addPixmap(QPixmap::fromImage(img32_2x));
+
+    // Test painting the icon version with a device independent size of 32x32
+    QRect iconRect(0, 0, 32, 32);
+
+    auto imageWithPaintedIconAtDpr = [&](qreal dpr) {
+        QImage paintDevice(64 * dpr, 64 * dpr, QImage::Format_ARGB32);
+        paintDevice.setDevicePixelRatio(dpr);
+
+        QPainter painter(&paintDevice);
+        icon.paint(&painter, iconRect);
+        return paintDevice;
+    };
+
+    QImage imageWithIcon1x = imageWithPaintedIconAtDpr(1.0);
+    QCOMPARE(imageWithIcon1x.pixel(iconRect.center()), qRgb(0xff, 0, 0));
+
+    QImage imageWithIcon2x = imageWithPaintedIconAtDpr(2.0);
+    QCOMPARE(imageWithIcon2x.pixel(iconRect.center()), qRgb(0, 0xff, 0));
+
+    QImage imageWithIcon3x = imageWithPaintedIconAtDpr(3.0);
+    QCOMPARE(imageWithIcon3x.pixel(iconRect.center()), qRgb(0, 0xff, 0));
 }
 
 static bool sizeLess(const QSize &a, const QSize &b)

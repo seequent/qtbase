@@ -1,48 +1,80 @@
-/****************************************************************************
-**
-** Copyright (C) 2018 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 or (at your option) any later version
-** approved by the KDE Free Qt Foundation. The licenses are as published by
-** the Free Software Foundation and appearing in the file LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2018 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qguiapplication_p.h>
 #include <QtGui/private/qopenglcontext_p.h>
 #include <QtGui/private/qwindow_p.h>
 #include <QtGui/qopenglcontext.h>
+#include <private/qpixmapcache_p.h>
 
 #include "qwasmwindow.h"
 #include "qwasmscreen.h"
+#include "qwasmstylepixmaps_p.h"
 #include "qwasmcompositor.h"
 #include "qwasmeventdispatcher.h"
 
 #include <iostream>
 
-Q_GUI_EXPORT int qt_defaultDpiX();
 
 QT_BEGIN_NAMESPACE
+
+Q_GUI_EXPORT int qt_defaultDpiX();
+
+namespace {
+// from commonstyle.cpp
+static QPixmap cachedPixmapFromXPM(const char *const *xpm)
+{
+    QPixmap result;
+    const QString tag = QString::asprintf("xpm:0x%p", static_cast<const void *>(xpm));
+    if (!QPixmapCache::find(tag, &result)) {
+        result = QPixmap(xpm);
+        QPixmapCache::insert(tag, result);
+    }
+    return result;
+}
+
+QPalette makePalette()
+{
+    QPalette palette;
+    palette.setColor(QPalette::Active, QPalette::Highlight,
+                     palette.color(QPalette::Active, QPalette::Highlight));
+    palette.setColor(QPalette::Active, QPalette::Base,
+                     palette.color(QPalette::Active, QPalette::Highlight));
+    palette.setColor(QPalette::Inactive, QPalette::Highlight,
+                     palette.color(QPalette::Inactive, QPalette::Dark));
+    palette.setColor(QPalette::Inactive, QPalette::Base,
+                     palette.color(QPalette::Inactive, QPalette::Dark));
+    palette.setColor(QPalette::Inactive, QPalette::HighlightedText,
+                     palette.color(QPalette::Inactive, QPalette::Window));
+
+    return palette;
+}
+
+void drawItemPixmap(QPainter *painter, const QRect &rect, int alignment, const QPixmap &pixmap)
+{
+    qreal scale = pixmap.devicePixelRatio();
+    QSize size = pixmap.size() / scale;
+    int x = rect.x();
+    int y = rect.y();
+    int w = size.width();
+    int h = size.height();
+    if ((alignment & Qt::AlignVCenter) == Qt::AlignVCenter)
+        y += rect.size().height() / 2 - h / 2;
+    else if ((alignment & Qt::AlignBottom) == Qt::AlignBottom)
+        y += rect.size().height() - h;
+    if ((alignment & Qt::AlignRight) == Qt::AlignRight)
+        x += rect.size().width() - w;
+    else if ((alignment & Qt::AlignHCenter) == Qt::AlignHCenter)
+        x += rect.size().width() / 2 - w / 2;
+
+    QRect aligned = QRect(x, y, w, h);
+    QRect inter = aligned.intersected(rect);
+
+    painter->drawPixmap(inter.x(), inter.y(), pixmap, inter.x() - aligned.x(),
+                        inter.y() - aligned.y(), inter.width() * scale, inter.height() * scale);
+}
+}
 
 QWasmWindow::QWasmWindow(QWindow *w, QWasmCompositor *compositor, QWasmBackingStore *backingStore)
     : QPlatformWindow(w),
@@ -63,6 +95,8 @@ QWasmWindow::QWasmWindow(QWindow *w, QWasmCompositor *compositor, QWasmBackingSt
 QWasmWindow::~QWasmWindow()
 {
     m_compositor->removeWindow(this);
+    if (m_requestAnimationFrameId > -1)
+        emscripten_cancel_animation_frame(m_requestAnimationFrameId);
 }
 
 void QWasmWindow::destroy()
@@ -100,40 +134,41 @@ QWasmScreen *QWasmWindow::platformScreen() const
 
 void QWasmWindow::setGeometry(const QRect &rect)
 {
-    QRect r = rect;
-    if (m_needsCompositor) {
-        int yMin = window()->geometry().top() - window()->frameGeometry().top();
+    const QRect clientAreaRect = ([this, &rect]() {
+        if (!m_needsCompositor)
+            return rect;
 
-        if (r.y() < yMin)
-            r.moveTop(yMin);
+        const int captionHeight = window()->geometry().top() - window()->frameGeometry().top();
+        const auto screenGeometry = screen()->geometry();
+
+        QRect result(rect);
+        result.moveTop(std::max(std::min(rect.y(), screenGeometry.bottom()),
+                                screenGeometry.y() + captionHeight));
+        return result;
+    })();
+    bool shouldInvalidate = true;
+    if (!m_windowState.testFlag(Qt::WindowFullScreen)
+        && !m_windowState.testFlag(Qt::WindowMaximized)) {
+        shouldInvalidate = m_normalGeometry.size() != clientAreaRect.size();
+        m_normalGeometry = clientAreaRect;
     }
-    QWindowSystemInterface::handleGeometryChange(window(), r);
-    QPlatformWindow::setGeometry(r);
-
-    QWindowSystemInterface::flushWindowSystemEvents();
-    invalidate();
+    QWindowSystemInterface::handleGeometryChange(window(), clientAreaRect);
+    if (shouldInvalidate)
+        invalidate();
+    else
+        m_compositor->requestUpdateWindow(this);
 }
 
 void QWasmWindow::setVisible(bool visible)
 {
-    QRect newGeom;
-
-    if (visible) {
-        const bool forceFullScreen = !m_needsCompositor;//make gl apps fullscreen for now
-
-        if (forceFullScreen || (m_windowState & Qt::WindowFullScreen))
-            newGeom = platformScreen()->geometry();
-        else if (m_windowState & Qt::WindowMaximized)
-            newGeom = platformScreen()->availableGeometry();
-    }
-    QPlatformWindow::setVisible(visible);
-
+    if (visible)
+        applyWindowState();
     m_compositor->setVisible(this, visible);
+}
 
-    if (!newGeom.isEmpty())
-        setGeometry(newGeom); // may or may not generate an expose
-
-    invalidate();
+bool QWasmWindow::isVisible()
+{
+    return window()->isVisible();
 }
 
 QMargins QWasmWindow::frameMargins() const
@@ -153,14 +188,12 @@ QMargins QWasmWindow::frameMargins() const
 void QWasmWindow::raise()
 {
     m_compositor->raise(this);
-    QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), geometry().size()));
     invalidate();
 }
 
 void QWasmWindow::lower()
 {
     m_compositor->lower(this);
-    QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), geometry().size()));
     invalidate();
 }
 
@@ -171,7 +204,19 @@ WId QWasmWindow::winId() const
 
 void QWasmWindow::propagateSizeHints()
 {
-// get rid of base class warning
+    QRect rect = windowGeometry();
+    if (rect.size().width() < windowMinimumSize().width()
+        && rect.size().height() < windowMinimumSize().height()) {
+        rect.setSize(windowMinimumSize());
+        setGeometry(rect);
+    }
+}
+
+bool QWasmWindow::startSystemResize(Qt::Edges edges)
+{
+    m_compositor->startResize(edges);
+
+    return true;
 }
 
 void QWasmWindow::injectMousePressed(const QPoint &local, const QPoint &global,
@@ -183,14 +228,8 @@ void QWasmWindow::injectMousePressed(const QPoint &local, const QPoint &global,
     if (!hasTitleBar() || button != Qt::LeftButton)
         return;
 
-    if (maxButtonRect().contains(global))
-        m_activeControl = QWasmCompositor::SC_TitleBarMaxButton;
-    else if (minButtonRect().contains(global))
-        m_activeControl = QWasmCompositor::SC_TitleBarMinButton;
-    else if (closeButtonRect().contains(global))
-        m_activeControl = QWasmCompositor::SC_TitleBarCloseButton;
-    else if (normButtonRect().contains(global))
-        m_activeControl = QWasmCompositor::SC_TitleBarNormalButton;
+    if (const auto controlHit = titleBarHitTest(global))
+        m_activeControl = *controlHit;
 
     invalidate();
 }
@@ -204,22 +243,28 @@ void QWasmWindow::injectMouseReleased(const QPoint &local, const QPoint &global,
     if (!hasTitleBar() || button != Qt::LeftButton)
         return;
 
-    if (closeButtonRect().contains(global) && m_activeControl == QWasmCompositor::SC_TitleBarCloseButton) {
-        window()->close();
-        return;
+    if (const auto controlHit = titleBarHitTest(global)) {
+        if (m_activeControl == *controlHit) {
+            switch (*controlHit) {
+            case SC_TitleBarCloseButton:
+                window()->close();
+                break;
+            case SC_TitleBarMaxButton:
+                window()->setWindowState(Qt::WindowMaximized);
+                break;
+            case SC_TitleBarNormalButton:
+                window()->setWindowState(Qt::WindowNoState);
+                break;
+            case SC_None:
+            case SC_TitleBarLabel:
+            case SC_TitleBarSysMenu:
+                Q_ASSERT(false); // These types are not clickable
+                return;
+            }
+        }
     }
 
-    if (maxButtonRect().contains(global) && m_activeControl == QWasmCompositor::SC_TitleBarMaxButton) {
-        window()->setWindowState(Qt::WindowMaximized);
-        platformScreen()->resizeMaximizedWindows();
-    }
-
-    if (normButtonRect().contains(global) && m_activeControl == QWasmCompositor::SC_TitleBarNormalButton) {
-        window()->setWindowState(Qt::WindowNoState);
-        setGeometry(normalGeometry());
-    }
-
-    m_activeControl = QWasmCompositor::SC_None;
+    m_activeControl = SC_None;
 
     invalidate();
 }
@@ -234,20 +279,6 @@ int QWasmWindow::borderWidth() const
     return  4. * (qreal(qt_defaultDpiX()) / 96.0);// dpiScaled(4.);
 }
 
-QRegion QWasmWindow::titleGeometry() const
-{
-    int border = borderWidth();
-
-    QRegion result(window()->frameGeometry().x() + border,
-                   window()->frameGeometry().y() + border,
-                   window()->frameGeometry().width() - 2*border,
-                   titleHeight());
-
-    result -= titleControlRegion();
-
-    return result;
-}
-
 QRegion QWasmWindow::resizeRegion() const
 {
     int border = borderWidth();
@@ -257,125 +288,266 @@ QRegion QWasmWindow::resizeRegion() const
     return result;
 }
 
-bool QWasmWindow::isPointOnTitle(QPoint point) const
+bool QWasmWindow::isPointOnTitle(QPoint globalPoint) const
 {
-    bool ok = titleGeometry().contains(point);
-    return ok;
+    const auto pointInFrameCoords = globalPoint - windowFrameGeometry().topLeft();
+    if (const auto titleRect =
+                getTitleBarControlRect(makeTitleBarOptions(), TitleBarControl::SC_TitleBarLabel)) {
+        return titleRect->contains(pointInFrameCoords);
+    }
+    return false;
 }
 
 bool QWasmWindow::isPointOnResizeRegion(QPoint point) const
 {
-    if (window()->flags().testFlag(Qt::Popup))
+    // Certain windows, like undocked dock widgets, are both popups and dialogs. Those should be
+    // resizable.
+    if (windowIsPopupType(window()->flags()))
         return false;
-    return resizeRegion().contains(point);
+    return (window()->maximumSize().isEmpty() || window()->minimumSize() != window()->maximumSize())
+            && resizeRegion().contains(point);
 }
 
-QWasmWindow::ResizeMode QWasmWindow::resizeModeAtPoint(QPoint point) const
+Qt::Edges QWasmWindow::resizeEdgesAtPoint(QPoint point) const
 {
-    QPoint p1 = window()->frameGeometry().topLeft() - QPoint(5, 5);
-    QPoint p2 = window()->frameGeometry().bottomRight() + QPoint(5, 5);
-    int corner = 20;
+    const QPoint topLeft = window()->frameGeometry().topLeft() - QPoint(5, 5);
+    const QPoint bottomRight = window()->frameGeometry().bottomRight() + QPoint(5, 5);
+    const int gripAreaWidth = std::min(20, (bottomRight.y() - topLeft.y()) / 2);
 
-    QRect top(p1, QPoint(p2.x(), p1.y() + corner));
-    QRect middle(QPoint(p1.x(), p1.y() + corner), QPoint(p2.x(), p2.y() - corner));
-    QRect bottom(QPoint(p1.x(), p2.y() - corner), p2);
+    const QRect top(topLeft, QPoint(bottomRight.x(), topLeft.y() + gripAreaWidth));
+    const QRect bottom(QPoint(topLeft.x(), bottomRight.y() - gripAreaWidth), bottomRight);
+    const QRect left(topLeft, QPoint(topLeft.x() + gripAreaWidth, bottomRight.y()));
+    const QRect right(QPoint(bottomRight.x() - gripAreaWidth, topLeft.y()), bottomRight);
 
-    QRect left(p1, QPoint(p1.x() + corner, p2.y()));
-    QRect center(QPoint(p1.x() + corner, p1.y()), QPoint(p2.x() - corner, p2.y()));
-    QRect right(QPoint(p2.x() - corner, p1.y()), p2);
+    Q_ASSERT(!top.intersects(bottom));
+    Q_ASSERT(!left.intersects(right));
 
-    if (top.contains(point)) {
-        // Top
-        if (left.contains(point))
-            return ResizeTopLeft;
-        if (center.contains(point))
-            return ResizeTop;
-        if (right.contains(point))
-            return ResizeTopRight;
-    } else if (middle.contains(point)) {
-        // Middle
-        if (left.contains(point))
-            return ResizeLeft;
-        if (right.contains(point))
-            return ResizeRight;
-    } else if (bottom.contains(point)) {
-        // Bottom
-        if (left.contains(point))
-            return ResizeBottomLeft;
-        if (center.contains(point))
-            return ResizeBottom;
-        if (right.contains(point))
-            return ResizeBottomRight;
+    Qt::Edges edges(top.contains(point) ? Qt::Edge::TopEdge : Qt::Edge(0));
+    edges |= bottom.contains(point) ? Qt::Edge::BottomEdge : Qt::Edge(0);
+    edges |= left.contains(point) ? Qt::Edge::LeftEdge : Qt::Edge(0);
+    return edges | (right.contains(point) ? Qt::Edge::RightEdge : Qt::Edge(0));
+}
+
+std::optional<QRect> QWasmWindow::getTitleBarControlRect(const TitleBarOptions &tb,
+                                                         TitleBarControl control) const
+{
+    const auto leftToRightRect = getTitleBarControlRectLeftToRight(tb, control);
+    if (!leftToRightRect)
+        return std::nullopt;
+    return qApp->layoutDirection() == Qt::LeftToRight
+            ? leftToRightRect
+            : leftToRightRect->translated(2 * (tb.rect.right() - leftToRightRect->right())
+                                                  + leftToRightRect->width() - tb.rect.width(),
+                                          0);
+}
+
+bool QWasmWindow::TitleBarOptions::hasControl(TitleBarControl control) const
+{
+    return subControls.testFlag(control);
+}
+
+std::optional<QRect> QWasmWindow::getTitleBarControlRectLeftToRight(const TitleBarOptions &tb,
+                                                                    TitleBarControl control) const
+{
+    if (!tb.hasControl(control))
+        return std::nullopt;
+
+    const int controlMargin = 2;
+    const int controlHeight = tb.rect.height() - controlMargin * 2;
+    const int controlWidth = controlHeight;
+    const int delta = controlWidth + controlMargin;
+    int offsetRight = 0;
+
+    switch (control) {
+    case SC_TitleBarLabel: {
+        const int leftOffset = tb.hasControl(SC_TitleBarSysMenu) ? delta : 0;
+        const int rightOffset = (tb.hasControl(SC_TitleBarCloseButton) ? delta : 0)
+                + ((tb.hasControl(SC_TitleBarMaxButton) || tb.hasControl(SC_TitleBarNormalButton))
+                           ? delta
+                           : 0);
+
+        return tb.rect.adjusted(leftOffset, 0, -rightOffset, 0);
     }
+    case SC_TitleBarSysMenu:
+        return QRect(tb.rect.left() + controlMargin, tb.rect.top() + controlMargin, controlWidth,
+                     controlHeight);
+    case SC_TitleBarCloseButton:
+        offsetRight = delta;
+        break;
+    case SC_TitleBarMaxButton:
+    case SC_TitleBarNormalButton:
+        offsetRight = delta + (tb.hasControl(SC_TitleBarCloseButton) ? delta : 0);
+        break;
+    case SC_None:
+        Q_ASSERT(false);
+        break;
+    };
 
-    return ResizeNone;
-}
-
-QRect getSubControlRect(const QWasmWindow *window, QWasmCompositor::SubControls subControl)
-{
-    QWasmCompositor::QWasmTitleBarOptions options = QWasmCompositor::makeTitleBarOptions(window);
-
-    QRect r = QWasmCompositor::titlebarRect(options, subControl);
-    r.translate(window->window()->frameGeometry().x(), window->window()->frameGeometry().y());
-
-    return r;
-}
-
-QRect QWasmWindow::maxButtonRect() const
-{
-    return getSubControlRect(this, QWasmCompositor::SC_TitleBarMaxButton);
-}
-
-QRect QWasmWindow::minButtonRect() const
-{
-    return getSubControlRect(this, QWasmCompositor::SC_TitleBarMinButton);
-}
-
-QRect QWasmWindow::closeButtonRect() const
-{
-    return getSubControlRect(this, QWasmCompositor::SC_TitleBarCloseButton);
-}
-
-QRect QWasmWindow::normButtonRect() const
-{
-    return getSubControlRect(this, QWasmCompositor::SC_TitleBarNormalButton);
-}
-
-QRect QWasmWindow::sysMenuRect() const
-{
-    return getSubControlRect(this, QWasmCompositor::SC_TitleBarSysMenu);
-}
-
-QRegion QWasmWindow::titleControlRegion() const
-{
-    QRegion result;
-    result += closeButtonRect();
-    result += minButtonRect();
-    result += maxButtonRect();
-    result += sysMenuRect();
-
-    return result;
+    return QRect(tb.rect.right() - offsetRight, tb.rect.top() + controlMargin, controlWidth,
+                 controlHeight);
 }
 
 void QWasmWindow::invalidate()
 {
-    m_compositor->requestRedraw();
+    m_compositor->requestUpdateWindow(this);
 }
 
-QWasmCompositor::SubControls QWasmWindow::activeSubControl() const
+QWasmWindow::TitleBarControl QWasmWindow::activeTitleBarControl() const
 {
     return m_activeControl;
 }
 
-void QWasmWindow::setWindowState(Qt::WindowStates states)
+std::optional<QWasmWindow::TitleBarControl>
+QWasmWindow::titleBarHitTest(const QPoint &globalPoint) const
 {
-    m_windowState = Qt::WindowNoState;
-    if (states & Qt::WindowMinimized)
-        m_windowState = Qt::WindowMinimized;
-    else if (states & Qt::WindowFullScreen)
-        m_windowState = Qt::WindowFullScreen;
-    else if (states & Qt::WindowMaximized)
-        m_windowState = Qt::WindowMaximized;
+    const auto pointInFrameCoords = globalPoint - windowFrameGeometry().topLeft();
+    const auto options = makeTitleBarOptions();
+
+    static constexpr TitleBarControl Controls[] = { SC_TitleBarMaxButton, SC_TitleBarCloseButton,
+                                                    SC_TitleBarNormalButton };
+    auto found = std::find_if(std::begin(Controls), std::end(Controls),
+                              [this, &pointInFrameCoords, &options](TitleBarControl control) {
+                                  auto controlRect = getTitleBarControlRect(options, control);
+                                  return controlRect && controlRect->contains(pointInFrameCoords);
+                              });
+    return found != std::end(Controls) ? *found : std::optional<TitleBarControl>();
+}
+
+void QWasmWindow::setWindowState(Qt::WindowStates newState)
+{
+    const Qt::WindowStates oldState = m_windowState;
+    bool isActive = oldState.testFlag(Qt::WindowActive);
+
+    if (newState.testFlag(Qt::WindowMinimized)) {
+        newState.setFlag(Qt::WindowMinimized, false);
+        qWarning("Qt::WindowMinimized is not implemented in wasm");
+    }
+
+    // Always keep OpenGL apps fullscreen
+    if (!m_needsCompositor && !newState.testFlag(Qt::WindowFullScreen)) {
+        newState.setFlag(Qt::WindowFullScreen, true);
+        qWarning("Qt::WindowFullScreen must be set for OpenGL surfaces");
+    }
+
+    // Ignore WindowActive flag in comparison, as we want to preserve it either way
+    if ((newState & ~Qt::WindowActive) == (oldState & ~Qt::WindowActive))
+        return;
+
+    newState.setFlag(Qt::WindowActive, isActive);
+
+    m_previousWindowState = oldState;
+    m_windowState = newState;
+
+    if (isVisible()) {
+        applyWindowState();
+    }
+}
+
+void QWasmWindow::applyWindowState()
+{
+    QRect newGeom;
+
+    if (m_windowState.testFlag(Qt::WindowFullScreen))
+        newGeom = platformScreen()->geometry();
+    else if (m_windowState.testFlag(Qt::WindowMaximized))
+        newGeom = platformScreen()->availableGeometry();
+    else
+        newGeom = normalGeometry();
+
+    QWindowSystemInterface::handleWindowStateChanged(window(), m_windowState, m_previousWindowState);
+    setGeometry(newGeom);
+}
+
+void QWasmWindow::drawTitleBar(QPainter *painter) const
+{
+    const auto tb = makeTitleBarOptions();
+    if (const auto ir = getTitleBarControlRect(tb, SC_TitleBarLabel)) {
+        QColor left = tb.palette.highlight().color();
+        QColor right = tb.palette.base().color();
+
+        QBrush fillBrush(left);
+        if (left != right) {
+            QPoint p1(tb.rect.x(), tb.rect.top() + tb.rect.height() / 2);
+            QPoint p2(tb.rect.right(), tb.rect.top() + tb.rect.height() / 2);
+            QLinearGradient lg(p1, p2);
+            lg.setColorAt(0, left);
+            lg.setColorAt(1, right);
+            fillBrush = lg;
+        }
+
+        painter->fillRect(tb.rect, fillBrush);
+        painter->setPen(tb.palette.highlightedText().color());
+        painter->drawText(ir->x() + 2, ir->y(), ir->width() - 2, ir->height(),
+                          Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
+                          tb.titleBarOptionsString);
+    }
+
+    if (const auto ir = getTitleBarControlRect(tb, SC_TitleBarCloseButton)) {
+        drawItemPixmap(painter, *ir, Qt::AlignCenter,
+                       cachedPixmapFromXPM(qt_close_xpm).scaled(QSize(10, 10)));
+    }
+
+    if (const auto ir = getTitleBarControlRect(tb, SC_TitleBarMaxButton)) {
+        drawItemPixmap(painter, *ir, Qt::AlignCenter,
+                       cachedPixmapFromXPM(qt_maximize_xpm).scaled(QSize(10, 10)));
+    }
+
+    if (const auto ir = getTitleBarControlRect(tb, SC_TitleBarNormalButton)) {
+        drawItemPixmap(painter, *ir, Qt::AlignCenter,
+                       cachedPixmapFromXPM(qt_normalizeup_xpm).scaled(QSize(10, 10)));
+    }
+
+    if (const auto ir = getTitleBarControlRect(tb, SC_TitleBarSysMenu)) {
+        if (!tb.windowIcon.isNull()) {
+            tb.windowIcon.paint(painter, *ir, Qt::AlignCenter);
+        } else {
+            drawItemPixmap(painter, *ir, Qt::AlignCenter,
+                           cachedPixmapFromXPM(qt_menu_xpm).scaled(QSize(10, 10)));
+        }
+    }
+}
+
+QWasmWindow::TitleBarOptions QWasmWindow::makeTitleBarOptions() const
+{
+    int width = windowFrameGeometry().width();
+    int border = borderWidth();
+
+    TitleBarOptions titleBarOptions;
+
+    titleBarOptions.rect = QRect(border, border, width - 2 * border, titleHeight());
+    titleBarOptions.flags = window()->flags();
+    titleBarOptions.state = window()->windowState();
+
+    bool isMaximized =
+            titleBarOptions.state & Qt::WindowMaximized; // this gets reset when maximized
+
+    if (titleBarOptions.flags & (Qt::WindowTitleHint))
+        titleBarOptions.subControls |= SC_TitleBarLabel;
+    if (titleBarOptions.flags & Qt::WindowMaximizeButtonHint) {
+        if (isMaximized)
+            titleBarOptions.subControls |= SC_TitleBarNormalButton;
+        else
+            titleBarOptions.subControls |= SC_TitleBarMaxButton;
+    }
+    if (titleBarOptions.flags & Qt::WindowSystemMenuHint) {
+        titleBarOptions.subControls |= SC_TitleBarCloseButton;
+        titleBarOptions.subControls |= SC_TitleBarSysMenu;
+    }
+
+    titleBarOptions.palette = makePalette();
+
+    titleBarOptions.palette.setCurrentColorGroup(
+            QGuiApplication::focusWindow() == window() ? QPalette::Active : QPalette::Inactive);
+
+    if (activeTitleBarControl() != SC_None)
+        titleBarOptions.subControls |= activeTitleBarControl();
+
+    if (!window()->title().isEmpty())
+        titleBarOptions.titleBarOptionsString = window()->title();
+
+    titleBarOptions.windowIcon = window()->icon();
+
+    return titleBarOptions;
 }
 
 QRect QWasmWindow::normalGeometry() const
@@ -390,22 +562,46 @@ qreal QWasmWindow::devicePixelRatio() const
 
 void QWasmWindow::requestUpdate()
 {
-    QPointer<QWindow> windowPointer(window());
-    bool registered = QWasmEventDispatcher::registerRequestUpdateCallback([=](){
-        if (windowPointer.isNull())
-            return;
-
-        deliverUpdateRequest();
-    });
-
-    if (!registered)
-        QPlatformWindow::requestUpdate();
+    m_compositor->requestUpdateWindow(this, QWasmCompositor::UpdateRequestDelivery);
 }
 
 bool QWasmWindow::hasTitleBar() const
 {
-    return !(m_windowState & Qt::WindowFullScreen) && (window()->flags().testFlag(Qt::WindowTitleHint) && m_needsCompositor)
-            && !window()->flags().testFlag(Qt::Popup);
+    Qt::WindowFlags flags = window()->flags();
+    return !(m_windowState & Qt::WindowFullScreen)
+        && flags.testFlag(Qt::WindowTitleHint)
+        && !(windowIsPopupType(flags))
+        && m_needsCompositor;
+}
+
+bool QWasmWindow::windowIsPopupType(Qt::WindowFlags flags) const
+{
+    if (flags.testFlag(Qt::Tool))
+        return false; // Qt::Tool has the Popup bit set but isn't
+
+    return (flags.testFlag(Qt::Popup));
+}
+
+void QWasmWindow::requestActivateWindow()
+{
+    QWindow *modalWindow;
+    if (QGuiApplicationPrivate::instance()->isWindowBlocked(window(), &modalWindow)) {
+        static_cast<QWasmWindow *>(modalWindow->handle())->requestActivateWindow();
+        return;
+    }
+
+    if (window()->isTopLevel())
+        raise();
+    QPlatformWindow::requestActivateWindow();
+}
+
+bool QWasmWindow::setMouseGrabEnabled(bool grab)
+{
+    if (grab)
+        m_compositor->setCapture(this);
+    else
+        m_compositor->releaseCapture();
+    return true;
 }
 
 QT_END_NAMESPACE

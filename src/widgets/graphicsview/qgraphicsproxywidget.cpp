@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qglobal.h"
 
@@ -239,6 +203,7 @@ void QGraphicsProxyWidgetPrivate::sendWidgetMouseEvent(QGraphicsSceneHoverEvent 
     mouseEvent.setButton(Qt::NoButton);
     mouseEvent.setButtons({ });
     mouseEvent.setModifiers(event->modifiers());
+    mouseEvent.setTimestamp(event->timestamp());
     sendWidgetMouseEvent(&mouseEvent);
     event->setAccepted(mouseEvent.isAccepted());
 }
@@ -304,6 +269,7 @@ void QGraphicsProxyWidgetPrivate::sendWidgetMouseEvent(QGraphicsSceneMouseEvent 
     QMouseEvent mouseEvent(type, pos, receiver->mapTo(receiver->topLevelWidget(), pos.toPoint()),
                            receiver->mapToGlobal(pos.toPoint()),
                            event->button(), event->buttons(), event->modifiers(), event->source());
+    mouseEvent.setTimestamp(event->timestamp());
 
     QWidget *embeddedMouseGrabberPtr = (QWidget *)embeddedMouseGrabber;
     QApplicationPrivate::sendMouseEvent(receiver, &mouseEvent, alienWidget, widget,
@@ -495,7 +461,7 @@ void QGraphicsProxyWidgetPrivate::embedSubWindow(QWidget *subWin)
 */
 void QGraphicsProxyWidgetPrivate::unembedSubWindow(QWidget *subWin)
 {
-    for (QGraphicsItem *child : qAsConst(children)) {
+    for (QGraphicsItem *child : std::as_const(children)) {
         if (child->isWidget()) {
             if (QGraphicsProxyWidget *proxy = qobject_cast<QGraphicsProxyWidget *>(static_cast<QGraphicsWidget *>(child))) {
                 if (proxy->widget() == subWin) {
@@ -832,6 +798,10 @@ bool QGraphicsProxyWidget::event(QEvent *event)
         return QGraphicsWidget::event(event);
 
     switch (event->type()) {
+    case QEvent::WindowActivate:
+    case QEvent::WindowDeactivate:
+        QCoreApplication::sendEvent(d->widget, event);
+        break;
     case QEvent::StyleChange:
         // Propagate style changes to the embedded widget.
         if (!d->styleChangeMode) {
@@ -916,16 +886,13 @@ bool QGraphicsProxyWidget::event(QEvent *event)
     case QEvent::TouchBegin:
     case QEvent::TouchUpdate:
     case QEvent::TouchEnd: {
-        if (event->spontaneous())
-            qt_sendSpontaneousEvent(d->widget, event);
-        else
-            QCoreApplication::sendEvent(d->widget, event);
-
-        if (event->isAccepted())
+        QTouchEvent *touchEvent = static_cast<QTouchEvent *>(event);
+        bool res = QApplicationPrivate::translateRawTouchEvent(d->widget, touchEvent);
+        if (res & touchEvent->isAccepted())
             return true;
 
         break;
-   }
+    }
     default:
         break;
     }
@@ -1044,6 +1011,7 @@ void QGraphicsProxyWidget::contextMenuEvent(QGraphicsSceneContextMenuEvent *even
     // Send mouse event. ### Doesn't propagate the event.
     QContextMenuEvent contextMenuEvent(QContextMenuEvent::Reason(event->reason()),
                                        pos.toPoint(), globalPos, event->modifiers());
+    contextMenuEvent.setTimestamp(event->timestamp());
     QCoreApplication::sendEvent(receiver, &contextMenuEvent);
 
     event->setAccepted(contextMenuEvent.isAccepted());
@@ -1289,6 +1257,19 @@ void QGraphicsProxyWidget::wheelEvent(QGraphicsSceneWheelEvent *event)
     if (!receiver)
         receiver = d->widget;
 
+    // high precision event streams go to the grabber, which will be the
+    // QGraphicsView's viewport. We need to change that temporarily, otherwise
+    // the event we send to the receiver get grabbed by the viewport, resulting
+    // in infinite recursion
+    QPointer<QWidget> prev_grabber = QApplicationPrivate::wheel_widget;
+    if (event->phase() == Qt::ScrollBegin) {
+        QApplicationPrivate::wheel_widget = receiver;
+    } else if (event->phase() != Qt::NoScrollPhase && QApplicationPrivate::wheel_widget != receiver) {
+        // this event is part of a stream that didn't start here, so ignore
+        event->ignore();
+        return;
+    }
+
     // Map event position from us to the receiver
     pos = d->mapToReceiver(pos, receiver);
 
@@ -1300,14 +1281,20 @@ void QGraphicsProxyWidget::wheelEvent(QGraphicsSceneWheelEvent *event)
         angleDelta.setY(event->delta());
     // pixelDelta, inverted, scrollPhase and source from the original QWheelEvent
     // were not preserved in the QGraphicsSceneWheelEvent unfortunately
-    QWheelEvent wheelEvent(pos, event->screenPos(), QPoint(), angleDelta,
-                           event->buttons(), event->modifiers(), Qt::NoScrollPhase,
-                           false, Qt::MouseEventNotSynthesized,
+    QWheelEvent wheelEvent(pos, event->screenPos(), event->pixelDelta(), angleDelta,
+                           event->buttons(), event->modifiers(), event->phase(),
+                           event->isInverted(), Qt::MouseEventSynthesizedByQt,
                            QPointingDevice::primaryPointingDevice());
     QPointer<QWidget> focusWidget = d->widget->focusWidget();
     extern bool qt_sendSpontaneousEvent(QObject *, QEvent *);
     qt_sendSpontaneousEvent(receiver, &wheelEvent);
     event->setAccepted(wheelEvent.isAccepted());
+
+    if (event->phase() == Qt::ScrollBegin) {
+        // reset the wheel grabber if the event wasn't accepted
+        if (!wheelEvent.isAccepted())
+            QApplicationPrivate::wheel_widget = prev_grabber;
+    }
 
     // ### Remove, this should be done by proper focusIn/focusOut events.
     if (focusWidget && !focusWidget->hasFocus()) {
@@ -1552,6 +1539,10 @@ void QGraphicsProxyWidget::paint(QPainter *painter, const QStyleOptionGraphicsIt
     const QRect exposedWidgetRect = (option->exposedRect & rect()).toAlignedRect();
     if (exposedWidgetRect.isEmpty())
         return;
+
+    // When rendering to pdf etc. painting may go outside widget boundaries unless clipped
+    if (painter->device()->devType() != QInternal::Widget && (flags() & ItemClipsChildrenToShape))
+        painter->setClipRect(d->widget->geometry(), Qt::IntersectClip);
 
     d->widget->render(painter, exposedWidgetRect.topLeft(), exposedWidgetRect);
 }

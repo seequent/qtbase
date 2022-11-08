@@ -1,31 +1,6 @@
 #!/usr/bin/env python3
-#############################################################################
-##
-## Copyright (C) 2018 The Qt Company Ltd.
-## Contact: https://www.qt.io/licensing/
-##
-## This file is part of the plugins of the Qt Toolkit.
-##
-## $QT_BEGIN_LICENSE:GPL-EXCEPT$
-## Commercial License Usage
-## Licensees holding valid commercial Qt licenses may use this file in
-## accordance with the commercial license agreement provided with the
-## Software or, alternatively, in accordance with the terms contained in
-## a written agreement between you and The Qt Company. For licensing terms
-## and conditions see https://www.qt.io/terms-conditions. For further
-## information use the contact form at https://www.qt.io/contact-us.
-##
-## GNU General Public License Usage
-## Alternatively, this file may be used under the terms of the GNU
-## General Public License version 3 as published by the Free Software
-## Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-## included in the packaging of this file. Please review the following
-## information to ensure the GNU General Public License requirements will
-## be met: https://www.gnu.org/licenses/gpl-3.0.html.
-##
-## $QT_END_LICENSE$
-##
-#############################################################################
+# Copyright (C) 2018 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 import json_parser
 import posixpath
@@ -608,24 +583,24 @@ def write_compile_test(
         return
 
     def resolve_head(detail):
-        head = detail.get("head", "")
+        head = detail.get("head")
         if isinstance(head, list):
             head = "\n".join(head)
-        return head
+        return head + "\n" if head else ""
 
     head = ""
     if inherit_details:
         head += resolve_head(inherit_details)
     head += resolve_head(details)
 
-    sourceCode = head + "\n"
+    sourceCode = head
 
     def resolve_include(detail, keyword):
         include = detail.get(keyword, "")
         if isinstance(include, list):
-            include = "#include <" + ">\n#include <".join(include) + ">"
+            include = "#include <" + ">\n#include <".join(include) + ">\n"
         elif include:
-            include = f"#include <{include}>"
+            include = f"#include <{include}>\n"
         return include
 
     include = ""
@@ -640,38 +615,39 @@ def write_compile_test(
             include += resolve_include(inherit_details, "include")
         include += resolve_include(details, "include")
 
-    sourceCode += include + "\n"
+    sourceCode += include
 
     def resolve_tail(detail):
-        tail = detail.get("tail", "")
+        tail = detail.get("tail")
         if isinstance(tail, list):
             tail = "\n".join(tail)
-        return tail
+        return tail + "\n" if tail else ""
 
     tail = ""
     if inherit_details:
         tail += resolve_tail(inherit_details)
     tail += resolve_tail(details)
 
-    sourceCode += tail + "\n"
+    sourceCode += tail
 
-    sourceCode += "int main(int argc, char **argv)\n"
+    if sourceCode:  # blank line before main
+        sourceCode += "\n"
+    sourceCode += "int main(void)\n"
     sourceCode += "{\n"
-    sourceCode += "    (void)argc; (void)argv;\n"
     sourceCode += "    /* BEGIN TEST: */\n"
 
     def resolve_main(detail):
-        main = detail.get("main", "")
+        main = detail.get("main")
         if isinstance(main, list):
             main = "\n".join(main)
-        return main
+        return main + "\n" if main else ""
 
     main = ""
     if inherit_details:
         main += resolve_main(inherit_details)
     main += resolve_main(details)
 
-    sourceCode += main + "\n"
+    sourceCode += main
 
     sourceCode += "    /* END TEST: */\n"
     sourceCode += "    return 0;\n"
@@ -709,7 +685,7 @@ def write_compile_test(
             languageStandard = "CXX_STANDARD 14"
         elif details["qmake"] == "CONFIG += c++11 c++14 c++17":
             languageStandard = "CXX_STANDARD 17"
-        elif details["qmake"] == "CONFIG += c++11 c++14 c++17 c++2a":
+        elif details["qmake"] == "CONFIG += c++11 c++14 c++17 c++20":
             languageStandard = "CXX_STANDARD 20"
         elif details["qmake"] == "QMAKE_CXXFLAGS += -fstack-protector-strong":
             compileOptions = details["qmake"][18:]
@@ -942,7 +918,11 @@ endif()""",
         "qreal": {
             "condition": 'DEFINED QT_COORD_TYPE AND NOT QT_COORD_TYPE STREQUAL "double"',
             "output": [
-                {"type": "define", "name": "QT_COORD_TYPE", "value": "${QT_COORD_TYPE}",},
+                {
+                    "type": "define",
+                    "name": "QT_COORD_TYPE",
+                    "value": "${QT_COORD_TYPE}",
+                },
                 {
                     "type": "define",
                     "name": "QT_COORD_TYPE_STRING",
@@ -950,7 +930,9 @@ endif()""",
                 },
             ],
         },
-        "reduce_exports": {"condition": "NOT MSVC",},
+        "reduce_exports": {
+            "condition": "NOT MSVC",
+        },
         "release": None,
         "release_tools": None,
         "rpath": {
@@ -1406,11 +1388,6 @@ def parseCommandLinePrefixes(ctx, data, cm_fh):
         cm_fh.write(f"qt_commandline_prefix({key} {data[key]})\n")
 
 
-def parseCommandLineAssignments(ctx, data, cm_fh):
-    for key in data:
-        cm_fh.write(f"qt_commandline_assignment({key} {data[key]})\n")
-
-
 def processCommandLine(ctx, data, cm_fh):
     print("  commandline:")
 
@@ -1432,8 +1409,7 @@ def processCommandLine(ctx, data, cm_fh):
         print("    prefix:")
         parseCommandLinePrefixes(ctx, commandLine["prefix"], cm_fh)
     if "assignments" in commandLine:
-        print("    assignments:")
-        parseCommandLineAssignments(ctx, commandLine["assignments"], cm_fh)
+        print("    assignments are ignored")
 
 
 def processInputs(ctx, data, cm_fh):
@@ -1519,10 +1495,9 @@ class special_cased_file:
 
     def __exit__(self, type, value, trace_back):
         self.file.close()
-        if self.preserve_special_cases and self.sc_handler.handle_special_cases():
-            os.replace(self.gen_file_path, self.file_path)
-        else:
-            os.replace(self.gen_file_path, self.file_path)
+        if self.preserve_special_cases:
+            self.sc_handler.handle_special_cases()
+        os.replace(self.gen_file_path, self.file_path)
 
 
 def processJson(path, ctx, data, skip_special_case_preservation=False):
@@ -1571,11 +1546,8 @@ def main():
         print("This scripts needs one directory to process!")
         quit(1)
 
-    skip_special_case_preservation = False
-    if len(sys.argv) > 2 and sys.argv[2] == "-s":
-        skip_special_case_preservation = True
-
     directory = sys.argv[1]
+    skip_special_case_preservation = "-s" in sys.argv[2:]
 
     print(f"Processing: {directory}.")
 

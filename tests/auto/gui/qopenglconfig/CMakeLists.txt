@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qopenglconfig.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ list(APPEND test_data "buglist.json")
 qt_internal_add_test(tst_qopenglconfig
     SOURCES
         tst_qopenglconfig.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate

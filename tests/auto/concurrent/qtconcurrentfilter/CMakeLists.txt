@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qtconcurrentfilter.pro.
 
 #####################################################################
@@ -7,6 +10,6 @@
 qt_internal_add_test(tst_qtconcurrentfilter
     SOURCES
         tst_qtconcurrentfilter.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Concurrent
 )

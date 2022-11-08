@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdtls.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ list(APPEND test_data "certs")
 qt_internal_add_test(tst_qdtls
     SOURCES
         tst_qdtls.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::NetworkPrivate
     TESTDATA ${test_data}
 )

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from eglfs_kms_egldevice.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QEglFSKmsEglDeviceIntegrationPlugin
     OUTPUT_NAME qeglfs-kms-egldevice-integration
-    TYPE egldeviceintegrations
+    PLUGIN_TYPE egldeviceintegrations
     SOURCES
         qeglfskmsegldevice.cpp qeglfskmsegldevice.h
         qeglfskmsegldeviceintegration.cpp qeglfskmsegldeviceintegration.h
@@ -14,7 +17,7 @@ qt_internal_add_plugin(QEglFSKmsEglDeviceIntegrationPlugin
         qeglfskmsegldevicescreen.cpp qeglfskmsegldevicescreen.h
     DEFINES
         QT_EGL_NO_X11
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Libdrm::Libdrm
         Qt::Core
         Qt::CorePrivate
@@ -27,10 +30,3 @@ qt_internal_add_plugin(QEglFSKmsEglDeviceIntegrationPlugin
 
 #### Keys ignored in scope 1:.:.:eglfs_kms_egldevice.pro:<TRUE>:
 # OTHER_FILES = "$$PWD/eglfs_kms_egldevice.json"
-
-# begin special case
-qt_internal_extend_target(QEglFSKmsEglDeviceIntegrationPlugin
-      CONDITION QNX
-      COMPILE_OPTIONS -fpermissive
-)
-# end special case

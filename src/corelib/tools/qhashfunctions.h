@@ -1,47 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2015 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2015 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QHASHFUNCTIONS_H
 #define QHASHFUNCTIONS_H
 
 #include <QtCore/qstring.h>
+#include <QtCore/qstringfwd.h>
 #include <QtCore/qpair.h>
 
 #include <numeric> // for std::accumulate
@@ -60,12 +25,25 @@
 QT_BEGIN_NAMESPACE
 
 class QBitArray;
-class QByteArray;
-class QString;
-class QLatin1String;
 
+#if QT_DEPRECATED_SINCE(6,6)
+QT_DEPRECATED_VERSION_X_6_6("Use QHashSeed instead")
 Q_CORE_EXPORT int qGlobalQHashSeed();
+QT_DEPRECATED_VERSION_X_6_6("Use QHashSeed instead")
 Q_CORE_EXPORT void qSetGlobalQHashSeed(int newSeed);
+#endif
+
+struct QHashSeed
+{
+    constexpr QHashSeed(size_t d = 0) : data(d) {}
+    constexpr operator size_t() const noexcept { return data; }
+
+    static Q_CORE_EXPORT QHashSeed globalSeed() noexcept;
+    static Q_CORE_EXPORT void setDeterministicGlobalSeed();
+    static Q_CORE_EXPORT void resetRandomGlobalSeed();
+private:
+    size_t data;
+};
 
 namespace QHashPrivate {
 
@@ -90,17 +68,14 @@ Q_DECL_CONST_FUNCTION constexpr size_t hash(size_t key, size_t seed) noexcept
     }
 }
 
-template <typename T, typename = void>
-constexpr inline bool HasQHashSingleArgOverload = false;
-
-template <typename T>
-constexpr inline bool HasQHashSingleArgOverload<T, std::enable_if_t<
-    std::is_convertible_v<decltype(qHash(std::declval<const T &>())), size_t>
->> = true;
-
+template <typename T1, typename T2> static constexpr bool noexceptPairHash();
 }
 
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHashBits(const void *p, size_t size, size_t seed = 0) noexcept;
+
+// implementation below qHashMulti
+template <typename T1, typename T2> inline size_t qHash(const std::pair<T1, T2> &key, size_t seed = 0)
+    noexcept(QHashPrivate::noexceptPairHash<T1, T2>());
 
 // C++ builtin types
 Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(char key, size_t seed = 0) noexcept
@@ -137,7 +112,7 @@ Q_DECL_CONST_FUNCTION inline size_t qHash(float key, size_t seed = 0) noexcept
     return QHashPrivate::hash(k, seed);
 }
 Q_CORE_EXPORT Q_DECL_CONST_FUNCTION size_t qHash(double key, size_t seed = 0) noexcept;
-#if !defined(Q_OS_DARWIN) || defined(Q_CLANG_QDOC)
+#if !defined(Q_OS_DARWIN) || defined(Q_QDOC)
 Q_CORE_EXPORT Q_DECL_CONST_FUNCTION size_t qHash(long double key, size_t seed = 0) noexcept;
 #endif
 Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(wchar_t key, size_t seed = 0) noexcept
@@ -158,25 +133,56 @@ Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(std::nullptr_t, size_t seed 
 {
     return seed;
 }
+template <class Enum, std::enable_if_t<std::is_enum_v<Enum>, bool> = true>
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(Enum e, size_t seed = 0) noexcept
+{ return QHashPrivate::hash(qToUnderlying(e), seed); }
 
 // (some) Qt types
 Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(const QChar key, size_t seed = 0) noexcept { return qHash(key.unicode(), seed); }
+
+#if QT_CORE_REMOVED_SINCE(6, 4)
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QByteArray &key, size_t seed = 0) noexcept;
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QByteArrayView &key, size_t seed = 0) noexcept;
+#else
+Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(QByteArrayView key, size_t seed = 0) noexcept;
+inline Q_DECL_PURE_FUNCTION size_t qHash(const QByteArray &key, size_t seed = 0
+        QT6_DECL_NEW_OVERLOAD_TAIL) noexcept
+{ return qHash(qToByteArrayViewIgnoringNull(key), seed); }
+#endif
+
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(QStringView key, size_t seed = 0) noexcept;
-#if QT_STRINGVIEW_LEVEL < 2
 inline Q_DECL_PURE_FUNCTION size_t qHash(const QString &key, size_t seed = 0) noexcept
 { return qHash(QStringView{key}, seed); }
-#endif
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(const QBitArray &key, size_t seed = 0) noexcept;
-Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(QLatin1String key, size_t seed = 0) noexcept;
+Q_CORE_EXPORT Q_DECL_PURE_FUNCTION size_t qHash(QLatin1StringView key, size_t seed = 0) noexcept;
 Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(QKeyCombination key, size_t seed = 0) noexcept
 { return qHash(key.toCombined(), seed); }
 Q_CORE_EXPORT Q_DECL_PURE_FUNCTION uint qt_hash(QStringView key, uint chained = 0) noexcept;
 
-template <typename T, std::enable_if_t<QHashPrivate::HasQHashSingleArgOverload<T>, bool> = true>
+template <typename Enum>
+Q_DECL_CONST_FUNCTION constexpr inline size_t qHash(QFlags<Enum> flags, size_t seed = 0) noexcept
+{ return qHash(flags.toInt(), seed); }
+
+// ### Qt 7: remove this "catch-all" overload logic, and require users
+// to provide the two-argument version of qHash.
+#if (QT_VERSION < QT_VERSION_CHECK(7, 0, 0))
+// Beware of moving this code from here. It needs to see all the
+// declarations of qHash overloads for C++ fundamental types *before*
+// its own declaration.
+namespace QHashPrivate {
+template <typename T, typename = void>
+constexpr inline bool HasQHashSingleArgOverload = false;
+
+template <typename T>
+constexpr inline bool HasQHashSingleArgOverload<T, std::enable_if_t<
+    std::is_convertible_v<decltype(qHash(std::declval<const T &>())), size_t>
+>> = true;
+}
+
+template <typename T, std::enable_if_t<QHashPrivate::HasQHashSingleArgOverload<T> && !std::is_enum_v<T>, bool> = true>
 size_t qHash(const T &t, size_t seed) noexcept(noexcept(qHash(t)))
 { return qHash(t) ^ seed; }
+#endif // < Qt 7
 
 template<typename T>
 bool qHashEquals(const T &a, const T &b)
@@ -226,6 +232,9 @@ struct QNothrowHashable : std::false_type {};
 template <typename T>
 struct QNothrowHashable<T, std::enable_if_t<QNothrowHashableHelper_v<T>>> : std::true_type {};
 
+template <typename T>
+constexpr inline bool QNothrowHashable_v = QNothrowHashable<T>::value;
+
 } // namespace QtPrivate
 
 template <typename... T>
@@ -270,8 +279,16 @@ inline size_t qHashRangeCommutative(InputIterator first, InputIterator last, siz
     return std::accumulate(first, last, seed, QtPrivate::QHashCombineCommutative());
 }
 
-template <typename T1, typename T2> inline size_t qHash(const std::pair<T1, T2> &key, size_t seed = 0)
-    noexcept(noexcept(qHash(key.first, seed)) && noexcept(qHash(key.second, seed)))
+namespace QHashPrivate {
+template <typename T1, typename T2> static constexpr bool noexceptPairHash()
+{
+    size_t seed = 0;
+    return noexcept(qHash(std::declval<T1>(), seed)) && noexcept(qHash(std::declval<T2>(), seed));
+}
+} // QHashPrivate
+
+template <typename T1, typename T2> inline size_t qHash(const std::pair<T1, T2> &key, size_t seed)
+    noexcept(QHashPrivate::noexceptPairHash<T1, T2>())
 {
     return qHashMulti(seed, key.first, key.second);
 }
@@ -284,15 +301,15 @@ template <typename T1, typename T2> inline size_t qHash(const std::pair<T1, T2> 
             using argument_type = QT_PREPEND_NAMESPACE(Class);      \
             using result_type = size_t;                             \
             size_t operator()(Arguments s) const                    \
-                noexcept(noexcept(QT_PREPEND_NAMESPACE(qHash)(s)))  \
+              noexcept(QT_PREPEND_NAMESPACE(                        \
+                     QtPrivate::QNothrowHashable_v)<argument_type>) \
             {                                                       \
                 /* this seeds qHash with the result of */           \
                 /* std::hash applied to an int, to reap */          \
                 /* any protection against predictable hash */       \
                 /* values the std implementation may provide */     \
-                return QT_PREPEND_NAMESPACE(qHash)(s,               \
-                           QT_PREPEND_NAMESPACE(qHash)(             \
-                                      std::hash<int>{}(0)));        \
+                using QT_PREPEND_NAMESPACE(qHash);                  \
+                return qHash(s, qHash(std::hash<int>{}(0)));        \
             }                                                       \
         };                                                          \
     }                                                               \
@@ -306,7 +323,8 @@ template <typename T1, typename T2> inline size_t qHash(const std::pair<T1, T2> 
 
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_CREF(QString)
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_VALUE(QStringView)
-QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_VALUE(QLatin1String)
+QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_VALUE(QLatin1StringView)
+QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_VALUE(QByteArrayView)
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_CREF(QByteArray)
 QT_SPECIALIZE_STD_HASH_TO_CALL_QHASH_BY_CREF(QBitArray)
 

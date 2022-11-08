@@ -1,4 +1,5 @@
-
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #### Inputs
 
@@ -6,10 +7,194 @@
 
 #### Libraries
 
-qt_find_package(ZLIB 1.0.8 PROVIDED_TARGETS ZLIB::ZLIB MODULE_NAME global QMAKE_LIB zlib)
-qt_find_package(ZSTD 1.3 PROVIDED_TARGETS ZSTD::ZSTD MODULE_NAME global QMAKE_LIB zstd)
+qt_find_package(WrapSystemZLIB 1.0.8 PROVIDED_TARGETS WrapSystemZLIB::WrapSystemZLIB MODULE_NAME global QMAKE_LIB zlib)
+# Work around global target promotion failure when WrapZLIB is used on APPLE platforms.
+# What ends up happening is that the ZLIB::ZLIB target is not promoted to global by qt_find_package,
+# then qt_find_package(WrapSystemPNG) tries to find its dependency ZLIB::ZLIB, sees it's not global
+# and tries to promote it to global, but fails because the directory scope of the PNG package is
+# different (src/gui) from where ZLIB was originally found (qtbase root).
+# To avoid that, just manually promote the target to global here.
+if(TARGET ZLIB::ZLIB)
+    set_property(TARGET ZLIB::ZLIB PROPERTY IMPORTED_GLOBAL TRUE)
+endif()
+
+qt_find_package(WrapOpenSSLHeaders PROVIDED_TARGETS WrapOpenSSLHeaders::WrapOpenSSLHeaders MODULE_NAME core)
+# openssl_headers
+# OPENSSL_VERSION_MAJOR is not defined for OpenSSL 1.1.1
+qt_config_compile_test(opensslv11_headers
+    LIBRARIES
+        WrapOpenSSLHeaders::WrapOpenSSLHeaders
+    CODE
+"#include <openssl/ssl.h>
+#include <openssl/opensslv.h>
+#if !defined(OPENSSL_VERSION_NUMBER) || defined(OPENSSL_VERSION_MAJOR) || OPENSSL_VERSION_NUMBER-0 < 0x10101000L
+#  error OpenSSL >= 1.1.1 is required
+#endif
+#if !defined(OPENSSL_NO_EC) && !defined(SSL_CTRL_SET_CURVES)
+#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it is libressl which is unsupported
+#endif
+
+int main(void)
+{
+    /* BEGIN TEST: */
+    /* END TEST: */
+    return 0;
+}
+")
+
+qt_find_package(WrapOpenSSL PROVIDED_TARGETS WrapOpenSSL::WrapOpenSSL MODULE_NAME core QMAKE_LIB openssl)
+# openssl
+# OPENSSL_VERSION_MAJOR is not defined for OpenSSL 1.1.1
+qt_config_compile_test(opensslv11
+    LIBRARIES
+        WrapOpenSSL::WrapOpenSSL
+    CODE
+"#include <openssl/ssl.h>
+#include <openssl/opensslv.h>
+#if !defined(OPENSSL_VERSION_NUMBER) || defined(OPENSSL_VERSION_MAJOR) || OPENSSL_VERSION_NUMBER-0 < 0x10101000L
+#  error OpenSSL >= 1.1.1 is required
+#endif
+#if !defined(OPENSSL_NO_EC) && !defined(SSL_CTRL_SET_CURVES)
+#  error OpenSSL was reported as >= 1.1.1 but is missing required features, possibly it is libressl which is unsupported
+#endif
+
+int main(void)
+{
+    /* BEGIN TEST: */
+SSL_free(SSL_new(0));
+    /* END TEST: */
+    return 0;
+}
+")
+
+# opensslv30
+# openssl_headers
+qt_config_compile_test(opensslv30_headers
+    LIBRARIES
+        WrapOpenSSLHeaders::WrapOpenSSLHeaders
+    CODE
+"#include <openssl/ssl.h>
+#include <openssl/opensslv.h>
+#if !OPENSSL_VERSION_PREREQ(3,0)
+#  error OpenSSL >= 3.0 is required
+#endif
+
+int main(void)
+{
+    /* BEGIN TEST: */
+    /* END TEST: */
+    return 0;
+}
+")
+qt_config_compile_test(opensslv30
+    LIBRARIES
+        WrapOpenSSL::WrapOpenSSL
+    CODE
+"#include <openssl/ssl.h>
+#include <openssl/opensslv.h>
+#if !OPENSSL_VERSION_PREREQ(3,0)
+#  error OpenSSL >= 3.0 is required
+#endif
+
+int main(void)
+{
+    /* BEGIN TEST: */
+SSL_free(SSL_new(0));
+    /* END TEST: */
+    return 0;
+}
+")
+
+# special case end
+qt_find_package(WrapZSTD 1.3 PROVIDED_TARGETS WrapZSTD::WrapZSTD MODULE_NAME global QMAKE_LIB zstd)
 qt_find_package(WrapDBus1 1.2 PROVIDED_TARGETS dbus-1 MODULE_NAME global QMAKE_LIB dbus)
 qt_find_package(Libudev PROVIDED_TARGETS PkgConfig::Libudev MODULE_NAME global QMAKE_LIB libudev)
+
+
+#### Early-evaluated, Linker-related Tests and Features
+
+qt_internal_check_if_linker_is_available(use_bfd_linker
+    LABEL "bfd linker"
+    FLAG "-fuse-ld=bfd"
+    )
+
+qt_internal_check_if_linker_is_available(use_gold_linker
+    LABEL "gold linker"
+    FLAG "-fuse-ld=gold"
+    )
+
+qt_internal_check_if_linker_is_available(use_lld_linker
+    LABEL "lld linker"
+    FLAG "-fuse-ld=lld"
+    )
+
+# We set an invalid flag as a default flag so the compile test fails
+# in case if no mold is found in PATH.
+set(__qt_internal_mold_linker_flags "-Wl,-invalid-flag")
+if(NOT QT_CONFIGURE_RUNNING)
+    qt_internal_get_mold_linker_flags(__qt_internal_mold_linker_flags)
+endif()
+qt_internal_check_if_linker_is_available(use_mold_linker
+    LABEL "mold linker"
+    FLAG "${__qt_internal_mold_linker_flags}"
+    )
+unset(__qt_internal_mold_linker_flags)
+
+qt_feature("use_bfd_linker"
+    PRIVATE
+    LABEL "bfd"
+    AUTODETECT false
+    CONDITION NOT MSVC AND NOT INTEGRITY AND NOT WASM AND TEST_use_bfd_linker
+    ENABLE INPUT_linker STREQUAL 'bfd'
+    DISABLE INPUT_linker STREQUAL 'gold' OR INPUT_linker STREQUAL 'lld'
+            OR INPUT_linker STREQUAL 'mold'
+)
+qt_feature_config("use_bfd_linker" QMAKE_PRIVATE_CONFIG)
+
+qt_feature("use_gold_linker_alias"
+    AUTODETECT false
+    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_gold_linker
+)
+qt_feature("use_gold_linker"
+    PRIVATE
+    LABEL "gold"
+    AUTODETECT false
+    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND NOT rtems AND TEST_use_gold_linker
+    ENABLE INPUT_linker STREQUAL 'gold' OR QT_FEATURE_use_gold_linker_alias
+    DISABLE INPUT_linker STREQUAL 'bfd' OR INPUT_linker STREQUAL 'lld'
+            OR INPUT_linker STREQUAL 'mold'
+)
+qt_feature_config("use_gold_linker" QMAKE_PRIVATE_CONFIG)
+
+qt_feature("use_lld_linker"
+    PRIVATE
+    LABEL "lld"
+    AUTODETECT false
+    CONDITION NOT MSVC AND NOT INTEGRITY AND NOT WASM AND TEST_use_lld_linker
+    ENABLE INPUT_linker STREQUAL 'lld'
+    DISABLE INPUT_linker STREQUAL 'bfd' OR INPUT_linker STREQUAL 'gold'
+            OR INPUT_linker STREQUAL 'mold'
+)
+qt_feature_config("use_lld_linker" QMAKE_PRIVATE_CONFIG)
+
+qt_feature("use_mold_linker"
+    PRIVATE
+    LABEL "mold"
+    AUTODETECT FALSE
+    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_mold_linker
+    ENABLE INPUT_linker STREQUAL 'mold'
+    DISABLE INPUT_linker STREQUAL 'bfd' OR INPUT_linker STREQUAL 'gold'
+            OR INPUT_linker STREQUAL 'lld'
+)
+qt_feature_config("use_mold_linker" QMAKE_PRIVATE_CONFIG)
+
+if(NOT QT_CONFIGURE_RUNNING)
+    qt_evaluate_feature(use_bfd_linker)
+    qt_evaluate_feature(use_gold_linker_alias)
+    qt_evaluate_feature(use_gold_linker)
+    qt_evaluate_feature(use_lld_linker)
+    qt_evaluate_feature(use_mold_linker)
+endif()
 
 
 #### Tests
@@ -27,12 +212,9 @@ qt_config_compile_test(cxx14
 #  error __cplusplus must be > 201103L (the value of C++11)
 #endif
 
-
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
-
     /* END TEST: */
     return 0;
 }
@@ -52,10 +234,8 @@ qt_config_compile_test(cxx17
 #include <map>  // https://bugs.llvm.org//show_bug.cgi?id=33117
 #include <variant>
 
-
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 std::variant<int> v(42);
 int i = std::get<int>(v);
@@ -67,22 +247,19 @@ std::visit([](const auto &) { return 1; }, v);
     CXX_STANDARD 17
 )
 
-# cxx2a
-qt_config_compile_test(cxx2a
-    LABEL "C++2a support"
+# cxx20
+qt_config_compile_test(cxx20
+    LABEL "C++20 support"
     CODE
 "#if __cplusplus > 201703L
-// Compiler claims to support experimental C++2a, trust it
+// Compiler claims to support C++20, trust it
 #else
 #  error __cplusplus must be > 201703L (the value for C++17)
 #endif
 
-
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
-
     /* END TEST: */
     return 0;
 }
@@ -90,44 +267,39 @@ int main(int argc, char **argv)
     CXX_STANDARD 20
 )
 
-# precompile_header
-qt_config_compile_test(precompile_header
-    LABEL "precompiled header support"
+qt_config_compile_test(cxx2b
+    LABEL "C++2b support"
     CODE
-"
-
-#ifndef HEADER_H
-#error no go
+"#if __cplusplus > 202002L
+// Compiler claims to support C++2B, trust it
+#else
+#  error __cplusplus must be > 202002L (the value for C++20)
 #endif
-int main(int argc, char **argv)
-{
-    (void)argc; (void)argv;
-    /* BEGIN TEST: */
 
+int main(void)
+{
+    /* BEGIN TEST: */
     /* END TEST: */
     return 0;
 }
-"# FIXME: qmake: ['CONFIG += precompile_header', 'PRECOMPILED_DIR = .pch', 'PRECOMPILED_HEADER = header.h']
+"
+    CXX_STANDARD 23
 )
 
-qt_config_compiler_supports_flag_test(use_bfd_linker
-    LABEL "bfd linker"
-    FLAG "-fuse-ld=bfd"
-)
-
-qt_config_compiler_supports_flag_test(use_gold_linker
-    LABEL "gold linker"
-    FLAG "-fuse-ld=gold"
-)
-
-qt_config_compiler_supports_flag_test(use_lld_linker
-    LABEL "lld linker"
-    FLAG "-fuse-ld=lld"
+# precompile_header
+qt_config_compile_test(precompile_header
+    LABEL "precompiled header support"
+    PROJECT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/config.tests/precompile_header"
 )
 
 qt_config_compiler_supports_flag_test(optimize_debug
     LABEL "-Og support"
     FLAG "-Og"
+)
+
+qt_config_compile_test(no_direct_extern_access
+    LABEL "-mno-direct-extern-access / -fno-direct-access-external-data support"
+    PROJECT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/config.tests/no_direct_extern_access"
 )
 
 qt_config_linker_supports_flag_test(enable_new_dtags
@@ -144,16 +316,13 @@ qt_config_linker_supports_flag_test(gdb_index
 qt_config_compile_test(reduce_relocations
     LABEL "-Bsymbolic-functions support"
     CODE
-"#if !(defined(__i386) || defined(__i386__) || defined(__x86_64) || defined(__x86_64__) || defined(__amd64))
+"#if !(defined(__i386) || defined(__i386__) || defined(__x86_64) || defined(__x86_64__) || defined(__amd64)) || defined(__sun)
 #  error Symbolic function binding on this architecture may be broken, disabling it (see QTBUG-36129).
 #endif
 
-
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
-
     /* END TEST: */
     return 0;
 }
@@ -169,12 +338,14 @@ qt_config_compile_test("separate_debug_info"
 qt_config_compile_test(signaling_nan
     LABEL "Signaling NaN for doubles"
     CODE
-"#include <limits>
+"#if defined(__ghs)  && (__GHS_VERSION_NUMBER <= 202014)
+#  error Signal NaNs are not supported by GHS compiler, but has_signaling_NaN returns TRUE. Will be fixed in future compiler releases.
+#endif
 
+#include <limits>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 using B = std::numeric_limits<double>;
 static_assert(B::has_signaling_NaN, \"System lacks signaling NaN\");
@@ -183,80 +354,27 @@ static_assert(B::has_signaling_NaN, \"System lacks signaling NaN\");
 }
 ")
 
-# sse2
-qt_config_compile_test_x86simd(sse2 "SSE2 instructions")
+# basic x86 intrinsics support
+qt_config_compile_test(x86intrin
+    LABEL "Basic x86 intrinsics"
+    PROJECT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/config.tests/x86intrin"
+)
 
-# sse3
-qt_config_compile_test_x86simd(sse3 "SSE3 instructions")
+# x86: avx512vbmi2
+qt_config_compile_test_x86simd(avx512vbmi2 "AVX512VBMI2")
 
-# ssse3
-qt_config_compile_test_x86simd(ssse3 "SSSE3 instructions")
-
-# sse4_1
-qt_config_compile_test_x86simd(sse4_1 "SSE4.1 instructions")
-
-# sse4_2
-qt_config_compile_test_x86simd(sse4_2 "SSE4.2 instructions")
-
-# aesni
-qt_config_compile_test_x86simd(aesni "AES new instructions")
-
-# f16c
-qt_config_compile_test_x86simd(f16c "F16C instructions")
-
-# rdrnd
-qt_config_compile_test_x86simd(rdrnd "RDRAND instruction")
-
-# rdseed
-qt_config_compile_test_x86simd(rdseed "RDSEED instruction")
-
-# shani
-qt_config_compile_test_x86simd(shani "SHA new instructions")
-
-# avx
-qt_config_compile_test_x86simd(avx "AVX instructions")
-
-# avx2
-qt_config_compile_test_x86simd(avx2 "AVX2 instructions")
-
-# avx512f
-qt_config_compile_test_x86simd(avx512f "AVX512 F instructions")
-
-# avx512er
-qt_config_compile_test_x86simd(avx512er "AVX512 ER instructions")
-
-# avx512cd
-qt_config_compile_test_x86simd(avx512cd "AVX512 CD instructions")
-
-# avx512pf
-qt_config_compile_test_x86simd(avx512pf "AVX512 PF instructions")
-
-# avx512dq
-qt_config_compile_test_x86simd(avx512dq "AVX512 DQ instructions")
-
-# avx512bw
-qt_config_compile_test_x86simd(avx512bw "AVX512 BW instructions")
-
-# avx512vl
-qt_config_compile_test_x86simd(avx512vl "AVX512 VL instructions")
-
-# avx512ifma
-qt_config_compile_test_x86simd(avx512ifma "AVX512 IFMA instructions")
-
-# avx512vbmi
-qt_config_compile_test_x86simd(avx512vbmi "AVX512 VBMI instructions")
+# x86: vaes
+qt_config_compile_test_x86simd(vaes "VAES")
 
 # posix_fallocate
 qt_config_compile_test(posix_fallocate
     LABEL "POSIX fallocate()"
     CODE
-"
-#include <fcntl.h>
+"#include <fcntl.h>
 #include <unistd.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 (void) posix_fallocate(0, 0, 0);
     /* END TEST: */
@@ -268,12 +386,10 @@ int main(int argc, char **argv)
 qt_config_compile_test(alloca_stdlib_h
     LABEL "alloca() in stdlib.h"
     CODE
-"
-#include <stdlib.h>
+"#include <stdlib.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 alloca(1);
     /* END TEST: */
@@ -285,15 +401,14 @@ alloca(1);
 qt_config_compile_test(alloca_h
     LABEL "alloca() in alloca.h"
     CODE
-"
-#include <alloca.h>
+"#include <alloca.h>
 #ifdef __QNXNTO__
 // extra include needed in QNX7 to define NULL for the alloca() macro
 #  include <stddef.h>
 #endif
-int main(int argc, char **argv)
+
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 alloca(1);
     /* END TEST: */
@@ -305,12 +420,10 @@ alloca(1);
 qt_config_compile_test(alloca_malloc_h
     LABEL "alloca() in malloc.h"
     CODE
-"
-#include <malloc.h>
+"#include <malloc.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 alloca(1);
     /* END TEST: */
@@ -330,12 +443,9 @@ qt_config_compile_test(stack_protector
 #  endif
 #endif
 
-
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
-
     /* END TEST: */
     return 0;
 }
@@ -343,14 +453,10 @@ int main(int argc, char **argv)
 
 # intelcet
 qt_config_compile_test(intelcet
-    LABEL "Support for Intel Control-flow Enforcement Technology"
+    LABEL "Support for Intel Control-flow Enforcement Technology (CET)"
     CODE
-"
-
-
-int main(int argc, char **argv)
+"int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 #if !defined(__CET__)
 #  error Intel CET not available
@@ -391,34 +497,6 @@ qt_feature_config("cross_compile" QMAKE_PRIVATE_CONFIG)
 qt_feature("gc_binaries" PRIVATE
     CONDITION NOT QT_FEATURE_shared
 )
-qt_feature("use_bfd_linker"
-    LABEL "bfd"
-    AUTODETECT false
-    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_bfd_linker
-    ENABLE INPUT_linker STREQUAL 'bfd'
-    DISABLE INPUT_linker STREQUAL 'gold' OR INPUT_linker STREQUAL 'lld'
-)
-qt_feature_config("use_bfd_linker" QMAKE_PRIVATE_CONFIG)
-qt_feature("use_gold_linker_alias"
-    AUTODETECT false
-    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_gold_linker
-)
-qt_feature("use_gold_linker"
-    LABEL "gold"
-    AUTODETECT false
-    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND NOT rtems AND TEST_use_gold_linker
-    ENABLE INPUT_linker STREQUAL 'gold' OR QT_FEATURE_use_gold_linker_alias
-    DISABLE INPUT_linker STREQUAL 'bfd' OR INPUT_linker STREQUAL 'lld'
-)
-qt_feature_config("use_gold_linker" QMAKE_PRIVATE_CONFIG)
-qt_feature("use_lld_linker"
-    LABEL "lld"
-    AUTODETECT false
-    CONDITION NOT WIN32 AND NOT INTEGRITY AND NOT WASM AND TEST_use_lld_linker
-    ENABLE INPUT_linker STREQUAL 'lld'
-    DISABLE INPUT_linker STREQUAL 'bfd' OR INPUT_linker STREQUAL 'gold'
-)
-qt_feature_config("use_lld_linker" QMAKE_PRIVATE_CONFIG)
 qt_feature("optimize_debug"
     LABEL "Optimize debug build"
     AUTODETECT NOT QT_FEATURE_developer_build
@@ -451,9 +529,14 @@ qt_feature("pkg-config" PUBLIC
 )
 qt_feature_config("pkg-config" QMAKE_PUBLIC_QT_CONFIG
     NEGATE)
-qt_feature("developer-build"
+qt_feature("developer-build" PRIVATE
     LABEL "Developer build"
     AUTODETECT OFF
+)
+qt_feature("no-prefix" PRIVATE
+    LABEL "No prefix build"
+    AUTODETECT NOT QT_WILL_INSTALL
+    CONDITION NOT QT_WILL_INSTALL
 )
 qt_feature("private_tests" PRIVATE
     LABEL "Developer build: private_tests"
@@ -463,7 +546,7 @@ qt_feature_definition("developer-build" "QT_BUILD_INTERNAL")
 qt_feature_config("developer-build" QMAKE_PUBLIC_QT_CONFIG
     NAME "private_tests"
 )
-qt_feature("debug"
+qt_feature("debug" PRIVATE
     LABEL "Build for debugging"
     AUTODETECT ON
     CONDITION CMAKE_BUILD_TYPE STREQUAL Debug OR Debug IN_LIST CMAKE_CONFIGURATION_TYPES
@@ -490,6 +573,9 @@ qt_feature("appstore-compliant" PUBLIC
     PURPOSE "Disables code that is not allowed in platform app stores"
     AUTODETECT UIKIT OR ANDROID
 )
+if(APPLE)
+    qt_feature_definition("appstore-compliant" "QT_APPLE_NO_PRIVATE_APIS")
+endif()
 qt_feature("simulator_and_device" PUBLIC
     LABEL "Build for both simulator and device"
     CONDITION UIKIT AND NOT QT_UIKIT_SDK
@@ -564,21 +650,6 @@ qt_feature("sanitizer"
     CONDITION QT_FEATURE_sanitize_address OR QT_FEATURE_sanitize_thread OR QT_FEATURE_sanitize_memory OR QT_FEATURE_sanitize_fuzzer_no_link OR QT_FEATURE_sanitize_undefined
 )
 qt_feature_config("sanitizer" QMAKE_PUBLIC_CONFIG)
-qt_feature("coverage_trace_pc_guard"
-    LABEL "trace-pc-guard"
-    AUTODETECT OFF
-)
-qt_feature_config("coverage_trace_pc_guard" QMAKE_PUBLIC_CONFIG)
-qt_feature("coverage_source_based"
-    LABEL "source-based"
-    AUTODETECT OFF
-)
-qt_feature_config("coverage_source_based" QMAKE_PUBLIC_CONFIG)
-qt_feature("coverage"
-    LABEL "Code Coverage Instrumentation"
-    CONDITION QT_FEATURE_coverage_trace_pc_guard OR QT_FEATURE_coverage_source_based
-)
-qt_feature_config("coverage" QMAKE_PUBLIC_CONFIG)
 qt_feature("plugin-manifests"
     LABEL "Embed manifests in plugins"
     AUTODETECT OFF
@@ -607,12 +678,27 @@ qt_feature("c++1z" PUBLIC
     CONDITION QT_FEATURE_cxx17
 )
 qt_feature_config("c++1z" QMAKE_PUBLIC_QT_CONFIG)
-qt_feature("c++2a" PUBLIC
-    LABEL "C++2a"
+qt_feature("c++20" PUBLIC
+    LABEL "C++20"
     AUTODETECT OFF
-    CONDITION QT_FEATURE_cxx17 AND TEST_cxx2a
+    CONDITION QT_FEATURE_cxx17 AND TEST_cxx20
+)
+qt_feature_config("c++20" QMAKE_PUBLIC_QT_CONFIG)
+qt_feature("c++2a" PUBLIC
+    LABEL "C++20"
+    CONDITION QT_FEATURE_cxx20
 )
 qt_feature_config("c++2a" QMAKE_PUBLIC_QT_CONFIG)
+qt_feature("c++2b" PUBLIC
+    LABEL "C++2b"
+    AUTODETECT OFF
+)
+qt_feature_config("c++2b" QMAKE_PUBLIC_QT_CONFIG)
+qt_feature("c++2b" PUBLIC
+    LABEL "C++2b"
+    AUTODETECT FALSE
+    CONDITION QT_FEATURE_cxx20 AND (CMAKE_VERSION VERSION_GREATER_EQUAL "3.20") AND TEST_cxx2b
+)
 qt_feature("c89"
     LABEL "C89"
 )
@@ -626,7 +712,8 @@ qt_feature("c11" PUBLIC
 )
 qt_feature("precompile_header"
     LABEL "Using precompiled headers"
-    CONDITION BUILD_WITH_PCH
+    CONDITION BUILD_WITH_PCH AND TEST_precompile_header
+    AUTODETECT NOT WASM
 )
 qt_feature_config("precompile_header" QMAKE_PRIVATE_CONFIG)
 set(__qt_ltcg_detected FALSE)
@@ -643,11 +730,17 @@ else()
     unset(__qt_uc_config)
 endif()
 qt_feature("ltcg"
-    LABEL "Using LTCG"
+    LABEL "Using Link Time Optimization (LTCG)"
     AUTODETECT ON
     CONDITION __qt_ltcg_detected
 )
 qt_feature_config("ltcg" QMAKE_PRIVATE_CONFIG)
+
+if(NOT QT_CONFIGURE_RUNNING)
+    # This feature is used early in QtCompilerOptimization.cmake.
+    qt_evaluate_feature(ltcg)
+endif()
+
 qt_feature("enable_new_dtags"
     LABEL "Using new DTAGS"
     CONDITION LINUX AND TEST_enable_new_dtags
@@ -665,7 +758,14 @@ qt_feature("reduce_exports" PRIVATE
 )
 qt_feature_definition("reduce_exports" "QT_VISIBILITY_AVAILABLE")
 qt_feature_config("reduce_exports" QMAKE_PUBLIC_QT_CONFIG)
-qt_feature("reduce_relocations" PRIVATE
+qt_feature("no_direct_extern_access" PRIVATE
+    LABEL "Use protected visibility and -mno-direct-extern-access"
+    CONDITION NOT WIN32 AND TEST_no_direct_extern_access
+    AUTODETECT OFF
+)
+qt_feature_definition("no_direct_extern_access" "QT_USE_PROTECTED_VISIBILITY")
+qt_feature_config("no_direct_extern_access" QMAKE_PUBLIC_QT_CONFIG)
+qt_feature("reduce_relocations" PUBLIC
     LABEL "Reduce amount of relocations"
     CONDITION NOT WIN32 AND TEST_reduce_relocations
 )
@@ -675,160 +775,177 @@ qt_feature("signaling_nan" PUBLIC
     LABEL "Signaling NaN"
     CONDITION TEST_signaling_nan
 )
+qt_feature("x86intrin" PRIVATE
+    LABEL "Basic"
+    CONDITION (((TEST_architecture_arch STREQUAL i386) OR (TEST_architecture_arch STREQUAL x86_64))
+        AND (QT_FORCE_FEATURE_x86intrin OR TEST_x86intrin))
+    AUTODETECT NOT WASM
+)
 qt_feature("sse2" PRIVATE
-    LABEL "SSE2"
-    CONDITION ( ( TEST_architecture_arch STREQUAL i386 ) OR ( TEST_architecture_arch STREQUAL x86_64 ) ) AND TEST_subarch_sse2
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("sse2" "QT_COMPILER_SUPPORTS_SSE2" VALUE "1")
 qt_feature_config("sse2" QMAKE_PRIVATE_CONFIG)
-qt_feature("sse3"
-    LABEL "SSE3"
-    CONDITION QT_FEATURE_sse2 AND TEST_subarch_sse3
+qt_feature("sse3" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("sse3" "QT_COMPILER_SUPPORTS_SSE3" VALUE "1")
 qt_feature_config("sse3" QMAKE_PRIVATE_CONFIG)
-qt_feature("ssse3"
-    LABEL "SSSE3"
-    CONDITION QT_FEATURE_sse3 AND TEST_subarch_ssse3
+qt_feature("ssse3" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("ssse3" "QT_COMPILER_SUPPORTS_SSSE3" VALUE "1")
 qt_feature_config("ssse3" QMAKE_PRIVATE_CONFIG)
-qt_feature("sse4_1"
-    LABEL "SSE4.1"
-    CONDITION QT_FEATURE_ssse3 AND TEST_subarch_sse4_1
+qt_feature("sse4_1" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("sse4_1" "QT_COMPILER_SUPPORTS_SSE4_1" VALUE "1")
 qt_feature_config("sse4_1" QMAKE_PRIVATE_CONFIG)
-qt_feature("sse4_2"
-    LABEL "SSE4.2"
-    CONDITION QT_FEATURE_sse4_1 AND TEST_subarch_sse4_2
+qt_feature("sse4_2" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("sse4_2" "QT_COMPILER_SUPPORTS_SSE4_2" VALUE "1")
 qt_feature_config("sse4_2" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx"
-    LABEL "AVX"
-    CONDITION QT_FEATURE_sse4_2 AND TEST_subarch_avx AND ( NOT ANDROID OR NOT ( TEST_architecture_arch STREQUAL x86_64 ) )
+qt_feature("avx" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx" "QT_COMPILER_SUPPORTS_AVX" VALUE "1")
 qt_feature_config("avx" QMAKE_PRIVATE_CONFIG)
-qt_feature("f16c"
-    LABEL "F16C"
-    CONDITION QT_FEATURE_avx AND TEST_subarch_f16c
+qt_feature("f16c" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("f16c" "QT_COMPILER_SUPPORTS_F16C" VALUE "1")
 qt_feature_config("f16c" QMAKE_PRIVATE_CONFIG)
 qt_feature("avx2" PRIVATE
-    LABEL "AVX2"
-    CONDITION QT_FEATURE_avx AND TEST_subarch_avx2 AND ( NOT ANDROID OR NOT ( TEST_architecture_arch STREQUAL x86_64 ) )
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx2" "QT_COMPILER_SUPPORTS_AVX2" VALUE "1")
 qt_feature_config("avx2" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512f"
-    LABEL "F"
-    CONDITION QT_FEATURE_avx2 AND TEST_subarch_avx512f
+qt_feature("avx512f" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512f" "QT_COMPILER_SUPPORTS_AVX512F" VALUE "1")
 qt_feature_config("avx512f" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512er"
-    LABEL "ER"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512er
+qt_feature("avx512er" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512er" "QT_COMPILER_SUPPORTS_AVX512ER" VALUE "1")
 qt_feature_config("avx512er" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512cd"
-    LABEL "CD"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512cd
+qt_feature("avx512cd" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512cd" "QT_COMPILER_SUPPORTS_AVX512CD" VALUE "1")
 qt_feature_config("avx512cd" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512pf"
-    LABEL "PF"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512pf
+qt_feature("avx512pf" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512pf" "QT_COMPILER_SUPPORTS_AVX512PF" VALUE "1")
 qt_feature_config("avx512pf" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512dq"
-    LABEL "DQ"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512dq
+qt_feature("avx512dq" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512dq" "QT_COMPILER_SUPPORTS_AVX512DQ" VALUE "1")
 qt_feature_config("avx512dq" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512bw"
-    LABEL "BW"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512bw
+qt_feature("avx512bw" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512bw" "QT_COMPILER_SUPPORTS_AVX512BW" VALUE "1")
 qt_feature_config("avx512bw" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512vl"
-    LABEL "VL"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512vl
+qt_feature("avx512vl" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512vl" "QT_COMPILER_SUPPORTS_AVX512VL" VALUE "1")
 qt_feature_config("avx512vl" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512ifma"
-    LABEL "IFMA"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512ifma
+qt_feature("avx512ifma" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512ifma" "QT_COMPILER_SUPPORTS_AVX512IFMA" VALUE "1")
 qt_feature_config("avx512ifma" QMAKE_PRIVATE_CONFIG)
-qt_feature("avx512vbmi"
-    LABEL "VBMI"
-    CONDITION QT_FEATURE_avx512f AND TEST_subarch_avx512vbmi
+qt_feature("avx512vbmi" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("avx512vbmi" "QT_COMPILER_SUPPORTS_AVX512VBMI" VALUE "1")
 qt_feature_config("avx512vbmi" QMAKE_PRIVATE_CONFIG)
-qt_feature("aesni"
-    LABEL "AES"
-    CONDITION QT_FEATURE_sse2 AND TEST_subarch_aesni
+qt_feature("avx512vbmi2" PRIVATE
+    LABEL "AVX512VBMI2"
+    CONDITION QT_FEATURE_x86intrin AND TEST_subarch_avx512vbmi2
+)
+qt_feature_definition("avx512vbmi2" "QT_COMPILER_SUPPORTS_AVX512VBMI2" VALUE "1")
+qt_feature_config("avx512vbmi2" QMAKE_PRIVATE_CONFIG)
+qt_feature("aesni" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("aesni" "QT_COMPILER_SUPPORTS_AES" VALUE "1")
 qt_feature_config("aesni" QMAKE_PRIVATE_CONFIG)
-qt_feature("rdrnd"
-    LABEL "RDRAND"
-    CONDITION TEST_subarch_rdrnd
+qt_feature("vaes" PRIVATE
+    LABEL "VAES"
+    CONDITION QT_FEATURE_x86intrin AND TEST_subarch_vaes
+)
+qt_feature_definition("vaes" "QT_COMPILER_SUPPORTS_VAES" VALUE "1")
+qt_feature_config("vaes" QMAKE_PRIVATE_CONFIG)
+qt_feature("rdrnd" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("rdrnd" "QT_COMPILER_SUPPORTS_RDRND" VALUE "1")
 qt_feature_config("rdrnd" QMAKE_PRIVATE_CONFIG)
-qt_feature("rdseed"
-    LABEL "RDSEED"
-    CONDITION TEST_subarch_rdseed
+qt_feature("rdseed" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("rdseed" "QT_COMPILER_SUPPORTS_RDSEED" VALUE "1")
 qt_feature_config("rdseed" QMAKE_PRIVATE_CONFIG)
-qt_feature("shani"
-    LABEL "SHA"
-    CONDITION QT_FEATURE_sse2 AND TEST_subarch_shani
+qt_feature("shani" PRIVATE
+    CONDITION QT_FEATURE_x86intrin
 )
 qt_feature_definition("shani" "QT_COMPILER_SUPPORTS_SHA" VALUE "1")
 qt_feature_config("shani" QMAKE_PRIVATE_CONFIG)
-qt_feature("x86SimdAlways"
-    LABEL "Intrinsics without -mXXX option"
-    CONDITION ( ( TEST_architecture_arch STREQUAL i386 ) OR ( TEST_architecture_arch STREQUAL x86_64 ) ) AND ON
-)
-qt_feature_definition("x86SimdAlways" "QT_COMPILER_SUPPORTS_SIMD_ALWAYS" VALUE "1")
-qt_feature_config("x86SimdAlways" QMAKE_PRIVATE_CONFIG)
-qt_feature("mips_dsp"
+qt_feature("mips_dsp" PRIVATE
     LABEL "DSP"
     CONDITION ( TEST_architecture_arch STREQUAL mips ) AND TEST_arch_${TEST_architecture_arch}_subarch_dsp
 )
 qt_feature_definition("mips_dsp" "QT_COMPILER_SUPPORTS_MIPS_DSP" VALUE "1")
 qt_feature_config("mips_dsp" QMAKE_PRIVATE_CONFIG)
-qt_feature("mips_dspr2"
+qt_feature("mips_dspr2" PRIVATE
     LABEL "DSPr2"
     CONDITION ( TEST_architecture_arch STREQUAL mips ) AND TEST_arch_${TEST_architecture_arch}_subarch_dspr2
 )
 qt_feature_definition("mips_dspr2" "QT_COMPILER_SUPPORTS_MIPS_DSPR2" VALUE "1")
 qt_feature_config("mips_dspr2" QMAKE_PRIVATE_CONFIG)
-qt_feature("neon"
+qt_feature("neon" PRIVATE
     LABEL "NEON"
-    CONDITION ( ( TEST_architecture_arch STREQUAL arm ) OR ( TEST_architecture_arch STREQUAL arm64 ) ) AND TEST_arch_${TEST_architecture_arch}_subarch_neon
+    CONDITION ( ( ( TEST_architecture_arch STREQUAL arm ) OR ( TEST_architecture_arch STREQUAL arm64 ) ) AND TEST_arch_${TEST_architecture_arch}_subarch_neon ) OR QT_FORCE_FEATURE_neon  # special case
 )
 qt_feature_definition("neon" "QT_COMPILER_SUPPORTS_NEON" VALUE "1")
 qt_feature_config("neon" QMAKE_PRIVATE_CONFIG)
+qt_feature("arm_crc32" PRIVATE
+    LABEL "CRC32"
+    CONDITION ( ( TEST_architecture_arch STREQUAL arm ) OR ( TEST_architecture_arch STREQUAL arm64 ) ) AND TEST_arch_${TEST_architecture_arch}_subarch_crc32
+)
+qt_feature_definition("arm_crc32" "QT_COMPILER_SUPPORTS_CRC32" VALUE "1")
+qt_feature_config("arm_crc32" QMAKE_PRIVATE_CONFIG)
+qt_feature("arm_crypto" PRIVATE
+    LABEL "AES"
+    CONDITION ( ( TEST_architecture_arch STREQUAL arm ) OR ( TEST_architecture_arch STREQUAL arm64 ) ) AND TEST_arch_${TEST_architecture_arch}_subarch_crypto
+)
+qt_feature_definition("arm_crypto" "QT_COMPILER_SUPPORTS_AES" VALUE "1")
+qt_feature_config("arm_crypto" QMAKE_PRIVATE_CONFIG)
+
+qt_feature("wasm_simd128" PRIVATE
+    LABEL "WebAssembly SIMD128"
+    AUTODETECT OFF
+)
+qt_feature_definition("wasm_simd128" "QT_COMPILER_SUPPORTS_WASM_SIMD128" VALUE "1")
+qt_feature_config("wasm_simd128" QMAKE_PRIVATE_CONFIG)
+
 qt_feature("posix_fallocate" PRIVATE
     LABEL "POSIX fallocate()"
     CONDITION TEST_posix_fallocate
 )
+qt_feature("wasm_exceptions" PRIVATE
+    LABEL "WebAssembly exception handling"
+    AUTODETECT OFF
+)
+qt_feature_definition("wasm_exceptions" "QT_WASM_EXCEPTIONS" VALUE "1")
+qt_feature_config("wasm_exceptions" QMAKE_PRIVATE_CONFIG)
 qt_feature("alloca_h" PRIVATE
     LABEL "alloca.h"
     CONDITION TEST_alloca_h
@@ -847,12 +964,35 @@ qt_feature("stack-protector-strong" PRIVATE
 )
 qt_feature("system-zlib" PRIVATE
     LABEL "Using system zlib"
-    CONDITION ZLIB_FOUND
+    CONDITION WrapSystemZLIB_FOUND
 )
-qt_feature("zstd" PRIVATE
+qt_feature("zstd" PUBLIC
     LABEL "Zstandard support"
-    CONDITION ZSTD_FOUND
+    CONDITION WrapZSTD_FOUND
 )
+qt_feature("stdlib-libcpp" PRIVATE
+    LABEL "Using stdlib=libc++"
+    AUTODETECT OFF
+    CONDITION LINUX AND NOT ANDROID
+)
+# special case begin
+# Check whether CMake was built with zstd support.
+# See https://gitlab.kitware.com/cmake/cmake/-/issues/21552
+if(NOT DEFINED CACHE{QT_CMAKE_ZSTD_SUPPORT})
+    set(QT_CMAKE_ZSTD_SUPPORT FALSE CACHE INTERNAL "")
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.18")
+        execute_process(COMMAND "${CMAKE_COMMAND}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/config.tests/cmake_zstd/check_zstd.cmake"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/config.tests"
+            OUTPUT_QUIET ERROR_QUIET
+            RESULT_VARIABLE qt_check_zstd_exit_code)
+        if(qt_check_zstd_exit_code EQUAL 0)
+            set(QT_CMAKE_ZSTD_SUPPORT TRUE CACHE INTERNAL "")
+        endif()
+        unset(qt_check_zstd_exit_code)
+    endif()
+endif()
+# special case end
 qt_feature("thread" PUBLIC
     SECTION "Kernel"
     LABEL "Thread support"
@@ -875,7 +1015,7 @@ qt_feature_definition("concurrent" "QT_NO_CONCURRENT" NEGATE VALUE "1")
 qt_feature("dbus" PUBLIC PRIVATE
     LABEL "Qt D-Bus"
     AUTODETECT NOT UIKIT AND NOT ANDROID
-    CONDITION QT_FEATURE_thread
+    CONDITION QT_FEATURE_thread AND NOT WASM
 )
 qt_feature_definition("dbus" "QT_NO_DBUS" NEGATE VALUE "1")
 qt_feature("dbus-linked" PRIVATE
@@ -898,9 +1038,12 @@ qt_feature_config("gui" QMAKE_PUBLIC_QT_CONFIG
 qt_feature("network" PRIVATE
     LABEL "Qt Network"
 )
+qt_feature("printsupport" PRIVATE
+    LABEL "Qt PrintSupport"
+    CONDITION QT_FEATURE_widgets
+)
 qt_feature("sql" PRIVATE
     LABEL "Qt Sql"
-    CONDITION QT_FEATURE_thread
 )
 qt_feature("testlib" PRIVATE
     LABEL "Qt Testlib"
@@ -918,7 +1061,35 @@ qt_feature("xml" PRIVATE
 )
 qt_feature("libudev" PRIVATE
     LABEL "udev"
-    CONDITION Libudev_FOUND
+    CONDITION Libudev_FOUND AND NOT INTEGRITY
+)
+qt_feature("openssl" PRIVATE
+    LABEL "OpenSSL"
+    CONDITION QT_FEATURE_openssl_runtime OR QT_FEATURE_openssl_linked
+    ENABLE false
+)
+qt_feature_definition("openssl" "QT_NO_OPENSSL" NEGATE)
+qt_feature_config("openssl" QMAKE_PUBLIC_QT_CONFIG)
+qt_feature("openssl-runtime"
+    AUTODETECT NOT WASM
+    CONDITION TEST_opensslv11_headers OR TEST_opensslv30_headers
+    ENABLE INPUT_openssl STREQUAL 'yes' OR INPUT_openssl STREQUAL 'runtime'
+    DISABLE INPUT_openssl STREQUAL 'no' OR INPUT_openssl STREQUAL 'linked' OR INPUT_ssl STREQUAL 'no'
+)
+qt_feature("openssl-linked" PUBLIC
+    LABEL "  Qt directly linked to OpenSSL"
+    AUTODETECT OFF
+    CONDITION TEST_opensslv11 OR TEST_opensslv30
+    ENABLE INPUT_openssl STREQUAL 'linked'
+)
+qt_feature_definition("openssl-linked" "QT_LINKED_OPENSSL")
+qt_feature("opensslv11" PUBLIC
+    LABEL "OpenSSL 1.1"
+    CONDITION TEST_opensslv11 OR TEST_opensslv11_headers
+)
+qt_feature("opensslv30" PUBLIC
+    LABEL "OpenSSL 3.0"
+    CONDITION TEST_opensslv30 OR TEST_opensslv30_headers
 )
 qt_feature("ccache"
     LABEL "Using ccache"
@@ -936,7 +1107,7 @@ qt_feature_config("static_runtime" QMAKE_PUBLIC_CONFIG)
 qt_feature_config("static_runtime" QMAKE_PUBLIC_QT_CONFIG)
 qt_feature("dlopen" PRIVATE
     LABEL "dlopen()"
-    CONDITION UNIX
+    CONDITION UNIX AND NOT INTEGRITY
 )
 qt_feature("relocatable" PRIVATE
     LABEL "Relocatable"
@@ -946,7 +1117,7 @@ qt_feature("relocatable" PRIVATE
 )
 qt_feature("intelcet" PRIVATE
     LABEL "Using Intel CET"
-    CONDITION TEST_intelcet
+    CONDITION ( INPUT_intelcet STREQUAL yes ) OR TEST_intelcet
 )
 qt_configure_add_summary_build_type_and_config()
 qt_configure_add_summary_section(NAME "Build options")
@@ -959,9 +1130,11 @@ qt_configure_add_summary_entry(
     ARGS "optimize_size"
     CONDITION NOT QT_FEATURE_debug OR QT_FEATURE_debug_and_release
 )
+# special case begin
 qt_configure_add_summary_entry(
     ARGS "optimize_full"
 )
+# special case end
 qt_configure_add_summary_entry(ARGS "shared")
 qt_configure_add_summary_entry(
     TYPE "firstAvailableFeature"
@@ -970,7 +1143,7 @@ qt_configure_add_summary_entry(
 )
 qt_configure_add_summary_entry(
     TYPE "firstAvailableFeature"
-    ARGS "c++2a c++17 c++14 c++11"
+    ARGS "c++2b c++20 c++17 c++14 c++11"
     MESSAGE "Using C++ standard"
 )
 qt_configure_add_summary_entry(
@@ -979,9 +1152,10 @@ qt_configure_add_summary_entry(
 )
 qt_configure_add_summary_entry(
     TYPE "firstAvailableFeature"
-    ARGS "use_bfd_linker use_gold_linker use_lld_linker"
+    ARGS "use_bfd_linker use_gold_linker use_lld_linker use_mold_linker"
     MESSAGE "Linker"
     CONDITION QT_FEATURE_use_bfd_linker OR QT_FEATURE_use_gold_linker OR QT_FEATURE_use_lld_linker
+              OR QT_FEATURE_use_mold_linker
 )
 qt_configure_add_summary_entry(
     ARGS "enable_new_dtags"
@@ -994,37 +1168,22 @@ qt_configure_add_summary_entry(
 qt_configure_add_summary_entry(ARGS "relocatable")
 qt_configure_add_summary_entry(ARGS "precompile_header")
 qt_configure_add_summary_entry(ARGS "ltcg")
+qt_configure_add_summary_entry(ARGS "intelcet")
+qt_configure_add_summary_entry(
+    ARGS "wasm_simd128"
+    CONDITION ( TEST_architecture_arch STREQUAL wasm )
+)
 qt_configure_add_summary_section(NAME "Target compiler supports")
 qt_configure_add_summary_entry(
     TYPE "featureList"
-    ARGS "sse2 sse3 ssse3 sse4_1 sse4_2"
-    MESSAGE "SSE"
+    ARGS "x86intrin vaes avx512vbmi2"
+    MESSAGE "x86 Intrinsics"
     CONDITION ( ( TEST_architecture_arch STREQUAL i386 ) OR ( TEST_architecture_arch STREQUAL x86_64 ) )
 )
 qt_configure_add_summary_entry(
     TYPE "featureList"
-    ARGS "avx avx2"
-    MESSAGE "AVX"
-    CONDITION ( ( TEST_architecture_arch STREQUAL i386 ) OR ( TEST_architecture_arch STREQUAL x86_64 ) )
-)
-qt_configure_add_summary_entry(
-    TYPE "featureList"
-    ARGS "avx512f avx512er avx512cd avx512pf avx512dq avx512bw avx512vl avx512ifma avx512vbmi"
-    MESSAGE "AVX512"
-    CONDITION ( ( TEST_architecture_arch STREQUAL i386 ) OR ( TEST_architecture_arch STREQUAL x86_64 ) )
-)
-qt_configure_add_summary_entry(
-    TYPE "featureList"
-    ARGS "aesni f16c rdrnd shani"
-    MESSAGE "Other x86"
-    CONDITION ( ( TEST_architecture_arch STREQUAL i386 ) OR ( TEST_architecture_arch STREQUAL x86_64 ) )
-)
-qt_configure_add_summary_entry(
-    ARGS "x86SimdAlways"
-    CONDITION ( ( TEST_architecture_arch STREQUAL i386 ) OR ( TEST_architecture_arch STREQUAL x86_64 ) ) AND NOT MSVC
-)
-qt_configure_add_summary_entry(
-    ARGS "neon"
+    ARGS "neon arm_crc32 arm_crypto"
+    MESSAGE "ARM Extensions"
     CONDITION ( TEST_architecture_arch STREQUAL arm ) OR ( TEST_architecture_arch STREQUAL arm64 )
 )
 qt_configure_add_summary_entry(
@@ -1043,12 +1202,6 @@ qt_configure_add_summary_entry(ARGS "sanitize_memory")
 qt_configure_add_summary_entry(ARGS "sanitize_fuzzer_no_link")
 qt_configure_add_summary_entry(ARGS "sanitize_undefined")
 qt_configure_end_summary_section() # end of "Sanitizers" section
-qt_configure_add_summary_entry(
-    TYPE "firstAvailableFeature"
-    ARGS "coverage_trace_pc_guard coverage_source_based"
-    MESSAGE "Code Coverage Instrumentation"
-    CONDITION QT_FEATURE_coverage
-)
 qt_configure_add_summary_build_parts("Build parts")
 qt_configure_add_summary_entry(
     ARGS "appstore-compliant"
@@ -1061,6 +1214,7 @@ qt_configure_add_summary_entry(ARGS "dbus")
 qt_configure_add_summary_entry(ARGS "dbus-linked")
 qt_configure_add_summary_entry(ARGS "gui")
 qt_configure_add_summary_entry(ARGS "network")
+qt_configure_add_summary_entry(ARGS "printsupport")
 qt_configure_add_summary_entry(ARGS "sql")
 qt_configure_add_summary_entry(ARGS "testlib")
 qt_configure_add_summary_entry(ARGS "widgets")
@@ -1069,8 +1223,13 @@ qt_configure_end_summary_section() # end of "Qt modules and options" section
 qt_configure_add_summary_section(NAME "Support enabled for")
 qt_configure_add_summary_entry(ARGS "pkg-config")
 qt_configure_add_summary_entry(ARGS "libudev")
+qt_configure_add_summary_entry(ARGS "openssl")
+qt_configure_add_summary_entry(ARGS "openssl-linked")
+qt_configure_add_summary_entry(ARGS "opensslv11")
+qt_configure_add_summary_entry(ARGS "opensslv30")
 qt_configure_add_summary_entry(ARGS "system-zlib")
 qt_configure_add_summary_entry(ARGS "zstd")
+qt_configure_add_summary_entry(ARGS "thread")
 qt_configure_end_summary_section() # end of "Support enabled for" section
 qt_configure_add_report_entry(
     TYPE NOTE
@@ -1080,7 +1239,7 @@ qt_configure_add_report_entry(
 # special case begin
 # qt_configure_add_report_entry(
 #     TYPE ERROR
-#     MESSAGE "Debug build wihtout Release build is not currently supported on ios see QTBUG-71990. Use -debug-and-release."
+#     MESSAGE "Debug build without Release build is not currently supported on ios see QTBUG-71990. Use -debug-and-release."
 #     CONDITION IOS AND QT_FEATURE_debug AND NOT QT_FEATURE_debug_and_release
 # )
 # special case end
@@ -1101,15 +1260,54 @@ qt_configure_add_report_entry(
 )
 qt_configure_add_report_entry(
     TYPE ERROR
-    MESSAGE "Command line option -coverage is only supported with clang compilers."
-    CONDITION QT_FEATURE_coverage AND NOT CLANG
-)
-qt_configure_add_report_entry(
-    TYPE ERROR
     MESSAGE "Command line option -sanitize fuzzer-no-link is only supported with clang compilers."
     CONDITION QT_FEATURE_sanitize_fuzzer_no_link AND NOT CLANG
 )
+if (TEST_architecture_arch STREQUAL x86_64 OR TEST_architecture_arch STREQUAL i386)
+    if ((TEST_architecture_arch STREQUAL i386) OR QNX OR WASM)
+        # Warn only
+        qt_configure_add_report_entry(
+            TYPE WARNING
+            CONDITION (NOT QT_FEATURE_x86intrin)
+            MESSAGE [=[
+All x86 intrinsics and SIMD support were disabled. If this was in error, check
+the result of the build in config.tests/x86intrin and report at https://bugreports.qt.io.
+]=]
+        )
+    else()
+        qt_configure_add_report_entry(
+            TYPE ERROR
+            CONDITION (NOT QT_FEATURE_x86intrin)
+            MESSAGE [========[
+x86 intrinsics support missing. Check your compiler settings. If this is an
+error, report at https://bugreports.qt.io with your compiler ID and version,
+and this output:
 
+${TEST_x86intrin_OUTPUT}
+]========]
+        )
+    endif()
+endif()
+# special case begin
+qt_configure_add_report_entry(
+    TYPE ERROR
+    MESSAGE "Setting a library infix is not supported for framework builds."
+    CONDITION QT_FEATURE_framework AND DEFINED QT_LIBINFIX
+)
+qt_configure_add_report_entry(
+    TYPE NOTE
+    MESSAGE "Enable thread support"
+    CONDITION QT_FEATURE_thread AND WASM
+)
+qt_configure_add_report_entry(
+    TYPE WARNING
+    MESSAGE "You should use the recommended Emscripten version ${QT_EMCC_RECOMMENDED_VERSION} with this Qt. You have ${EMCC_VERSION}."
+    CONDITION WASM AND NOT ${EMCC_VERSION} MATCHES ${QT_EMCC_RECOMMENDED_VERSION}
+)
+if(WASM)
+    qt_extra_definition("QT_EMCC_VERSION" "\"${EMCC_VERSION}\"" PUBLIC)
+endif()
+# special case end
 qt_extra_definition("QT_VERSION_STR" "\"${PROJECT_VERSION}\"" PUBLIC)
 qt_extra_definition("QT_VERSION_MAJOR" ${PROJECT_VERSION_MAJOR} PUBLIC)
 qt_extra_definition("QT_VERSION_MINOR" ${PROJECT_VERSION_MINOR} PUBLIC)

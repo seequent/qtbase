@@ -1,89 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2022 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 //#define QPROCESS_DEBUG
 
 #include <qdebug.h>
 #include <qdir.h>
 #include <qscopedvaluerollback.h>
-#if defined(Q_OS_WIN)
-#include <qtimer.h>
-#endif
-#if defined QPROCESS_DEBUG
-#include <qstring.h>
-#include <ctype.h>
-
-QT_BEGIN_NAMESPACE
-/*
-    Returns a human readable representation of the first \a len
-    characters in \a data.
-*/
-static QByteArray qt_prettyDebug(const char *data, int len, int maxSize)
-{
-    if (!data) return "(null)";
-    QByteArray out;
-    for (int i = 0; i < len && i < maxSize; ++i) {
-        char c = data[i];
-        if (isprint(c)) {
-            out += c;
-        } else switch (c) {
-        case '\n': out += "\\n"; break;
-        case '\r': out += "\\r"; break;
-        case '\t': out += "\\t"; break;
-        default:
-            char buf[5];
-            qsnprintf(buf, sizeof(buf), "\\%3o", c);
-            buf[4] = '\0';
-            out += QByteArray(buf);
-        }
-    }
-
-    if (len < maxSize)
-        out += "...";
-
-    return out;
-}
-
-QT_END_NAMESPACE
-
-#endif
 
 #include "qprocess.h"
 #include "qprocess_p.h"
@@ -91,14 +14,7 @@ QT_END_NAMESPACE
 #include <qbytearray.h>
 #include <qdeadlinetimer.h>
 #include <qcoreapplication.h>
-#include <qsocketnotifier.h>
 #include <qtimer.h>
-
-#ifdef Q_OS_WIN
-#include <qwineventnotifier.h>
-#else
-#include <private/qcore_unix_p.h>
-#endif
 
 #if __has_include(<paths.h>)
 #include <paths.h>
@@ -146,7 +62,7 @@ QStringList QProcessEnvironmentPrivate::toList() const
     QStringList result;
     result.reserve(vars.size());
     for (auto it = vars.cbegin(), end = vars.cend(); it != end; ++it)
-        result << nameToString(it.key()) + QLatin1Char('=') + valueToString(it.value());
+        result << nameToString(it.key()) + u'=' + valueToString(it.value());
     return result;
 }
 
@@ -156,7 +72,7 @@ QProcessEnvironment QProcessEnvironmentPrivate::fromList(const QStringList &list
     QStringList::ConstIterator it = list.constBegin(),
                               end = list.constEnd();
     for ( ; it != end; ++it) {
-        int pos = it->indexOf(QLatin1Char('='), 1);
+        int pos = it->indexOf(u'=', 1);
         if (pos < 1)
             continue;
 
@@ -196,14 +112,43 @@ void QProcessEnvironmentPrivate::insert(const QProcessEnvironmentPrivate &other)
 }
 
 /*!
+    \enum QProcessEnvironment::Initialization
+
+    This enum contains a token that is used to disambiguate constructors.
+
+    \value InheritFromParent A QProcessEnvironment will be created that, when
+        set on a QProcess, causes it to inherit variables from its parent.
+
+    \since 6.3
+*/
+
+/*!
     Creates a new QProcessEnvironment object. This constructor creates an
     empty environment. If set on a QProcess, this will cause the current
-    environment variables to be removed.
+    environment variables to be removed (except for PATH and SystemRoot
+    on Windows).
 */
-QProcessEnvironment::QProcessEnvironment()
-    : d(nullptr)
-{
-}
+QProcessEnvironment::QProcessEnvironment() : d(new QProcessEnvironmentPrivate) { }
+
+/*!
+    Creates an object that when set on QProcess will cause it to be executed with
+    environment variables inherited from its parent process.
+
+    \note The created object does not store any environment variables by itself,
+    it just indicates to QProcess to arrange for inheriting the environment at the
+    time when the new process is started. Adding any environment variables to
+    the created object will disable inheritance of the environment and result in
+    an environment containing only the added environment variables.
+
+    If a modified version of the parent environment is wanted, start with the
+    return value of \c systemEnvironment() and modify that (but note that changes to
+    the parent process's environment after that is created won't be reflected
+    in the modified environment).
+
+    \sa inheritsFromParent(), systemEnvironment()
+    \since 6.3
+*/
+QProcessEnvironment::QProcessEnvironment(QProcessEnvironment::Initialization) noexcept { }
 
 /*!
     Frees the resources associated with this QProcessEnvironment object.
@@ -259,22 +204,18 @@ bool QProcessEnvironment::operator==(const QProcessEnvironment &other) const
 {
     if (d == other.d)
         return true;
-    if (d) {
-        if (other.d) {
-            return d->vars == other.d->vars;
-        } else {
-            return isEmpty();
-        }
-    } else {
-        return other.isEmpty();
-    }
+
+    return d && other.d && d->vars == other.d->vars;
 }
 
 /*!
     Returns \c true if this QProcessEnvironment object is empty: that is
     there are no key=value pairs set.
 
-    \sa clear(), systemEnvironment(), insert()
+    This method also returns \c true for objects that were constructed using
+    \c{QProcessEnvironment::InheritFromParent}.
+
+    \sa clear(), systemEnvironment(), insert(), inheritsFromParent()
 */
 bool QProcessEnvironment::isEmpty() const
 {
@@ -283,8 +224,23 @@ bool QProcessEnvironment::isEmpty() const
 }
 
 /*!
+    Returns \c true if this QProcessEnvironment was constructed using
+    \c{QProcessEnvironment::InheritFromParent}.
+
+    \since 6.3
+    \sa isEmpty()
+*/
+bool QProcessEnvironment::inheritsFromParent() const
+{
+    return !d;
+}
+
+/*!
     Removes all key=value pairs from this QProcessEnvironment object, making
     it empty.
+
+    If the environment was constructed using \c{QProcessEnvironment::InheritFromParent}
+    it remains unchanged.
 
     \sa isEmpty(), systemEnvironment()
 */
@@ -389,6 +345,9 @@ QStringList QProcessEnvironment::toStringList() const
 
     Returns a list containing all the variable names in this QProcessEnvironment
     object.
+
+    The returned list is empty for objects constructed using
+    \c{QProcessEnvironment::InheritFromParent}.
 */
 QStringList QProcessEnvironment::keys() const
 {
@@ -427,6 +386,8 @@ void QProcessPrivate::Channel::clear()
         Q_ASSERT(process);
         process->stdoutChannel.type = Normal;
         process->stdoutChannel.process = nullptr;
+        break;
+    default:
         break;
     }
 
@@ -490,6 +451,97 @@ void QProcessPrivate::Channel::clear()
     last, and state() to find the current process state.
 
     \note QProcess is not supported on VxWorks, iOS, tvOS, or watchOS.
+
+    \section1 Finding the Executable
+
+    The program to be run can be set either by calling setProgram() or directly
+    in the start() call. The effect of calling start() with the program name
+    and arguments is equivalent to calling setProgram() and setArguments()
+    before that function and then calling the overload without those
+    parameters.
+
+    QProcess interprets the program name in one of three different ways,
+    similar to how Unix shells and the Windows command interpreter operate in
+    their own command-lines:
+
+    \list
+      \li If the program name is an absolute path, then that is the exact
+      executable that will be launched and QProcess performs no searching.
+
+      \li If the program name is a relative path with more than one path
+      component (that is, it contains at least one slash), the starting
+      directory where that relative path is searched is OS-dependent: on
+      Windows, it's the parent process' current working dir, while on Unix it's
+      the one set with setWorkingDirectory().
+
+      \li If the program name is a plain file name with no slashes, the
+      behavior is operating-system dependent. On Unix systems, QProcess will
+      search the \c PATH environment variable; on Windows, the search is
+      performed by the OS and will first the parent process' current directory
+      before the \c PATH environment variable (see the documentation for
+      \l{CreateProcess} for the full list).
+    \endlist
+
+    To avoid platform-dependent behavior or any issues with how the current
+    application was launched, it is advisable to always pass an absolute path
+    to the executable to be launched. For auxiliary binaries shipped with the
+    application, one can construct such a path starting with
+    QCoreApplication::applicationDirPath(). Similarly, to explicitly run an
+    executable that is to be found relative to the directory set with
+    setWorkingDirectory(), use a program path starting with "./" or "../" as
+    the case may be.
+
+    On Windows, the ".exe" suffix is not required for most uses, except those
+    outlined in the \l{CreateProcess} documentation. Additionally, QProcess
+    will convert the Unix-style forward slashes to Windows path backslashes for
+    the program name. This allows code using QProcess to be written in a
+    cross-platform manner, as shown in the examples above.
+
+    QProcess does not support directly executing Unix shell or Windows command
+    interpreter built-in functions, such as \c{cmd.exe}'s \c dir command or the
+    Bourne shell's \c export. On Unix, even though many shell built-ins are
+    also provided as separate executables, their behavior may differ from those
+    implemented as built-ins. To run those commands, one should explicitly
+    execute the interpreter with suitable options. For Unix systems, launch
+    "/bin/sh" with two arguments: "-c" and a string with the command-line to be
+    run. For Windows, due to the non-standard way \c{cmd.exe} parses its
+    command-line, use setNativeArguments() (for example, "/c dir d:").
+
+    \section1 Environment variables
+
+    The QProcess API offers methods to manipulate the environment variables
+    that the child process will see. By default, the child process will have a
+    copy of the current process environment variables that exist at the time
+    the start() function is called. This means that any modifications performed
+    using qputenv() prior to that call will be reflected in the child process'
+    environment. Note that QProcess makes no attempt to prevent race conditions
+    with qputenv() happening in other threads, so it is recommended to avoid
+    qputenv() after the application's initial start up.
+
+    The environment for a specific child can be modified using the
+    processEnvironment() and setProcessEnvironment() functions, which use the
+    \l QProcessEnvironment class. By default, processEnvironment() will return
+    an object for which QProcessEnvironment::inheritsFromParent() is true.
+    Setting an environment that does not inherit from the parent will cause
+    QProcess to use exactly that environment for the child when it is started.
+
+    The normal scenario starts from the current environment by calling
+    QProcessEnvironment::systemEnvironment() and then proceeds to adding,
+    changing, or removing specific variables. The resulting variable roster can
+    then be applied to a QProcess with setProcessEnvironment().
+
+    It is possible to remove all variables from the environment or to start
+    from an empty environment, using the QProcessEnvironment() default
+    constructor. This is not advisable outside of controlled and
+    system-specific conditions, as there may be system variables that are set
+    in the current process environment and are required for proper execution
+    of the child process.
+
+    On Windows, QProcess will copy the current process' \c "PATH" and \c
+    "SystemRoot" environment variables if they were unset. It is not possible
+    to unset them completely, but it is possible to set them to empty values.
+    Setting \c "PATH" to empty on Windows will likely cause the child process
+    to fail to start.
 
     \section1 Communicating via Channels
 
@@ -570,15 +622,6 @@ void QProcessPrivate::Channel::clear()
     rocks!", without an event loop:
 
     \snippet process/process.cpp 0
-
-    \section1 Notes for Windows Users
-
-    Some Windows commands (for example, \c dir) are not provided by
-    separate applications, but by the command interpreter itself.
-    If you attempt to use QProcess to execute these commands directly,
-    it won't work. One possible solution is to execute the command
-    interpreter itself (\c{cmd.exe} on some Windows systems), and ask
-    the interpreter to execute the desired command.
 
     \sa QBuffer, QFile, QTcpSocket
 */
@@ -828,7 +871,9 @@ void QProcessPrivate::Channel::clear()
 QProcessPrivate::QProcessPrivate()
 {
     readBufferChunkSize = QRINGBUFFER_CHUNKSIZE;
+#ifndef Q_OS_WIN
     writeBufferChunkSize = QRINGBUFFER_CHUNKSIZE;
+#endif
 }
 
 /*!
@@ -840,58 +885,6 @@ QProcessPrivate::~QProcessPrivate()
         stdinChannel.process->stdoutChannel.clear();
     if (stdoutChannel.process)
         stdoutChannel.process->stdinChannel.clear();
-}
-
-/*!
-    \internal
-*/
-void QProcessPrivate::cleanup()
-{
-    q_func()->setProcessState(QProcess::NotRunning);
-#ifdef Q_OS_WIN
-    if (stdinWriteTrigger) {
-        delete stdinWriteTrigger;
-        stdinWriteTrigger = 0;
-    }
-    if (processFinishedNotifier) {
-        delete processFinishedNotifier;
-        processFinishedNotifier = 0;
-    }
-    if (pid) {
-        CloseHandle(pid->hThread);
-        CloseHandle(pid->hProcess);
-        delete pid;
-        pid = nullptr;
-    }
-#else
-    pid = 0;
-#endif
-
-    if (stdoutChannel.notifier) {
-        delete stdoutChannel.notifier;
-        stdoutChannel.notifier = nullptr;
-    }
-    if (stderrChannel.notifier) {
-        delete stderrChannel.notifier;
-        stderrChannel.notifier = nullptr;
-    }
-    if (stdinChannel.notifier) {
-        delete stdinChannel.notifier;
-        stdinChannel.notifier = nullptr;
-    }
-    if (stateNotifier) {
-        delete stateNotifier;
-        stateNotifier = nullptr;
-    }
-    closeChannel(&stdoutChannel);
-    closeChannel(&stderrChannel);
-    closeChannel(&stdinChannel);
-    destroyPipe(childStartedPipe);
-#ifdef Q_OS_UNIX
-    if (forkfd != -1)
-        qt_safe_close(forkfd);
-    forkfd = -1;
-#endif
 }
 
 /*!
@@ -975,6 +968,16 @@ bool QProcessPrivate::openChannels()
 /*!
     \internal
 */
+void QProcessPrivate::closeChannels()
+{
+    closeChannel(&stdoutChannel);
+    closeChannel(&stderrChannel);
+    closeChannel(&stdinChannel);
+}
+
+/*!
+    \internal
+*/
 bool QProcessPrivate::openChannelsForDetached()
 {
     // stdin channel.
@@ -1052,8 +1055,6 @@ bool QProcessPrivate::tryReadFromChannel(Channel *channel)
     }
     if (readBytes == 0) {
         // EOF
-        if (channel->notifier)
-            channel->notifier->setEnabled(false);
         closeChannel(channel);
 #if defined QPROCESS_DEBUG
         qDebug("QProcessPrivate::tryReadFromChannel(%d), 0 bytes available",
@@ -1108,29 +1109,6 @@ bool QProcessPrivate::_q_canReadStandardError()
 /*!
     \internal
 */
-bool QProcessPrivate::_q_canWrite()
-{
-    if (writeBuffer.isEmpty()) {
-        if (stdinChannel.notifier)
-            stdinChannel.notifier->setEnabled(false);
-#if defined QPROCESS_DEBUG
-        qDebug("QProcessPrivate::canWrite(), not writing anything (empty write buffer).");
-#endif
-        return false;
-    }
-
-    const bool writeSucceeded = writeToStdin();
-
-    if (writeBuffer.isEmpty() && stdinChannel.closed)
-        closeWriteChannel();
-    else if (stdinChannel.notifier)
-        stdinChannel.notifier->setEnabled(!writeBuffer.isEmpty());
-    return writeSucceeded;
-}
-
-/*!
-    \internal
-*/
 void QProcessPrivate::_q_processDied()
 {
 #if defined QPROCESS_DEBUG
@@ -1142,9 +1120,10 @@ void QProcessPrivate::_q_processDied()
     // so the data is made available before we announce death.
 #ifdef Q_OS_WIN
     drainOutputPipes();
-#endif
+#else
     _q_canReadStandardOutput();
     _q_canReadStandardError();
+#endif
 
     // Slots connected to signals emitted by the functions called above
     // might call waitFor*(), which would synchronously reap the process.
@@ -1165,8 +1144,9 @@ void QProcessPrivate::processFinished()
 
 #ifdef Q_OS_UNIX
     waitForDeadChild();
-#endif
+#else
     findExitCode();
+#endif
 
     cleanup();
 
@@ -1209,7 +1189,6 @@ bool QProcessPrivate::_q_startupNotification()
     setErrorAndEmit(QProcess::FailedToStart, errorMessage);
 #ifdef Q_OS_UNIX
     waitForDeadChild();
-    findExitCode();
 #endif
     cleanup();
     return false;
@@ -1223,15 +1202,7 @@ void QProcessPrivate::closeWriteChannel()
 #if defined QPROCESS_DEBUG
     qDebug("QProcessPrivate::closeWriteChannel()");
 #endif
-    if (stdinChannel.notifier) {
-        delete stdinChannel.notifier;
-        stdinChannel.notifier = nullptr;
-    }
-#ifdef Q_OS_WIN
-    // ### Find a better fix, feeding the process little by little
-    // instead.
-    flushPipeWriter();
-#endif
+
     closeChannel(&stdinChannel);
 }
 
@@ -1261,9 +1232,6 @@ QProcess::~QProcess()
         kill();
         waitForFinished();
     }
-#ifdef Q_OS_UNIX
-    d->findExitCode();
-#endif
     d->cleanup();
 }
 
@@ -1392,7 +1360,7 @@ void QProcess::closeWriteChannel()
 {
     Q_D(QProcess);
     d->stdinChannel.closed = true; // closing
-    if (d->writeBuffer.isEmpty())
+    if (bytesToWrite() == 0)
         d->closeWriteChannel();
 }
 
@@ -1445,6 +1413,9 @@ void QProcess::setStandardInputFile(const QString &fileName)
 
     Calling setStandardOutputFile() after the process has started has
     no effect.
+
+    If \a fileName is an empty string, it stops redirecting the standard
+    output. This is useful for restoring the standard output after redirection.
 
     \sa setStandardInputFile(), setStandardErrorFile(),
         setStandardOutputProcess()
@@ -1505,7 +1476,7 @@ void QProcess::setStandardOutputProcess(QProcess *destination)
     dto->stdinChannel.pipeFrom(dfrom);
 }
 
-#if defined(Q_OS_WIN) || defined(Q_CLANG_QDOC)
+#if defined(Q_OS_WIN) || defined(Q_QDOC)
 
 /*!
     \since 4.7
@@ -1708,11 +1679,11 @@ bool QProcess::isSequential() const
 */
 qint64 QProcess::bytesToWrite() const
 {
-    qint64 size = QIODevice::bytesToWrite();
 #ifdef Q_OS_WIN
-    size += d_func()->pipeWriterBytesToWrite();
+    return d_func()->pipeWriterBytesToWrite();
+#else
+    return QIODevice::bytesToWrite();
 #endif
-    return size;
 }
 
 /*!
@@ -1781,7 +1752,8 @@ QStringList QProcess::environment() const
 
     Note how, on Windows, environment variable names are case-insensitive.
 
-    \sa processEnvironment(), QProcessEnvironment::systemEnvironment(), setEnvironment()
+    \sa processEnvironment(), QProcessEnvironment::systemEnvironment(),
+        {Environment variables}
 */
 void QProcess::setProcessEnvironment(const QProcessEnvironment &environment)
 {
@@ -1791,12 +1763,12 @@ void QProcess::setProcessEnvironment(const QProcessEnvironment &environment)
 
 /*!
     \since 4.6
-    Returns the environment that QProcess will pass to its child
-    process, or an empty object if no environment has been set using
-    setEnvironment() or setProcessEnvironment(). If no environment has
-    been set, the environment of the calling process will be used.
+    Returns the environment that QProcess will pass to its child process. If no
+    environment has been set using setProcessEnvironment(), this method returns
+    an object indicating the environment will be inherited from the parent.
 
-    \sa setProcessEnvironment(), setEnvironment(), QProcessEnvironment::isEmpty()
+    \sa setProcessEnvironment(), QProcessEnvironment::inheritsFromParent(),
+        {Environment variables}
 */
 QProcessEnvironment QProcess::processEnvironment() const
 {
@@ -1931,8 +1903,7 @@ void QProcess::setProcessState(ProcessState state)
 */
 auto QProcess::setupChildProcess() -> Use_setChildProcessModifier_Instead
 {
-    Q_UNREACHABLE();
-    return {};
+    Q_UNREACHABLE_RETURN({});
 }
 #endif
 
@@ -1947,44 +1918,6 @@ qint64 QProcess::readData(char *data, qint64 maxlen)
     if (d->processState == QProcess::NotRunning)
         return -1;              // EOF
     return 0;
-}
-
-/*! \reimp
-*/
-qint64 QProcess::writeData(const char *data, qint64 len)
-{
-    Q_D(QProcess);
-
-    if (d->stdinChannel.closed) {
-#if defined QPROCESS_DEBUG
-    qDebug("QProcess::writeData(%p \"%s\", %lld) == 0 (write channel closing)",
-           data, qt_prettyDebug(data, len, 16).constData(), len);
-#endif
-        return 0;
-    }
-
-#if defined(Q_OS_WIN)
-    if (!d->stdinWriteTrigger) {
-        d->stdinWriteTrigger = new QTimer;
-        d->stdinWriteTrigger->setSingleShot(true);
-        QObjectPrivate::connect(d->stdinWriteTrigger, &QTimer::timeout,
-                                d, &QProcessPrivate::_q_canWrite);
-    }
-#endif
-
-    d->write(data, len);
-#ifdef Q_OS_WIN
-    if (!d->stdinWriteTrigger->isActive())
-        d->stdinWriteTrigger->start();
-#else
-    if (d->stdinChannel.notifier)
-        d->stdinChannel.notifier->setEnabled(true);
-#endif
-#if defined QPROCESS_DEBUG
-    qDebug("QProcess::writeData(%p \"%s\", %lld) == %lld (written to buffer)",
-           data, qt_prettyDebug(data, len, 16).constData(), len, len);
-#endif
-    return len;
 }
 
 /*!
@@ -2012,16 +1945,23 @@ QByteArray QProcess::readAllStandardOutput()
 */
 QByteArray QProcess::readAllStandardError()
 {
-    ProcessChannel tmp = readChannel();
-    setReadChannel(StandardError);
-    QByteArray data = readAll();
-    setReadChannel(tmp);
+    Q_D(QProcess);
+    QByteArray data;
+    if (d->processChannelMode == MergedChannels) {
+        qWarning("QProcess::readAllStandardError: Called with MergedChannels");
+    } else {
+        ProcessChannel tmp = readChannel();
+        setReadChannel(StandardError);
+        data = readAll();
+        setReadChannel(tmp);
+    }
     return data;
 }
 
 /*!
     Starts the given \a program in a new process, passing the command line
-    arguments in \a arguments.
+    arguments in \a arguments. See setProgram() for information about how
+    QProcess searches for the executable to be run.
 
     The QProcess object will immediately enter the Starting state. If the
     process starts successfully, QProcess will emit started(); otherwise,
@@ -2151,11 +2091,12 @@ void QProcess::startCommand(const QString &command, OpenMode mode)
     temporarily freeze.
 
     If the function is successful then *\a pid is set to the process identifier
-    of the started process. Note that the child process may exit and the PID
-    may become invalid without notice. Furthermore, after the child process
-    exits, the same PID may be recycled and used by a completely different
-    process. User code should be careful when using this variable, especially
-    if one intends to forcibly terminate the process by operating system means.
+    of the started process; otherwise, it's set to -1. Note that the child
+    process may exit and the PID may become invalid without notice.
+    Furthermore, after the child process exits, the same PID may be recycled
+    and used by a completely different process. User code should be careful
+    when using this variable, especially if one intends to forcibly terminate
+    the process by operating system means.
 
     Only the following property setters are supported by startDetached():
     \list
@@ -2281,7 +2222,7 @@ QStringList QProcess::splitCommand(QStringView command)
     // "hello world". three consecutive double quotes represent
     // the quote character itself.
     for (int i = 0; i < command.size(); ++i) {
-        if (command.at(i) == QLatin1Char('"')) {
+        if (command.at(i) == u'"') {
             ++quoteCount;
             if (quoteCount == 3) {
                 // third consecutive quote
@@ -2329,7 +2270,12 @@ QString QProcess::program() const
     Set the \a program to use when starting the process.
     This function must be called before start().
 
-    \sa start(), setArguments(), program()
+    If \a program is an absolute path, it specifies the exact executable that
+    will be launched. Relative paths will be resolved in a platform-specific
+    manner, which includes searching the \c PATH environment variable (see
+    \l{Finding the Executable} for details).
+
+    \sa start(), setArguments(), program(), QStandardPaths::findExecutable()
 */
 void QProcess::setProgram(const QString &program)
 {
@@ -2497,7 +2443,7 @@ QT_BEGIN_INCLUDE_NAMESPACE
 # include <crt_externs.h>
 # define environ (*_NSGetEnviron())
 #elif defined(QT_PLATFORM_UIKIT)
-  static char *qt_empty_environ[] = { 0 };
+  Q_CONSTINIT static char *qt_empty_environ[] = { 0 };
 #define environ qt_empty_environ
 #elif !defined(Q_OS_WIN)
   extern char **environ;

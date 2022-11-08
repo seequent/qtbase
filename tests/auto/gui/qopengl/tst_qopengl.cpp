@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QtOpenGL/QOpenGLFramebufferObject>
 #include <QtOpenGL/QOpenGLPaintDevice>
@@ -32,7 +7,9 @@
 #include <QtOpenGL/qopengltextureblitter.h>
 #include <QtOpenGL/QOpenGLVertexArrayObject>
 #include <QtOpenGL/QOpenGLBuffer>
-#include <QtOpenGL/QOpenGLFunctions_4_2_Core>
+#if !QT_CONFIG(opengles2)
+#  include <QtOpenGL/QOpenGLFunctions_4_2_Core>
+#endif
 #include <QtOpenGL/QOpenGLVersionFunctionsFactory>
 #include <QtGui/private/qopenglcontext_p.h>
 #include <QtGui/QOpenGLFunctions>
@@ -643,6 +620,10 @@ static bool supportsInternalFboFormat(QOpenGLContext *ctx, int glFormat)
 
 void tst_QOpenGL::fboRenderingRGB30()
 {
+#ifdef Q_OS_ANDROID
+    if (QNativeInterface::QAndroidApplication::sdkVersion() >= 31)
+        QSKIP("Fails on Android 12 (QTBUG-105738)");
+#endif
 #if defined(Q_OS_LINUX) && defined(Q_CC_GNU) && !defined(__x86_64__)
     QSKIP("QTBUG-22617");
 #endif
@@ -1182,6 +1163,7 @@ void tst_QOpenGL::sizeLessWindow()
     // child window
     {
         QWindow parent;
+        parent.setSurfaceType(QWindow::OpenGLSurface);
         QWindow window(&parent);
         window.setSurfaceType(QWindow::OpenGLSurface);
 
@@ -1480,6 +1462,9 @@ void tst_QOpenGL::glxContextWrap()
     if (QGuiApplication::platformName().startsWith(QLatin1String("offscreen"), Qt::CaseInsensitive))
         QSKIP("Offscreen: This fails.");
 
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Fails on Wayland.");
+
     QWindow *window = new QWindow;
     window->setSurfaceType(QWindow::OpenGLSurface);
     window->setGeometry(0, 0, 10, 10);
@@ -1607,6 +1592,13 @@ void tst_QOpenGL::bufferCreate()
     buf.allocate(128);
     QCOMPARE(buf.size(), 128);
 
+    {
+        QOpenGLBuffer moved = std::move(buf);
+        QCOMPARE_EQ(moved.isCreated(), true);
+        QCOMPARE_EQ(moved.size(), 128);
+        buf = std::move(moved);
+    }
+
     buf.release();
 
     buf.destroy();
@@ -1692,10 +1684,11 @@ void tst_QOpenGL::nullTextureInitializtion()
 
 /*
     Verify that the clipping works correctly.
-    The red outline should be covered by the blue rect on top and left,
-    while it should be clipped on the right and bottom and thus the red outline be visible
+    Just like fillRect, cliprect should snap rightwards and downwards in case of .5 coordinates.
+    The red outline should be covered by the blue rect on top,
+    while it should be clipped on the other edges and thus the red outline be visible
 
-    See: QTBUG-83229
+    See: QTBUG-83229, modified by QTBUG-100329
 */
 void tst_QOpenGL::clipRect()
 {
@@ -1751,7 +1744,7 @@ void tst_QOpenGL::clipRect()
     QCOMPARE(fb.size(), size);
 
     QCOMPARE(fb.pixelColor(clipRect.left() + 1, clipRect.top()), QColor(Qt::blue));
-    QCOMPARE(fb.pixelColor(clipRect.left(), clipRect.top() + 1), QColor(Qt::blue));
+    QCOMPARE(fb.pixelColor(clipRect.left(), clipRect.top() + 1), QColor(Qt::red));
     QCOMPARE(fb.pixelColor(clipRect.left() + 1, clipRect.bottom()), QColor(Qt::red));
 
     // Enable this once QTBUG-85286 is fixed

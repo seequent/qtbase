@@ -1,6 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from text.pro.
 
+add_subdirectory(qanystringview)
 add_subdirectory(qbytearray)
+add_subdirectory(qbytearray_large)
 add_subdirectory(qbytearrayapisymmetry)
 add_subdirectory(qbytearraylist)
 add_subdirectory(qbytearraymatcher)
@@ -8,7 +13,7 @@ add_subdirectory(qbytearrayview)
 add_subdirectory(qbytedatabuffer)
 add_subdirectory(qchar)
 add_subdirectory(qcollator)
-add_subdirectory(qlatin1string)
+add_subdirectory(qlatin1stringview)
 add_subdirectory(qregularexpression)
 add_subdirectory(qstring)
 add_subdirectory(qstring_no_cast_from_bytearray)
@@ -21,7 +26,5 @@ add_subdirectory(qstringmatcher)
 add_subdirectory(qstringtokenizer)
 add_subdirectory(qstringview)
 add_subdirectory(qtextboundaryfinder)
-# QTBUG-87414 # special case
-if(NOT ANDROID)
-    add_subdirectory(qlocale)
-endif()
+add_subdirectory(qunicodetools)
+add_subdirectory(qlocale)

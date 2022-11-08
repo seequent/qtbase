@@ -1,4 +1,5 @@
-# Generated from testForwarding.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## testForwarding Binary:
@@ -9,3 +10,5 @@ qt_internal_add_executable(testForwarding
     SOURCES
         main.cpp
 )
+
+add_dependencies(testForwarding testForwardingHelper)

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -43,6 +18,7 @@
 #include <qlabel.h>
 #include <qmainwindow.h>
 #include <qtoolbar.h>
+#include <qsignalspy.h>
 #include <private/qwindow_p.h>
 #include <private/qguiapplication_p.h>
 #include <qpa/qplatformintegration.h>
@@ -51,6 +27,8 @@
 #include <private/qhighdpiscaling_p.h>
 
 #include <QtTest/private/qtesthelpers_p.h>
+
+#include <QtWidgets/private/qapplication_p.h>
 
 using namespace QTestPrivate;
 
@@ -90,6 +68,8 @@ private slots:
     void tst_show_resize();
     void tst_show_resize_hide_show();
 
+    void close();
+
     void tst_windowFilePathAndwindowTitle_data();
     void tst_windowFilePathAndwindowTitle();
     void tst_windowFilePath_data();
@@ -104,6 +84,7 @@ private slots:
     void tst_dnd();
     void tst_dnd_events();
     void tst_dnd_propagation();
+    void tst_dnd_destroyOnDrop();
 #endif
 
     void tst_qtbug35600();
@@ -128,6 +109,8 @@ private slots:
 
     void mouseMoveWithPopup_data();
     void mouseMoveWithPopup();
+
+    void resetFocusObjectOnDestruction();
 
 private:
     QSize m_testWidgetSize;
@@ -245,6 +228,70 @@ void tst_QWidget_window::tst_show_resize_hide_show()
     w.hide();
     w.show();
     QCOMPARE(w.size(), m_testWidgetSize);
+}
+
+void tst_QWidget_window::close()
+{
+    // Verfy that closing a QWidgetWindow deletes its platform window,
+    // as expected of a QWindow subclass. This must be done also
+    // if QWidget API is used to close. The QCloseEvent must not be
+    // spontaneous if the close is triggered by a Qt API that the application
+    // would call in response to an event, and spontaneous if it is directly
+    // caused by user interaction, such as clicking the (x) in the titlebar.
+    // We can simulate this only by generating a WindowSystemEvent.
+    // Children of the window should get a hide event (never spontaneous when
+    // caused by closing the window).
+
+    struct Widget : public QWidget
+    {
+        using QWidget::QWidget;
+        int spontClose = -1;
+        int spontHide = -1;
+    protected:
+        void hideEvent(QHideEvent *e) override
+        { spontHide = e->spontaneous() ? 1 : 0; }
+        void closeEvent(QCloseEvent *e) override
+        { spontClose = e->spontaneous() ? 1 : 0; }
+    };
+
+    // QWindow::close()
+    {
+        Widget w;
+        Widget child(&w);
+        w.winId();
+        QVERIFY(w.windowHandle());
+        QVERIFY(w.windowHandle()->handle());
+        w.windowHandle()->close();
+        QCOMPARE(w.spontClose, 0);
+        QCOMPARE(child.spontHide, -1); // was never shown
+        QVERIFY(w.windowHandle());
+        QVERIFY(!w.windowHandle()->handle());
+    }
+
+    // QWidget::close()
+    {
+        Widget w;
+        Widget child(&w);
+        w.show();
+        QVERIFY(w.windowHandle());
+        QVERIFY(w.windowHandle()->handle());
+        w.close();
+        QCOMPARE(w.spontClose, 0);
+        QCOMPARE(child.spontHide, 0);
+        QVERIFY(w.windowHandle());
+        QVERIFY(!w.windowHandle()->handle());
+    }
+
+    // User-initiated close
+    {
+        Widget w;
+        Widget child(&w);
+        w.show();
+        QWindowSystemInterface::handleCloseEvent(w.windowHandle());
+        QApplication::processEvents();
+        QCOMPARE(w.spontClose, 1);
+        QCOMPARE(child.spontHide, 0);
+    }
 }
 
 class PaintTestWidget : public QWidget
@@ -368,14 +415,14 @@ void tst_QWidget_window::tst_windowFilePath()
 void tst_QWidget_window::tst_showWithoutActivating()
 {
     QString platformName = QGuiApplication::platformName().toLower();
-    if (platformName == "cocoa")
-        QSKIP("Cocoa: This fails. Figure out why.");
-    else if (platformName != QStringLiteral("xcb")
-            && platformName != QStringLiteral("windows")
-            && platformName != QStringLiteral("ios")
-            && platformName != QStringLiteral("tvos")
-            && platformName != QStringLiteral("watchos"))
-        QSKIP("Qt::WA_ShowWithoutActivating is currently supported only on xcb, windows, and ios/tvos/watchos platforms.");
+    if (platformName != QStringLiteral("xcb")
+        && platformName != QStringLiteral("windows")
+        && platformName != QStringLiteral("cocoa")
+        && platformName != QStringLiteral("ios")
+        && platformName != QStringLiteral("tvos")
+        && platformName != QStringLiteral("watchos"))
+        QSKIP("Qt::WA_ShowWithoutActivating is currently supported only on xcb, " \
+              "windows, and macos/ios/tvos/watchos platforms.");
 
     QWidget w1;
     w1.setAttribute(Qt::WA_ShowWithoutActivating);
@@ -399,6 +446,7 @@ void tst_QWidget_window::tst_paintEventOnSecondShow()
 {
     PaintTestWidget w;
     w.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
     w.hide();
 
     w.paintEventCount = 0;
@@ -632,7 +680,7 @@ void tst_QWidget_window::tst_dnd()
 
     dndTestWidget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&dndTestWidget));
-    qApp->setActiveWindow(&dndTestWidget);
+    QApplicationPrivate::setActiveWindow(&dndTestWidget);
     QVERIFY(QTest::qWaitForWindowActive(&dndTestWidget));
 
     QMimeData mimeData;
@@ -872,6 +920,78 @@ void tst_QWidget_window::tst_dnd_propagation()
 
     QCOMPARE(target.mDndEvents, "enter leave enter drop ");
 }
+
+class ReparentSelfOnDropWidget : public QWidget
+{
+public:
+    ReparentSelfOnDropWidget(QWidget *newFutureParent)
+        : m_newFutureParent(newFutureParent)
+    {
+        setAcceptDrops(true);
+
+        const QRect availableGeometry = QGuiApplication::primaryScreen()->availableGeometry();
+        auto width = availableGeometry.width() / 6;
+        auto height = availableGeometry.height() / 4;
+
+        setGeometry(availableGeometry.x() + 200, availableGeometry.y() + 200, width, height);
+
+        QLabel *label = new QLabel(QStringLiteral("Test"), this);
+        label->setGeometry(40, 40, 60, 60);
+        label->setAcceptDrops(true);
+    }
+
+    void dragEnterEvent(QDragEnterEvent *event) override
+    {
+        event->accept();
+    }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        event->acceptProposedAction();
+    }
+
+    void dropEvent(QDropEvent *event) override
+    {
+        event->accept();
+        // Turn 'this' from a top-level widget to a child widget.
+        // This destroys the QWidgetWindow since the widget is no longer top-level.
+        setParent(m_newFutureParent);
+    }
+
+private:
+    QWidget *m_newFutureParent;
+};
+
+void tst_QWidget_window::tst_dnd_destroyOnDrop()
+{
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: This fails. Figure out why.");
+
+    QMimeData mimeData;
+    mimeData.setText(QLatin1String("testmimetext"));
+
+    QWidget newParent;
+    newParent.resize(400, 400);
+    newParent.show();
+    QVERIFY(QTest::qWaitForWindowActive(&newParent));
+
+    ReparentSelfOnDropWidget *target = new ReparentSelfOnDropWidget(&newParent);
+    target->show();
+    QVERIFY(QTest::qWaitForWindowActive(target));
+
+    Qt::DropActions supportedActions = Qt::DropAction::CopyAction;
+    QWindow *window = target->windowHandle();
+
+    auto posInsideDropTarget = QHighDpi::toNativePixels(QPoint(20, 20), window->screen());
+    auto posInsideLabel      = QHighDpi::toNativePixels(QPoint(60, 60), window->screen());
+
+    QWindowSystemInterface::handleDrag(window, &mimeData, posInsideDropTarget, supportedActions, {}, {});
+    QWindowSystemInterface::handleDrag(window, &mimeData, posInsideLabel, supportedActions, {}, {});
+    QWindowSystemInterface::handleDrop(window, &mimeData, posInsideLabel, supportedActions, {}, {});
+
+    QGuiApplication::processEvents();
+}
+
 #endif
 
 void tst_QWidget_window::tst_qtbug35600()
@@ -1332,6 +1452,9 @@ void tst_QWidget_window::mouseMoveWithPopup_data()
 
 void tst_QWidget_window::mouseMoveWithPopup()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: Skip this test, see also QTBUG-107154");
+
     QFETCH(Qt::WindowType, windowType);
 
     class Window : public QWidget
@@ -1397,7 +1520,7 @@ void tst_QWidget_window::mouseMoveWithPopup()
         QSKIP("Failed to expose window!");
 
     QCOMPARE(QApplication::activePopupWidget(), nullptr);
-    QCOMPARE(QApplication::activeWindow(), &topLevel);
+    QTRY_COMPARE(QApplication::activeWindow(), &topLevel);
 
     QPoint mousePos = topLevel.geometry().center();
     QWindow *window = nullptr;
@@ -1452,6 +1575,9 @@ void tst_QWidget_window::mouseMoveWithPopup()
     topLevel.resetCounters();
     topLevel.popup->resetCounters();
 
+    QTRY_VERIFY(QApplication::activeWindow() == topLevel.popup
+                || QApplication::activePopupWidget() == topLevel.popup);
+
     // nested popup, same procedure
     QCOMPARE(mouseAction(Qt::RightButton), QEvent::MouseButtonPress);
     QVERIFY(topLevel.popup);
@@ -1502,6 +1628,42 @@ void tst_QWidget_window::mouseMoveWithPopup()
         && !QGuiApplication::platformName().startsWith(QLatin1String("windows"), Qt::CaseInsensitive))
         QEXPECT_FAIL("Dialog", "Platform specific behavior", Continue);
     QCOMPARE(topLevel.popup->mouseReleaseCount, 1);
+}
+
+void tst_QWidget_window::resetFocusObjectOnDestruction()
+{
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+        QSKIP("QWindow::requestActivate() is not supported.");
+
+    QSignalSpy focusObjectChangedSpy(qApp, &QGuiApplication::focusObjectChanged);
+
+    // single top level widget that has focus
+    std::unique_ptr<QWidget> widget(new QWidget);
+    widget->setObjectName("Widget 1");
+    widget->setFocus();
+    widget->show();
+    QVERIFY(QTest::qWaitForWindowActive(widget.get()));
+
+    int activeCount = focusObjectChangedSpy.size();
+    widget.reset();
+    QVERIFY(focusObjectChangedSpy.size() > activeCount);
+    QCOMPARE(focusObjectChangedSpy.last().last().value<QObject*>(), nullptr);
+    focusObjectChangedSpy.clear();
+
+    // top level widget with focused child
+    widget.reset(new QWidget);
+    widget->setObjectName("Widget 2");
+    QWidget *child = new QWidget(widget.get());
+    child->setObjectName("Child widget");
+    child->setFocus();
+    widget->show();
+    QVERIFY(QTest::qWaitForWindowActive(widget.get()));
+
+    activeCount = focusObjectChangedSpy.size();
+    widget.reset();
+    // we might get more than one signal emission
+    QVERIFY(focusObjectChangedSpy.size() > activeCount);
+    QCOMPARE(focusObjectChangedSpy.last().last().value<QObject*>(), nullptr);
 }
 
 QTEST_MAIN(tst_QWidget_window)

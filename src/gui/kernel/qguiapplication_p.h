@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QGUIAPPLICATION_P_H
 #define QGUIAPPLICATION_P_H
@@ -53,11 +17,15 @@
 
 #include <QtGui/private/qtguiglobal_p.h>
 #include <QtGui/qguiapplication.h>
+#include <QtGui/qicon.h>
 
+#include <QtCore/QHash>
 #include <QtCore/QPointF>
-#include <QtCore/QSharedPointer>
 #include <QtCore/private/qcoreapplication_p.h>
 
+#include <QtCore/qnativeinterface.h>
+#include <QtCore/private/qnativeinterface_p.h>
+#include <QtCore/private/qnumeric_p.h>
 #include <QtCore/private/qthread_p.h>
 
 #include <qpa/qwindowsysteminterface.h>
@@ -66,7 +34,7 @@
 #  include "private/qshortcutmap_p.h"
 #endif
 
-#include <qicon.h>
+#include <memory>
 
 QT_BEGIN_NAMESPACE
 
@@ -89,7 +57,7 @@ class Q_GUI_EXPORT QGuiApplicationPrivate : public QCoreApplicationPrivate
 {
     Q_DECLARE_PUBLIC(QGuiApplication)
 public:
-    QGuiApplicationPrivate(int &argc, char **argv, int flags);
+    QGuiApplicationPrivate(int &argc, char **argv);
     ~QGuiApplicationPrivate();
 
     void init();
@@ -104,10 +72,12 @@ public:
 #if QT_CONFIG(commandlineparser)
     void addQtOptions(QList<QCommandLineOption> *options) override;
 #endif
-    virtual bool shouldQuit() override;
+    bool canQuitAutomatically() override;
     void quit() override;
 
-    bool shouldQuitInternal(const QWindowList &processedWindows);
+    void maybeLastWindowClosed();
+    bool lastWindowClosed() const;
+    static bool quitOnLastWindowClosed;
 
     static void captureGlobalModifierState(QEvent *e);
     static Qt::KeyboardModifiers modifier_buttons;
@@ -187,11 +157,7 @@ public:
                                                Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers);
 #endif
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     static bool processNativeEvent(QWindow *window, const QByteArray &eventType, void *message, qintptr *result);
-#else
-    static bool processNativeEvent(QWindow *window, const QByteArray &eventType, void *message, long *result);
-#endif
 
     static bool sendQWindowEventToQPlatformWindow(QWindow *window, QEvent *event);
 
@@ -206,8 +172,6 @@ public:
         }
         return alignment;
     }
-
-    static void emitLastWindowClosed();
 
     QPixmap getPixmapCursor(Qt::CursorShape cshape);
 
@@ -224,16 +188,31 @@ public:
     static void showModalWindow(QWindow *window);
     static void hideModalWindow(QWindow *window);
     static void updateBlockedStatus(QWindow *window);
-    virtual bool isWindowBlocked(QWindow *window, QWindow **blockingWindow = nullptr) const;
+
+    virtual Qt::WindowModality defaultModality() const;
+    virtual bool windowNeverBlocked(QWindow *window) const;
+    bool isWindowBlocked(QWindow *window, QWindow **blockingWindow = nullptr) const;
     virtual bool popupActive() { return false; }
+    virtual bool closeAllPopups() { return false; }
 
     static Qt::MouseButton mousePressButton;
-    static QPointF lastCursorPosition;
+    static struct QLastCursorPosition {
+        constexpr inline QLastCursorPosition() noexcept : thePoint(qt_inf(), qt_inf()) {}
+        constexpr inline Q_IMPLICIT QLastCursorPosition(QPointF p) noexcept : thePoint(p) {}
+        constexpr inline Q_IMPLICIT operator QPointF() const noexcept { return thePoint; }
+        constexpr inline qreal x() const noexcept{ return thePoint.x(); }
+        constexpr inline qreal y() const noexcept{ return thePoint.y(); }
+        Q_GUI_EXPORT QPoint toPoint() const noexcept;
+
+        constexpr void reset() noexcept { *this = QLastCursorPosition{}; }
+
+    private:
+        QPointF thePoint;
+    } lastCursorPosition;
     static QWindow *currentMouseWindow;
     static QWindow *currentMousePressWindow;
     static Qt::ApplicationState applicationState;
     static Qt::HighDpiScaleFactorRoundingPolicy highDpiScaleFactorRoundingPolicy;
-    static bool highDpiScalingUpdated;
     static QPointer<QWindow> currentDragWindow;
 
     // TODO remove this: QPointingDevice can store what we need directly
@@ -319,7 +298,7 @@ public:
     static void updatePalette();
 
 protected:
-    virtual void notifyThemeChanged();
+    virtual void handleThemeChanged();
 
     static bool setPalette(const QPalette &palette);
     virtual QPalette basePalette() const;
@@ -334,10 +313,14 @@ private:
 
     friend class QDragManager;
 
+    static Qt::Appearance appearance();
+
     static QGuiApplicationPrivate *self;
     static int m_fakeMouseSourcePointId;
-    QSharedPointer<QColorTrcLut> m_a8ColorProfile;
-    QSharedPointer<QColorTrcLut> m_a32ColorProfile;
+#ifdef Q_OS_WIN
+    std::shared_ptr<QColorTrcLut> m_a8ColorProfile;
+#endif
+    std::shared_ptr<QColorTrcLut> m_a32ColorProfile;
 
     bool ownGlobalShareContext;
 
@@ -352,13 +335,13 @@ private:
 
 namespace QNativeInterface::Private {
 
-#if defined(Q_OS_WIN) || defined(Q_CLANG_QDOC)
+#if defined(Q_OS_WIN) || defined(Q_QDOC)
 
 class QWindowsMime;
 
 struct Q_GUI_EXPORT QWindowsApplication
 {
-    QT_DECLARE_NATIVE_INTERFACE(QWindowsApplication)
+    QT_DECLARE_NATIVE_INTERFACE(QWindowsApplication, 1, QGuiApplication)
 
     enum WindowActivationBehavior {
         DefaultActivateWindow,
@@ -385,6 +368,8 @@ struct Q_GUI_EXPORT QWindowsApplication
 
     virtual WindowActivationBehavior windowActivationBehavior() const = 0;
     virtual void setWindowActivationBehavior(WindowActivationBehavior behavior) = 0;
+
+    virtual void setHasBorderInFullScreenDefault(bool border) = 0;
 
     virtual bool isTabletMode() const = 0;
 

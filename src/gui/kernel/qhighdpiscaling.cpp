@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qhighdpiscaling_p.h"
 #include "qguiapplication.h"
@@ -49,10 +13,11 @@
 #include <QtCore/qmetaobject.h>
 
 #include <algorithm>
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(lcScaling, "qt.scaling");
+Q_LOGGING_CATEGORY(lcHighDpi, "qt.highdpi");
 
 #ifndef QT_NO_HIGHDPISCALING
 
@@ -63,35 +28,38 @@ static const char scaleFactorRoundingPolicyEnvVar[] = "QT_SCALE_FACTOR_ROUNDING_
 static const char dpiAdjustmentPolicyEnvVar[] = "QT_DPI_ADJUSTMENT_POLICY";
 static const char usePhysicalDpiEnvVar[] = "QT_USE_PHYSICAL_DPI";
 
-// Per-screen scale factors for named screens set with QT_SCREEN_SCALE_FACTORS
-// are stored here. Use a global hash to keep the factor across screen
-// disconnect/connect cycles where the screen object may be deleted.
-typedef QHash<QString, qreal> QScreenScaleFactorHash;
-Q_GLOBAL_STATIC(QScreenScaleFactorHash, qNamedScreenScaleFactors);
-
-// Reads and interprets the given environment variable as a bool,
-// returns the default value if not set.
-static bool qEnvironmentVariableAsBool(const char *name, bool defaultValue)
+static std::optional<QString> qEnvironmentVariableOptionalString(const char *name)
 {
-    bool ok = false;
-    int value = qEnvironmentVariableIntValue(name, &ok);
-    return ok ? value > 0 : defaultValue;
+    if (!qEnvironmentVariableIsSet(name))
+        return std::nullopt;
+
+    return std::optional(qEnvironmentVariable(name));
 }
 
-static inline qreal initialGlobalScaleFactor()
+static std::optional<QByteArray> qEnvironmentVariableOptionalByteArray(const char *name)
 {
+    if (!qEnvironmentVariableIsSet(name))
+        return std::nullopt;
 
-    qreal result = 1;
-    if (qEnvironmentVariableIsSet(scaleFactorEnvVar)) {
-        bool ok;
-        const qreal f = qEnvironmentVariable(scaleFactorEnvVar).toDouble(&ok);
-        if (ok && f > 0) {
-            qCDebug(lcScaling) << "Apply " << scaleFactorEnvVar << f;
-            result = f;
-        }
-    }
+    return std::optional(qgetenv(name));
+}
 
-    return result;
+static std::optional<int> qEnvironmentVariableOptionalInt(const char *name)
+{
+    bool ok = false;
+    const int value = qEnvironmentVariableIntValue(name, &ok);
+    auto opt = ok ? std::optional(value) : std::nullopt;
+    return opt;
+}
+
+static std::optional<qreal> qEnvironmentVariableOptionalReal(const char *name)
+{
+    if (!qEnvironmentVariableIsSet(name))
+        return std::nullopt;
+
+    bool ok = false;
+    const qreal value = qEnvironmentVariable(name).toDouble(&ok);
+    return ok ? std::optional(value) : std::nullopt;
 }
 
 /*!
@@ -179,7 +147,7 @@ static inline qreal initialGlobalScaleFactor()
       is always enabled. The Qt scale factor value is typically determined by the
       QPlatformScreen implementation - see below.
 
-      There is one environment variable based opt-out option: set QT_ENABLE_HIGH_DPI_SCALING=0.
+      There is one environment variable based opt-out option: set QT_ENABLE_HIGHDPI_SCALING=0.
       Keep in mind that this does not affect the OS scale factor, which is controlled by
       the operating system.
 
@@ -275,39 +243,21 @@ bool QHighDpiScaling::m_usePlatformPluginDpi = false; // use scale factor based 
 bool QHighDpiScaling::m_platformPluginDpiScalingActive  = false; // platform plugin DPI gives a scale factor > 1
 bool QHighDpiScaling::m_globalScalingActive = false; // global scale factor is active
 bool QHighDpiScaling::m_screenFactorSet = false; // QHighDpiScaling::setScreenFactor has been used
-
-/*
-    Initializes the QHighDpiScaling global variables. Called before the
-    platform plugin is created.
-*/
-
-static inline bool usePlatformPluginDpi()
-{
-    // Determine if we should set a scale factor based on the logical DPI
-    // reported by the platform plugin.
-
-    bool enableEnvValueOk;
-    const int enableEnvValue = qEnvironmentVariableIntValue(enableHighDpiScalingEnvVar, &enableEnvValueOk);
-    if (enableEnvValueOk && enableEnvValue < 1)
-        return false;
-
-    // Enable by default
-    return true;
-}
+bool QHighDpiScaling::m_usePhysicalDpi = false;
+QVector<QHighDpiScaling::ScreenFactor> QHighDpiScaling::m_screenFactors;
+QHighDpiScaling::DpiAdjustmentPolicy QHighDpiScaling::m_dpiAdjustmentPolicy = QHighDpiScaling::DpiAdjustmentPolicy::Unset;
+QHash<QString, qreal> QHighDpiScaling::m_namedScreenScaleFactors; // Per-screen scale factors (screen name -> factor)
 
 qreal QHighDpiScaling::rawScaleFactor(const QPlatformScreen *screen)
 {
-    // Determine if physical DPI should be used
-    static const bool usePhysicalDpi = qEnvironmentVariableAsBool(usePhysicalDpiEnvVar, false);
-
     // Calculate scale factor beased on platform screen DPI values
     qreal factor;
     QDpi platformBaseDpi = screen->logicalBaseDpi();
-    if (usePhysicalDpi) {
+    if (QHighDpiScaling::m_usePhysicalDpi) {
         QSize sz = screen->geometry().size();
         QSizeF psz = screen->physicalSize();
         qreal platformPhysicalDpi = ((sz.height() / psz.height()) + (sz.width() / psz.width())) * qreal(25.4 * 0.5);
-        factor = qreal(platformPhysicalDpi) / qreal(platformBaseDpi.first);
+        factor = qRound(platformPhysicalDpi) / qreal(platformBaseDpi.first);
     } else {
         const QDpi platformLogicalDpi = QPlatformScreen::overrideDpi(screen->logicalDpi());
         factor = qreal(platformLogicalDpi.first) / qreal(platformBaseDpi.first);
@@ -387,32 +337,9 @@ qreal QHighDpiScaling::roundScaleFactor(qreal rawFactor)
     // sizes that are smaller than the ideal size, and opposite for rounding up.
     // Rounding down is then preferable since "small UI" is a more acceptable
     // high-DPI experience than "large UI".
-    static auto scaleFactorRoundingPolicy = Qt::HighDpiScaleFactorRoundingPolicy::Unset;
 
-    // Determine rounding policy
-    if (scaleFactorRoundingPolicy == Qt::HighDpiScaleFactorRoundingPolicy::Unset) {
-        // Check environment
-        if (qEnvironmentVariableIsSet(scaleFactorRoundingPolicyEnvVar)) {
-            QByteArray policyText = qgetenv(scaleFactorRoundingPolicyEnvVar);
-            auto policyEnumValue = lookupScaleFactorRoundingPolicy(policyText);
-            if (policyEnumValue != Qt::HighDpiScaleFactorRoundingPolicy::Unset) {
-                scaleFactorRoundingPolicy = policyEnumValue;
-            } else {
-                auto values = joinEnumValues(std::begin(scaleFactorRoundingPolicyLookup),
-                                             std::end(scaleFactorRoundingPolicyLookup));
-                qWarning("Unknown scale factor rounding policy: %s. Supported values are: %s.",
-                         policyText.constData(), values.constData());
-            }
-        }
-
-        // Check application object if no environment value was set.
-        if (scaleFactorRoundingPolicy == Qt::HighDpiScaleFactorRoundingPolicy::Unset) {
-            scaleFactorRoundingPolicy = QGuiApplication::highDpiScaleFactorRoundingPolicy();
-        } else {
-            // Make application setting reflect environment
-            QGuiApplication::setHighDpiScaleFactorRoundingPolicy(scaleFactorRoundingPolicy);
-        }
-    }
+    Qt::HighDpiScaleFactorRoundingPolicy scaleFactorRoundingPolicy =
+        QGuiApplication::highDpiScaleFactorRoundingPolicy();
 
     // Apply rounding policy.
     qreal roundedFactor = rawFactor;
@@ -436,11 +363,9 @@ qreal QHighDpiScaling::roundScaleFactor(qreal rawFactor)
         break;
     }
 
-    // Don't round down to to zero; clamp the minimum (rounded) factor to 1.
-    // This is not a common case but can happen if a display reports a very
-    // low DPI.
-    if (scaleFactorRoundingPolicy != Qt::HighDpiScaleFactorRoundingPolicy::PassThrough)
-        roundedFactor = qMax(roundedFactor, qreal(1));
+    // Clamp the minimum factor to 1. Qt does not currently render
+    // correctly with factors less than 1.
+    roundedFactor = qMax(roundedFactor, qreal(1));
 
     return roundedFactor;
 }
@@ -454,56 +379,139 @@ QDpi QHighDpiScaling::effectiveLogicalDpi(const QPlatformScreen *screen, qreal r
     // with the rest of the UI. The amount of out-of-synch-ness depends on how
     // well user code handles a non-standard DPI values, but since the
     // adjustment is small (typically +/- 48 max) this might be OK.
-    static auto dpiAdjustmentPolicy = DpiAdjustmentPolicy::Unset;
-
-    // Determine adjustment policy.
-    if (dpiAdjustmentPolicy == DpiAdjustmentPolicy::Unset) {
-        if (qEnvironmentVariableIsSet(dpiAdjustmentPolicyEnvVar)) {
-            QByteArray policyText = qgetenv(dpiAdjustmentPolicyEnvVar);
-            auto policyEnumValue = lookupDpiAdjustmentPolicy(policyText);
-            if (policyEnumValue != DpiAdjustmentPolicy::Unset) {
-                dpiAdjustmentPolicy = policyEnumValue;
-            } else {
-                auto values = joinEnumValues(std::begin(dpiAdjustmentPolicyLookup),
-                                             std::end(dpiAdjustmentPolicyLookup));
-                qWarning("Unknown DPI adjustment policy: %s. Supported values are: %s.",
-                         policyText.constData(), values.constData());
-            }
-        }
-        if (dpiAdjustmentPolicy == DpiAdjustmentPolicy::Unset)
-            dpiAdjustmentPolicy = DpiAdjustmentPolicy::UpOnly;
-    }
 
     // Apply adjustment policy.
     const QDpi baseDpi = screen->logicalBaseDpi();
     const qreal dpiAdjustmentFactor = rawFactor / roundedFactor;
 
     // Return the base DPI for cases where there is no adjustment
-    if (dpiAdjustmentPolicy == DpiAdjustmentPolicy::Disabled)
+    if (QHighDpiScaling::m_dpiAdjustmentPolicy == DpiAdjustmentPolicy::Disabled)
         return baseDpi;
-    if (dpiAdjustmentPolicy == DpiAdjustmentPolicy::UpOnly && dpiAdjustmentFactor < 1)
+    if (QHighDpiScaling::m_dpiAdjustmentPolicy == DpiAdjustmentPolicy::UpOnly && dpiAdjustmentFactor < 1)
         return baseDpi;
 
     return QDpi(baseDpi.first * dpiAdjustmentFactor, baseDpi.second * dpiAdjustmentFactor);
 }
 
+/*
+    Determine and apply global/initial configuration which do not depend on
+    having access to QScreen objects - this function is called before they
+    have been created. Screen-dependent configuration happens later in
+    updateHighDpiScaling().
+*/
 void QHighDpiScaling::initHighDpiScaling()
 {
-    // Determine if there is a global scale factor set.
-    m_factor = initialGlobalScaleFactor();
+    qCDebug(lcHighDpi) << "Initializing high-DPI scaling";
+
+    // Read environment variables
+    static const char* envDebugStr = "environment variable set:";
+    std::optional<int> envEnableHighDpiScaling = qEnvironmentVariableOptionalInt(enableHighDpiScalingEnvVar);
+    if (envEnableHighDpiScaling.has_value())
+        qCDebug(lcHighDpi) << envDebugStr << enableHighDpiScalingEnvVar << envEnableHighDpiScaling.value();
+
+    std::optional<qreal> envScaleFactor = qEnvironmentVariableOptionalReal(scaleFactorEnvVar);
+    if (envScaleFactor.has_value())
+        qCDebug(lcHighDpi) << envDebugStr <<  scaleFactorEnvVar << envScaleFactor.value();
+
+    std::optional<QString> envScreenFactors = qEnvironmentVariableOptionalString(screenFactorsEnvVar);
+    if (envScreenFactors.has_value())
+        qCDebug(lcHighDpi) << envDebugStr << screenFactorsEnvVar << envScreenFactors.value();
+
+    std::optional<int> envUsePhysicalDpi = qEnvironmentVariableOptionalInt(usePhysicalDpiEnvVar);
+    if (envUsePhysicalDpi.has_value())
+        qCDebug(lcHighDpi) << envDebugStr << usePhysicalDpiEnvVar << envUsePhysicalDpi.value();
+
+    std::optional<QByteArray> envScaleFactorRoundingPolicy = qEnvironmentVariableOptionalByteArray(scaleFactorRoundingPolicyEnvVar);
+    if (envScaleFactorRoundingPolicy.has_value())
+        qCDebug(lcHighDpi) << envDebugStr << scaleFactorRoundingPolicyEnvVar << envScaleFactorRoundingPolicy.value();
+
+    std::optional<QByteArray> envDpiAdjustmentPolicy = qEnvironmentVariableOptionalByteArray(dpiAdjustmentPolicyEnvVar);
+    if (envDpiAdjustmentPolicy.has_value())
+        qCDebug(lcHighDpi) << envDebugStr << dpiAdjustmentPolicyEnvVar << envDpiAdjustmentPolicy.value();
+
+    // High-dpi scaling is enabled by default; check for global disable.
+    m_usePlatformPluginDpi = envEnableHighDpiScaling.value_or(1) > 0;
+    m_platformPluginDpiScalingActive = false; // see updateHighDpiScaling()
+
+    // Check for glabal scale factor (different from 1)
+    m_factor = envScaleFactor.value_or(qreal(1));
     m_globalScalingActive = !qFuzzyCompare(m_factor, qreal(1));
 
-    m_usePlatformPluginDpi = usePlatformPluginDpi();
+    // Store the envScreenFactors string for later use. The string format
+    // supports using screen names, which means that screen DPI cannot
+    // be resolved at this point.
+    QString screenFactorsSpec = envScreenFactors.value_or(QString());
+    m_screenFactors = parseScreenScaleFactorsSpec(QStringView{screenFactorsSpec});
+    m_namedScreenScaleFactors.clear();
 
-    m_platformPluginDpiScalingActive  = false; //set in updateHighDpiScaling below
+    m_usePhysicalDpi = envUsePhysicalDpi.value_or(0) > 0;
 
+    // Resolve HighDpiScaleFactorRoundingPolicy to QGuiApplication::highDpiScaleFactorRoundingPolicy
+    if (envScaleFactorRoundingPolicy.has_value()) {
+        QByteArray policyText = envScaleFactorRoundingPolicy.value();
+        auto policyEnumValue = lookupScaleFactorRoundingPolicy(policyText);
+        if (policyEnumValue != Qt::HighDpiScaleFactorRoundingPolicy::Unset) {
+            QGuiApplication::setHighDpiScaleFactorRoundingPolicy(policyEnumValue);
+        } else {
+            auto values = joinEnumValues(std::begin(scaleFactorRoundingPolicyLookup),
+                                         std::end(scaleFactorRoundingPolicyLookup));
+            qWarning("Unknown scale factor rounding policy: %s. Supported values are: %s.",
+                     policyText.constData(), values.constData());
+        }
+    }
+
+    // Resolve DpiAdjustmentPolicy to m_dpiAdjustmentPolicy
+    if (envDpiAdjustmentPolicy.has_value()) {
+        QByteArray policyText = envDpiAdjustmentPolicy.value();
+        auto policyEnumValue = lookupDpiAdjustmentPolicy(policyText);
+        if (policyEnumValue != DpiAdjustmentPolicy::Unset) {
+            QHighDpiScaling::m_dpiAdjustmentPolicy = policyEnumValue;
+        } else {
+            auto values = joinEnumValues(std::begin(dpiAdjustmentPolicyLookup),
+                                         std::end(dpiAdjustmentPolicyLookup));
+            qWarning("Unknown DPI adjustment policy: %s. Supported values are: %s.",
+                     policyText.constData(), values.constData());
+        }
+    }
+
+    // Set initial active state
     m_active = m_globalScalingActive || m_usePlatformPluginDpi;
+
+    qCDebug(lcHighDpi) << "Initialization done, high-DPI scaling is"
+                       << (m_active ? "active" : "inactive");
 }
 
+/*
+    Update configuration based on available screens and screen properties.
+    This function may be called whenever the screen configuration changed.
+*/
 void QHighDpiScaling::updateHighDpiScaling()
 {
-    m_usePlatformPluginDpi = usePlatformPluginDpi();
+    qCDebug(lcHighDpi) << "Updating high-DPI scaling";
 
+    // Apply screen factors from environment
+    if (m_screenFactors.size() > 0) {
+        qCDebug(lcHighDpi) << "Applying screen factors" << m_screenFactors;
+        int i = -1;
+        const auto screens = QGuiApplication::screens();
+        for (const auto &[name, factor] : m_screenFactors) {
+            ++i;
+            if (name.isNull()) {
+                if (i < screens.size())
+                    setScreenFactor(screens.at(i), factor);
+            } else {
+                for (QScreen *screen : screens) {
+                    if (screen->name() == name) {
+                        setScreenFactor(screen, factor);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if any screens (now) has a scale factor != 1 and set
+    // m_platformPluginDpiScalingActive if so.
     if (m_usePlatformPluginDpi && !m_platformPluginDpiScalingActive ) {
         const auto screens = QGuiApplication::screens();
         for (QScreen *screen : screens) {
@@ -513,40 +521,11 @@ void QHighDpiScaling::updateHighDpiScaling()
             }
         }
     }
-    if (qEnvironmentVariableIsSet(screenFactorsEnvVar)) {
-        int i = 0;
-        const QString spec = qEnvironmentVariable(screenFactorsEnvVar);
-        const auto specs = QStringView{spec}.split(u';');
-        for (const auto &spec : specs) {
-            int equalsPos = spec.lastIndexOf(QLatin1Char('='));
-            qreal factor = 0;
-            if (equalsPos > 0) {
-                // support "name=factor"
-                bool ok;
-                const auto name = spec.left(equalsPos);
-                factor = spec.mid(equalsPos + 1).toDouble(&ok);
-                if (ok && factor > 0 ) {
-                    const auto screens = QGuiApplication::screens();
-                    for (QScreen *s : screens) {
-                        if (s->name() == name) {
-                            setScreenFactor(s, factor);
-                            break;
-                        }
-                    }
-                }
-            } else {
-                // listing screens in order
-                bool ok;
-                factor = spec.toDouble(&ok);
-                if (ok && factor > 0 && i < QGuiApplication::screens().count()) {
-                    QScreen *screen = QGuiApplication::screens().at(i);
-                    setScreenFactor(screen, factor);
-                }
-            }
-            ++i;
-        }
-    }
-    m_active = m_globalScalingActive || m_screenFactorSet || m_platformPluginDpiScalingActive ;
+
+    m_active = m_globalScalingActive || m_screenFactorSet || m_platformPluginDpiScalingActive;
+
+    qCDebug(lcHighDpi) << "Update done, high-DPI scaling is"
+                       << (m_active ? "active" : "inactive");
 }
 
 /*
@@ -554,6 +533,8 @@ void QHighDpiScaling::updateHighDpiScaling()
 */
 void QHighDpiScaling::setGlobalFactor(qreal factor)
 {
+    qCDebug(lcHighDpi) << "Setting global scale factor to" << factor;
+
     if (qFuzzyCompare(factor, m_factor))
         return;
     if (!QGuiApplication::allWindows().isEmpty())
@@ -564,7 +545,10 @@ void QHighDpiScaling::setGlobalFactor(qreal factor)
     m_active = m_globalScalingActive || m_screenFactorSet || m_platformPluginDpiScalingActive ;
     const auto screens = QGuiApplication::screens();
     for (QScreen *screen : screens)
-         screen->d_func()->updateHighDpi();
+        screen->d_func()->updateGeometry();
+
+    // FIXME: The geometry has been updated based on the new scale factor,
+    // but we don't emit any geometry change signals for the screens.
 }
 
 static const char scaleFactorProperty[] = "_q_scaleFactor";
@@ -574,6 +558,8 @@ static const char scaleFactorProperty[] = "_q_scaleFactor";
 */
 void QHighDpiScaling::setScreenFactor(QScreen *screen, qreal factor)
 {
+    qCDebug(lcHighDpi) << "Setting screen scale factor for" << screen << "to" << factor;
+
     if (!qFuzzyCompare(factor, qreal(1))) {
         m_screenFactorSet = true;
         m_active = true;
@@ -585,7 +571,7 @@ void QHighDpiScaling::setScreenFactor(QScreen *screen, qreal factor)
     if (name.isEmpty())
         screen->setProperty(scaleFactorProperty, QVariant(factor));
     else
-        qNamedScreenScaleFactors()->insert(name, factor);
+        QHighDpiScaling::m_namedScreenScaleFactors.insert(name, factor);
 
     // hack to force re-evaluation of screen geometry
     if (screen->handle())
@@ -632,8 +618,8 @@ qreal QHighDpiScaling::screenSubfactor(const QPlatformScreen *screen)
         }
 
         if (!screenPropertyUsed) {
-            auto byNameIt = qNamedScreenScaleFactors()->constFind(screen->name());
-            if ((screenPropertyUsed = byNameIt != qNamedScreenScaleFactors()->cend()))
+            auto byNameIt = QHighDpiScaling::m_namedScreenScaleFactors.constFind(screen->name());
+            if ((screenPropertyUsed = byNameIt != QHighDpiScaling::m_namedScreenScaleFactors.cend()))
                 factor = *byNameIt;
         }
     }
@@ -701,6 +687,36 @@ QScreen *QHighDpiScaling::screenForPosition(QHighDpiScaling::Point position, QSc
     return nullptr;
 }
 
+QVector<QHighDpiScaling::ScreenFactor> QHighDpiScaling::parseScreenScaleFactorsSpec(const QStringView &screenScaleFactors)
+{
+    QVector<QHighDpiScaling::ScreenFactor> screenFactors;
+
+    // The spec is _either_
+    // - a semicolon-separated ordered factor list: "1.5;2;3"
+    // - a semicolon-separated name=factor list: "foo=1.5;bar=2;baz=3"
+    const auto specs = screenScaleFactors.split(u';');
+    for (const auto &spec : specs) {
+        const int equalsPos = spec.lastIndexOf(u'=');
+        if (equalsPos == -1) {
+            // screens in order
+            bool ok;
+            const qreal factor = spec.toDouble(&ok);
+            if (ok && factor > 0) {
+                screenFactors.append(QHighDpiScaling::ScreenFactor(QString(), factor));
+            }
+        } else {
+            // "name=factor"
+            bool ok;
+            const qreal factor = spec.mid(equalsPos + 1).toDouble(&ok);
+            if (ok && factor > 0) {
+                screenFactors.append(QHighDpiScaling::ScreenFactor(spec.left(equalsPos).toString(), factor));
+            }
+        }
+    } // for (specs)
+
+    return screenFactors;
+}
+
 QHighDpiScaling::ScaleAndOrigin QHighDpiScaling::scaleAndOrigin(const QPlatformScreen *platformScreen, QHighDpiScaling::Point position)
 {
     Q_UNUSED(position)
@@ -734,7 +750,20 @@ QHighDpiScaling::ScaleAndOrigin QHighDpiScaling::scaleAndOrigin(const QWindow *w
     return scaleAndOrigin(targetScreen, position);
 }
 
-#else
+#ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug debug, const QHighDpiScaling::ScreenFactor &factor)
+{
+    const QDebugStateSaver saver(debug);
+    debug.nospace();
+    if (!factor.name.isEmpty())
+        debug << factor.name << "=";
+    debug << factor.factor;
+    return debug;
+}
+#endif
+
+#else // QT_NO_HIGHDPISCALING
+
 QHighDpiScaling::ScaleAndOrigin QHighDpiScaling::scaleAndOrigin(const QPlatformScreen *, QPoint *)
 {
     return { qreal(1), QPoint() };
@@ -749,5 +778,9 @@ QHighDpiScaling::ScaleAndOrigin QHighDpiScaling::scaleAndOrigin(const QWindow *,
 {
     return { qreal(1), QPoint() };
 }
-#endif //QT_NO_HIGHDPISCALING
+
+#endif // QT_NO_HIGHDPISCALING
+
 QT_END_NAMESPACE
+
+#include "moc_qhighdpiscaling_p.cpp"

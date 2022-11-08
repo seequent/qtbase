@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2012 Jeremy Lainé <jeremy.laine@m4x.org>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtNetwork module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2012 Jeremy Lainé <jeremy.laine@m4x.org>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qdnslookup.h"
 #include "qdnslookup_p.h"
@@ -48,6 +12,8 @@
 #include <algorithm>
 
 QT_BEGIN_NAMESPACE
+
+QT_IMPL_METATYPE_EXTERN(QDnsLookupReply)
 
 #if QT_CONFIG(thread)
 Q_GLOBAL_STATIC(QDnsLookupThreadPool, theDnsLookupThreadPool);
@@ -86,7 +52,7 @@ static void qt_qdnsmailexchangerecord_sort(QList<QDnsMailExchangeRecord> &record
 
         // Randomize the slice of records.
         while (!slice.isEmpty()) {
-            const unsigned int pos = QRandomGenerator::global()->bounded(int(slice.size()));
+            const unsigned int pos = QRandomGenerator::global()->bounded(slice.size());
             records[i++] = slice.takeAt(pos);
         }
     }
@@ -356,10 +322,13 @@ QString QDnsLookup::name() const
 void QDnsLookup::setName(const QString &name)
 {
     Q_D(QDnsLookup);
-    if (name != d->name) {
-        d->name = name;
-        emit nameChanged(name);
-    }
+    d->name = name;
+}
+
+QBindable<QString> QDnsLookup::bindableName()
+{
+    Q_D(QDnsLookup);
+    return &d->name;
 }
 
 /*!
@@ -375,10 +344,13 @@ QDnsLookup::Type QDnsLookup::type() const
 void QDnsLookup::setType(Type type)
 {
     Q_D(QDnsLookup);
-    if (type != d->type) {
-        d->type = type;
-        emit typeChanged(type);
-    }
+    d->type = type;
+}
+
+QBindable<QDnsLookup::Type> QDnsLookup::bindableType()
+{
+    Q_D(QDnsLookup);
+    return &d->type;
 }
 
 /*!
@@ -394,10 +366,13 @@ QHostAddress QDnsLookup::nameserver() const
 void QDnsLookup::setNameserver(const QHostAddress &nameserver)
 {
     Q_D(QDnsLookup);
-    if (nameserver != d->nameserver) {
-        d->nameserver = nameserver;
-        emit nameserverChanged(nameserver);
-    }
+    d->nameserver = nameserver;
+}
+
+QBindable<QHostAddress> QDnsLookup::bindableNameserver()
+{
+    Q_D(QDnsLookup);
+    return &d->nameserver;
 }
 
 /*!
@@ -1060,3 +1035,4 @@ void QDnsLookupThreadPool::_q_applicationDestroyed()
 QT_END_NAMESPACE
 
 #include "moc_qdnslookup.cpp"
+#include "moc_qdnslookup_p.cpp"

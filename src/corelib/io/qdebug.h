@@ -1,66 +1,38 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QDEBUG_H
 #define QDEBUG_H
 
-#include <QtCore/qalgorithms.h>
-#include <QtCore/qhash.h>
-#include <QtCore/qlist.h>
-#include <QtCore/qmap.h>
+#if 0
+#pragma qt_class(QtDebug)
+#endif
+
+#include <QtCore/qcontainerfwd.h>
 #include <QtCore/qtextstream.h>
 #include <QtCore/qstring.h>
-#include <QtCore/qset.h>
 #include <QtCore/qcontiguouscache.h>
 #include <QtCore/qsharedpointer.h>
 
 // all these have already been included by various headers above, but don't rely on indirect includes:
-#include <vector>
 #include <list>
 #include <map>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
+
+#if !defined(QT_LEAN_HEADERS) || QT_LEAN_HEADERS < 1
+#  include <QtCore/qlist.h>
+#  include <QtCore/qmap.h>
+#  include <QtCore/qset.h>
+#  include <QtCore/qvarlengtharray.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
-
-class Q_CORE_EXPORT QDebug : public QIODeviceBase
+class QT6_ONLY(Q_CORE_EXPORT) QDebug : public QIODeviceBase
 {
     friend class QMessageLogger;
     friend class QDebugStateSaver;
@@ -92,21 +64,21 @@ class Q_CORE_EXPORT QDebug : public QIODeviceBase
 
     enum Latin1Content { ContainsBinary = 0, ContainsLatin1 };
 
-    void putUcs4(uint ucs4);
-    void putString(const QChar *begin, size_t length);
-    void putByteArray(const char *begin, size_t length, Latin1Content content);
+    QT7_ONLY(Q_CORE_EXPORT) void putUcs4(uint ucs4);
+    QT7_ONLY(Q_CORE_EXPORT) void putString(const QChar *begin, size_t length);
+    QT7_ONLY(Q_CORE_EXPORT) void putByteArray(const char *begin, size_t length, Latin1Content content);
 public:
     explicit QDebug(QIODevice *device) : stream(new Stream(device)) {}
     explicit QDebug(QString *string) : stream(new Stream(string)) {}
     explicit QDebug(QtMsgType t) : stream(new Stream(t)) {}
     QDebug(const QDebug &o) : stream(o.stream) { ++stream->ref; }
-    QDebug(QDebug &&other) noexcept : stream{qExchange(other.stream, nullptr)} {}
+    QDebug(QDebug &&other) noexcept : stream{std::exchange(other.stream, nullptr)} {}
     inline QDebug &operator=(const QDebug &other);
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QDebug)
     ~QDebug();
-    inline void swap(QDebug &other) noexcept { qSwap(stream, other.stream); }
+    void swap(QDebug &other) noexcept { qt_ptr_swap(stream, other.stream); }
 
-    QDebug &resetFormat();
+    QT7_ONLY(Q_CORE_EXPORT) QDebug &resetFormat();
 
     inline QDebug &space() { stream->space = true; stream->ts << ' '; return *this; }
     inline QDebug &nospace() { stream->space = false; return *this; }
@@ -140,12 +112,10 @@ public:
     inline QDebug &operator<<(double t) { stream->ts << t; return maybeSpace(); }
     inline QDebug &operator<<(const char* t) { stream->ts << QString::fromUtf8(t); return maybeSpace(); }
     inline QDebug &operator<<(const char16_t *t)  { stream->ts << QStringView(t); return maybeSpace(); }
-#if QT_STRINGVIEW_LEVEL < 2
-    inline QDebug &operator<<(const QString & t) { putString(t.constData(), uint(t.length())); return maybeSpace(); }
-#endif
+    inline QDebug &operator<<(const QString & t) { putString(t.constData(), size_t(t.size())); return maybeSpace(); }
     inline QDebug &operator<<(QStringView s) { putString(s.data(), size_t(s.size())); return maybeSpace(); }
     inline QDebug &operator<<(QUtf8StringView s) { putByteArray(reinterpret_cast<const char*>(s.data()), s.size(), ContainsBinary); return maybeSpace(); }
-    inline QDebug &operator<<(QLatin1String t) { putByteArray(t.latin1(), t.size(), ContainsLatin1); return maybeSpace(); }
+    inline QDebug &operator<<(QLatin1StringView t) { putByteArray(t.latin1(), t.size(), ContainsLatin1); return maybeSpace(); }
     inline QDebug &operator<<(const QByteArray & t) { putByteArray(t.constData(), t.size(), ContainsBinary); return maybeSpace(); }
     inline QDebug &operator<<(QByteArrayView t) { putByteArray(t.constData(), t.size(), ContainsBinary); return maybeSpace(); }
     inline QDebug &operator<<(const void * t) { stream->ts << t; return maybeSpace(); }
@@ -157,6 +127,30 @@ public:
 
     inline QDebug &operator<<(QTextStreamManipulator m)
     { stream->ts << m; return *this; }
+
+    inline QDebug &operator<<(const std::string &s)
+    { return *this << QUtf8StringView(s); }
+
+    inline QDebug &operator<<(std::string_view s)
+    { return *this << QUtf8StringView(s); }
+
+    inline QDebug &operator<<(const std::wstring &s)
+    { return *this << QString::fromStdWString(s); }
+
+    inline QDebug &operator<<(std::wstring_view s)
+    { return *this << QString::fromWCharArray(s.data(), s.size()); }
+
+    inline QDebug &operator<<(const std::u16string &s)
+    { return *this << QStringView(s); }
+
+    inline QDebug &operator<<(std::u16string_view s)
+    { return *this << QStringView(s); }
+
+    inline QDebug &operator<<(const std::u32string &s)
+    { return *this << QString::fromUcs4(s.data(), s.size()); }
+
+    inline QDebug &operator<<(std::u32string_view s)
+    { return *this << QString::fromUcs4(s.data(), s.size()); }
 
     template <typename T>
     static QString toString(T &&object)
@@ -243,10 +237,22 @@ template<typename ...T>
 using QDebugIfHasDebugStream =
     std::enable_if_t<std::conjunction_v<QTypeTraits::has_ostream_operator<QDebug, T>...>, QDebug>;
 
+template<typename Container, typename ...T>
+using QDebugIfHasDebugStreamContainer =
+    std::enable_if_t<std::conjunction_v<QTypeTraits::has_ostream_operator_container<QDebug, Container, T>...>, QDebug>;
+
+#ifndef Q_QDOC
+
 template<typename T>
-inline QDebugIfHasDebugStream<T> operator<<(QDebug debug, const QList<T> &vec)
+inline QDebugIfHasDebugStreamContainer<QList<T>, T> operator<<(QDebug debug, const QList<T> &vec)
 {
     return QtPrivate::printSequentialContainer(debug, "QList", vec);
+}
+
+template<typename T, qsizetype P>
+inline QDebugIfHasDebugStream<T> operator<<(QDebug debug, const QVarLengthArray<T, P> &vec)
+{
+    return QtPrivate::printSequentialContainer(debug, "QVarLengthArray", vec);
 }
 
 template <typename T, typename Alloc>
@@ -259,6 +265,12 @@ template <typename T, typename Alloc>
 inline QDebugIfHasDebugStream<T> operator<<(QDebug debug, const std::list<T, Alloc> &vec)
 {
     return QtPrivate::printSequentialContainer(debug, "std::list", vec);
+}
+
+template <typename T>
+inline QDebugIfHasDebugStream<T> operator<<(QDebug debug, std::initializer_list<T> list)
+{
+    return QtPrivate::printSequentialContainer(debug, "std::initializer_list", list);
 }
 
 template <typename Key, typename T, typename Compare, typename Alloc>
@@ -274,25 +286,25 @@ inline QDebugIfHasDebugStream<Key, T> operator<<(QDebug debug, const std::multim
 }
 
 template <class Key, class T>
-inline QDebugIfHasDebugStream<Key, T> operator<<(QDebug debug, const QMap<Key, T> &map)
+inline QDebugIfHasDebugStreamContainer<QMap<Key, T>, Key, T> operator<<(QDebug debug, const QMap<Key, T> &map)
 {
     return QtPrivate::printAssociativeContainer(debug, "QMap", map);
 }
 
 template <class Key, class T>
-inline QDebugIfHasDebugStream<Key, T> operator<<(QDebug debug, const QMultiMap<Key, T> &map)
+inline QDebugIfHasDebugStreamContainer<QMultiMap<Key, T>, Key, T> operator<<(QDebug debug, const QMultiMap<Key, T> &map)
 {
     return QtPrivate::printAssociativeContainer(debug, "QMultiMap", map);
 }
 
 template <class Key, class T>
-inline QDebugIfHasDebugStream<Key, T> operator<<(QDebug debug, const QHash<Key, T> &hash)
+inline QDebugIfHasDebugStreamContainer<QHash<Key, T>, Key, T> operator<<(QDebug debug, const QHash<Key, T> &hash)
 {
     return QtPrivate::printAssociativeContainer(debug, "QHash", hash);
 }
 
 template <class Key, class T>
-inline QDebugIfHasDebugStream<Key, T> operator<<(QDebug debug, const QMultiHash<Key, T> &hash)
+inline QDebugIfHasDebugStreamContainer<QMultiHash<Key, T>, Key, T> operator<<(QDebug debug, const QMultiHash<Key, T> &hash)
 {
     return QtPrivate::printAssociativeContainer(debug, "QMultiHash", hash);
 }
@@ -306,7 +318,7 @@ inline QDebugIfHasDebugStream<T1, T2> operator<<(QDebug debug, const std::pair<T
 }
 
 template <typename T>
-inline QDebugIfHasDebugStream<T> operator<<(QDebug debug, const QSet<T> &set)
+inline QDebugIfHasDebugStreamContainer<QSet<T>, T> operator<<(QDebug debug, const QSet<T> &set)
 {
     return QtPrivate::printSequentialContainer(debug, "QSet", set);
 }
@@ -316,7 +328,7 @@ inline QDebugIfHasDebugStream<T> operator<<(QDebug debug, const QContiguousCache
 {
     const QDebugStateSaver saver(debug);
     debug.nospace() << "QContiguousCache(";
-    for (int i = cache.firstIndex(); i <= cache.lastIndex(); ++i) {
+    for (qsizetype i = cache.firstIndex(); i <= cache.lastIndex(); ++i) {
         debug << cache[i];
         if (i != cache.lastIndex())
             debug << ", ";
@@ -324,6 +336,51 @@ inline QDebugIfHasDebugStream<T> operator<<(QDebug debug, const QContiguousCache
     debug << ')';
     return debug;
 }
+
+#else
+template <class T>
+QDebug operator<<(QDebug debug, const QList<T> &list);
+
+template <class T, qsizetype P>
+QDebug operator<<(QDebug debug, const QVarLengthArray<T, P> &array);
+
+template <typename T, typename Alloc>
+QDebug operator<<(QDebug debug, const std::vector<T, Alloc> &vec);
+
+template <typename T, typename Alloc>
+QDebug operator<<(QDebug debug, const std::list<T, Alloc> &vec);
+
+template <typename Key, typename T, typename Compare, typename Alloc>
+QDebug operator<<(QDebug debug, const std::map<Key, T, Compare, Alloc> &map);
+
+template <typename Key, typename T, typename Compare, typename Alloc>
+QDebug operator<<(QDebug debug, const std::multimap<Key, T, Compare, Alloc> &map);
+
+template <class Key, class T>
+QDebug operator<<(QDebug debug, const QMap<Key, T> &map);
+
+template <class Key, class T>
+QDebug operator<<(QDebug debug, const QMultiMap<Key, T> &map);
+
+template <class Key, class T>
+QDebug operator<<(QDebug debug, const QHash<Key, T> &hash);
+
+template <class Key, class T>
+QDebug operator<<(QDebug debug, const QMultiHash<Key, T> &hash);
+
+template <typename T>
+QDebug operator<<(QDebug debug, const QSet<T> &set);
+
+template <class T1, class T2>
+QDebug operator<<(QDebug debug, const QPair<T1, T2> &pair);
+
+template <class T1, class T2>
+QDebug operator<<(QDebug debug, const std::pair<T1, T2> &pair);
+
+template <typename T>
+QDebug operator<<(QDebug debug, const QContiguousCache<T> &cache);
+
+#endif // Q_QDOC
 
 template <class T>
 inline QDebug operator<<(QDebug debug, const QSharedPointer<T> &ptr)
@@ -352,7 +409,7 @@ void qt_QMetaEnum_flagDebugOperator(QDebug &debug, size_t sizeofT, Int value)
     debug.resetFormat();
     debug.nospace() << "QFlags(" << Qt::hex << Qt::showbase;
     bool needSeparator = false;
-    for (uint i = 0; i < sizeofT * 8; ++i) {
+    for (size_t i = 0; i < sizeofT * 8; ++i) {
         if (value & (Int(1) << i)) {
             if (needSeparator)
                 debug << '|';
@@ -398,7 +455,7 @@ qt_QMetaEnum_flagDebugOperator_helper(QDebug debug, const QFlags<T> &flags)
 {
     const QMetaObject *obj = qt_getEnumMetaObject(T());
     const char *name = qt_getEnumName(T());
-    return qt_QMetaEnum_flagDebugOperator(debug, quint64(flags), obj, name);
+    return qt_QMetaEnum_flagDebugOperator(debug, flags.toInt(), obj, name);
 }
 
 template <class T>
@@ -471,6 +528,7 @@ inline QDebug operator<<(QDebug debug, QKeyCombination combination)
 
 QT_END_NAMESPACE
 Q_FORWARD_DECLARE_CF_TYPE(CFString);
+struct objc_object;
 Q_FORWARD_DECLARE_OBJC_CLASS(NSObject);
 QT_FOR_EACH_CORE_FOUNDATION_TYPE(QT_FORWARD_DECLARE_CF_TYPE)
 QT_FOR_EACH_MUTABLE_CORE_FOUNDATION_TYPE(QT_FORWARD_DECLARE_MUTABLE_CF_TYPE)
@@ -495,6 +553,10 @@ QT_BEGIN_NAMESPACE
     }
 
 // Defined in qcore_mac_objc.mm
+#if defined(__OBJC__)
+Q_CORE_EXPORT QDebug operator<<(QDebug, id);
+#endif
+Q_CORE_EXPORT QDebug operator<<(QDebug, objc_object *);
 Q_CORE_EXPORT QDebug operator<<(QDebug, const NSObject *);
 Q_CORE_EXPORT QDebug operator<<(QDebug, CFStringRef);
 

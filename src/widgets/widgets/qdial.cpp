@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qdial.h"
 
@@ -52,7 +16,7 @@
 #include <qslider.h>
 #include <private/qabstractslider_p.h>
 #include <private/qmath_p.h>
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
 #include "qaccessible.h"
 #endif
 #include <qmath.h>
@@ -222,11 +186,11 @@ int QDialPrivate::valueFromPoint(const QPoint &p) const
 
     If you are using the mouse wheel to adjust the dial, the increment
     value is determined by the lesser value of
-    \l{QApplication::wheelScrollLines()} {wheelScrollLines} multipled
+    \l{QApplication::wheelScrollLines()} {wheelScrollLines} multiplied
     by \l {QAbstractSlider::singleStep} {singleStep}, and
     \l {QAbstractSlider::pageStep} {pageStep}.
 
-    \sa QScrollBar, QSpinBox, QSlider, {fowler}{GUI Design Handbook: Slider}, {Sliders Example}
+    \sa QScrollBar, QSpinBox, QSlider, {Sliders Example}
 */
 
 /*!
@@ -370,11 +334,9 @@ bool QDial::wrapping() const
     \property QDial::notchSize
     \brief the current notch size
 
-    The notch size is in range control units, not pixels, and if
-    possible it is a multiple of singleStep() that results in an
+    The notch size is in range control units, not pixels, and is
+    calculated to be a multiple of singleStep() that results in an
     on-screen notch size near notchTarget().
-
-    By default, this property has a value of 1.
 
     \sa notchTarget(), singleStep()
 */
@@ -383,21 +345,17 @@ int QDial::notchSize() const
 {
     Q_D(const QDial);
     // radius of the arc
-    int r = qMin(width(), height())/2;
+    qreal r = qMin(width(), height())/2.0;
     // length of the whole arc
-    int l = (int)(r * (d->wrapping ? 6 : 5) * Q_PI / 6);
+    int l = qRound(r * (d->wrapping ? 6.0 : 5.0) * Q_PI / 6.0);
     // length of the arc from minValue() to minValue()+pageStep()
     if (d->maximum > d->minimum + d->pageStep)
-        l = (int)(0.5 + l * d->pageStep / (d->maximum - d->minimum));
+        l = qRound(l * d->pageStep / double(d->maximum - d->minimum));
     // length of a singleStep arc
-    l = l * d->singleStep / (d->pageStep ? d->pageStep : 1);
-    if (l < 1)
-        l = 1;
+    l = qMax(l * d->singleStep / (d->pageStep ? d->pageStep : 1), 1);
     // how many times singleStep can be draw in d->target pixels
-    l = (int)(0.5 + d->target / l);
-    // we want notchSize() to be a non-zero multiple of lineStep()
-    if (!l)
-        l = 1;
+    l = qMax(qRound(d->target / l), 1);
+    // we want notchSize() to be a non-zero multiple of singleStep()
     return d->singleStep * l;
 }
 

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qabstractscrollarea.h"
 
@@ -67,6 +31,8 @@
 #endif
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 /*!
     \class QAbstractScrollArea
@@ -202,7 +168,7 @@ void QAbstractScrollAreaScrollBarContainer::addWidget(QWidget *widget, LogicalPo
 }
 
 /*! \internal
-    Retuns a list of scroll bar widgets for the given position. The scroll bar
+    Returns a list of scroll-bar widgets for the given position. The scroll bar
     itself is not returned.
 */
 QWidgetList QAbstractScrollAreaScrollBarContainer::widgets(LogicalPosition position)
@@ -282,11 +248,11 @@ void QAbstractScrollAreaPrivate::init()
 {
     Q_Q(QAbstractScrollArea);
     viewport = new QWidget(q);
-    viewport->setObjectName(QLatin1String("qt_scrollarea_viewport"));
+    viewport->setObjectName("qt_scrollarea_viewport"_L1);
     viewport->setBackgroundRole(QPalette::Base);
     viewport->setAutoFillBackground(true);
     scrollBarContainers[Qt::Horizontal] = new QAbstractScrollAreaScrollBarContainer(Qt::Horizontal, q);
-    scrollBarContainers[Qt::Horizontal]->setObjectName(QLatin1String("qt_scrollarea_hcontainer"));
+    scrollBarContainers[Qt::Horizontal]->setObjectName("qt_scrollarea_hcontainer"_L1);
     hbar = scrollBarContainers[Qt::Horizontal]->scrollBar;
     hbar->setRange(0,0);
     scrollBarContainers[Qt::Horizontal]->setVisible(false);
@@ -294,7 +260,7 @@ void QAbstractScrollAreaPrivate::init()
     QObject::connect(hbar, SIGNAL(valueChanged(int)), q, SLOT(_q_hslide(int)));
     QObject::connect(hbar, SIGNAL(rangeChanged(int,int)), q, SLOT(_q_showOrHideScrollBars()), Qt::QueuedConnection);
     scrollBarContainers[Qt::Vertical] = new QAbstractScrollAreaScrollBarContainer(Qt::Vertical, q);
-    scrollBarContainers[Qt::Vertical]->setObjectName(QLatin1String("qt_scrollarea_vcontainer"));
+    scrollBarContainers[Qt::Vertical]->setObjectName("qt_scrollarea_vcontainer"_L1);
     vbar = scrollBarContainers[Qt::Vertical]->scrollBar;
     vbar->setRange(0,0);
     scrollBarContainers[Qt::Vertical]->setVisible(false);
@@ -402,7 +368,7 @@ void QAbstractScrollAreaPrivate::layoutChildren_helper(bool *needHorizontalScrol
 #if QT_CONFIG(itemviews)
     if ((vscrollOverlap > 0 && needv) || (hscrollOverlap > 0 && needh)) {
         const QList<QHeaderView *> headers = q->findChildren<QHeaderView*>();
-        if (headers.count() <= 2) {
+        if (headers.size() <= 2) {
             for (const QHeaderView *header : headers) {
                 const QRect geo = header->geometry();
                 if (header->orientation() == Qt::Vertical && header->isVisible() && QStyle::visualRect(opt.direction, opt.rect, geo).left() <= opt.rect.width() / 2)
@@ -442,8 +408,10 @@ void QAbstractScrollAreaPrivate::layoutChildren_helper(bool *needHorizontalScrol
         viewportRect.adjust(right, top, -left, -bottom);
     else
         viewportRect.adjust(left, top, -right, -bottom);
+    viewportRect = QStyle::visualRect(opt.direction, opt.rect, viewportRect);
+    viewportRect.translate(-overshoot);
+    viewport->setGeometry(viewportRect); // resize the viewport last
 
-    viewport->setGeometry(QStyle::visualRect(opt.direction, opt.rect, viewportRect)); // resize the viewport last
     *needHorizontalScrollbar = needh;
     *needVerticalScrollbar = needv;
 }
@@ -836,7 +804,7 @@ QWidgetList QAbstractScrollArea::scrollBarWidgets(Qt::Alignment alignment)
 /*!
     Sets the margins around the scrolling area to \a left, \a top, \a
     right and \a bottom. This is useful for applications such as
-    spreadsheets with "locked" rows and columns. The marginal space is
+    spreadsheets with "locked" rows and columns. The marginal space
     is left blank; put widgets in the unused area.
 
     Note that this function is frequently called by QTreeView and
@@ -1230,49 +1198,57 @@ void QAbstractScrollArea::contextMenuEvent(QContextMenuEvent *e)
 void QAbstractScrollArea::keyPressEvent(QKeyEvent * e)
 {
     Q_D(QAbstractScrollArea);
-
-#ifdef QT_KEYPAD_NAVIGATION
-    if (QApplicationPrivate::keypadNavigationEnabled() && !hasEditFocus()) {
-        e->ignore();
-        return;
-    }
+    if (false){
+#ifndef QT_NO_SHORTCUT
+    } else if (e == QKeySequence::MoveToPreviousPage) {
+        d->vbar->triggerAction(QScrollBar::SliderPageStepSub);
+    } else if (e == QKeySequence::MoveToNextPage) {
+        d->vbar->triggerAction(QScrollBar::SliderPageStepAdd);
 #endif
-    switch (e->key()) {
-    case Qt::Key_Up:
-        d->vbar->triggerAction(QScrollBar::SliderSingleStepSub);
-        break;
-    case Qt::Key_Down:
-        d->vbar->triggerAction(QScrollBar::SliderSingleStepAdd);
-        break;
-    case Qt::Key_Left:
+    } else {
 #ifdef QT_KEYPAD_NAVIGATION
-    if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
-        && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->minimum())) {
-        //if we aren't using the hbar or we are already at the leftmost point ignore
-        e->ignore();
-        return;
-    }
+        if (QApplicationPrivate::keypadNavigationEnabled() && !hasEditFocus()) {
+            e->ignore();
+            return;
+        }
 #endif
-        d->hbar->triggerAction(
-            layoutDirection() == Qt::LeftToRight
-            ? QScrollBar::SliderSingleStepSub : QScrollBar::SliderSingleStepAdd);
-        break;
-    case Qt::Key_Right:
+        switch (e->key()) {
+        case Qt::Key_Up:
+            d->vbar->triggerAction(QScrollBar::SliderSingleStepSub);
+            break;
+        case Qt::Key_Down:
+            d->vbar->triggerAction(QScrollBar::SliderSingleStepAdd);
+            break;
+        case Qt::Key_Left:
 #ifdef QT_KEYPAD_NAVIGATION
-    if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
-        && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->maximum())) {
-        //if we aren't using the hbar or we are already at the rightmost point ignore
-        e->ignore();
-        return;
-    }
+        if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
+            && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->minimum())) {
+            //if we aren't using the hbar or we are already at the leftmost point ignore
+            e->ignore();
+            return;
+        }
 #endif
-        d->hbar->triggerAction(
-            layoutDirection() == Qt::LeftToRight
-            ? QScrollBar::SliderSingleStepAdd : QScrollBar::SliderSingleStepSub);
-        break;
-    default:
-        e->ignore();
-        return;
+            d->hbar->triggerAction(
+                layoutDirection() == Qt::LeftToRight
+                ? QScrollBar::SliderSingleStepSub : QScrollBar::SliderSingleStepAdd);
+            break;
+        case Qt::Key_Right:
+#ifdef QT_KEYPAD_NAVIGATION
+        if (QApplicationPrivate::keypadNavigationEnabled() && hasEditFocus()
+            && (!d->hbar->isVisible() || d->hbar->value() == d->hbar->maximum())) {
+            //if we aren't using the hbar or we are already at the rightmost point ignore
+            e->ignore();
+            return;
+        }
+#endif
+            d->hbar->triggerAction(
+                layoutDirection() == Qt::LeftToRight
+                ? QScrollBar::SliderSingleStepAdd : QScrollBar::SliderSingleStepSub);
+            break;
+        default:
+            e->ignore();
+            return;
+        }
     }
     e->accept();
 }

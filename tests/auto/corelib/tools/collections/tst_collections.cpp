@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 // test the container forwards
@@ -63,6 +38,9 @@ void foo()
 
 #include <QTest>
 #include <QVector>
+#include <QScopedPointer>
+#include <QThread>
+#include <QSemaphore>
 
 #include <algorithm>
 
@@ -123,6 +101,15 @@ private slots:
 
     void foreach_2();
     void insert_remove_loop();
+
+    void detachAssociativeContainerQMap() { detachAssociativeContainerImpl<QMap>(); }
+    void detachAssociativeContainerQMultiMap() { detachAssociativeContainerImpl<QMultiMap>(); }
+    void detachAssociativeContainerQHash() { detachAssociativeContainerImpl<QHash>(); }
+    void detachAssociativeContainerQMultiHash() { detachAssociativeContainerImpl<QMultiHash>(); }
+
+private:
+    template <template<typename, typename> typename Container>
+    void detachAssociativeContainerImpl();
 };
 
 struct LargeStatic {
@@ -159,6 +146,151 @@ QT_END_NAMESPACE
 struct Pod {
     int i1, i2;
 };
+
+// Compile-time checks for recursive containers
+struct Dummy
+{
+    bool operator==(const Dummy &) const { return false; }
+    bool operator<(const Dummy &) const { return false; }
+};
+
+struct RecursiveList : public QList<RecursiveList> {};
+struct RecursiveSet : public QSet<RecursiveSet> {};
+struct RecursiveMapV : public QMap<Dummy, RecursiveMapV> {};
+struct RecursiveMapK : public QMap<RecursiveMapK, Dummy> {};
+struct RecursiveMultiMapV : public QMultiMap<Dummy, RecursiveMultiMapV> {};
+struct RecursiveMultiMapK : public QMultiMap<RecursiveMultiMapK, Dummy> {};
+struct RecursiveHashV : public QHash<Dummy, RecursiveHashV> {};
+struct RecursiveHashK : public QHash<RecursiveHashK, Dummy> {};
+struct RecursiveMultiHashV : public QMultiHash<Dummy, RecursiveMultiHashV> {};
+struct RecursiveMultiHashK : public QMultiHash<RecursiveMultiHashK, Dummy> {};
+
+struct Empty {};
+struct NoCmpParamRecursiveMapV : public QMap<Empty, NoCmpParamRecursiveMapV> {};
+struct NoCmpParamRecursiveMapK : public QMap<NoCmpParamRecursiveMapK, Empty> {};
+struct NoCmpParamRecursiveMultiMapV : public QMultiMap<Empty, NoCmpParamRecursiveMultiMapV> {};
+struct NoCmpParamRecursiveMultiMapK : public QMultiMap<NoCmpParamRecursiveMultiMapK, Empty> {};
+struct NoCmpParamRecursiveHashV : public QHash<Empty, NoCmpParamRecursiveHashV> {};
+struct NoCmpParamRecursiveHashK : public QHash<NoCmpParamRecursiveHashK, Empty> {};
+struct NoCmpParamRecursiveMultiHashV : public QMultiHash<Empty, NoCmpParamRecursiveMultiHashV> {};
+struct NoCmpParamRecursiveMultiHashK : public QMultiHash<NoCmpParamRecursiveMultiHashK, Empty> {};
+
+struct NoCmpRecursiveList : public QList<NoCmpRecursiveList>
+{
+    bool operator==(const RecursiveList &) const = delete;
+    bool operator<(const RecursiveList &) const = delete;
+};
+struct NoCmpRecursiveSet : public QSet<NoCmpRecursiveSet>
+{
+    bool operator==(const NoCmpRecursiveSet &) const = delete;
+};
+struct NoCmpRecursiveMapV : public QMap<Dummy, NoCmpRecursiveMapV>
+{
+    bool operator==(const NoCmpRecursiveMapV &) const = delete;
+};
+struct NoCmpRecursiveMapK : public QMap<NoCmpRecursiveMapK, Dummy>
+{
+    bool operator==(const NoCmpRecursiveMapK &) const = delete;
+};
+struct NoCmpRecursiveMultiMapV : public QMultiMap<Dummy, NoCmpRecursiveMultiMapV>
+{
+    bool operator==(const NoCmpRecursiveMultiMapV &) const = delete;
+};
+struct NoCmpRecursiveMultiMapK : public QMultiMap<NoCmpRecursiveMultiMapK, Dummy>
+{
+    bool operator==(const NoCmpRecursiveMultiMapK &) const = delete;
+};
+struct NoCmpRecursiveHashV : public QHash<Dummy, NoCmpRecursiveHashV>
+{
+    bool operator==(const NoCmpRecursiveHashV &) const = delete;
+};
+struct NoCmpRecursiveHashK : public QHash<NoCmpRecursiveHashK, Dummy>
+{
+    bool operator==(const NoCmpRecursiveHashK &) const = delete;
+};
+struct NoCmpRecursiveMultiHashV : public QMultiHash<Dummy, NoCmpRecursiveMultiHashV>
+{
+    bool operator==(const NoCmpRecursiveMultiHashV &) const = delete;
+};
+struct NoCmpRecursiveMultiHashK : public QMultiHash<NoCmpRecursiveMultiHashK, Dummy>
+{
+    bool operator==(const NoCmpRecursiveMultiHashK &) const = delete;
+};
+
+uint qHash(const Dummy &) { return 0; }
+uint qHash(const RecursiveSet &) { return 0; }
+uint qHash(const RecursiveHashK &) { return 0; }
+uint qHash(const RecursiveHashV &) { return 0; }
+uint qHash(const RecursiveMultiHashK &) { return 0; }
+uint qHash(const RecursiveMultiHashV &) { return 0; }
+
+Q_DECLARE_METATYPE(RecursiveList);
+Q_DECLARE_METATYPE(RecursiveSet);
+Q_DECLARE_METATYPE(RecursiveMapV);
+Q_DECLARE_METATYPE(RecursiveMapK);
+Q_DECLARE_METATYPE(RecursiveMultiMapV);
+Q_DECLARE_METATYPE(RecursiveMultiMapK);
+Q_DECLARE_METATYPE(RecursiveHashV);
+Q_DECLARE_METATYPE(RecursiveHashK);
+Q_DECLARE_METATYPE(RecursiveMultiHashV);
+Q_DECLARE_METATYPE(RecursiveMultiHashK);
+
+Q_DECLARE_METATYPE(NoCmpParamRecursiveMapV);
+Q_DECLARE_METATYPE(NoCmpParamRecursiveMapK);
+Q_DECLARE_METATYPE(NoCmpParamRecursiveMultiMapV);
+Q_DECLARE_METATYPE(NoCmpParamRecursiveMultiMapK);
+Q_DECLARE_METATYPE(NoCmpParamRecursiveHashK);
+Q_DECLARE_METATYPE(NoCmpParamRecursiveHashV);
+Q_DECLARE_METATYPE(NoCmpParamRecursiveMultiHashK);
+Q_DECLARE_METATYPE(NoCmpParamRecursiveMultiHashV);
+
+Q_DECLARE_METATYPE(NoCmpRecursiveList);
+Q_DECLARE_METATYPE(NoCmpRecursiveMapV);
+Q_DECLARE_METATYPE(NoCmpRecursiveMapK);
+Q_DECLARE_METATYPE(NoCmpRecursiveMultiMapV);
+Q_DECLARE_METATYPE(NoCmpRecursiveMultiMapK);
+Q_DECLARE_METATYPE(NoCmpRecursiveHashV);
+Q_DECLARE_METATYPE(NoCmpRecursiveHashK);
+Q_DECLARE_METATYPE(NoCmpRecursiveMultiHashV);
+Q_DECLARE_METATYPE(NoCmpRecursiveMultiHashK);
+
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveList>);
+static_assert(QTypeTraits::has_operator_less_than_v<RecursiveList>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveSet>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveMapV>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveMapK>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveMultiMapV>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveMultiMapK>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveHashV>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveHashK>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveMultiHashV>);
+static_assert(QTypeTraits::has_operator_equal_v<RecursiveMultiHashK>);
+
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveMapV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveMapK>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveMultiMapV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveMultiMapK>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveHashV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveHashK>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveMultiHashV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpParamRecursiveMultiHashK>);
+
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveList>);
+static_assert(!QTypeTraits::has_operator_less_than_v<NoCmpRecursiveList>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveSet>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveMapV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveMapK>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveMultiMapV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveMultiMapK>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveHashV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveHashK>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveMultiHashV>);
+static_assert(!QTypeTraits::has_operator_equal_v<NoCmpRecursiveMultiHashK>);
+
+template <typename T>
+constexpr inline bool has_prepend_v = true;
+template <typename T, qsizetype N>
+constexpr inline bool has_prepend_v<QVarLengthArray<T,N>> = false; // deprecated in Qt 6.3
 
 void tst_Collections::typeinfo()
 {
@@ -552,7 +684,7 @@ QT_WARNING_POP
         list.insert(0, "atzero");
         QCOMPARE(list.at(0), QString("atzero"));
 
-        int listCount = list.count();
+        int listCount = list.size();
         list.insert(listCount, "atcount");
         QCOMPARE(list.at(listCount), QString("atcount"));
     }
@@ -977,6 +1109,16 @@ void tst_Collections::byteArray()
     QVERIFY(hello.indexOf('l') == 2);
     QVERIFY(hello.indexOf('l',2) == 2);
     QVERIFY(hello.indexOf('l',3) == 3);
+
+    QByteArray empty;
+    QCOMPARE(empty.indexOf("x"), -1);
+    QCOMPARE(empty.lastIndexOf("x"), -1);
+    QCOMPARE(empty.lastIndexOf("x", 0), -1);
+    QCOMPARE(empty.count("x"), 0);
+    QCOMPARE(empty.indexOf(""), 0);
+    QCOMPARE(empty.lastIndexOf(""), 0);
+    QCOMPARE(empty.lastIndexOf("", -1), -1);
+    QCOMPARE(empty.count(""), 1);
 
     QByteArray large = "000 100 200 300 400 500 600 700 800 900";
 
@@ -1710,10 +1852,20 @@ void tst_Collections::qstring()
     QVERIFY (hello.contains('e') != false);
 
     QVERIFY(hello.indexOf('e') == 1);
-    QVERIFY(hello.indexOf('e', -10) == 1);
+    QVERIFY(hello.indexOf('e', -10) == -1);
     QVERIFY(hello.indexOf('l') == 2);
     QVERIFY(hello.indexOf('l',2) == 2);
     QVERIFY(hello.indexOf('l',3) == 3);
+
+    QString empty;
+    QCOMPARE(empty.indexOf("x"), -1);
+    QCOMPARE(empty.lastIndexOf("x"), -1);
+    QCOMPARE(empty.lastIndexOf("x", 0), -1);
+    QCOMPARE(empty.count("x"), 0);
+    QCOMPARE(empty.indexOf(""), 0);
+    QCOMPARE(empty.lastIndexOf(""), 0);
+    QCOMPARE(empty.lastIndexOf("", -1), -1);
+    QCOMPARE(empty.count(""), 1);
 
     QString large = "000 100 200 300 400 500 600 700 800 900";
 
@@ -1723,6 +1875,20 @@ void tst_Collections::qstring()
     QVERIFY(large.lastIndexOf("700") == 28);
     QVERIFY(large.lastIndexOf("700", 28) == 28);
     QVERIFY(large.lastIndexOf("700", 27) == -1);
+
+    QCOMPARE(large.indexOf(""), 0);
+    QCOMPARE(large.indexOf(QString()), 0);
+    QCOMPARE(large.indexOf(QLatin1String()), 0);
+    QCOMPARE(large.indexOf(QStringView()), 0);
+    QCOMPARE(large.lastIndexOf(""), large.size());
+    QCOMPARE(large.lastIndexOf("", -1), large.size() - 1);
+    QCOMPARE(large.lastIndexOf(QString()), large.size());
+    QCOMPARE(large.lastIndexOf(QLatin1String()), large.size());
+    QCOMPARE(large.lastIndexOf(QStringView()), large.size());
+    QCOMPARE(large.count(""), large.size() + 1);
+    QCOMPARE(large.count(QString()), large.size() + 1);
+    QCOMPARE(large.count(QLatin1String()), large.size() + 1);
+    QCOMPARE(large.count(QStringView()), large.size() + 1);
 
     QVERIFY(large.contains("200"));
     QVERIFY(!large.contains("201"));
@@ -1852,8 +2018,8 @@ void tst_Collections::qstring()
     s = "ascii";
     s += QChar((uchar) 0xb0);
     QVERIFY(s.toUtf8() != s.toLatin1());
-    QCOMPARE(s[s.length()-1].unicode(), (ushort)0xb0);
-    QCOMPARE(s.left(s.length()-1), QLatin1String("ascii"));
+    QCOMPARE(s[s.size()-1].unicode(), (ushort)0xb0);
+    QCOMPARE(s.left(s.size()-1), QLatin1String("ascii"));
 
     QVERIFY(s == QString::fromUtf8(s.toUtf8().constData()));
 
@@ -1905,7 +2071,7 @@ void tst_Collections::qstring()
 
 
     QString str = "Hello";
-    QString cstr = QString::fromRawData(str.unicode(), str.length());
+    QString cstr = QString::fromRawData(str.unicode(), str.size());
     QCOMPARE(str, QLatin1String("Hello"));
     QCOMPARE(cstr, QLatin1String("Hello"));
     cstr.clear();
@@ -2527,7 +2693,7 @@ void tst_Collections::vector_stl()
     QFETCH(QStringList, elements);
 
     QList<QString> vector;
-    for (int i = 0; i < elements.count(); ++i)
+    for (int i = 0; i < elements.size(); ++i)
         vector << elements.at(i);
 
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
@@ -2562,7 +2728,7 @@ void tst_Collections::list_stl()
     QFETCH(QStringList, elements);
 
     QList<QString> list;
-    for (int i = 0; i < elements.count(); ++i)
+    for (int i = 0; i < elements.size(); ++i)
         list << elements.at(i);
 
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
@@ -2655,7 +2821,7 @@ void instantiateContainer()
 
     container.clear();
     container.contains(value);
-    container.count();
+    container.size();
     container.empty();
     container.isEmpty();
     container.size();
@@ -2903,9 +3069,8 @@ class T2;
 
 void tst_Collections::forwardDeclared()
 {
-#define COMMA ,
-#define TEST(type) do { \
-        using C = type; \
+#define TEST(...) do { \
+        using C = __VA_ARGS__; \
         C *x = nullptr; \
         C::iterator i; \
         C::const_iterator j; \
@@ -2914,16 +3079,15 @@ void tst_Collections::forwardDeclared()
         Q_UNUSED(j); \
     } while (false)
 
-    TEST(QHash<Key1 COMMA T1>);
-    TEST(QMap<Key1 COMMA T1>);
-    TEST(QMultiMap<Key1 COMMA T1>);
+    TEST(QHash<Key1, T1>);
+    TEST(QMap<Key1, T1>);
+    TEST(QMultiMap<Key1, T1>);
     TEST(QList<T1>);
     TEST(QVector<T1>);
     TEST(QStack<T1>);
     TEST(QQueue<T1>);
     TEST(QSet<T1>);
 #undef TEST
-#undef COMMA
 
     {
         using C = QPair<T1, T2>;
@@ -3080,7 +3244,7 @@ template<template<class> class C> void QTBUG13079_collectionInsideCollectionImpl
     QCOMPARE(nodeList.first().s, QString::fromLatin1("child"));
 
     nodeList = nodeList.first().children;
-    QCOMPARE(nodeList.count(), 0);
+    QCOMPARE(nodeList.size(), 0);
     nodeList << QTBUG13079_Node<C>();
 }
 
@@ -3105,7 +3269,7 @@ template<template<class, class> class C> void QTBUG13079_collectionInsideCollect
     QCOMPARE(nodeMap[12].s, QString::fromLatin1("child"));
 
     nodeMap = nodeMap[12].children;
-    QCOMPARE(nodeMap.count(), 0);
+    QCOMPARE(nodeMap.size(), 0);
     nodeMap[42] = QTBUG13079_NodeAssoc<C>();
 }
 
@@ -3172,7 +3336,7 @@ void tst_Collections::QTBUG13079_collectionInsideCollection()
         QSet<QTBUG13079_Node<QSet> > nodeSet;
         nodeSet << QTBUG13079_Node<QSet>();
         nodeSet = nodeSet.begin()->children;
-        QCOMPARE(nodeSet.count(), 0);
+        QCOMPARE(nodeSet.size(), 0);
     }
 
     QTBUG13079_collectionInsideCollectionAssocImpl<QMap>();
@@ -3194,7 +3358,7 @@ template<class Container> void foreach_test_arrays(const Container &container)
         set << val;
         i++;
     }
-    QCOMPARE(set.count(), container.count());
+    QCOMPARE(set.size(), container.size());
 
     //modify the container while iterating.
     Container c2 = container;
@@ -3231,9 +3395,9 @@ void tst_Collections::foreach_2()
         varl2 << i;
         varl3 << i;
     }
-    QCOMPARE(varl1.count(), intlist.count());
-    QCOMPARE(varl2.count(), intlist.count());
-    QCOMPARE(varl3.count(), intlist.count());
+    QCOMPARE(varl1.size(), intlist.size());
+    QCOMPARE(varl2.size(), intlist.size());
+    QCOMPARE(varl3.size(), intlist.size());
 
     QVarLengthArray<QString> varl4;
     QVarLengthArray<QString, 3> varl5;
@@ -3243,9 +3407,9 @@ void tst_Collections::foreach_2()
         varl5 << str;
         varl6 << str;
     }
-    QCOMPARE(varl4.count(), strlist.count());
-    QCOMPARE(varl5.count(), strlist.count());
-    QCOMPARE(varl6.count(), strlist.count());
+    QCOMPARE(varl4.size(), strlist.size());
+    QCOMPARE(varl5.size(), strlist.size());
+    QCOMPARE(varl6.size(), strlist.size());
 }
 
 struct IntOrString
@@ -3266,14 +3430,17 @@ template<class Container> void insert_remove_loop_impl()
     t.append(T(IntOrString(1)));
     t << (T(IntOrString(2)));
     t += (T(IntOrString(3)));
-    t.prepend(T(IntOrString(4)));
+    if constexpr (has_prepend_v<Container>)
+        t.prepend(T(IntOrString(4)));
+    else
+        t.insert(t.cbegin(), T(IntOrString(4)));
     t.insert(2, 3 , T(IntOrString(5)));
     t.insert(4, T(IntOrString(6)));
     t.insert(t.begin() + 2, T(IntOrString(7)));
     t.insert(t.begin() + 5, 3,  T(IntOrString(8)));
     int expect1[] = { 4 , 1 , 7, 5 , 5 , 8, 8, 8, 6, 5, 2 , 3 };
-    QCOMPARE(size_t(t.count()), sizeof(expect1)/sizeof(int));
-    for (int i = 0; i < t.count(); i++) {
+    QCOMPARE(size_t(t.size()), sizeof(expect1)/sizeof(int));
+    for (int i = 0; i < t.size(); i++) {
         QCOMPARE(t[i], T(IntOrString(expect1[i])));
     }
 
@@ -3287,8 +3454,8 @@ template<class Container> void insert_remove_loop_impl()
     t.remove(7);
     t.remove(2, 3);
     int expect2[] = { 4 , 1 , 9, 8, 6, 5, 2 , 3 };
-    QCOMPARE(size_t(t.count()), sizeof(expect2)/sizeof(int));
-    for (int i = 0; i < t.count(); i++) {
+    QCOMPARE(size_t(t.size()), sizeof(expect2)/sizeof(int));
+    for (int i = 0; i < t.size(); i++) {
         QCOMPARE(t[i], T(IntOrString(expect2[i])));
     }
 
@@ -3300,16 +3467,16 @@ template<class Container> void insert_remove_loop_impl()
     }
 
     int expect3[] = { 1 , 9, 5, 3 };
-    QCOMPARE(size_t(t.count()), sizeof(expect3)/sizeof(int));
-    for (int i = 0; i < t.count(); i++) {
+    QCOMPARE(size_t(t.size()), sizeof(expect3)/sizeof(int));
+    for (int i = 0; i < t.size(); i++) {
         QCOMPARE(t[i], T(IntOrString(expect3[i])));
     }
 
     t.erase(t.begin() + 1, t.end() - 1);
 
     int expect4[] = { 1 , 3 };
-    QCOMPARE(size_t(t.count()), sizeof(expect4)/sizeof(int));
-    for (int i = 0; i < t.count(); i++) {
+    QCOMPARE(size_t(t.size()), sizeof(expect4)/sizeof(int));
+    for (int i = 0; i < t.size(); i++) {
         QCOMPARE(t[i], T(IntOrString(expect4[i])));
     }
 
@@ -3326,8 +3493,8 @@ template<class Container> void insert_remove_loop_impl()
 
     int expect5[] = { 1, 1, 2, 3*3, 3, 3*3+1, 10, 11*11, 11, 11*11+1, 12 , 13*13, 13, 13*13+1, 14,
                       15*15, 15, 15*15+1, 16 , 17*17, 17, 17*17+1 ,18 , 19*19, 19, 19*19+1, 20, 21*21, 21, 21*21+1 };
-    QCOMPARE(size_t(t.count()), sizeof(expect5)/sizeof(int));
-    for (int i = 0; i < t.count(); i++) {
+    QCOMPARE(size_t(t.size()), sizeof(expect5)/sizeof(int));
+    for (int i = 0; i < t.size(); i++) {
         QCOMPARE(t[i], T(IntOrString(expect5[i])));
     }
 
@@ -3337,8 +3504,8 @@ template<class Container> void insert_remove_loop_impl()
     t.insert(2, 4, T(IntOrString(7)));
 
     int expect6[] = { 1, 2, 7, 7, 7, 7, 9, 9, 9, 9, 3, 4 };
-    QCOMPARE(size_t(t.count()), sizeof(expect6)/sizeof(int));
-    for (int i = 0; i < t.count(); i++) {
+    QCOMPARE(size_t(t.size()), sizeof(expect6)/sizeof(int));
+    for (int i = 0; i < t.size(); i++) {
         QCOMPARE(t[i], T(IntOrString(expect6[i])));
     }
 
@@ -3371,7 +3538,63 @@ void tst_Collections::insert_remove_loop()
     insert_remove_loop_impl<QVarLengthArray<std::string, 15>>();
 }
 
+template <template<typename, typename> typename Container>
+void tst_Collections::detachAssociativeContainerImpl()
+{
+    constexpr int RUNS = 50;
 
+    for (int run = 0; run < RUNS; ++run) {
+        Container<int, int> container;
+
+        for (int i = 0; i < 1'000; ++i) {
+            container.insert(i, i);
+            container.insert(i, i); // for multi-keyed containers
+        }
+
+        const auto it = container.constBegin();
+        const auto &key = it.key();
+        const auto &value = it.value();
+        const auto keyCopy = key;
+        const auto valueCopy = value;
+
+        QSemaphore sem1, sem2;
+        auto detachInAnotherThread = [&sem1, &sem2, copy = container]() mutable {
+            sem1.release();
+            sem2.acquire();
+            copy.clear(); // <==
+        };
+
+        QScopedPointer thread(QThread::create(std::move(detachInAnotherThread)));
+        thread->start();
+
+        sem2.release();
+        sem1.acquire();
+
+        // The following call may detach (because the container is
+        // shared), and then use key/value to search+insert.
+        //
+        // This means that key/value, as references, have to be valid
+        // throughout the insertion procedure. Note that they are
+        // references into the container *itself*; and that the
+        // insertion procedure is working on a new (detached) copy of
+        // the container's payload.
+        //
+        // There is now a possible scenario in which the clear() above
+        // finds the copy's refcount at 1, hence not perform a detach,
+        // and destroy its payload. But key/value were references into
+        // *that* payload (it's the payload that `container` itself
+        // used to share). If inside insert() we don't take extra
+        // measures to keep the payload alive, now they're dangling and
+        // the insertion will malfunction.
+
+        container.insert(key, value);
+
+        QVERIFY(container.contains(keyCopy));
+        QCOMPARE(container.value(keyCopy), valueCopy);
+
+        thread->wait();
+    }
+}
 
 QTEST_APPLESS_MAIN(tst_Collections)
 #include "tst_collections.moc"

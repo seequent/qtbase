@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qfont.h"
 #include "qdebug.h"
@@ -136,14 +100,14 @@ bool QFontDef::exactMatch(const QFontDef &other) const
        );
 }
 
-extern bool qt_is_gui_used;
+extern bool qt_is_tty_app;
 
 Q_GUI_EXPORT int qt_defaultDpiX()
 {
     if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
         return 96;
 
-    if (!qt_is_gui_used)
+    if (qt_is_tty_app)
         return 75;
 
     if (const QScreen *screen = QGuiApplication::primaryScreen())
@@ -158,7 +122,7 @@ Q_GUI_EXPORT int qt_defaultDpiY()
     if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
         return 96;
 
-    if (!qt_is_gui_used)
+    if (qt_is_tty_app)
         return 75;
 
     if (const QScreen *screen = QGuiApplication::primaryScreen())
@@ -208,14 +172,14 @@ static QStringList splitIntoFamilies(const QString &family)
     QStringList familyList;
     if (family.isEmpty())
         return familyList;
-    const auto list = QStringView{family}.split(QLatin1Char(','));
+    const auto list = QStringView{family}.split(u',');
     const int numFamilies = list.size();
     familyList.reserve(numFamilies);
     for (int i = 0; i < numFamilies; ++i) {
         auto str = list.at(i).trimmed();
-        if ((str.startsWith(QLatin1Char('"')) && str.endsWith(QLatin1Char('"')))
-            || (str.startsWith(QLatin1Char('\'')) && str.endsWith(QLatin1Char('\'')))) {
-            str = str.mid(1, str.length() - 2);
+        if ((str.startsWith(u'"') && str.endsWith(u'"'))
+            || (str.startsWith(u'\'') && str.endsWith(u'\''))) {
+            str = str.mid(1, str.size() - 2);
         }
         familyList << str.toString();
     }
@@ -258,8 +222,10 @@ QFontPrivate::~QFontPrivate()
     if (engineData && !engineData->ref.deref())
         delete engineData;
     engineData = nullptr;
-    if (scFont && scFont != this)
-        scFont->ref.deref();
+    if (scFont && scFont != this) {
+        if (!scFont->ref.deref())
+            delete scFont;
+    }
     scFont = nullptr;
 }
 
@@ -447,7 +413,7 @@ QFontEngineData::~QFontEngineData()
     The attributes set in the constructor can also be set later, e.g.
     setFamily(), setPointSize(), setPointSizeF(), setWeight() and
     setItalic(). The remaining attributes must be set after
-    contstruction, e.g. setBold(), setUnderline(), setOverline(),
+    construction, e.g. setBold(), setUnderline(), setOverline(),
     setStrikeOut() and setFixedPitch(). QFontInfo objects should be
     created \e after the font's attributes have been set. A QFontInfo
     object will not change, even if you change the font's
@@ -560,8 +526,8 @@ QFontEngineData::~QFontEngineData()
 
     For more general information on fonts, see the
     \l{comp.fonts FAQ}{comp.fonts FAQ}.
-    Information on encodings can be found from
-    \l{Roman Czyborra's} page.
+    Information on encodings can be found from the
+    \l{UTR17} page.
 
     \sa QFontMetrics, QFontInfo, QFontDatabase, {Character Map Example}
 */
@@ -616,16 +582,6 @@ QFontEngineData::~QFontEngineData()
     \since 5.2
 */
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-/*
-  \obsolete
-  Constructs a font from \a font for use on the paint device \a pd.
-*/
-QFont::QFont(const QFont &font, QPaintDevice *pd)
-    : QFont(font, static_cast<const QPaintDevice*>(pd))
-{}
-#endif
-
 /*!
   \since 5.13
   Constructs a font from \a font for use on the paint device \a pd.
@@ -660,8 +616,10 @@ void QFont::detach()
         if (d->engineData && !d->engineData->ref.deref())
             delete d->engineData;
         d->engineData = nullptr;
-        if (d->scFont && d->scFont != d.data())
-            d->scFont->ref.deref();
+        if (d->scFont && d->scFont != d.data()) {
+            if (!d->scFont->ref.deref())
+                delete d->scFont;
+        }
         d->scFont = nullptr;
         return;
     }
@@ -698,7 +656,6 @@ QFont::QFont()
 }
 
 /*!
-    \obsolete
     Constructs a font object with the specified \a family, \a
     pointSize, \a weight and \a italic settings.
 
@@ -827,7 +784,7 @@ QFont &QFont::operator=(const QFont &font)
 */
 QString QFont::family() const
 {
-    return d->request.families.isEmpty() ? QString() : d->request.families.first();
+    return d->request.families.isEmpty() ? QString() : d->request.families.constFirst();
 }
 
 /*!
@@ -841,22 +798,11 @@ QString QFont::family() const
     available a family will be set using the \l{QFont}{font matching}
     algorithm.
 
-    This will split the family string on a comma and call setFamilies() with the
-    resulting list. To preserve a font that uses a comma in it's name then use
-    setFamilies() directly. From Qt 6.2 this behavior will no longer happen and
-    \a family will be passed as a single family.
-
     \sa family(), setStyleHint(), setFamilies(), families(), QFontInfo
 */
 void QFont::setFamily(const QString &family)
 {
-#ifdef QT_DEBUG
-    if (family.contains(QLatin1Char(','))) {
-        qWarning("From Qt 6.2, QFont::setFamily() will no long split the family string on the comma"
-                 " and will keep it as a single family");
-    }
-#endif
-    setFamilies(splitIntoFamilies(family));
+    setFamilies(QStringList(family));
 }
 
 /*!
@@ -945,13 +891,7 @@ int QFont::pointSize() const
     \li PreferVerticalHinting
     \li PreferFullHinting
     \row
-    \li Windows Vista (w/o Platform Update) and earlier
-    \li Full hinting
-    \li Full hinting
-    \li Full hinting
-    \li Full hinting
-    \row
-    \li Windows 7 and Windows Vista (w/Platform Update) and DirectWrite enabled in Qt
+    \li Windows and DirectWrite enabled in Qt
     \li Full hinting
     \li Vertical hinting
     \li Vertical hinting
@@ -1189,7 +1129,7 @@ QFont::Weight QFont::weight() const
 
 #if QT_DEPRECATED_SINCE(6, 0)
 /*!
-    \obsolete Use setWeight() instead.
+    \deprecated [6.0] Use setWeight() instead.
 
     Sets the weight of the font to \a legacyWeight using the legacy font
     weight scale of Qt 5 and previous versions.
@@ -1201,7 +1141,7 @@ QFont::Weight QFont::weight() const
 
     \note If styleName() is set, this value may be ignored for font selection.
 
-    \sa setWeight(), weight(), legacyWeight(), QFontInfo
+    \sa setWeight(), weight(), QFontInfo
 */
 void QFont::setLegacyWeight(int legacyWeight)
 {
@@ -1209,7 +1149,7 @@ void QFont::setLegacyWeight(int legacyWeight)
 }
 
 /*!
-    \obsolete Use weight() instead.
+    \deprecated [6.0] Use weight() instead.
 
     Returns the weight of the font converted to the non-standard font
     weight scale used in Qt 5 and earlier versions.
@@ -2136,7 +2076,7 @@ QString QFont::key() const
  */
 QString QFont::toString() const
 {
-    const QChar comma(QLatin1Char(','));
+    const QChar comma(u',');
     QString fontDescription = family() + comma +
         QString::number(     pointSizeF()) + comma +
         QString::number(      pixelSize()) + comma +
@@ -2184,8 +2124,8 @@ size_t qHash(const QFont &font, size_t seed) noexcept
 bool QFont::fromString(const QString &descrip)
 {
     const auto sr = QStringView(descrip).trimmed();
-    const auto l = sr.split(QLatin1Char(','));
-    const int count = l.count();
+    const auto l = sr.split(u',');
+    const int count = l.size();
     if (!count || (count > 2 && count < 9) || count == 9 || count > 17 ||
         l.first().isEmpty()) {
         qWarning("QFont::fromString: Invalid description '%s'",
@@ -2394,8 +2334,12 @@ QDataStream &operator<<(QDataStream &s, const QFont &font)
         s << (quint8)font.d->request.hintingPreference;
     if (s.version() >= QDataStream::Qt_5_6)
         s << (quint8)font.d->capital;
-    if (s.version() >= QDataStream::Qt_5_13)
-        s << font.d->request.families;
+    if (s.version() >= QDataStream::Qt_5_13) {
+        if (s.version() < QDataStream::Qt_6_0)
+            s << font.d->request.families.mid(1);
+        else
+            s << font.d->request.families;
+    }
     return s;
 }
 
@@ -2505,7 +2449,10 @@ QDataStream &operator>>(QDataStream &s, QFont &font)
     if (s.version() >= QDataStream::Qt_5_13) {
         QStringList value;
         s >> value;
-        font.d->request.families = value;
+        if (s.version() < QDataStream::Qt_6_0)
+            font.d->request.families.append(value);
+        else
+            font.d->request.families = value;
     }
     return s;
 }
@@ -2704,7 +2651,7 @@ QFont::Style QFontInfo::style() const
 
 #if QT_DEPRECATED_SINCE(6, 0)
 /*!
-    \obsolete Use weight() instead.
+    \deprecated Use weight() instead.
 
     Returns the weight of the font converted to the non-standard font
     weight scale used in Qt 5 and earlier versions.
@@ -2799,7 +2746,7 @@ bool QFontInfo::fixedPitch() const
     Q_ASSERT(engine != nullptr);
 #ifdef Q_OS_MAC
     if (!engine->fontDef.fixedPitchComputed) {
-        QChar ch[2] = { QLatin1Char('i'), QLatin1Char('m') };
+        QChar ch[2] = { u'i', u'm' };
         QGlyphLayoutArray<2> g;
         int l = 2;
         if (!engine->stringToCMap(ch, 2, &g, &l, {}))
@@ -2881,11 +2828,14 @@ void QFontCache::cleanup()
         cache->setLocalData(nullptr);
 }
 
-static QBasicAtomicInt font_cache_id = Q_BASIC_ATOMIC_INITIALIZER(0);
+Q_CONSTINIT static QBasicAtomicInt font_cache_id = Q_BASIC_ATOMIC_INITIALIZER(0);
 
 QFontCache::QFontCache()
     : QObject(), total_cost(0), max_cost(min_cost),
-      current_timestamp(0), fast(false), timer_id(-1),
+      current_timestamp(0), fast(false),
+      autoClean(QGuiApplication::instance()
+                && (QGuiApplication::instance()->thread() == QThread::currentThread())),
+      timer_id(-1),
       m_id(font_cache_id.fetchAndAddRelaxed(1) + 1)
 {
 }
@@ -3055,10 +3005,14 @@ void QFontCache::increaseCost(uint cost)
     if (total_cost > max_cost) {
         max_cost = total_cost;
 
+        if (!autoClean)
+            return;
+
         if (timer_id == -1 || ! fast) {
             FC_DEBUG("  TIMER: starting fast timer (%d ms)", fast_timeout);
 
-            if (timer_id != -1) killTimer(timer_id);
+            if (timer_id != -1)
+                killTimer(timer_id);
             timer_id = startTimer(fast_timeout);
             fast = true;
         }
@@ -3149,22 +3103,26 @@ void QFontCache::decreaseCache()
     FC_DEBUG("  after sweep, in use %u kb, total %u kb, max %u kb, new max %u kb",
               in_use_cost, total_cost, max_cost, new_max_cost);
 
-    if (new_max_cost == max_cost) {
-        if (fast) {
-            FC_DEBUG("  cannot shrink cache, slowing timer");
+    if (autoClean) {
+        if (new_max_cost == max_cost) {
+            if (fast) {
+                FC_DEBUG("  cannot shrink cache, slowing timer");
 
-            killTimer(timer_id);
-            timer_id = startTimer(slow_timeout);
-            fast = false;
+                if (timer_id != -1) {
+                    killTimer(timer_id);
+                timer_id = startTimer(slow_timeout);
+                fast = false;
+            }
+
+            return;
+        } else if (! fast) {
+            FC_DEBUG("  dropping into passing gear");
+
+            if (timer_id != -1)
+                killTimer(timer_id);
+            timer_id = startTimer(fast_timeout);
+            fast = true;        }
         }
-
-        return;
-    } else if (! fast) {
-        FC_DEBUG("  dropping into passing gear");
-
-        killTimer(timer_id);
-        timer_id = startTimer(fast_timeout);
-        fast = true;
     }
 
     max_cost = new_max_cost;
@@ -3345,3 +3303,5 @@ QDebug operator<<(QDebug stream, const QFont &font)
 #endif
 
 QT_END_NAMESPACE
+
+#include "moc_qfont.cpp"

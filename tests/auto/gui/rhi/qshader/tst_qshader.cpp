@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QFile>
@@ -43,11 +18,14 @@ private slots:
     void genVariants();
     void shaderDescImplicitSharing();
     void bakedShaderImplicitSharing();
+    void sortedKeys();
     void mslResourceMapping();
     void serializeShaderDesc();
     void comparison();
     void loadV4();
     void manualShaderPackCreation();
+    void loadV6WithSeparateImagesAndSamplers();
+    void loadV7();
 };
 
 static QShader getShader(const QString &name)
@@ -80,7 +58,7 @@ void tst_QShader::simpleCompileCheckResults()
     QShader s = getShader(QLatin1String(":/data/color_spirv_v5.vert.qsb"));
     QVERIFY(s.isValid());
     QCOMPARE(QShaderPrivate::get(&s)->qsbVersion, 5);
-    QCOMPARE(s.availableShaders().count(), 1);
+    QCOMPARE(s.availableShaders().size(), 1);
 
     const QShaderCode shader = s.shader(QShaderKey(QShader::SpirvShader,
                                                    QShaderVersion(100)));
@@ -89,7 +67,7 @@ void tst_QShader::simpleCompileCheckResults()
 
     const QShaderDescription desc = s.description();
     QVERIFY(desc.isValid());
-    QCOMPARE(desc.inputVariables().count(), 2);
+    QCOMPARE(desc.inputVariables().size(), 2);
     for (const QShaderDescription::InOutVariable &v : desc.inputVariables()) {
         switch (v.location) {
         case 0:
@@ -101,11 +79,11 @@ void tst_QShader::simpleCompileCheckResults()
             QCOMPARE(v.type, QShaderDescription::Vec3);
             break;
         default:
-            QVERIFY(false);
+            QFAIL(qPrintable(QStringLiteral("Bad location: %1").arg(v.location)));
             break;
         }
     }
-    QCOMPARE(desc.outputVariables().count(), 1);
+    QCOMPARE(desc.outputVariables().size(), 1);
     for (const QShaderDescription::InOutVariable &v : desc.outputVariables()) {
         switch (v.location) {
         case 0:
@@ -113,19 +91,19 @@ void tst_QShader::simpleCompileCheckResults()
             QCOMPARE(v.type, QShaderDescription::Vec3);
             break;
         default:
-            QVERIFY(false);
+            QFAIL(qPrintable(QStringLiteral("Bad location: %1").arg(v.location)));
             break;
         }
     }
-    QCOMPARE(desc.uniformBlocks().count(), 1);
+    QCOMPARE(desc.uniformBlocks().size(), 1);
     const QShaderDescription::UniformBlock blk = desc.uniformBlocks().first();
     QCOMPARE(blk.blockName, QByteArrayLiteral("buf"));
     QCOMPARE(blk.structName, QByteArrayLiteral("ubuf"));
     QCOMPARE(blk.size, 68);
     QCOMPARE(blk.binding, 0);
     QCOMPARE(blk.descriptorSet, 0);
-    QCOMPARE(blk.members.count(), 2);
-    for (int i = 0; i < blk.members.count(); ++i) {
+    QCOMPARE(blk.members.size(), 2);
+    for (int i = 0; i < blk.members.size(); ++i) {
         const QShaderDescription::BlockVariable v = blk.members[i];
         switch (i) {
         case 0:
@@ -142,7 +120,7 @@ void tst_QShader::simpleCompileCheckResults()
             QCOMPARE(v.type, QShaderDescription::Float);
             break;
         default:
-            QVERIFY(false);
+            QFAIL(qPrintable(QStringLiteral("Too many blocks: %1").arg(blk.members.size())));
             break;
         }
     }
@@ -155,7 +133,7 @@ void tst_QShader::genVariants()
     // + batchable variants
     QVERIFY(s.isValid());
     QCOMPARE(QShaderPrivate::get(&s)->qsbVersion, 5);
-    QCOMPARE(s.availableShaders().count(), 2 * 6);
+    QCOMPARE(s.availableShaders().size(), 2 * 6);
 
     int batchableVariantCount = 0;
     int batchableGlslVariantCount = 0;
@@ -178,33 +156,33 @@ void tst_QShader::shaderDescImplicitSharing()
     QShader s = getShader(QLatin1String(":/data/color_spirv_v5.vert.qsb"));
     QVERIFY(s.isValid());
     QCOMPARE(QShaderPrivate::get(&s)->qsbVersion, 5);
-    QCOMPARE(s.availableShaders().count(), 1);
+    QCOMPARE(s.availableShaders().size(), 1);
     QVERIFY(s.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
 
     QShaderDescription d0 = s.description();
     QVERIFY(d0.isValid());
-    QCOMPARE(d0.inputVariables().count(), 2);
-    QCOMPARE(d0.outputVariables().count(), 1);
-    QCOMPARE(d0.uniformBlocks().count(), 1);
+    QCOMPARE(d0.inputVariables().size(), 2);
+    QCOMPARE(d0.outputVariables().size(), 1);
+    QCOMPARE(d0.uniformBlocks().size(), 1);
 
     QShaderDescription d1 = d0;
     QVERIFY(QShaderDescriptionPrivate::get(&d0) == QShaderDescriptionPrivate::get(&d1));
-    QCOMPARE(d0.inputVariables().count(), 2);
-    QCOMPARE(d0.outputVariables().count(), 1);
-    QCOMPARE(d0.uniformBlocks().count(), 1);
-    QCOMPARE(d1.inputVariables().count(), 2);
-    QCOMPARE(d1.outputVariables().count(), 1);
-    QCOMPARE(d1.uniformBlocks().count(), 1);
+    QCOMPARE(d0.inputVariables().size(), 2);
+    QCOMPARE(d0.outputVariables().size(), 1);
+    QCOMPARE(d0.uniformBlocks().size(), 1);
+    QCOMPARE(d1.inputVariables().size(), 2);
+    QCOMPARE(d1.outputVariables().size(), 1);
+    QCOMPARE(d1.uniformBlocks().size(), 1);
     QCOMPARE(d0, d1);
 
     d1.detach();
     QVERIFY(QShaderDescriptionPrivate::get(&d0) != QShaderDescriptionPrivate::get(&d1));
-    QCOMPARE(d0.inputVariables().count(), 2);
-    QCOMPARE(d0.outputVariables().count(), 1);
-    QCOMPARE(d0.uniformBlocks().count(), 1);
-    QCOMPARE(d1.inputVariables().count(), 2);
-    QCOMPARE(d1.outputVariables().count(), 1);
-    QCOMPARE(d1.uniformBlocks().count(), 1);
+    QCOMPARE(d0.inputVariables().size(), 2);
+    QCOMPARE(d0.outputVariables().size(), 1);
+    QCOMPARE(d0.uniformBlocks().size(), 1);
+    QCOMPARE(d1.inputVariables().size(), 2);
+    QCOMPARE(d1.outputVariables().size(), 1);
+    QCOMPARE(d1.uniformBlocks().size(), 1);
     QCOMPARE(d0, d1);
 
     d1 = QShaderDescription();
@@ -216,24 +194,24 @@ void tst_QShader::bakedShaderImplicitSharing()
     QShader s0 = getShader(QLatin1String(":/data/color_spirv_v5.vert.qsb"));
     QVERIFY(s0.isValid());
     QCOMPARE(QShaderPrivate::get(&s0)->qsbVersion, 5);
-    QCOMPARE(s0.availableShaders().count(), 1);
+    QCOMPARE(s0.availableShaders().size(), 1);
     QVERIFY(s0.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
 
     {
         QShader s1 = s0;
         QVERIFY(QShaderPrivate::get(&s0) == QShaderPrivate::get(&s1));
-        QCOMPARE(s0.availableShaders().count(), 1);
+        QCOMPARE(s0.availableShaders().size(), 1);
         QVERIFY(s0.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
-        QCOMPARE(s1.availableShaders().count(), 1);
+        QCOMPARE(s1.availableShaders().size(), 1);
         QVERIFY(s1.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
         QCOMPARE(s0.stage(), s1.stage());
         QCOMPARE(s0, s1);
 
         s1.detach();
         QVERIFY(QShaderPrivate::get(&s0) != QShaderPrivate::get(&s1));
-        QCOMPARE(s0.availableShaders().count(), 1);
+        QCOMPARE(s0.availableShaders().size(), 1);
         QVERIFY(s0.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
-        QCOMPARE(s1.availableShaders().count(), 1);
+        QCOMPARE(s1.availableShaders().size(), 1);
         QVERIFY(s1.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
         QCOMPARE(s0.stage(), s1.stage());
         QCOMPARE(s0, s1);
@@ -246,20 +224,30 @@ void tst_QShader::bakedShaderImplicitSharing()
 
         s1.setStage(QShader::FragmentStage); // call a setter to trigger a detach
         QVERIFY(QShaderPrivate::get(&s0) != QShaderPrivate::get(&s1));
-        QCOMPARE(s0.availableShaders().count(), 1);
+        QCOMPARE(s0.availableShaders().size(), 1);
         QVERIFY(s0.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
-        QCOMPARE(s1.availableShaders().count(), 1);
+        QCOMPARE(s1.availableShaders().size(), 1);
         QVERIFY(s1.availableShaders().contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
         QShaderDescription d0 = s0.description();
-        QCOMPARE(d0.inputVariables().count(), 2);
-        QCOMPARE(d0.outputVariables().count(), 1);
-        QCOMPARE(d0.uniformBlocks().count(), 1);
+        QCOMPARE(d0.inputVariables().size(), 2);
+        QCOMPARE(d0.outputVariables().size(), 1);
+        QCOMPARE(d0.uniformBlocks().size(), 1);
         QShaderDescription d1 = s1.description();
-        QCOMPARE(d1.inputVariables().count(), 2);
-        QCOMPARE(d1.outputVariables().count(), 1);
-        QCOMPARE(d1.uniformBlocks().count(), 1);
+        QCOMPARE(d1.inputVariables().size(), 2);
+        QCOMPARE(d1.outputVariables().size(), 1);
+        QCOMPARE(d1.uniformBlocks().size(), 1);
         QVERIFY(s0 != s1);
     }
+}
+
+void tst_QShader::sortedKeys()
+{
+    QShader s = getShader(QLatin1String(":/data/texture_all_v4.frag.qsb"));
+    QVERIFY(s.isValid());
+    QList<QShaderKey> availableShaders = s.availableShaders();
+    QCOMPARE(availableShaders.size(), 7);
+    std::sort(availableShaders.begin(), availableShaders.end());
+    QCOMPARE(availableShaders, s.availableShaders());
 }
 
 void tst_QShader::mslResourceMapping()
@@ -269,7 +257,7 @@ void tst_QShader::mslResourceMapping()
     QCOMPARE(QShaderPrivate::get(&s)->qsbVersion, 4);
 
     const QList<QShaderKey> availableShaders = s.availableShaders();
-    QCOMPARE(availableShaders.count(), 7);
+    QCOMPARE(availableShaders.size(), 7);
     QVERIFY(availableShaders.contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
     QVERIFY(availableShaders.contains(QShaderKey(QShader::MslShader, QShaderVersion(12))));
     QVERIFY(availableShaders.contains(QShaderKey(QShader::HlslShader, QShaderVersion(50))));
@@ -278,19 +266,19 @@ void tst_QShader::mslResourceMapping()
     QVERIFY(availableShaders.contains(QShaderKey(QShader::GlslShader, QShaderVersion(150))));
     QVERIFY(availableShaders.contains(QShaderKey(QShader::GlslShader, QShaderVersion(330))));
 
-    const QShader::NativeResourceBindingMap *resMap =
+    QShader::NativeResourceBindingMap resMap =
             s.nativeResourceBindingMap(QShaderKey(QShader::GlslShader, QShaderVersion(330)));
-    QVERIFY(!resMap);
+    QVERIFY(resMap.isEmpty());
 
     // The Metal shader must come with a mapping table for binding points 0
     // (uniform buffer) and 1 (combined image sampler mapped to a texture and
     // sampler in the shader).
     resMap = s.nativeResourceBindingMap(QShaderKey(QShader::MslShader, QShaderVersion(12)));
-    QVERIFY(resMap);
+    QVERIFY(!resMap.isEmpty());
 
-    QCOMPARE(resMap->count(), 2);
-    QCOMPARE(resMap->value(0).first, 0); // mapped to native buffer index 0
-    QCOMPARE(resMap->value(1), qMakePair(0, 0)); // mapped to native texture index 0 and sampler index 0
+    QCOMPARE(resMap.size(), 2);
+    QCOMPARE(resMap.value(0).first, 0); // mapped to native buffer index 0
+    QCOMPARE(resMap.value(1), qMakePair(0, 0)); // mapped to native texture index 0 and sampler index 0
 }
 
 void tst_QShader::serializeShaderDesc()
@@ -390,7 +378,7 @@ void tst_QShader::loadV4()
     QCOMPARE(QShaderPrivate::get(&s)->qsbVersion, 4);
 
     const QList<QShaderKey> availableShaders = s.availableShaders();
-    QCOMPARE(availableShaders.count(), 7);
+    QCOMPARE(availableShaders.size(), 7);
     QVERIFY(availableShaders.contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
     QVERIFY(availableShaders.contains(QShaderKey(QShader::MslShader, QShaderVersion(12))));
     QVERIFY(availableShaders.contains(QShaderKey(QShader::HlslShader, QShaderVersion(50))));
@@ -401,7 +389,7 @@ void tst_QShader::loadV4()
 
     const QShaderDescription desc = s.description();
     QVERIFY(desc.isValid());
-    QCOMPARE(desc.inputVariables().count(), 1);
+    QCOMPARE(desc.inputVariables().size(), 1);
     for (const QShaderDescription::InOutVariable &v : desc.inputVariables()) {
         switch (v.location) {
         case 0:
@@ -409,11 +397,11 @@ void tst_QShader::loadV4()
             QCOMPARE(v.type, QShaderDescription::Vec2);
             break;
         default:
-            QVERIFY(false);
+            QFAIL(qPrintable(QStringLiteral("Bad location: %1").arg(v.location)));
             break;
         }
     }
-    QCOMPARE(desc.outputVariables().count(), 1);
+    QCOMPARE(desc.outputVariables().size(), 1);
     for (const QShaderDescription::InOutVariable &v : desc.outputVariables()) {
         switch (v.location) {
         case 0:
@@ -421,19 +409,19 @@ void tst_QShader::loadV4()
             QCOMPARE(v.type, QShaderDescription::Vec4);
             break;
         default:
-            QVERIFY(false);
+            QFAIL(qPrintable(QStringLiteral("Bad location: %1").arg(v.location)));
             break;
         }
     }
-    QCOMPARE(desc.uniformBlocks().count(), 1);
+    QCOMPARE(desc.uniformBlocks().size(), 1);
     const QShaderDescription::UniformBlock blk = desc.uniformBlocks().first();
     QCOMPARE(blk.blockName, QByteArrayLiteral("buf"));
     QCOMPARE(blk.structName, QByteArrayLiteral("ubuf"));
     QCOMPARE(blk.size, 68);
     QCOMPARE(blk.binding, 0);
     QCOMPARE(blk.descriptorSet, 0);
-    QCOMPARE(blk.members.count(), 2);
-    for (int i = 0; i < blk.members.count(); ++i) {
+    QCOMPARE(blk.members.size(), 2);
+    for (int i = 0; i < blk.members.size(); ++i) {
         const QShaderDescription::BlockVariable v = blk.members[i];
         switch (i) {
         case 0:
@@ -450,7 +438,7 @@ void tst_QShader::loadV4()
             QCOMPARE(v.type, QShaderDescription::Float);
             break;
         default:
-            QVERIFY(false);
+            QFAIL(qPrintable(QStringLiteral("Bad many blocks: %1").arg(blk.members.size())));
             break;
         }
     }
@@ -561,13 +549,128 @@ void tst_QShader::manualShaderPackCreation()
 
     const QByteArray serialized = shaderPack.serialized();
     QShader newShaderPack = QShader::fromSerialized(serialized);
-    QCOMPARE(newShaderPack.availableShaders().count(), 2);
-    QCOMPARE(newShaderPack.description().inputVariables().count(), 1);
-    QCOMPARE(newShaderPack.description().outputVariables().count(), 1);
-    QCOMPARE(newShaderPack.description().uniformBlocks().count(), 1);
-    QCOMPARE(newShaderPack.description().combinedImageSamplers().count(), 1);
+    QCOMPARE(newShaderPack.availableShaders().size(), 2);
+    QCOMPARE(newShaderPack.description().inputVariables().size(), 1);
+    QCOMPARE(newShaderPack.description().outputVariables().size(), 1);
+    QCOMPARE(newShaderPack.description().uniformBlocks().size(), 1);
+    QCOMPARE(newShaderPack.description().combinedImageSamplers().size(), 1);
     QCOMPARE(newShaderPack.shader(QShaderKey(QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs))).shader(), fs_gles);
     QCOMPARE(newShaderPack.shader(QShaderKey(QShader::GlslShader, QShaderVersion(120))).shader(), fs_gl);
+}
+
+void tst_QShader::loadV6WithSeparateImagesAndSamplers()
+{
+    QShader s = getShader(QLatin1String(":/data/texture_sep_v6.frag.qsb"));
+    QVERIFY(s.isValid());
+    QCOMPARE(QShaderPrivate::get(&s)->qsbVersion, 6);
+
+    const QList<QShaderKey> availableShaders = s.availableShaders();
+    QCOMPARE(availableShaders.size(), 6);
+    QVERIFY(availableShaders.contains(QShaderKey(QShader::SpirvShader, QShaderVersion(100))));
+    QVERIFY(availableShaders.contains(QShaderKey(QShader::MslShader, QShaderVersion(12))));
+    QVERIFY(availableShaders.contains(QShaderKey(QShader::HlslShader, QShaderVersion(50))));
+    QVERIFY(availableShaders.contains(QShaderKey(QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs))));
+    QVERIFY(availableShaders.contains(QShaderKey(QShader::GlslShader, QShaderVersion(120))));
+    QVERIFY(availableShaders.contains(QShaderKey(QShader::GlslShader, QShaderVersion(150))));
+
+    QShader::NativeResourceBindingMap resMap =
+            s.nativeResourceBindingMap(QShaderKey(QShader::HlslShader, QShaderVersion(50)));
+    QVERIFY(resMap.size() == 4);
+    QVERIFY(s.separateToCombinedImageSamplerMappingList(QShaderKey(QShader::HlslShader, QShaderVersion(50))).isEmpty());
+    resMap = s.nativeResourceBindingMap(QShaderKey(QShader::MslShader, QShaderVersion(12)));
+    QVERIFY(resMap.size() == 4);
+    QVERIFY(s.separateToCombinedImageSamplerMappingList(QShaderKey(QShader::MslShader, QShaderVersion(12))).isEmpty());
+
+    for (auto key : {
+         QShaderKey(QShader::GlslShader, QShaderVersion(100, QShaderVersion::GlslEs)),
+         QShaderKey(QShader::GlslShader, QShaderVersion(120)),
+         QShaderKey(QShader::GlslShader, QShaderVersion(150)) })
+    {
+         auto list = s.separateToCombinedImageSamplerMappingList(key);
+         QCOMPARE(list.size(), 2);
+    }
+}
+
+void tst_QShader::loadV7()
+{
+    QShader vert = getShader(QLatin1String(":/data/metal_enabled_tessellation_v7.vert.qsb"));
+    QVERIFY(vert.isValid());
+    QCOMPARE(QShaderPrivate::get(&vert)->qsbVersion, 7);
+    QCOMPARE(vert.availableShaders().size(), 8);
+
+    QCOMPARE(vert.description().inputVariables().size(), 2);
+    QCOMPARE(vert.description().outputBuiltinVariables().size(), 1);
+    QCOMPARE(vert.description().outputBuiltinVariables()[0].type, QShaderDescription::PositionBuiltin);
+    QCOMPARE(vert.description().outputVariables().size(), 1);
+    QCOMPARE(vert.description().outputVariables()[0].name, QByteArrayLiteral("v_color"));
+
+    QVERIFY(vert.availableShaders().contains(QShaderKey(QShader::MslShader, QShaderVersion(12))));
+    QVERIFY(!vert.shader(QShaderKey(QShader::MslShader, QShaderVersion(12), QShader::NonIndexedVertexAsComputeShader)).shader().isEmpty());
+    QVERIFY(!vert.shader(QShaderKey(QShader::MslShader, QShaderVersion(12), QShader::UInt16IndexedVertexAsComputeShader)).shader().isEmpty());
+    QVERIFY(!vert.shader(QShaderKey(QShader::MslShader, QShaderVersion(12), QShader::UInt32IndexedVertexAsComputeShader)).shader().isEmpty());
+
+    QShader tesc = getShader(QLatin1String(":/data/metal_enabled_tessellation_v7.tesc.qsb"));
+    QVERIFY(tesc.isValid());
+    QCOMPARE(QShaderPrivate::get(&tesc)->qsbVersion, 7);
+    QCOMPARE(tesc.availableShaders().size(), 5);
+    QCOMPARE(tesc.description().tessellationOutputVertexCount(), 3u);
+
+    QCOMPARE(tesc.description().inputBuiltinVariables().size(), 2);
+    QCOMPARE(tesc.description().outputBuiltinVariables().size(), 3);
+    // builtins must be sorted based on the type
+    QCOMPARE(tesc.description().inputBuiltinVariables()[0].type, QShaderDescription::PositionBuiltin);
+    QCOMPARE(tesc.description().inputBuiltinVariables()[1].type, QShaderDescription::InvocationIdBuiltin);
+    QCOMPARE(tesc.description().outputBuiltinVariables()[0].type, QShaderDescription::PositionBuiltin);
+    QCOMPARE(tesc.description().outputBuiltinVariables()[1].type, QShaderDescription::TessLevelOuterBuiltin);
+    QCOMPARE(tesc.description().outputBuiltinVariables()[2].type, QShaderDescription::TessLevelInnerBuiltin);
+
+    QCOMPARE(tesc.description().outputVariables().size(), 3);
+    for (const QShaderDescription::InOutVariable &v : tesc.description().outputVariables()) {
+        switch (v.location) {
+        case 0:
+            QCOMPARE(v.name, QByteArrayLiteral("outColor"));
+            QCOMPARE(v.type, QShaderDescription::Vec3);
+            QCOMPARE(v.perPatch, false);
+            break;
+        case 1:
+            QCOMPARE(v.name, QByteArrayLiteral("stuff"));
+            QCOMPARE(v.type, QShaderDescription::Vec3);
+            QCOMPARE(v.perPatch, true);
+            break;
+        case 2:
+            QCOMPARE(v.name, QByteArrayLiteral("more_stuff"));
+            QCOMPARE(v.type, QShaderDescription::Float);
+            QCOMPARE(v.perPatch, true);
+            break;
+        default:
+            QFAIL(qPrintable(QStringLiteral("Bad location: %1").arg(v.location)));
+            break;
+        }
+    }
+
+    QVERIFY(!tesc.shader(QShaderKey(QShader::MslShader, QShaderVersion(12))).shader().isEmpty());
+    QCOMPARE(tesc.nativeShaderInfo(QShaderKey(QShader::SpirvShader, QShaderVersion(100))).extraBufferBindings.size(), 0);
+    QCOMPARE(tesc.nativeShaderInfo(QShaderKey(QShader::MslShader, QShaderVersion(12))).extraBufferBindings.size(), 5);
+
+    QShader tese = getShader(QLatin1String(":/data/metal_enabled_tessellation_v7.tese.qsb"));
+    QVERIFY(tese.isValid());
+    QCOMPARE(QShaderPrivate::get(&tese)->qsbVersion, 7);
+    QCOMPARE(tese.availableShaders().size(), 5);
+    QCOMPARE(tese.description().tessellationMode(), QShaderDescription::TrianglesTessellationMode);
+    QCOMPARE(tese.description().tessellationWindingOrder(), QShaderDescription::CcwTessellationWindingOrder);
+    QCOMPARE(tese.description().tessellationPartitioning(), QShaderDescription::FractionalOddTessellationPartitioning);
+
+    QCOMPARE(tese.description().inputBuiltinVariables()[0].type, QShaderDescription::PositionBuiltin);
+    QCOMPARE(tese.description().inputBuiltinVariables()[1].type, QShaderDescription::TessLevelOuterBuiltin);
+    QCOMPARE(tese.description().inputBuiltinVariables()[2].type, QShaderDescription::TessLevelInnerBuiltin);
+    QCOMPARE(tese.description().inputBuiltinVariables()[3].type, QShaderDescription::TessCoordBuiltin);
+
+    QCOMPARE(tese.nativeResourceBindingMap(QShaderKey(QShader::MslShader, QShaderVersion(12))).size(), 1);
+    QCOMPARE(tese.nativeResourceBindingMap(QShaderKey(QShader::MslShader, QShaderVersion(12))).value(0), qMakePair(0, -1));
+
+    QShader frag = getShader(QLatin1String(":/data/metal_enabled_tessellation_v7.frag.qsb"));
+    QVERIFY(frag.isValid());
+    QCOMPARE(QShaderPrivate::get(&frag)->qsbVersion, 7);
 }
 
 #include <tst_qshader.moc>

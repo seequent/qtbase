@@ -1,98 +1,121 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qunicodetools_p.h"
 
+#include "qmutex.h"
 #include "qunicodetables_p.h"
 #include "qvarlengtharray.h"
+#if QT_CONFIG(library)
 #include "qlibrary.h"
+#endif
+
+#include <mutex>
+
+#include <limits.h>
 
 #define FLAG(x) (1 << (x))
 
 QT_BEGIN_NAMESPACE
 
-Q_AUTOTEST_EXPORT int qt_initcharattributes_default_algorithm_only = 0;
+using namespace Qt::StringLiterals;
+
+#ifdef QT_BUILD_INTERNAL
+Q_CONSTINIT Q_AUTOTEST_EXPORT
+#else
+constexpr
+#endif
+int qt_initcharattributes_default_algorithm_only = 0;
 
 namespace QUnicodeTools {
 
 // -----------------------------------------------------------------------------------------------------
 //
 // The text boundaries determination algorithm.
-// See http://www.unicode.org/reports/tr29/tr29-31.html
+// See https://www.unicode.org/reports/tr29/tr29-37.html
 //
 // -----------------------------------------------------------------------------------------------------
 
 namespace GB {
 
-/*
- * Most grapheme break rules can be implemented table driven, but rules GB10, GB12 and GB13 need a bit
- * of special treatment.
- */
-enum State : uchar {
-    Break,
-    Inside,
-    GB10,
-    GB10_2,
-    GB10_3,
-    GB13, // also covers GB12
+// This table is indexed by the grapheme break classes of two
+// (adjacent) code points.
+// The class of the first code point selects an entry.
+// If the entry's bit at position second_cp_class is set
+// (in other words: if entry & (1u << second_cp_class) is non-zero)
+// then there is NO grapheme break between the two code points.
+
+using GBTableEntryType = quint16;
+
+// Check that we have enough bits in the table (in case
+// NumGraphemeBreakClasses grows too much).
+static_assert(sizeof(GBTableEntryType) * CHAR_BIT >= QUnicodeTables::NumGraphemeBreakClasses,
+              "Internal error: increase the size in bits of GBTableEntryType");
+
+// GB9, GB9a
+static const GBTableEntryType Extend_SpacingMark_ZWJ =
+        FLAG(QUnicodeTables::GraphemeBreak_Extend)
+        | FLAG(QUnicodeTables::GraphemeBreak_SpacingMark)
+        | FLAG(QUnicodeTables::GraphemeBreak_ZWJ);
+
+static const GBTableEntryType HardBreak = 0u;
+
+static const GBTableEntryType breakTable[QUnicodeTables::NumGraphemeBreakClasses] = {
+    Extend_SpacingMark_ZWJ, // Any
+    FLAG(QUnicodeTables::GraphemeBreak_LF), // CR
+    HardBreak, // LF
+    HardBreak, // Control
+    Extend_SpacingMark_ZWJ, // Extend
+    Extend_SpacingMark_ZWJ, // ZWJ
+    Extend_SpacingMark_ZWJ, // RegionalIndicator
+    (Extend_SpacingMark_ZWJ
+        | FLAG(QUnicodeTables::GraphemeBreak_Any)
+        | FLAG(QUnicodeTables::GraphemeBreak_Prepend)
+        | FLAG(QUnicodeTables::GraphemeBreak_L)
+        | FLAG(QUnicodeTables::GraphemeBreak_V)
+        | FLAG(QUnicodeTables::GraphemeBreak_T)
+        | FLAG(QUnicodeTables::GraphemeBreak_LV)
+        | FLAG(QUnicodeTables::GraphemeBreak_LVT)
+        | FLAG(QUnicodeTables::GraphemeBreak_RegionalIndicator)
+        | FLAG(QUnicodeTables::GraphemeBreak_Extended_Pictographic)
+    ), // Prepend
+    Extend_SpacingMark_ZWJ, // SpacingMark
+    (Extend_SpacingMark_ZWJ
+        | FLAG(QUnicodeTables::GraphemeBreak_L)
+        | FLAG(QUnicodeTables::GraphemeBreak_V)
+        | FLAG(QUnicodeTables::GraphemeBreak_LV)
+        | FLAG(QUnicodeTables::GraphemeBreak_LVT)
+    ), // L
+    (Extend_SpacingMark_ZWJ
+        | FLAG(QUnicodeTables::GraphemeBreak_V)
+        | FLAG(QUnicodeTables::GraphemeBreak_T)
+    ), // V
+    (Extend_SpacingMark_ZWJ
+        | FLAG(QUnicodeTables::GraphemeBreak_T)
+    ), // T
+    (Extend_SpacingMark_ZWJ
+        | FLAG(QUnicodeTables::GraphemeBreak_V)
+        | FLAG(QUnicodeTables::GraphemeBreak_T)
+    ), // LV
+    (Extend_SpacingMark_ZWJ
+        | FLAG(QUnicodeTables::GraphemeBreak_T)
+    ), // LVT
+    Extend_SpacingMark_ZWJ // Extended_Pictographic
 };
 
-static const State breakTable[QUnicodeTables::NumGraphemeBreakClasses][QUnicodeTables::NumGraphemeBreakClasses] = {
-//    Any     CR      LF     Control  Extend  ZWJ     RI     Prepend  S-Mark  L       V       T       LV      LVT     E_B     E_M     GAZ     EBG
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // Any
-    { Break , Break , Inside, Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // CR
-    { Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // LF
-    { Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // Control
-    { Break , Break , Break , Break , GB10_2, Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , GB10_3, Break , Break  }, // Extend
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , Break , Inside, Inside }, // ZWJ
-    { Break , Break , Break , Break , Inside, Inside, GB13  , Break , Inside, Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // RegionalIndicator
-    { Inside, Break , Break , Break , Inside, Inside, Inside, Inside, Inside, Inside, Inside, Inside, Inside, Inside, Inside, Inside, Inside, Inside }, // Prepend
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // SpacingMark
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Inside, Inside, Break , Inside, Inside, Break , Break , Break , Break  }, // L
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Inside, Inside, Break , Break , Break , Break , Break , Break  }, // V
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break  }, // T
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Inside, Inside, Break , Break , Break , Break , Break , Break  }, // LV
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break  }, // LVT
-    { Break , Break , Break , Break , GB10  , Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , Inside, Break , Break  }, // E_B
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // E_M
-    { Break , Break , Break , Break , Inside, Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , Break , Break , Break  }, // GAZ
-    { Break , Break , Break , Break , GB10  , Inside, Break , Break , Inside, Break , Break , Break , Break , Break , Break , Inside, Break , Break  }, // EBG
+static bool shouldBreakBetweenClasses(QUnicodeTables::GraphemeBreakClass first,
+                                      QUnicodeTables::GraphemeBreakClass second)
+{
+    return (breakTable[first] & FLAG(second)) == 0;
+}
+
+// Some rules (GB11, GB12, GB13) cannot be represented by the table alone,
+// so we need to store some local state.
+enum class State : uchar {
+    Normal,
+    GB11_ExtPicExt,    // saw a Extend after a Extended_Pictographic
+    GB11_ExtPicExtZWJ, // saw a ZWG after a Extended_Pictographic and zero or more Extend
+    GB12_13_RI,        // saw a RegionalIndicator following a non-RegionalIndicator
 };
 
 } // namespace GB
@@ -100,7 +123,7 @@ static const State breakTable[QUnicodeTables::NumGraphemeBreakClasses][QUnicodeT
 static void getGraphemeBreaks(const char16_t *string, qsizetype len, QCharAttributes *attributes)
 {
     QUnicodeTables::GraphemeBreakClass lcls = QUnicodeTables::GraphemeBreak_LF; // to meet GB1
-    GB::State state = GB::Break; // only required to track some of the rules
+    GB::State state = GB::State::Normal;
     for (qsizetype i = 0; i != len; ++i) {
         qsizetype pos = i;
         char32_t ucs4 = string[i];
@@ -115,36 +138,66 @@ static void getGraphemeBreaks(const char16_t *string, qsizetype len, QCharAttrib
         const QUnicodeTables::Properties *prop = QUnicodeTables::properties(ucs4);
         QUnicodeTables::GraphemeBreakClass cls = (QUnicodeTables::GraphemeBreakClass) prop->graphemeBreakClass;
 
-        switch (GB::breakTable[lcls][cls]) {
-        case GB::Break:
-            attributes[pos].graphemeBoundary = true;
-            state = GB::Break;
-            break;
-        case GB::Inside:
-            state = GB::Break;
-            break;
-        case GB::GB10:
-            state = GB::GB10;
-            break;
-        case GB::GB10_2:
-            if (state == GB::GB10 || state == GB::GB10_2)
-                state = GB::GB10_2;
-            else
-                state = GB::Break;
-            break;
-        case GB::GB10_3:
-            if (state != GB::GB10 && state != GB::GB10_2)
-                attributes[pos].graphemeBoundary = true;
-            state = GB::Break;
-            break;
-        case GB::GB13:
-            if (state != GB::GB13) {
-                state = GB::GB13;
+        bool shouldBreak = GB::shouldBreakBetweenClasses(lcls, cls);
+        bool handled = false;
+
+        switch (state) {
+        case GB::State::Normal:
+            break; // will deal with it below
+
+        case GB::State::GB11_ExtPicExt:
+            Q_ASSERT(lcls == QUnicodeTables::GraphemeBreak_Extend);
+            if (cls == QUnicodeTables::GraphemeBreak_Extend) {
+                // keep going in the current state
+                Q_ASSERT(!shouldBreak); // GB9, do not break before Extend
+                handled = true;
+            } else if (cls == QUnicodeTables::GraphemeBreak_ZWJ) {
+                state = GB::State::GB11_ExtPicExtZWJ;
+                Q_ASSERT(!shouldBreak); // GB9, do not break before ZWJ
+                handled = true;
             } else {
-                attributes[pos].graphemeBoundary = true;
-                state = GB::Break;
+                state = GB::State::Normal;
+            }
+            break;
+
+        case GB::State::GB11_ExtPicExtZWJ:
+            Q_ASSERT(lcls == QUnicodeTables::GraphemeBreak_ZWJ);
+            if (cls == QUnicodeTables::GraphemeBreak_Extended_Pictographic) {
+                shouldBreak = false;
+                handled = true;
+            }
+
+            state = GB::State::Normal;
+            break;
+
+        case GB::State::GB12_13_RI:
+            Q_ASSERT(lcls == QUnicodeTables::GraphemeBreak_RegionalIndicator);
+            if (cls == QUnicodeTables::GraphemeBreak_RegionalIndicator) {
+                shouldBreak = false;
+                handled = true;
+            }
+
+            state = GB::State::Normal;
+            break;
+        }
+
+        if (!handled) {
+            Q_ASSERT(state == GB::State::Normal);
+            if (lcls == QUnicodeTables::GraphemeBreak_Extended_Pictographic) { // GB11
+                if (cls == QUnicodeTables::GraphemeBreak_Extend) {
+                    state = GB::State::GB11_ExtPicExt;
+                    Q_ASSERT(!shouldBreak); // GB9, do not break before Extend
+                } else if (cls == QUnicodeTables::GraphemeBreak_ZWJ) {
+                    state = GB::State::GB11_ExtPicExtZWJ;
+                    Q_ASSERT(!shouldBreak); // GB9, do not break before ZWJ
+                }
+            } else if (cls == QUnicodeTables::GraphemeBreak_RegionalIndicator) { // GB12, GB13
+                state = GB::State::GB12_13_RI;
             }
         }
+
+        if (shouldBreak)
+            attributes[pos].graphemeBoundary = true;
 
         lcls = cls;
     }
@@ -163,30 +216,26 @@ enum Action {
 };
 
 static const uchar breakTable[QUnicodeTables::NumWordBreakClasses][QUnicodeTables::NumWordBreakClasses] = {
-//    Any      CR       LF       Newline  Extend   ZWJ      Format    RI       Katakana HLetter  ALetter  SQuote   DQuote  MidNumLet MidLetter MidNum  Numeric ExtNumLet E_Base   E_Mod    GAZ      EBG      WSeg
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // Any
-    { Break  , Break  , NoBreak, Break  , Break  , Break  , Break  ,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // CR
-    { Break  , Break  , Break  , Break  , Break  , Break  , Break  ,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // LF
-    { Break  , Break  , Break  , Break  , Break  , Break  , Break  ,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // Newline
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // Extend
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , NoBreak, NoBreak, Break }, // ZWJ
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // Format
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  NoBreak, Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // RegionalIndicator
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , NoBreak, Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , NoBreak, Break  , Break  , Break  , Break  , Break }, // Katakana
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , NoBreak, NoBreak, LookupW, Lookup , LookupW, LookupW, Break  , NoBreak, NoBreak, Break  , Break  , Break  , Break  , Break }, // HebrewLetter
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , NoBreak, NoBreak, LookupW, Break  , LookupW, LookupW, Break  , NoBreak, NoBreak, Break  , Break  , Break  , Break  , Break }, // ALetter
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // SingleQuote
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // DoubleQuote
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // MidNumLet
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // MidLetter
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // MidNum
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , NoBreak, NoBreak, Lookup , Break  , Lookup , Break  , Lookup , NoBreak, NoBreak, Break  , Break  , Break  , Break  , Break }, // Numeric
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , NoBreak, NoBreak, NoBreak, Break  , Break  , Break  , Break  , Break  , NoBreak, NoBreak, Break  , Break  , Break  , Break  , Break }, // ExtendNumLet
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , NoBreak, Break  , Break  , Break }, // E_Base
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // E_Mod
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // GAZ
-    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , NoBreak, Break  , Break  , Break }, // EBG
-    { Break  , Break  , Break  , Break  , Break  , Break  , Break  ,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break }, // WSeg
+//    Any      CR       LF       Newline  Extend   ZWJ      Format    RI       Katakana HLetter  ALetter  SQuote   DQuote  MidNumLet MidLetter MidNum  Numeric ExtNumLet WSeg
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // Any
+    { Break  , Break  , NoBreak, Break  , Break  , Break  , Break  ,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // CR
+    { Break  , Break  , Break  , Break  , Break  , Break  , Break  ,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // LF
+    { Break  , Break  , Break  , Break  , Break  , Break  , Break  ,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // Newline
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // Extend
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // ZWJ
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // Format
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  NoBreak, Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // RegionalIndicator
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , NoBreak, Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , NoBreak, Break   }, // Katakana
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , NoBreak, NoBreak, LookupW, Lookup , LookupW, LookupW, Break  , NoBreak, NoBreak, Break   }, // HebrewLetter
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , NoBreak, NoBreak, LookupW, Break  , LookupW, LookupW, Break  , NoBreak, NoBreak, Break   }, // ALetter
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // SingleQuote
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // DoubleQuote
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // MidNumLet
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // MidLetter
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break   }, // MidNum
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , NoBreak, NoBreak, Lookup , Break  , Lookup , Break  , Lookup , NoBreak, NoBreak, Break   }, // Numeric
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , NoBreak, NoBreak, NoBreak, Break  , Break  , Break  , Break  , Break  , NoBreak, NoBreak, Break   }, // ExtendNumLet
+    { Break  , Break  , Break  , Break  , NoBreak, NoBreak, NoBreak,  Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , Break  , NoBreak }, // WSegSpace
 };
 
 } // namespace WB
@@ -198,6 +247,8 @@ static void getWordBreaks(const char16_t *string, qsizetype len, QCharAttributes
     } currentWordType = WordTypeNone;
 
     QUnicodeTables::WordBreakClass cls = QUnicodeTables::WordBreak_LF; // to meet WB1
+    auto real_cls = cls; // Unaffected by WB4
+
     for (qsizetype i = 0; i != len; ++i) {
         qsizetype pos = i;
         char32_t ucs4 = string[i];
@@ -211,7 +262,6 @@ static void getWordBreaks(const char16_t *string, qsizetype len, QCharAttributes
 
         const QUnicodeTables::Properties *prop = QUnicodeTables::properties(ucs4);
         QUnicodeTables::WordBreakClass ncls = (QUnicodeTables::WordBreakClass) prop->wordBreakClass;
-#ifdef QT_BUILD_INTERNAL
         if (qt_initcharattributes_default_algorithm_only) {
             // as of Unicode 5.1, some punctuation marks were mapped to MidLetter and MidNumLet
             // which caused "hi.there" to be treated like if it were just a single word;
@@ -222,21 +272,31 @@ static void getWordBreaks(const char16_t *string, qsizetype len, QCharAttributes
             else if (ucs4 == 0x003A) // COLON
                 ncls = QUnicodeTables::WordBreak_MidLetter;
         }
-#endif
 
         uchar action = WB::breakTable[cls][ncls];
         switch (action) {
         case WB::Break:
+            if (Q_UNLIKELY(real_cls == QUnicodeTables::WordBreak_ZWJ
+                           && prop->graphemeBreakClass
+                                   == QUnicodeTables::GraphemeBreak_Extended_Pictographic)) {
+                // WB3c: ZWJ × \p{Extended_Pictographic}
+                action = WB::NoBreak;
+            }
             break;
         case WB::NoBreak:
             if (Q_UNLIKELY(ncls == QUnicodeTables::WordBreak_Extend || ncls == QUnicodeTables::WordBreak_ZWJ || ncls == QUnicodeTables::WordBreak_Format)) {
                 // WB4: X(Extend|Format)* -> X
-                if (cls != QUnicodeTables::WordBreak_ZWJ) // WB3c
-                    continue;
+                real_cls = ncls;
+                continue;
             }
             if (Q_UNLIKELY(cls == QUnicodeTables::WordBreak_RegionalIndicator)) {
                 // WB15/WB16: break between pairs of Regional indicator
                 ncls = QUnicodeTables::WordBreak_Any;
+            }
+            if (Q_UNLIKELY(ncls == QUnicodeTables::WordBreak_WSegSpace
+                           && real_cls != QUnicodeTables::WordBreak_WSegSpace)) {
+                // WB3d should not be affected by WB4
+                action = WB::Break;
             }
             break;
         case WB::Lookup:
@@ -276,6 +336,8 @@ static void getWordBreaks(const char16_t *string, qsizetype len, QCharAttributes
         }
 
         cls = ncls;
+        real_cls = ncls;
+
         if (action == WB::Break) {
             attributes[pos].wordBreak = true;
             if (currentWordType != WordTypeNone)
@@ -496,49 +558,49 @@ enum Action {
     IndirectBreak, IB = IndirectBreak,
     CombiningIndirectBreak, CI = CombiningIndirectBreak,
     CombiningProhibitedBreak, CP = CombiningProhibitedBreak,
-    ProhibitedBreakAfterHebrewPlusHyphen, HH = ProhibitedBreakAfterHebrewPlusHyphen
+    ProhibitedBreakAfterHebrewPlusHyphen, HH = ProhibitedBreakAfterHebrewPlusHyphen,
+    IndirectBreakIfNarrow, IN = IndirectBreakIfNarrow, // For LB30
 };
 
-static const uchar breakTable[QUnicodeTables::LineBreak_SA][QUnicodeTables::LineBreak_SA] = {
-/*         OP  CL  CP  QU  GL  NS  EX  SY  IS  PR  PO  NU  AL  HL  ID  IN  HY  BA  BB  B2  ZW  CM  WJ  H2  H3  JL  JV  JT  RI  CB  EB  EM  ZWJ*/
-/* OP */ { PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, CP, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB },
-/* CL */ { DB, PB, PB, IB, IB, PB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* CP */ { DB, PB, PB, IB, IB, PB, PB, PB, PB, DB, DB, IB, IB, IB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* QU */ { PB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB },
-/* GL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB },
-/* NS */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* EX */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* SY */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, IB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* IS */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, IB, IB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* PR */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, IB, DB, IB, IB, DB, DB, PB, CI, PB, IB, IB, IB, IB, IB, DB, DB, IB, IB, IB },
-/* PO */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* NU */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* AL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* HL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, DB, IB, CI, CI, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* ID */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* IN */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* HY */ { HH, PB, PB, IB, HH, IB, PB, PB, PB, HH, HH, IB, HH, HH, HH, HH, IB, IB, HH, HH, PB, CI, PB, HH, HH, HH, HH, HH, HH, DB, DB, DB, IB },
-/* BA */ { HH, PB, PB, IB, HH, IB, PB, PB, PB, HH, HH, HH, HH, HH, HH, HH, IB, IB, HH, HH, PB, CI, PB, HH, HH, HH, HH, HH, HH, DB, DB, DB, IB },
-/* BB */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, DB, IB, IB, IB },
-/* B2 */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, PB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* ZW */ { DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
-/* CM */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* WJ */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB },
-/* H2 */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, IB, IB, DB, DB, DB, DB, IB },
-/* H3 */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, IB, DB, DB, DB, DB, IB },
-/* JL */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, IB, IB, IB, IB, DB, DB, DB, DB, DB, IB },
-/* JV */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, IB, IB, DB, DB, DB, DB, IB },
-/* JT */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, IB, DB, DB, DB, DB, IB },
-/* RI */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, IB, DB, DB, DB, IB },
-/* CB */ { DB, PB, PB, IB, IB, DB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* EB */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, IB, IB },
-/* EM */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
-/* ZWJ*/ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, IB }
+static const uchar breakTable[QUnicodeTables::LineBreak_ZWJ][QUnicodeTables::LineBreak_ZWJ] = {
+/*         OP  CL  CP  QU  GL  NS  EX  SY  IS  PR  PO  NU  AL  HL  ID  IN  HY  BA  BB  B2  ZW  CM  WJ  H2  H3  JL  JV  JT  RI  CB  EB  EM*/
+/* OP */ { PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB, CP, PB, PB, PB, PB, PB, PB, PB, PB, PB, PB },
+/* CL */ { DB, PB, PB, IB, IB, PB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* CP */ { DB, PB, PB, IB, IB, PB, PB, PB, PB, DB, DB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* QU */ { PB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB },
+/* GL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB },
+/* NS */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* EX */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* SY */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* IS */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* PR */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, IB, IB, IB, IB, DB, DB, PB, CI, PB, IB, IB, IB, IB, IB, DB, DB, IB, IB },
+/* PO */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* NU */ { IN, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* AL */ { IN, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* HL */ { IN, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, DB, IB, CI, CI, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* ID */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* IN */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* HY */ { HH, PB, PB, IB, HH, IB, PB, PB, PB, HH, HH, IB, HH, HH, HH, IB, IB, IB, HH, HH, PB, CI, PB, HH, HH, HH, HH, HH, HH, DB, DB, DB },
+/* BA */ { HH, PB, PB, IB, HH, IB, PB, PB, PB, HH, HH, HH, HH, HH, HH, IB, IB, IB, HH, HH, PB, CI, PB, HH, HH, HH, HH, HH, HH, DB, DB, DB },
+/* BB */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, DB, IB, IB },
+/* B2 */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, PB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* ZW */ { DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* CM */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* WJ */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB },
+/* H2 */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, IB, IB, DB, DB, DB, DB },
+/* H3 */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, IB, DB, DB, DB, DB },
+/* JL */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, IB, IB, IB, IB, DB, DB, DB, DB, DB },
+/* JV */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, IB, IB, DB, DB, DB, DB },
+/* JT */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, IB, DB, DB, DB, DB },
+/* RI */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, IB, DB, DB, DB },
+/* CB */ { DB, PB, PB, IB, IB, DB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
+/* EB */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, IB },
+/* EM */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
 };
 
 // The following line break classes are not treated by the pair table
 // and must be resolved outside:
-//  AI, BK, CB, CJ, CR, LF, NL, SA, SG, SP, XX
+//  AI, BK, CB, CJ, CR, LF, NL, ZWJ, SA, SG, SP, XX
 
 } // namespace LB
 
@@ -549,6 +611,8 @@ static void getLineBreaks(const char16_t *string, qsizetype len, QCharAttributes
 
     QUnicodeTables::LineBreakClass lcls = QUnicodeTables::LineBreak_LF; // to meet LB10
     QUnicodeTables::LineBreakClass cls = lcls;
+    const QUnicodeTables::Properties *lastProp = QUnicodeTables::properties(U'\n');
+
     for (qsizetype i = 0; i != len; ++i) {
         qsizetype pos = i;
         char32_t ucs4 = string[i];
@@ -621,9 +685,8 @@ static void getLineBreaks(const char16_t *string, qsizetype len, QCharAttributes
         }
 
         if (Q_UNLIKELY(lcls == QUnicodeTables::LineBreak_ZWJ)) {
-            // LB8a: ZWJ x (ID | EB | EM)
-            if (ncls == QUnicodeTables::LineBreak_ID || ncls == QUnicodeTables::LineBreak_EB || ncls == QUnicodeTables::LineBreak_EM)
-                goto next;
+            // LB8a: ZWJ x
+            goto next;
         }
 
         // LB25: do not break lines inside numbers
@@ -653,16 +716,24 @@ static void getLineBreaks(const char16_t *string, qsizetype len, QCharAttributes
             goto next;
         }
 
+        if (Q_UNLIKELY(ncls == QUnicodeTables::LineBreak_EM
+                       && lastProp->category == QChar::Other_NotAssigned
+                       && lastProp->graphemeBreakClass
+                               == QUnicodeTables::GraphemeBreak_Extended_Pictographic)) {
+            // LB30b: [\p{Extended_Pictographic}&\p{Cn}] × EM
+            goto next;
+        }
+
         // for South East Asian chars that require a complex analysis, the Unicode
         // standard recommends to treat them as AL. tailoring that do dictionary analysis can override
         if (Q_UNLIKELY(cls >= QUnicodeTables::LineBreak_SA))
             cls = QUnicodeTables::LineBreak_AL;
 
         tcls = cls;
-        if (tcls == QUnicodeTables::LineBreak_CM)
+        if (tcls == QUnicodeTables::LineBreak_CM || tcls == QUnicodeTables::LineBreak_ZWJ)
             // LB10
             tcls = QUnicodeTables::LineBreak_AL;
-        switch (LB::breakTable[tcls][ncls < QUnicodeTables::LineBreak_SA ? ncls : QUnicodeTables::LineBreak_AL]) {
+        switch (LB::breakTable[tcls][ncls < QUnicodeTables::LineBreak_ZWJ ? ncls : QUnicodeTables::LineBreak_AL]) {
         case LB::DirectBreak:
             attributes[pos].lineBreak = true;
             break;
@@ -683,6 +754,19 @@ static void getLineBreaks(const char16_t *string, qsizetype len, QCharAttributes
             if (lcls != QUnicodeTables::LineBreak_HL)
                 attributes[pos].lineBreak = true;
             break;
+        case LB::IndirectBreakIfNarrow:
+            switch (static_cast<QUnicodeTables::EastAsianWidth>(prop->eastAsianWidth)) {
+            default:
+                if (lcls != QUnicodeTables::LineBreak_SP)
+                    break;
+                Q_FALLTHROUGH();
+            case QUnicodeTables::EastAsianWidth::F:
+            case QUnicodeTables::EastAsianWidth::W:
+            case QUnicodeTables::EastAsianWidth::H:
+                attributes[pos].lineBreak = true;
+                break;
+            }
+            break;
         case LB::ProhibitedBreak:
             // nothing to do
         default:
@@ -691,6 +775,7 @@ static void getLineBreaks(const char16_t *string, qsizetype len, QCharAttributes
 
     next:
         cls = ncls;
+        lastProp = prop;
     next_no_cls_update:
         lcls = ncls;
     }
@@ -1179,17 +1264,17 @@ static inline Form form(unsigned short uc) {
    (Consonant Nukta? Halant)* Consonant Halant
    IndependentVowel VowelMark? StressMark?
 
-   We return syllable boundaries on invalid combinations aswell
+   We return syllable boundaries on invalid combinations as well
 */
 static qsizetype indic_nextSyllableBoundary(QChar::Script script, const char16_t *s, qsizetype start, qsizetype end, bool *invalid)
 {
     *invalid = false;
-    IDEBUG("indic_nextSyllableBoundary: start=%d, end=%d", int(start), int(end));
+    IDEBUG("indic_nextSyllableBoundary: start=%lld, end=%lld", qlonglong(start), qlonglong(end));
     const char16_t *uc = s+start;
 
     qsizetype pos = 0;
     Form state = form(uc[pos]);
-    IDEBUG("state[%d]=%d (uc=%4x)", int(pos), state, uc[pos]);
+    IDEBUG("state[%lld]=%d (uc=%4x)", qlonglong(pos), state, uc[pos]);
     pos++;
 
     if (state != Consonant && state != IndependentVowel) {
@@ -1200,7 +1285,7 @@ static qsizetype indic_nextSyllableBoundary(QChar::Script script, const char16_t
 
     while (pos < end - start) {
         Form newState = form(uc[pos]);
-        IDEBUG("state[%d]=%d (uc=%4x)", int(pos), newState, uc[pos]);
+        IDEBUG("state[%lld]=%d (uc=%4x)", qlonglong(pos), newState, uc[pos]);
         switch (newState) {
         case Control:
             newState = state;
@@ -1288,7 +1373,6 @@ static qsizetype indic_nextSyllableBoundary(QChar::Script script, const char16_t
 static void indicAttributes(QChar::Script script, const char16_t *text, qsizetype from, qsizetype len, QCharAttributes *attributes)
 {
     qsizetype end = from + len;
-    const char16_t *uc = text + from;
     attributes += from;
     qsizetype i = 0;
     while (i < len) {
@@ -1300,7 +1384,6 @@ static void indicAttributes(QChar::Script script, const char16_t *text, qsizetyp
         i++;
         while (i < boundary) {
             attributes[i].graphemeBoundary = false;
-            ++uc;
             ++i;
         }
         assert(i == boundary);
@@ -1323,34 +1406,40 @@ typedef int (*th_brk_def) (const unsigned char*, int*, size_t);
 typedef size_t (*th_next_cell_def) (const unsigned char *, size_t, struct thcell_t *, int);
 
 /* libthai related function handles */
-static th_brk_def th_brk = nullptr;
-static th_next_cell_def th_next_cell = nullptr;
+Q_CONSTINIT static th_brk_def th_brk = nullptr;
+Q_CONSTINIT static th_next_cell_def th_next_cell = nullptr;
 
 static int init_libthai() {
-    static bool initialized = false;
-    if (!initialized && (!th_brk || !th_next_cell)) {
-        th_brk = (th_brk_def) QLibrary::resolve(QLatin1String("thai"), (int)LIBTHAI_MAJOR, "th_brk");
-        th_next_cell = (th_next_cell_def)QLibrary::resolve(QLatin1String("thai"), LIBTHAI_MAJOR, "th_next_cell");
-        initialized = true;
+#if QT_CONFIG(library)
+    Q_CONSTINIT static QBasicAtomicInt initialized = Q_BASIC_ATOMIC_INITIALIZER(false);
+    Q_CONSTINIT static QBasicMutex mutex;
+    if (!initialized.loadAcquire()) {
+        const auto locker = std::scoped_lock(mutex);
+        if (!initialized.loadAcquire()) {
+            th_brk = reinterpret_cast<th_brk_def>(QLibrary::resolve("thai"_L1, LIBTHAI_MAJOR, "th_brk"));
+            th_next_cell = (th_next_cell_def)QLibrary::resolve("thai"_L1, LIBTHAI_MAJOR, "th_next_cell");
+            initialized.storeRelease(true);
+        }
     }
     if (th_brk && th_next_cell)
         return 1;
     else
+#endif
         return 0;
 }
 
 static void to_tis620(const char16_t *string, qsizetype len, char *cstr)
 {
     qsizetype i;
-    unsigned char *result = (unsigned char *)cstr;
+    unsigned char *result = reinterpret_cast<unsigned char *>(cstr);
 
     for (i = 0; i < len; ++i) {
         if (string[i] <= 0xa0)
-            result[i] = (unsigned char)string[i];
+            result[i] = static_cast<unsigned char>(string[i]);
         else if (string[i] >= 0xe01 && string[i] <= 0xe5b)
-            result[i] = (unsigned char)(string[i] - 0xe00 + 0xa0);
+            result[i] = static_cast<unsigned char>(string[i] - 0xe00 + 0xa0);
         else
-            result[i] = (unsigned char)~0; // Same encoding as libthai uses for invalid chars
+            result[i] = static_cast<unsigned char>(~0); // Same encoding as libthai uses for invalid chars
     }
 
     result[len] = 0;
@@ -1365,15 +1454,15 @@ static void thaiAssignAttributes(const char16_t *string, qsizetype len, QCharAtt
     char *cstr = s;
     int *break_positions = nullptr;
     int brp[128];
-    int brp_size = 0;
-    qsizetype numbreaks, i, j, cell_length;
+    size_t brp_size = 0;
+    qsizetype numbreaks, i;
     struct thcell_t tis_cell;
 
     if (!init_libthai())
         return ;
 
     if (len >= 128)
-        cstr = (char *)malloc(len*sizeof(char) + 1);
+        cstr = static_cast<char *>(malloc (len * sizeof(char) + 1));
 
     to_tis620(string, len, cstr);
 
@@ -1385,9 +1474,9 @@ static void thaiAssignAttributes(const char16_t *string, qsizetype len, QCharAtt
     }
 
     if (len > 128) {
-        break_positions = (int*) malloc (sizeof(int) * len);
+        break_positions = static_cast<int *>(malloc (sizeof(int) * len));
         memset (break_positions, 0, sizeof(int) * len);
-        brp_size = len;
+        brp_size = size_t(len);
     }
     else {
         break_positions = brp;
@@ -1398,7 +1487,7 @@ static void thaiAssignAttributes(const char16_t *string, qsizetype len, QCharAtt
         attributes[0].wordBreak = true;
         attributes[0].wordStart = true;
         attributes[0].wordEnd = false;
-        numbreaks = th_brk((const unsigned char *)cstr, break_positions, brp_size);
+        numbreaks = th_brk(reinterpret_cast<const unsigned char *>(cstr), break_positions, brp_size);
         for (i = 0; i < numbreaks; ++i) {
             attributes[break_positions[i]].wordBreak = true;
             attributes[break_positions[i]].wordStart = true;
@@ -1415,15 +1504,13 @@ static void thaiAssignAttributes(const char16_t *string, qsizetype len, QCharAtt
     /* manage grapheme boundaries */
     i = 0;
     while (i < len) {
-        cell_length = (uint)(th_next_cell((const unsigned char *)cstr + i, len - i, &tis_cell, true));
+        size_t cell_length = th_next_cell(reinterpret_cast<const unsigned char *>(cstr) + i,
+                                          size_t(len - i), &tis_cell, true);
+
 
         attributes[i].graphemeBoundary = true;
-        for (j = 1; j < cell_length; j++)
+        for (size_t j = 1; j < cell_length; ++j)
             attributes[i + j].graphemeBoundary = false;
-
-        /* Set graphemeBoundary for SARA AM */
-        if (cstr[i + cell_length - 1] == (char)0xd3)
-            attributes[i + cell_length - 1].graphemeBoundary = true;
 
         i += cell_length;
     }
@@ -1552,7 +1639,6 @@ finish:
 static void tibetanAttributes(QChar::Script script, const char16_t *text, qsizetype from, qsizetype len, QCharAttributes *attributes)
 {
     qsizetype end = from + len;
-    const char16_t *uc = text + from;
     qsizetype i = 0;
     Q_UNUSED(script);
     attributes += from;
@@ -1566,7 +1652,6 @@ static void tibetanAttributes(QChar::Script script, const char16_t *text, qsizet
         i++;
         while (i < boundary) {
             attributes[i].graphemeBoundary = false;
-            ++uc;
             ++i;
         }
         assert(i == boundary);
@@ -1616,6 +1701,8 @@ enum MymrCharClassFlags {
 
     Mymr_CF_AFTER_KINZI = 0x00100000
 };
+
+Q_DECLARE_MIXED_ENUM_OPERATORS(int, MymrCharClassValues, MymrCharClassFlags)
 
 /* Characters that get refrered to by name */
 enum MymrChar
@@ -1749,7 +1836,7 @@ static qsizetype myanmar_nextSyllableBoundary(const char16_t *s, qsizetype start
         if (pos == start)
             *invalid = (bool)(charClass & Mymr_CF_DOTTED_CIRCLE);
 
-        MMDEBUG("state[%d]=%d class=%8x (uc=%4x)", int(pos - start), state, charClass, *uc);
+        MMDEBUG("state[%lld]=%d class=%8x (uc=%4x)", qlonglong(pos - start), state, charClass, *uc);
 
         if (state < 0) {
             if (state < -1)
@@ -1765,7 +1852,6 @@ static qsizetype myanmar_nextSyllableBoundary(const char16_t *s, qsizetype start
 static void myanmarAttributes(QChar::Script script, const char16_t *text, qsizetype from, qsizetype len, QCharAttributes *attributes)
 {
     qsizetype end = from + len;
-    const char16_t *uc = text + from;
     qsizetype i = 0;
     Q_UNUSED(script);
     attributes += from;
@@ -1781,7 +1867,6 @@ static void myanmarAttributes(QChar::Script script, const char16_t *text, qsizet
     i++;
     while (i < boundary) {
         attributes[i].graphemeBoundary = false;
-        ++uc;
         ++i;
     }
     assert(i == boundary);
@@ -1864,6 +1949,7 @@ enum KhmerCharClassFlags {
     CF_POS_MASK      = 0x000f0000
 };
 
+Q_DECLARE_MIXED_ENUM_OPERATORS(int, KhmerCharClassValues, KhmerCharClassFlags)
 
 /* Characters that get referred to by name */
 enum KhmerChar {
@@ -2085,7 +2171,7 @@ static qsizetype khmer_nextSyllableBoundary(const char16_t *s, qsizetype start, 
         }
         state = khmerStateTable[state][charClass & CF_CLASS_MASK];
 
-        KHDEBUG("state[%d]=%d class=%8lx (uc=%4x)", int(pos - start), state,
+        KHDEBUG("state[%lld]=%d class=%8lx (uc=%4x)", qlonglong(pos - start), state,
                 charClass, *uc );
 
         if (state < 0) {
@@ -2100,7 +2186,6 @@ static qsizetype khmer_nextSyllableBoundary(const char16_t *s, qsizetype start, 
 static void khmerAttributes(QChar::Script script, const char16_t *text, qsizetype from, qsizetype len, QCharAttributes *attributes)
 {
     qsizetype end = from + len;
-    const char16_t *uc = text + from;
     qsizetype i = 0;
     Q_UNUSED(script);
     attributes += from;
@@ -2114,7 +2199,6 @@ static void khmerAttributes(QChar::Script script, const char16_t *text, qsizetyp
     i++;
     while ( i < boundary ) {
         attributes[i].graphemeBoundary = false;
-        ++uc;
         ++i;
     }
     assert( i == boundary );

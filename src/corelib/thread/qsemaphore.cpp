@@ -1,49 +1,16 @@
-/****************************************************************************
-**
-** Copyright (C) 2017 The Qt Company Ltd.
-** Copyright (C) 2018 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2018 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qsemaphore.h"
-#include "qmutex.h"
 #include "qfutex_p.h"
-#include "qwaitcondition.h"
 #include "qdeadlinetimer.h"
 #include "qdatetime.h"
+#include "qdebug.h"
+#include "qlocking_p.h"
+#include "qwaitcondition_p.h"
+
+#include <chrono>
 
 QT_BEGIN_NAMESPACE
 
@@ -132,8 +99,8 @@ static constexpr bool futexHasWaiterCount = true;
 static constexpr bool futexHasWaiterCount = false;
 #endif
 
-static const quintptr futexNeedsWakeAllBit =
-        Q_UINT64_C(1) << (sizeof(quintptr) * CHAR_BIT - 1);
+static constexpr quintptr futexNeedsWakeAllBit = futexHasWaiterCount ?
+        (Q_UINT64_C(1) << (sizeof(quintptr) * CHAR_BIT - 1)) : 0x80000000U;
 
 static int futexAvailCounter(quintptr v)
 {
@@ -150,10 +117,11 @@ static int futexAvailCounter(quintptr v)
 
 static bool futexNeedsWake(quintptr v)
 {
-    // If we're counting waiters, the number of waiters is stored in the low 31
-    // bits of the high word (that is, bits 32-62). If we're not, then we use
-    // bit 31 to indicate anyone is waiting. Either way, if any bit 31 or above
-    // is set, there are waiters.
+    // If we're counting waiters, the number of waiters plus value is stored in the
+    // low 31 bits of the high word (that is, bits 32-62). If we're not, then we only
+    // use futexNeedsWakeAllBit to indicate anyone is waiting.
+    if constexpr (futexHasWaiterCount)
+        return unsigned(quint64(v) >> 32) > unsigned(v);
     return v >> 31;
 }
 
@@ -168,6 +136,7 @@ static QBasicAtomicInteger<quint32> *futexLow32(QBasicAtomicInteger<quintptr> *p
 
 static QBasicAtomicInteger<quint32> *futexHigh32(QBasicAtomicInteger<quintptr> *ptr)
 {
+    Q_ASSERT(futexHasWaiterCount);
     auto result = reinterpret_cast<QBasicAtomicInteger<quint32> *>(ptr);
 #if Q_BYTE_ORDER == Q_LITTLE_ENDIAN && QT_POINTER_SIZE > 4
     ++result;
@@ -183,30 +152,15 @@ futexSemaphoreTryAcquire_loop(QBasicAtomicInteger<quintptr> &u, quintptr curValu
     int n = int(unsigned(nn));
 
     // we're called after one testAndSet, so start by waiting first
-    goto start_wait;
-
-    forever {
-        if (futexAvailCounter(curValue) >= n) {
-            // try to acquire
-            quintptr newValue = curValue - nn;
-            if (u.testAndSetOrdered(curValue, newValue, curValue))
-                return true;        // succeeded!
-            continue;
-        }
-
-        // not enough tokens available, put us to wait
-        if (remainingTime == 0)
-            return false;
-
+    for (;;) {
         // indicate we're waiting
-start_wait:
         auto ptr = futexLow32(&u);
         if (n > 1 || !futexHasWaiterCount) {
             u.fetchAndOrRelaxed(futexNeedsWakeAllBit);
             curValue |= futexNeedsWakeAllBit;
-            if (n > 1 && futexHasWaiterCount) {
+            if constexpr (futexHasWaiterCount) {
+                Q_ASSERT(n > 1);
                 ptr = futexHigh32(&u);
-                //curValue >>= 32;  // but this is UB in 32-bit, so roundabout:
                 curValue = quint64(curValue) >> 32;
             }
         }
@@ -222,6 +176,17 @@ start_wait:
         curValue = u.loadAcquire();
         if (IsTimed)
             remainingTime = timer.remainingTimeNSecs();
+
+        // try to acquire
+        while (futexAvailCounter(curValue) >= n) {
+            quintptr newValue = curValue - nn;
+            if (u.testAndSetOrdered(curValue, newValue, curValue))
+                return true;        // succeeded!
+        }
+
+        // not enough tokens available, put us to wait
+        if (remainingTime == 0)
+            return false;
     }
 }
 
@@ -244,15 +209,18 @@ template <bool IsTimed> bool futexSemaphoreTryAcquire(QBasicAtomicInteger<quintp
         return false;
 
     // we need to wait
-    quintptr oneWaiter = quintptr(Q_UINT64_C(1) << 32); // zero on 32-bit
-    if (futexHasWaiterCount) {
-        // increase the waiter count
-        u.fetchAndAddRelaxed(oneWaiter);
-
+    constexpr quintptr oneWaiter = quintptr(Q_UINT64_C(1) << 32); // zero on 32-bit
+    if constexpr (futexHasWaiterCount) {
         // We don't use the fetched value from above so futexWait() fails if
         // it changed after the testAndSetOrdered above.
-        if ((quint64(curValue) >> 32) == 0x7fffffff)
-            return false;       // overflow!
+        quint32 waiterCount = (quint64(curValue) >> 32) & 0x7fffffffU;
+        if (waiterCount == 0x7fffffffU) {
+            qCritical() << "Waiter count overflow in QSemaphore";
+            return false;
+        }
+
+        // increase the waiter count
+        u.fetchAndAddRelaxed(oneWaiter);
         curValue += oneWaiter;
 
         // Also adjust nn to subtract oneWaiter when we succeed in acquiring.
@@ -261,6 +229,8 @@ template <bool IsTimed> bool futexSemaphoreTryAcquire(QBasicAtomicInteger<quintp
 
     if (futexSemaphoreTryAcquire_loop<IsTimed>(u, curValue, nn, timeout))
         return true;
+
+    Q_ASSERT(IsTimed);
 
     if (futexHasWaiterCount) {
         // decrement the number of threads waiting
@@ -272,10 +242,10 @@ template <bool IsTimed> bool futexSemaphoreTryAcquire(QBasicAtomicInteger<quintp
 
 class QSemaphorePrivate {
 public:
-    inline QSemaphorePrivate(int n) : avail(n) { }
+    explicit QSemaphorePrivate(int n) : avail(n) { }
 
-    QMutex mutex;
-    QWaitCondition cond;
+    QtPrivate::mutex mutex;
+    QtPrivate::condition_variable cond;
 
     int avail;
 };
@@ -327,9 +297,10 @@ void QSemaphore::acquire(int n)
         return;
     }
 
-    QMutexLocker locker(&d->mutex);
-    while (n > d->avail)
-        d->cond.wait(locker.mutex());
+    const auto sufficientResourcesAvailable = [this, n] { return d->avail >= n; };
+
+    auto locker = qt_unique_lock(d->mutex);
+    d->cond.wait(locker, sufficientResourcesAvailable);
     d->avail -= n;
 }
 
@@ -354,66 +325,57 @@ void QSemaphore::release(int n)
         quintptr nn = unsigned(n);
         if (futexHasWaiterCount)
             nn |= quint64(nn) << 32;    // token count replicated in high word
-        quintptr prevValue = u.fetchAndAddRelease(nn);
+        quintptr prevValue = u.loadRelaxed();
+        quintptr newValue;
+        do { // loop just to ensure the operations are done atomically
+            newValue = prevValue + nn;
+            newValue &= (futexNeedsWakeAllBit - 1);
+        } while (!u.testAndSetRelease(prevValue, newValue, prevValue));
         if (futexNeedsWake(prevValue)) {
 #ifdef FUTEX_OP
-            if (!futexHasWaiterCount) {
-                /*
-                   On 32-bit systems, all waiters are waiting on the same address,
-                   so we'll wake them all and ask the kernel to clear the high bit.
-
-                   atomic {
-                      int oldval = u;
-                      u = oldval & ~(1 << 31);
-                      futexWake(u, INT_MAX);
-                      if (oldval == 0)       // impossible condition
-                          futexWake(u, INT_MAX);
-                   }
-                */
-                quint32 op = FUTEX_OP_ANDN | FUTEX_OP_OPARG_SHIFT;
-                quint32 oparg = 31;
-                quint32 cmp = FUTEX_OP_CMP_EQ;
-                quint32 cmparg = 0;
-                futexWakeOp(u, INT_MAX, INT_MAX, u, FUTEX_OP(op, oparg, cmp, cmparg));
-            } else {
+            if (futexHasWaiterCount) {
                 /*
                    On 64-bit systems, the single-token waiters wait on the low half
                    and the multi-token waiters wait on the upper half. So we ask
                    the kernel to wake up n single-token waiters and all multi-token
-                   waiters (if any), then clear the multi-token wait bit.
+                   waiters (if any), and clear the multi-token wait bit.
 
                    atomic {
                       int oldval = *upper;
-                      *upper = oldval & ~(1 << 31);
+                      *upper = oldval | 0;
                       futexWake(lower, n);
-                      if (oldval < 0)   // sign bit set
+                      if (oldval != 0)   // always true
                           futexWake(upper, INT_MAX);
                    }
                 */
-                quint32 op = FUTEX_OP_ANDN | FUTEX_OP_OPARG_SHIFT;
-                quint32 oparg = 31;
-                quint32 cmp = FUTEX_OP_CMP_LT;
+                quint32 op = FUTEX_OP_OR;
+                quint32 oparg = 0;
+                quint32 cmp = FUTEX_OP_CMP_NE;
                 quint32 cmparg = 0;
                 futexWakeOp(*futexLow32(&u), n, INT_MAX, *futexHigh32(&u), FUTEX_OP(op, oparg, cmp, cmparg));
+                return;
             }
-#else
-            // Unset the bit and wake everyone. There are two possibibilies
+#endif
+            // Unset the bit and wake everyone. There are two possibilities
             // under which a thread can set the bit between the AND and the
             // futexWake:
             // 1) it did see the new counter value, but it wasn't enough for
             //    its acquisition anyway, so it has to wait;
             // 2) it did not see the new counter value, in which case its
             //    futexWait will fail.
-            u.fetchAndAndRelease(futexNeedsWakeAllBit - 1);
-            futexWakeAll(u);
-#endif
+            if (futexHasWaiterCount) {
+                futexWakeAll(*futexLow32(&u));
+                futexWakeAll(*futexHigh32(&u));
+            } else {
+                futexWakeAll(u);
+            }
         }
         return;
     }
 
-    QMutexLocker locker(&d->mutex);
+    const auto locker = qt_scoped_lock(d->mutex);
     d->avail += n;
-    d->cond.wakeAll();
+    d->cond.notify_all();
 }
 
 /*!
@@ -427,7 +389,7 @@ int QSemaphore::available() const
     if (futexAvailable())
         return futexAvailCounter(u.loadRelaxed());
 
-    QMutexLocker locker(&d->mutex);
+    const auto locker = qt_scoped_lock(d->mutex);
     return d->avail;
 }
 
@@ -449,7 +411,7 @@ bool QSemaphore::tryAcquire(int n)
     if (futexAvailable())
         return futexSemaphoreTryAcquire<false>(u, n, 0);
 
-    QMutexLocker locker(&d->mutex);
+    const auto locker = qt_scoped_lock(d->mutex);
     if (n > d->avail)
         return false;
     d->avail -= n;
@@ -474,28 +436,73 @@ bool QSemaphore::tryAcquire(int n)
 */
 bool QSemaphore::tryAcquire(int n, int timeout)
 {
-    Q_ASSERT_X(n >= 0, "QSemaphore::tryAcquire", "parameter 'n' must be non-negative");
+    if (timeout < 0) {
+        acquire(n);
+        return true;
+    }
 
-    // We're documented to accept any negative value as "forever"
-    // but QDeadlineTimer only accepts -1.
-    timeout = qMax(timeout, -1);
+    if (timeout == 0)
+        return tryAcquire(n);
+
+    Q_ASSERT_X(n >= 0, "QSemaphore::tryAcquire", "parameter 'n' must be non-negative");
 
     if (futexAvailable())
         return futexSemaphoreTryAcquire<true>(u, n, timeout);
 
-    QDeadlineTimer timer(timeout);
-    QMutexLocker locker(&d->mutex);
-    while (n > d->avail && !timer.hasExpired()) {
-        if (!d->cond.wait(locker.mutex(), timer))
-            return false;
-    }
-    if (n > d->avail)
+    using namespace std::chrono;
+    const auto sufficientResourcesAvailable = [this, n] { return d->avail >= n; };
+
+    auto locker = qt_unique_lock(d->mutex);
+    if (!d->cond.wait_for(locker, milliseconds{timeout}, sufficientResourcesAvailable))
         return false;
     d->avail -= n;
     return true;
-
-
 }
+
+/*!
+    \fn template <typename Rep, typename Period> QSemaphore::tryAcquire(int n, std::chrono::duration<Rep, Period> timeout)
+    \overload
+    \since 6.3
+*/
+
+/*!
+    \fn bool QSemaphore::try_acquire()
+    \since 6.3
+
+    This function is provided for \c{std::counting_semaphore} compatibility.
+
+    It is equivalent to calling \c{tryAcquire(1)}, where the function returns
+    \c true on acquiring the resource successfully.
+
+    \sa tryAcquire(), try_acquire_for(), try_acquire_until()
+*/
+
+/*!
+    \fn template <typename Rep, typename Period> bool QSemaphore::try_acquire_for(const std::chrono::duration<Rep, Period> &timeout)
+    \since 6.3
+
+    This function is provided for \c{std::counting_semaphore} compatibility.
+
+    It is equivalent to calling \c{tryAcquire(1, timeout)}, where the call
+    times out on the given \a timeout value. The function returns \c true
+    on acquiring the resource successfully.
+
+    \sa tryAcquire(), try_acquire(), try_acquire_until()
+*/
+
+/*!
+    \fn template <typename Clock, typename Duration> bool QSemaphore::try_acquire_until(const std::chrono::time_point<Clock, Duration> &tp)
+    \since 6.3
+
+    This function is provided for \c{std::counting_semaphore} compatibility.
+
+    It is equivalent to calling \c{tryAcquire(1, tp - Clock::now())},
+    which means that the \a tp (time point) is recorded, ignoring the
+    adjustments to \c{Clock} while waiting. The function returns \c true
+    on acquiring the resource successfully.
+
+    \sa tryAcquire(), try_acquire(), try_acquire_for()
+*/
 
 /*!
     \class QSemaphoreReleaser
@@ -594,7 +601,7 @@ bool QSemaphore::tryAcquire(int n, int timeout)
 /*!
     \fn QSemaphoreReleaser::swap(QSemaphoreReleaser &other)
 
-    Exchanges the responsibilites of \c{*this} and \a other.
+    Exchanges the responsibilities of \c{*this} and \a other.
 
     Unlike move assignment, neither of the two objects ever releases its
     semaphore, if any, as a consequence of swapping.

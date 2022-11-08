@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qscreen.h"
 #include "qscreen_p.h"
@@ -80,33 +44,6 @@ QScreen::QScreen(QPlatformScreen *screen)
     d->setPlatformScreen(screen);
 }
 
-void QScreenPrivate::updateGeometriesWithSignals()
-{
-    const QRect oldGeometry = geometry;
-    const QRect oldAvailableGeometry = availableGeometry;
-    updateHighDpi();
-    emitGeometryChangeSignals(oldGeometry != geometry, oldAvailableGeometry != availableGeometry);
-}
-
-void QScreenPrivate::emitGeometryChangeSignals(bool geometryChanged, bool availableGeometryChanged)
-{
-    Q_Q(QScreen);
-    if (geometryChanged)
-        emit q->geometryChanged(geometry);
-
-    if (availableGeometryChanged)
-        emit q->availableGeometryChanged(availableGeometry);
-
-    if (geometryChanged || availableGeometryChanged) {
-        const auto siblings = q->virtualSiblings();
-        for (QScreen* sibling : siblings)
-            emit sibling->virtualGeometryChanged(sibling->virtualGeometry());
-    }
-
-    if (geometryChanged)
-        emit q->physicalDotsPerInchChanged(q->physicalDotsPerInch());
-}
-
 void QScreenPrivate::setPlatformScreen(QPlatformScreen *screen)
 {
     Q_Q(QScreen);
@@ -121,10 +58,17 @@ void QScreenPrivate::setPlatformScreen(QPlatformScreen *screen)
     if (refreshRate < 1.0)
         refreshRate = 60.0;
 
-    updateHighDpi();
+    updateGeometry();
     updatePrimaryOrientation(); // derived from the geometry
 }
 
+void QScreenPrivate::updateGeometry()
+{
+    qreal scaleFactor = QHighDpiScaling::factor(platformScreen);
+    QRect nativeGeometry = platformScreen->geometry();
+    geometry = QRect(nativeGeometry.topLeft(), QHighDpi::fromNative(nativeGeometry.size(), scaleFactor));
+    availableGeometry = QHighDpi::fromNative(platformScreen->availableGeometry(), scaleFactor, geometry.topLeft());
+}
 
 /*!
     Destroys the screen.
@@ -449,7 +393,7 @@ QList<QScreen *> QScreen::virtualSiblings() const
     Q_D(const QScreen);
     const QList<QPlatformScreen *> platformScreens = d->platformScreen->virtualSiblings();
     QList<QScreen *> screens;
-    screens.reserve(platformScreens.count());
+    screens.reserve(platformScreens.size());
     for (QPlatformScreen *platformScreen : platformScreens)
         screens << platformScreen->screen();
     return screens;
@@ -547,6 +491,11 @@ Qt::ScreenOrientation QScreen::orientation() const
 /*!
   \property QScreen::refreshRate
   \brief the approximate vertical refresh rate of the screen in Hz
+
+  \warning Avoid using the screen's refresh rate to drive animations
+  via a timer such as QTimer. Instead use QWindow::requestUpdate().
+
+  \sa QWindow::requestUpdate()
 */
 qreal QScreen::refreshRate() const
 {
@@ -785,15 +734,39 @@ QPixmap QScreen::grabWindow(WId window, int x, int y, int width, int height)
     result.setDevicePixelRatio(result.devicePixelRatio() * factor);
     return result;
 }
-
-#ifndef QT_NO_DEBUG_STREAM
-
-static inline void formatRect(QDebug &debug, const QRect r)
+void *QScreen::resolveInterface(const char *name, int revision) const
 {
-    debug << r.width() << 'x' << r.height()
-        << Qt::forcesign << r.x() << r.y() << Qt::noforcesign;
+    using namespace QNativeInterface::Private;
+
+    auto *platformScreen = handle();
+    Q_UNUSED(platformScreen);
+    Q_UNUSED(name);
+    Q_UNUSED(revision);
+
+#if QT_CONFIG(xcb)
+    QT_NATIVE_INTERFACE_RETURN_IF(QXcbScreen, platformScreen);
+#endif
+
+#if QT_CONFIG(vsp2)
+    QT_NATIVE_INTERFACE_RETURN_IF(QVsp2Screen, platformScreen);
+#endif
+
+#if defined(Q_OS_WEBOS)
+    QT_NATIVE_INTERFACE_RETURN_IF(QWebOSScreen, platformScreen);
+#endif
+
+#if defined(Q_OS_WIN32)
+    QT_NATIVE_INTERFACE_RETURN_IF(QWindowsScreen, platformScreen);
+#endif
+
+#if defined(Q_OS_UNIX)
+    QT_NATIVE_INTERFACE_RETURN_IF(QWaylandScreen, platformScreen);
+#endif
+
+    return nullptr;
 }
 
+#ifndef QT_NO_DEBUG_STREAM
 Q_GUI_EXPORT QDebug operator<<(QDebug debug, const QScreen *screen)
 {
     const QDebugStateSaver saver(debug);
@@ -804,10 +777,8 @@ Q_GUI_EXPORT QDebug operator<<(QDebug debug, const QScreen *screen)
         if (debug.verbosity() > 2) {
             if (screen == QGuiApplication::primaryScreen())
                 debug << ", primary";
-            debug << ", geometry=";
-            formatRect(debug, screen->geometry());
-            debug << ", available=";
-            formatRect(debug, screen->availableGeometry());
+            debug << ", geometry=" << screen->geometry();
+            debug << ", available=" << screen->availableGeometry();
             debug << ", logical DPI=" << screen->logicalDotsPerInchX()
                 << ',' << screen->logicalDotsPerInchY()
                 << ", physical DPI=" << screen->physicalDotsPerInchX()
@@ -823,4 +794,60 @@ Q_GUI_EXPORT QDebug operator<<(QDebug debug, const QScreen *screen)
 }
 #endif // !QT_NO_DEBUG_STREAM
 
+QScreenPrivate::UpdateEmitter::UpdateEmitter(QScreen *screen)
+{
+    initialState.platformScreen = screen->handle();
+
+    // Use public APIs to read out current state, rather
+    // than accessing the QScreenPrivate members, so that
+    // we detect any changes to the high-DPI scale factors
+    // that may be applied in the getters.
+
+    initialState.logicalDpi = QDpi{
+        screen->logicalDotsPerInchX(),
+        screen->logicalDotsPerInchY()
+    };
+    initialState.geometry = screen->geometry();
+    initialState.availableGeometry = screen->availableGeometry();
+    initialState.primaryOrientation = screen->primaryOrientation();
+}
+
+QScreenPrivate::UpdateEmitter::~UpdateEmitter()
+{
+    QScreen *screen = initialState.platformScreen->screen();
+
+    const auto logicalDotsPerInch = QDpi{
+        screen->logicalDotsPerInchX(),
+        screen->logicalDotsPerInchY()
+    };
+    if (logicalDotsPerInch != initialState.logicalDpi)
+        emit screen->logicalDotsPerInchChanged(screen->logicalDotsPerInch());
+
+    const auto geometry = screen->geometry();
+    const auto geometryChanged = geometry != initialState.geometry;
+    if (geometryChanged)
+        emit screen->geometryChanged(geometry);
+
+    const auto availableGeometry = screen->availableGeometry();
+    const auto availableGeometryChanged = availableGeometry != initialState.availableGeometry;
+    if (availableGeometryChanged)
+        emit screen->availableGeometryChanged(availableGeometry);
+
+    if (geometryChanged || availableGeometryChanged) {
+        const auto siblings = screen->virtualSiblings();
+        for (QScreen* sibling : siblings)
+            emit sibling->virtualGeometryChanged(sibling->virtualGeometry());
+    }
+
+    if (geometryChanged) {
+        emit screen->physicalDotsPerInchChanged(screen->physicalDotsPerInch());
+
+        const auto primaryOrientation = screen->primaryOrientation();
+        if (primaryOrientation != initialState.primaryOrientation)
+            emit screen->primaryOrientationChanged(primaryOrientation);
+    }
+}
+
 QT_END_NAMESPACE
+
+#include "moc_qscreen.cpp"

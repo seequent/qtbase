@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from GraphicsViewBenchmark.pro.
 
 #####################################################################
@@ -38,7 +41,7 @@ qt_internal_add_benchmark(tst_GraphicsViewBenchmark
         widgets/topbar.cpp widgets/topbar.h
     INCLUDE_DIRECTORIES
         widgets
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Svg
         Qt::Test
@@ -362,7 +365,7 @@ qt_internal_add_resource(tst_GraphicsViewBenchmark "GraphicsViewBenchmark3"
 #####################################################################
 
 qt_internal_extend_target(tst_GraphicsViewBenchmark CONDITION TARGET Qt::OpenGL
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::OpenGL
         Qt::OpenGLWidgets
 )

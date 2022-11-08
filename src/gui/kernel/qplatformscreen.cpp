@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qplatformscreen.h"
 #include <QtCore/qdebug.h>
@@ -47,6 +11,7 @@
 #include <QtGui/qscreen.h>
 #include <QtGui/qwindow.h>
 #include <private/qhighdpiscaling_p.h>
+#include <private/qwindow_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -353,11 +318,12 @@ QPlatformCursor *QPlatformScreen::cursor() const
 */
 void QPlatformScreen::resizeMaximizedWindows()
 {
-    // 'screen()' still has the old geometry info while 'this' has the new geometry info
+    // 'screen()' still has the old geometry (in device independent pixels),
+    // while 'this' has the new geometry (in native pixels)
     const QRect oldGeometry = screen()->geometry();
     const QRect oldAvailableGeometry = screen()->availableGeometry();
-    const QRect newGeometry = deviceIndependentGeometry();
-    const QRect newAvailableGeometry = QHighDpi::fromNative(availableGeometry(), QHighDpiScaling::factor(this), newGeometry.topLeft());
+    const QRect newNativeGeometry = this->geometry();
+    const QRect newNativeAvailableGeometry = this->availableGeometry();
 
     const bool supportsMaximizeUsingFullscreen = QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::MaximizeUsingFullscreenGeometry);
 
@@ -366,14 +332,19 @@ void QPlatformScreen::resizeMaximizedWindows()
         if (!w->handle())
             continue;
 
+        // Set QPlatformWindow size in native pixels, and let the platform's geometry
+        // change signals update the QWindow geomeyry. This way we make sure that the
+        // platform window geometry covers the entire (available) platform screen geometry,
+        // also when fractional DPRs introduce rounding errors in the device independent
+        // QWindow and QScreen sizes.
         if (supportsMaximizeUsingFullscreen
                 && w->windowState() & Qt::WindowMaximized
                 && w->flags() & Qt::MaximizeUsingFullscreenGeometryHint) {
-            w->setGeometry(newGeometry);
+            w->handle()->setGeometry(newNativeGeometry);
         } else if (w->windowState() & Qt::WindowMaximized || w->geometry() == oldAvailableGeometry) {
-            w->setGeometry(newAvailableGeometry);
+            w->handle()->setGeometry(newNativeAvailableGeometry);
         } else if (w->windowState() & Qt::WindowFullScreen || w->geometry() == oldGeometry) {
-            w->setGeometry(newGeometry);
+            w->handle()->setGeometry(newNativeGeometry);
         }
     }
 }
@@ -462,13 +433,6 @@ QRect QPlatformScreen::mapBetween(Qt::ScreenOrientation a, Qt::ScreenOrientation
     }
 
     return rect;
-}
-
-QRect QPlatformScreen::deviceIndependentGeometry() const
-{
-    qreal scaleFactor = QHighDpiScaling::factor(this);
-    QRect nativeGeometry = geometry();
-    return QRect(nativeGeometry.topLeft(), QHighDpi::fromNative(nativeGeometry.size(), scaleFactor));
 }
 
 /*!

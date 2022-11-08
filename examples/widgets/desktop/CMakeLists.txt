@@ -1,4 +1,2 @@
-# Generated from desktop.pro.
-
-add_subdirectory(screenshot)
-add_subdirectory(systray)
+qt_internal_add_example(screenshot)
+qt_internal_add_example(systray)

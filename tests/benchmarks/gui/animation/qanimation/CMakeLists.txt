@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qanimation.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ qt_internal_add_benchmark(tst_bench_qanimation
         dummyobject.cpp dummyobject.h
         main.cpp
         rectanimation.cpp rectanimation.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Test
         Qt::Widgets

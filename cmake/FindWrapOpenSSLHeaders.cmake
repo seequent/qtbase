@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # We can't create the same interface imported target multiple times, CMake will complain if we do
 # that. This can happen if the find_package call is done in multiple different subdirectories.
 if(TARGET WrapOpenSSLHeaders::WrapOpenSSLHeaders)
@@ -28,7 +31,15 @@ if(OPENSSL_INCLUDE_DIR)
     add_library(WrapOpenSSLHeaders::WrapOpenSSLHeaders INTERFACE IMPORTED)
     target_include_directories(WrapOpenSSLHeaders::WrapOpenSSLHeaders INTERFACE
         ${OPENSSL_INCLUDE_DIR})
+
+    set_target_properties(WrapOpenSSLHeaders::WrapOpenSSLHeaders PROPERTIES
+        _qt_is_nolink_target TRUE)
 endif()
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(WrapOpenSSLHeaders DEFAULT_MSG WrapOpenSSLHeaders_FOUND)
+find_package_handle_standard_args(WrapOpenSSLHeaders
+    REQUIRED_VARS
+        OPENSSL_INCLUDE_DIR
+    VERSION_VAR
+        OPENSSL_VERSION
+)

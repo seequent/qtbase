@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 Intel Corporation
+** Copyright (C) 2021 Intel Corporation
 **
 ** Permission is hereby granted, free of charge, to any person obtaining a copy
 ** of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@
 **
 ****************************************************************************/
 
-#include <QTest>
+#include <QtTest>
 #include "cbor.h"
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)

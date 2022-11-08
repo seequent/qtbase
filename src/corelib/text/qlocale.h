@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QLOCALE_H
 #define QLOCALE_H
@@ -403,6 +367,8 @@ public:
         Zarma = 325,
         Zhuang = 326,
         Zulu = 327,
+        Kaingang = 328,
+        Nheengatu = 329,
 
         Afan = Oromo,
         Bengali = Bangla,
@@ -424,7 +390,7 @@ public:
         Uigur = Uyghur,
         Walamo = Wolaytta,
 
-        LastLanguage = Zulu
+        LastLanguage = Nheengatu
     };
 
     enum Script : ushort {
@@ -580,8 +546,9 @@ public:
         LastScript = YiScript
     };
 
+    // ### Qt 7: Rename to Territory
     enum Country : ushort {
-        AnyCountry = 0,
+        AnyTerritory = 0,
         Afghanistan = 1,
         AlandIslands = 2,
         Albania = 3,
@@ -744,7 +711,7 @@ public:
         Mozambique = 160,
         Myanmar = 161,
         Namibia = 162,
-        NauruCountry = 163,
+        NauruTerritory = 163,
         Nepal = 164,
         Netherlands = 165,
         NewCaledonia = 166,
@@ -815,7 +782,7 @@ public:
         Thailand = 231,
         TimorLeste = 232,
         Togo = 233,
-        TokelauCountry = 234,
+        TokelauTerritory = 234,
         Tonga = 235,
         TrinidadAndTobago = 236,
         TristanDaCunha = 237,
@@ -823,7 +790,7 @@ public:
         Turkey = 239,
         Turkmenistan = 240,
         TurksAndCaicosIslands = 241,
-        TuvaluCountry = 242,
+        TuvaluTerritory = 242,
         Uganda = 243,
         Ukraine = 244,
         UnitedArabEmirates = 245,
@@ -844,6 +811,7 @@ public:
         Zambia = 260,
         Zimbabwe = 261,
 
+        AnyCountry = AnyTerritory,
         Bonaire = CaribbeanNetherlands,
         BosniaAndHerzegowina = BosniaAndHerzegovina,
         CuraSao = Curacao,
@@ -853,6 +821,7 @@ public:
         EastTimor = TimorLeste,
         LatinAmericaAndTheCaribbean = LatinAmerica,
         Macau = Macao,
+        NauruCountry = NauruTerritory,
         PeoplesRepublicOfCongo = CongoBrazzaville,
         RepublicOfKorea = SouthKorea,
         RussianFederation = Russia,
@@ -861,13 +830,18 @@ public:
         SvalbardAndJanMayenIslands = SvalbardAndJanMayen,
         Swaziland = Eswatini,
         SyrianArabRepublic = Syria,
+        TokelauCountry = TokelauTerritory,
+        TuvaluCountry = TuvaluTerritory,
         UnitedStatesMinorOutlyingIslands = UnitedStatesOutlyingIslands,
         VaticanCityState = VaticanCity,
         WallisAndFutunaIslands = WallisAndFutuna,
 
-        LastCountry = Zimbabwe
+        LastTerritory = Zimbabwe,
+        LastCountry = LastTerritory
     };
 // GENERATED PART ENDS HERE
+
+    using Territory = Country; // ### Qt 7: reverse
 
     Q_ENUM(Language)
     Q_ENUM(Country)
@@ -882,6 +856,7 @@ public:
     Q_ENUM(MeasurementSystem)
 
     enum FormatType { LongFormat, ShortFormat, NarrowFormat };
+    Q_ENUM(FormatType)
     enum NumberOption {
         DefaultNumberOptions = 0x0,
         OmitGroupSeparator = 0x01,
@@ -892,6 +867,7 @@ public:
         RejectTrailingZeroesAfterDot = 0x20
     };
     Q_DECLARE_FLAGS(NumberOptions, NumberOption)
+    Q_FLAG(NumberOptions)
 
     enum FloatingPointPrecisionOption {
         FloatingPointShortest = -128
@@ -917,26 +893,35 @@ public:
     Q_FLAG(DataSizeFormats)
 
     QLocale();
+    QT_CORE_INLINE_SINCE(6, 4)
     explicit QLocale(const QString &name);
-    QLocale(Language language, Country country = AnyCountry);
-    QLocale(Language language, Script script, Country country);
-    QLocale(const QLocale &other);
+    explicit QLocale(QStringView name);
+    QLocale(Language language, Territory territory);
+    QLocale(Language language, Script script = AnyScript, Territory territory = AnyTerritory);
+    QLocale(const QLocale &other) noexcept;
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(QLocale)
-    QLocale &operator=(const QLocale &other);
+    QLocale &operator=(const QLocale &other) noexcept;
     ~QLocale();
 
-    void swap(QLocale &other) noexcept { qSwap(d, other.d); }
+    void swap(QLocale &other) noexcept { d.swap(other.d); }
 
     Language language() const;
     Script script() const;
+    Territory territory() const;
+#if QT_DEPRECATED_SINCE(6, 6)
+    QT_DEPRECATED_VERSION_X_6_6("Use territory() instead")
     Country country() const;
+#endif
     QString name() const;
 
     QString bcp47Name() const;
     QString nativeLanguageName() const;
+    QString nativeTerritoryName() const;
+#if QT_DEPRECATED_SINCE(6, 6)
+    QT_DEPRECATED_VERSION_X_6_6("Use nativeTerritoryName() instead")
     QString nativeCountryName() const;
+#endif
 
-#if QT_STRINGVIEW_LEVEL < 2
     short toShort(const QString &s, bool *ok = nullptr) const
     { return toShort(qToStringViewIgnoringNull(s), ok); }
     ushort toUShort(const QString &s, bool *ok = nullptr) const
@@ -957,7 +942,6 @@ public:
     { return toFloat(qToStringViewIgnoringNull(s), ok); }
     double toDouble(const QString &s, bool *ok = nullptr) const
     { return toDouble(qToStringViewIgnoringNull(s), ok); }
-#endif
 
     short toShort(QStringView s, bool *ok = nullptr) const;
     ushort toUShort(QStringView s, bool *ok = nullptr) const;
@@ -978,17 +962,15 @@ public:
     QString toString(ushort i) const { return toString(qulonglong(i)); }
     QString toString(int i) const { return toString(qlonglong(i)); }
     QString toString(uint i) const { return toString(qulonglong(i)); }
-    QString toString(double i, char f = 'g', int prec = 6) const;
-    QString toString(float i, char f = 'g', int prec = 6) const
-    { return toString(double(i), f, prec); }
+    QString toString(double f, char format = 'g', int precision = 6) const;
+    QString toString(float f, char format = 'g', int precision = 6) const
+    { return toString(double(f), format, precision); }
 
-#if QT_STRINGVIEW_LEVEL < 2
     // (Can't inline first two: passing by value doesn't work when only forward-declared.)
     QString toString(QDate date, const QString &format) const;
     QString toString(QTime time, const QString &format) const;
     QString toString(const QDateTime &dateTime, const QString &format) const
     { return toString(dateTime, qToStringViewIgnoringNull(format)); }
-#endif
     QString toString(QDate date, QStringView format) const;
     QString toString(QTime time, QStringView format) const;
     QString toString(const QDateTime &dateTime, QStringView format) const;
@@ -1067,20 +1049,59 @@ public:
 
     QStringList uiLanguages() const;
 
+    enum LanguageCodeType {
+        ISO639Part1 = 1 << 0,
+        ISO639Part2B = 1 << 1,
+        ISO639Part2T = 1 << 2,
+        ISO639Part3 = 1 << 3,
+        LegacyLanguageCode = 1 << 15,
+
+        ISO639Part2 = ISO639Part2B | ISO639Part2T,
+        ISO639Alpha2 = ISO639Part1,
+        ISO639Alpha3 = ISO639Part2 | ISO639Part3,
+        ISO639 = ISO639Alpha2 | ISO639Alpha3,
+
+        AnyLanguageCode = -1
+    };
+    Q_DECLARE_FLAGS(LanguageCodeTypes, LanguageCodeType)
+    Q_FLAG(LanguageCodeTypes)
+
+#if QT_CORE_REMOVED_SINCE(6, 3)
     static QString languageToCode(Language language);
+    static Language codeToLanguage(QStringView languageCode) noexcept;
+#endif
+    static QString languageToCode(Language language, LanguageCodeTypes codeTypes = AnyLanguageCode);
+    static Language codeToLanguage(QStringView languageCode,
+                                   LanguageCodeTypes codeTypes = AnyLanguageCode) noexcept;
+    static QString territoryToCode(Territory territory);
+    static Territory codeToTerritory(QStringView territoryCode) noexcept;
+#if QT_DEPRECATED_SINCE(6, 6)
+    QT_DEPRECATED_VERSION_X_6_6("Use territoryToCode(Territory) instead")
     static QString countryToCode(Country country);
+    QT_DEPRECATED_VERSION_X_6_6("Use codeToTerritory(QStringView) instead")
+    static Country codeToCountry(QStringView countryCode) noexcept;
+#endif
     static QString scriptToCode(Script script);
+    static Script codeToScript(QStringView scriptCode) noexcept;
 
     static QString languageToString(Language language);
+    static QString territoryToString(Territory territory);
+#if QT_DEPRECATED_SINCE(6, 6)
+    QT_DEPRECATED_VERSION_X_6_6("Use territoryToString(Territory) instead")
     static QString countryToString(Country country);
+#endif
     static QString scriptToString(Script script);
     static void setDefault(const QLocale &locale);
 
     static QLocale c() { return QLocale(C); }
     static QLocale system();
 
-    static QList<QLocale> matchingLocales(QLocale::Language language, QLocale::Script script, QLocale::Country country);
+    static QList<QLocale> matchingLocales(QLocale::Language language, QLocale::Script script,
+                                          QLocale::Territory territory);
+#if QT_DEPRECATED_SINCE(6, 6)
+    QT_DEPRECATED_VERSION_X_6_6("Query territory() on each entry from matchingLocales() instead")
     static QList<Country> countriesForLanguage(Language lang);
+#endif
 
     void setNumberOptions(NumberOptions options);
     NumberOptions numberOptions() const;
@@ -1108,6 +1129,12 @@ private:
 };
 Q_DECLARE_SHARED(QLocale)
 Q_DECLARE_OPERATORS_FOR_FLAGS(QLocale::NumberOptions)
+Q_DECLARE_OPERATORS_FOR_FLAGS(QLocale::LanguageCodeTypes)
+
+#if QT_CORE_INLINE_IMPL_SINCE(6, 4)
+QLocale::QLocale(const QString &name)
+    : QLocale(qToStringViewIgnoringNull(name)) {}
+#endif
 
 #ifndef QT_NO_DATASTREAM
 Q_CORE_EXPORT QDataStream &operator<<(QDataStream &, const QLocale &);

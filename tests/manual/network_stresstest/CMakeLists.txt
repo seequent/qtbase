@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from network_stresstest.pro.
 
 #####################################################################
@@ -8,9 +11,7 @@ qt_internal_add_manual_test(tst_network_stresstest
     SOURCES
         minihttpserver.cpp minihttpserver.h
         tst_network_stresstest.cpp
-    DEFINES
-        QT_DISABLE_DEPRECATED_BEFORE=0
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
         Qt::Test

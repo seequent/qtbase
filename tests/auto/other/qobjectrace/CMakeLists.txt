@@ -1,13 +1,15 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qobjectrace.pro.
 
 #####################################################################
 ## qobjectrace Test:
 #####################################################################
 
-qt_internal_add_test(qobjectrace
+qt_internal_add_test(tst_qobjectrace
     SOURCES
-        ../../../shared/emulationdetector.h
         tst_qobjectrace.cpp
-    INCLUDE_DIRECTORIES
-        ../../../shared
+    LIBRARIES
+        Qt::TestPrivate
 )

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 
@@ -125,6 +100,17 @@ void Http2Server::setContentEncoding(const QByteArray &encoding)
     contentEncoding = encoding;
 }
 
+void Http2Server::setAuthenticationHeader(const QByteArray &authentication)
+{
+    authenticationHeader = authentication;
+}
+
+void Http2Server::setRedirect(const QByteArray &url, int count)
+{
+    redirectUrl = url;
+    redirectCount = count;
+}
+
 void Http2Server::emulateGOAWAY(int timeout)
 {
     Q_ASSERT(timeout >= 0);
@@ -141,6 +127,17 @@ void Http2Server::redirectOpenStream(quint16 port)
 bool Http2Server::isClearText() const
 {
     return connectionType == H2Type::h2c || connectionType == H2Type::h2cDirect;
+}
+
+QByteArray Http2Server::requestAuthorizationHeader()
+{
+    const auto isAuthHeader = [](const HeaderField &field) {
+        return field.name == "authorization";
+    };
+    const auto requestHeaders = decoder.decodedHeader();
+    const auto authentication =
+            std::find_if(requestHeaders.cbegin(), requestHeaders.cend(), isAuthHeader);
+    return authentication == requestHeaders.cend() ? QByteArray() : authentication->value;
 }
 
 void Http2Server::startServer()
@@ -302,11 +299,11 @@ void Http2Server::incomingConnection(qintptr socketDescriptor)
         sslSocket->setProtocol(QSsl::TlsV1_2OrLater);
         connect(sslSocket, SIGNAL(sslErrors(QList<QSslError>)),
                 this, SLOT(ignoreErrorSlot()));
-        QFile file(SRCDIR "certs/fluke.key");
+        QFile file(QT_TESTCASE_SOURCEDIR "/certs/fluke.key");
         file.open(QIODevice::ReadOnly);
         QSslKey key(file.readAll(), QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey);
         sslSocket->setPrivateKey(key);
-        auto localCert = QSslCertificate::fromPath(SRCDIR "certs/fluke.cert");
+        auto localCert = QSslCertificate::fromPath(QT_TESTCASE_SOURCEDIR "/certs/fluke.cert");
         sslSocket->setLocalCertificateChain(localCert);
         sslSocket->setSocketDescriptor(socketDescriptor, QAbstractSocket::ConnectedState);
         // Stop listening.
@@ -366,7 +363,7 @@ bool Http2Server::verifyProtocolUpgradeRequest()
     QHttpNetworkReplyPrivate *firstRequestReader = protocolUpgradeHandler->d_func();
 
     // That's how we append them, that's what I expect to find:
-    for (const auto &header : firstRequestReader->fields) {
+    for (const auto &header : firstRequestReader->headers()) {
         if (header.first == "Connection")
             connectionOk = header.second.contains("Upgrade, HTTP2-Settings");
         else if (header.first == "Upgrade")
@@ -737,10 +734,15 @@ void Http2Server::handleDATA()
     }
 
     if (inboundFrame.flags().testFlag(FrameFlag::END_STREAM)) {
-        closedStreams.insert(streamID); // Enter "half-closed remote" state.
-        streamWindows.erase(it);
+        if (responseBody.isEmpty()) {
+            closedStreams.insert(streamID); // Enter "half-closed remote" state.
+            streamWindows.erase(it);
+        }
         emit receivedData(streamID);
     }
+    emit receivedDATAFrame(streamID,
+                           QByteArray(reinterpret_cast<const char *>(inboundFrame.dataBegin()),
+                                      inboundFrame.dataSize()));
 }
 
 void Http2Server::handleWINDOW_UPDATE()
@@ -821,6 +823,9 @@ void Http2Server::sendResponse(quint32 streamID, bool emptyBody)
     if (emptyBody)
         writer.addFlag(FrameFlag::END_STREAM);
 
+    // We assume any auth is correct. Leaves the checking to the test itself
+    const bool hasAuth = !requestAuthorizationHeader().isEmpty();
+
     HttpHeader header;
     if (redirectWhileReading) {
         if (redirectSent) {
@@ -836,7 +841,14 @@ void Http2Server::sendResponse(quint32 streamID, bool emptyBody)
         const QString url("%1://localhost:%2/");
         header.push_back({"location", url.arg(isClearText() ? QStringLiteral("http") : QStringLiteral("https"),
                                               QString::number(targetPort)).toLatin1()});
-
+    } else if (redirectCount > 0) { // Not redirecting while reading, unlike above
+        --redirectCount;
+        header.push_back({":status", "308"});
+        header.push_back({"location", redirectUrl});
+    } else if (!authenticationHeader.isEmpty() && !hasAuth) {
+        header.push_back({ ":status", "401" });
+        header.push_back(HPack::HeaderField("www-authenticate", authenticationHeader));
+        authenticationHeader.clear();
     } else {
         header.push_back({":status", "200"});
     }

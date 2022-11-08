@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Copyright (C) 2016 by Southwest Research Institute (R)
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2016 by Southwest Research Institute (R)
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QFloat16>
@@ -43,6 +18,8 @@ class tst_qfloat16: public QObject
 private slots:
     void fuzzyCompare_data();
     void fuzzyCompare();
+    void fuzzyIsNull_data();
+    void fuzzyIsNull();
     void ltgt_data();
     void ltgt();
     void qNaN();
@@ -109,6 +86,33 @@ void tst_qfloat16::fuzzyCompare()
         QVERIFY(!::qFuzzyCompare(-val1, -val2));
         QVERIFY(!::qFuzzyCompare(-val2, -val1));
     }
+}
+
+void tst_qfloat16::fuzzyIsNull_data()
+{
+    QTest::addColumn<qfloat16>("value");
+    QTest::addColumn<bool>("isNull");
+    using Bounds = std::numeric_limits<qfloat16>;
+    const qfloat16 one(1), huge(1000), tiny(0.00976f);
+
+    QTest::newRow("zero") << qfloat16(0.0f) << true;
+    QTest::newRow("min") << Bounds::min() << true;
+    QTest::newRow("denorm_min") << Bounds::denorm_min() << true;
+    QTest::newRow("tiny") << tiny << true;
+
+    QTest::newRow("deci") << qfloat16(.1) << false;
+    QTest::newRow("one") << one << false;
+    QTest::newRow("ten") << qfloat16(10) << false;
+    QTest::newRow("huge") << huge << false;
+}
+
+void tst_qfloat16::fuzzyIsNull()
+{
+    QFETCH(qfloat16, value);
+    QFETCH(bool, isNull);
+
+    QCOMPARE(::qFuzzyIsNull(value), isNull);
+    QCOMPARE(::qFuzzyIsNull(-value), isNull);
 }
 
 void tst_qfloat16::ltgt_data()
@@ -184,13 +188,7 @@ void tst_qfloat16::qNaN()
     QVERIFY(qIsNaN(nan));
     QVERIFY(qIsNaN(nan + one));
     QVERIFY(qIsNaN(-nan));
-#ifdef Q_CC_INTEL
-    QEXPECT_FAIL("", "ICC optimizes zero * anything to zero", Continue);
-#endif
     QVERIFY(qIsNaN(nan * zero));
-#ifdef Q_CC_INTEL
-    QEXPECT_FAIL("", "ICC optimizes zero * anything to zero", Continue);
-#endif
     QVERIFY(qIsNaN(Bounds::infinity() * zero));
 
     QVERIFY(!nan.isNormal());
@@ -511,14 +509,35 @@ void tst_qfloat16::properties()
     QVERIFY(Bounds::is_signed);
     QVERIFY(!Bounds::is_integer);
     QVERIFY(!Bounds::is_exact);
+
+    // While we'd like to check for __STDC_IEC_559__, as per ISO/IEC 9899:2011
+    // Annex F (C11, normative for C++11), there are a few corner cases regarding
+    // denormals where GHS compiler is relying hardware behavior that is not IEC
+    // 559 compliant.
+
+    // On GHS the compiler reports std::numeric_limits<float>::is_iec559 as false.
+    // and the same supposed to be for qfloat16.
+#if !defined(Q_CC_GHS)
     QVERIFY(Bounds::is_iec559);
+#endif //Q_CC_GHS
+#if QT_CONFIG(signaling_nan)
+    // Technically, presence of NaN and infinities are implied from the above check, but that checkings GHS compiler complies.
+    QVERIFY(Bounds::has_infinity && Bounds::has_quiet_NaN && Bounds::has_signaling_NaN);
+#endif
     QVERIFY(Bounds::is_bounded);
     QVERIFY(!Bounds::is_modulo);
     QVERIFY(!Bounds::traps);
     QVERIFY(Bounds::has_infinity);
     QVERIFY(Bounds::has_quiet_NaN);
+#if QT_CONFIG(signaling_nan)
     QVERIFY(Bounds::has_signaling_NaN);
+#endif
+#if !defined(Q_CC_GHS)
     QCOMPARE(Bounds::has_denorm, std::denorm_present);
+#else
+    // For GHS compiler the "denorm_indeterminite" is the expected return value.
+    QCOMPARE(Bounds::has_denorm, std::denorm_indeterminate);
+#endif // Q_CC_GHS
     QCOMPARE(Bounds::round_style, std::round_to_nearest);
     QCOMPARE(Bounds::radix, 2);
     // Untested: has_denorm_loss

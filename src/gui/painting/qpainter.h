@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QPAINTER_H
 #define QPAINTER_H
@@ -48,6 +12,7 @@
 #include <QtGui/qpixmap.h>
 #include <QtGui/qimage.h>
 #include <QtGui/qtextoption.h>
+#include <memory>
 
 #ifndef QT_INCLUDE_COMPAT
 #include <QtGui/qpolygon.h>
@@ -87,9 +52,11 @@ public:
         Antialiasing = 0x01,
         TextAntialiasing = 0x02,
         SmoothPixmapTransform = 0x04,
+        VerticalSubpixelPositioning = 0x08,
         LosslessImageRendering = 0x40,
+        NonCosmeticBrushPatterns = 0x80
     };
-    Q_FLAG(RenderHint)
+    Q_ENUM(RenderHint)
 
     Q_DECLARE_FLAGS(RenderHints, RenderHint)
     Q_FLAG(RenderHints)
@@ -437,7 +404,7 @@ public:
     void setRenderHint(RenderHint hint, bool on = true);
     void setRenderHints(RenderHints hints, bool on = true);
     RenderHints renderHints() const;
-    inline bool testRenderHint(RenderHint hint) const { return renderHints() & hint; }
+    inline bool testRenderHint(RenderHint hint) const { return bool(renderHints() & hint); }
 
     QPaintEngine *paintEngine() const;
 
@@ -447,7 +414,7 @@ public:
 private:
     Q_DISABLE_COPY(QPainter)
 
-    QScopedPointer<QPainterPrivate> d_ptr;
+    std::unique_ptr<QPainterPrivate> d_ptr;
 
     friend class QWidget;
     friend class QFontEngine;
@@ -501,52 +468,52 @@ inline void QPainter::drawLine(const QPointF &p1, const QPointF &p2)
 
 inline void QPainter::drawLines(const QList<QLineF> &lines)
 {
-    drawLines(lines.constData(), lines.size());
+    drawLines(lines.constData(), int(lines.size()));
 }
 
 inline void QPainter::drawLines(const QList<QLine> &lines)
 {
-    drawLines(lines.constData(), lines.size());
+    drawLines(lines.constData(), int(lines.size()));
 }
 
 inline void QPainter::drawLines(const QList<QPointF> &pointPairs)
 {
-    drawLines(pointPairs.constData(), pointPairs.size() / 2);
+    drawLines(pointPairs.constData(), int(pointPairs.size() / 2));
 }
 
 inline void QPainter::drawLines(const QList<QPoint> &pointPairs)
 {
-    drawLines(pointPairs.constData(), pointPairs.size() / 2);
+    drawLines(pointPairs.constData(), int(pointPairs.size() / 2));
 }
 
 inline void QPainter::drawPolyline(const QPolygonF &polyline)
 {
-    drawPolyline(polyline.constData(), polyline.size());
+    drawPolyline(polyline.constData(), int(polyline.size()));
 }
 
 inline void QPainter::drawPolyline(const QPolygon &polyline)
 {
-    drawPolyline(polyline.constData(), polyline.size());
+    drawPolyline(polyline.constData(), int(polyline.size()));
 }
 
 inline void QPainter::drawPolygon(const QPolygonF &polygon, Qt::FillRule fillRule)
 {
-    drawPolygon(polygon.constData(), polygon.size(), fillRule);
+    drawPolygon(polygon.constData(), int(polygon.size()), fillRule);
 }
 
 inline void QPainter::drawPolygon(const QPolygon &polygon, Qt::FillRule fillRule)
 {
-    drawPolygon(polygon.constData(), polygon.size(), fillRule);
+    drawPolygon(polygon.constData(), int(polygon.size()), fillRule);
 }
 
 inline void QPainter::drawConvexPolygon(const QPolygonF &poly)
 {
-    drawConvexPolygon(poly.constData(), poly.size());
+    drawConvexPolygon(poly.constData(), int(poly.size()));
 }
 
 inline void QPainter::drawConvexPolygon(const QPolygon &poly)
 {
-    drawConvexPolygon(poly.constData(), poly.size());
+    drawConvexPolygon(poly.constData(), int(poly.size()));
 }
 
 inline void QPainter::drawRect(const QRectF &rect)
@@ -567,12 +534,12 @@ inline void QPainter::drawRect(const QRect &r)
 
 inline void QPainter::drawRects(const QList<QRectF> &rects)
 {
-    drawRects(rects.constData(), rects.size());
+    drawRects(rects.constData(), int(rects.size()));
 }
 
 inline void QPainter::drawRects(const QList<QRect> &rects)
 {
-    drawRects(rects.constData(), rects.size());
+    drawRects(rects.constData(), int(rects.size()));
 }
 
 inline void QPainter::drawPoint(const QPointF &p)
@@ -593,12 +560,12 @@ inline void QPainter::drawPoint(const QPoint &p)
 
 inline void QPainter::drawPoints(const QPolygonF &points)
 {
-    drawPoints(points.constData(), points.size());
+    drawPoints(points.constData(), int(points.size()));
 }
 
 inline void QPainter::drawPoints(const QPolygon &points)
 {
-    drawPoints(points.constData(), points.size());
+    drawPoints(points.constData(), int(points.size()));
 }
 
 inline void QPainter::drawRoundedRect(int x, int y, int w, int h, qreal xRadius, qreal yRadius,

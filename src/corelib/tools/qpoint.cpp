@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qpoint.h"
 #include "qdatastream.h"
@@ -381,6 +345,15 @@ QT_BEGIN_NAMESPACE
     \sa QPoint::operator/=()
 */
 
+/*!
+    \fn QPoint::toPointF() const
+    \since 6.4
+
+    Returns this point as a point with floating point accuracy.
+
+    \sa QPointF::toPoint()
+*/
+
 /*****************************************************************************
   QPoint stream functions
  *****************************************************************************/
@@ -495,7 +468,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
 
     A point is specified by a x coordinate and an y coordinate which
     can be accessed using the x() and y() functions. The coordinates
-    of the point are specified using floating point numbers for
+    of the point are specified using finite floating point numbers for
     accuracy. The isNull() function returns \c true if both x and y are
     set to 0.0. The coordinates can be set (or altered) using the setX()
     and setY() functions, or alternatively the rx() and ry() functions which
@@ -532,7 +505,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
 
     Constructs a copy of the given \a point.
 
-    \sa toPoint()
+    \sa toPoint(), QPoint::toPointF()
 */
 
 /*!
@@ -581,7 +554,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
 /*!
     \fn void QPointF::setX(qreal x)
 
-    Sets the x coordinate of this point to the given \a x coordinate.
+    Sets the x coordinate of this point to the given finite \a x coordinate.
 
     \sa x(), setY()
 */
@@ -589,7 +562,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
 /*!
     \fn void QPointF::setY(qreal y)
 
-    Sets the y coordinate of this point to the given \a y coordinate.
+    Sets the y coordinate of this point to the given finite \a y coordinate.
 
     \sa y(), setX()
 */
@@ -655,7 +628,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
 /*!
     \fn QPointF& QPointF::operator*=(qreal factor)
 
-    Multiplies this point's coordinates by the given \a factor, and
+    Multiplies this point's coordinates by the given finite \a factor, and
     returns a reference to this point. For example:
 
     \snippet code/src_corelib_tools_qpoint.cpp 14
@@ -670,6 +643,8 @@ size_t qHash(QPoint key, size_t seed) noexcept
     to this point. For example:
 
     \snippet code/src_corelib_tools_qpoint.cpp 15
+
+    The \a divisor must not be zero or NaN.
 
     \sa operator*=()
 */
@@ -695,7 +670,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
 /*!
     \fn QPointF QPointF::operator*(const QPointF &point, qreal factor)
 
-    Returns a copy of the given \a point,  multiplied by the given \a factor.
+    Returns a copy of the given \a point, multiplied by the given finite \a factor.
 
     \sa QPointF::operator*=()
 */
@@ -705,7 +680,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
 
     \overload
 
-    Returns a copy of the given \a point, multiplied by the given \a factor.
+    Returns a copy of the given \a point, multiplied by the given finite \a factor.
 */
 
 /*!
@@ -720,7 +695,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
     \overload
 
     Returns a QPointF object that is formed by changing the sign of
-    both components of the given \a point.
+    each component of the given \a point.
 
     Equivalent to \c {QPointF(0,0) - point}.
 */
@@ -728,8 +703,10 @@ size_t qHash(QPoint key, size_t seed) noexcept
 /*!
     \fn QPointF QPointF::operator/(const QPointF &point, qreal divisor)
 
-    Returns the QPointF object formed by dividing both components of
+    Returns the QPointF object formed by dividing each component of
     the given \a point by the given \a divisor.
+
+    The \a divisor must not be zero or NaN.
 
     \sa QPointF::operator/=()
 */
@@ -740,7 +717,7 @@ size_t qHash(QPoint key, size_t seed) noexcept
     Rounds the coordinates of this point to the nearest integer, and
     returns a QPoint object with the rounded coordinates.
 
-    \sa QPointF()
+    \sa QPointF(), QPoint::toPointF()
 */
 
 /*!

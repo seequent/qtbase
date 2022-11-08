@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QWaitCondition>
@@ -34,7 +9,7 @@
 #include <qfile.h>
 #include <qtemporarydir.h>
 
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
+#ifdef Q_OS_ANDROID
 #include <QDirIterator>
 #endif
 
@@ -48,6 +23,7 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 private slots:
     void initTestCase();
+    void init();
 
     void load_data();
     void load();
@@ -73,38 +49,14 @@ tst_QTranslator::tst_QTranslator()
 
 void tst_QTranslator::initTestCase()
 {
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
-    QString sourceDir(":/android_testdata/");
-    QDirIterator it(sourceDir, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        it.next();
-
-        QFileInfo sourceFileInfo = it.fileInfo();
-        if (!sourceFileInfo.isDir()) {
-            QFileInfo destinationFileInfo(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QLatin1Char('/') + sourceFileInfo.filePath().mid(sourceDir.length()));
-
-            if (!destinationFileInfo.exists()) {
-                QVERIFY(QDir().mkpath(destinationFileInfo.path()));
-                QVERIFY(QFile::copy(sourceFileInfo.filePath(), destinationFileInfo.filePath()));
-            }
-        }
-    }
-
-    QDir::setCurrent(QStandardPaths::writableLocation(QStandardPaths::CacheLocation));
-#endif
-
-    // chdir into the directory containing our testdata,
-    // to make the code simpler (load testdata via relative paths)
-#if 0
-    // ### TODO: Use this for all platforms in 5.7
-    dataDir = QEXTRACTTESTDATA(QStringLiteral("/"));
+    dataDir = QEXTRACTTESTDATA(QStringLiteral("/tst_qtranslator"));
     QVERIFY2(!dataDir.isNull(), qPrintable("Could not extract test data"));
-    QVERIFY2(QDir::setCurrent(dataDir->path()), qPrintable("Could not chdir to " + dataDir->path()));
-#else
-    QString testdata_dir = QFileInfo(QFINDTESTDATA("hellotr_la.qm")).absolutePath();
-    QVERIFY2(QDir::setCurrent(testdata_dir), qPrintable("Could not chdir to " + testdata_dir));
-#endif
+}
 
+void tst_QTranslator::init()
+{
+    QVERIFY2(QDir::setCurrent(dataDir->path()),
+             qPrintable("Could not chdir to " + dataDir->path()));
 }
 
 bool tst_QTranslator::eventFilter(QObject *, QEvent *event)
@@ -383,6 +335,15 @@ void tst_QTranslator::dependencies()
         QVERIFY(!tor.isEmpty());
         QCOMPARE(tor.translate("QPushButton", "Hello world!"), QLatin1String("Hallo Welt!"));
     }
+
+    {
+        // Test resolution of paths relative to main file
+        const QString absoluteFile = QFileInfo("dependencies_la").absoluteFilePath();
+        QDir::setCurrent(QDir::tempPath());
+        QTranslator tor;
+        QVERIFY(tor.load(absoluteFile));
+        QVERIFY(!tor.isEmpty());
+    }
 }
 
 struct TranslateThread : public QThread
@@ -422,9 +383,9 @@ void tst_QTranslator::translationInThreadWhileInstallingTranslator()
 
     thread.runningCondition.wait(&thread.startupLock);
 
-    QTranslator *tor = new QTranslator;
-    QVERIFY(tor->load("hellotr_la"));
-    QCoreApplication::installTranslator(tor);
+    QTranslator tor;
+    QVERIFY(tor.load("hellotr_la"));
+    QVERIFY(QCoreApplication::installTranslator(&tor));
 
     ++thread.terminate;
 

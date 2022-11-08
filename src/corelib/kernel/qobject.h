@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2013 Olivier Goffart <ogoffart@woboq.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// Copyright (C) 2013 Olivier Goffart <ogoffart@woboq.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QOBJECT_H
 #define QOBJECT_H
@@ -54,16 +18,14 @@
 #include <QtCore/qmetatype.h>
 
 #include <QtCore/qobject_impl.h>
-#include <QtCore/qproperty.h>
+#include <QtCore/qbindingstorage.h>
 
-#if __has_include(<chrono>)
-#  include <chrono>
-#endif
+#include <chrono>
 
 QT_BEGIN_NAMESPACE
 
 
-class QBindingStorage;
+template <typename T> class QBindable;
 class QEvent;
 class QTimerEvent;
 class QChildEvent;
@@ -83,6 +45,8 @@ typedef QList<QObject*> QObjectList;
 
 Q_CORE_EXPORT void qt_qFindChildren_helper(const QObject *parent, const QString &name,
                                            const QMetaObject &mo, QList<void *> *list, Qt::FindChildOptions options);
+Q_CORE_EXPORT void qt_qFindChildren_helper(const QObject *parent, const QMetaObject &mo,
+                                           QList<void *> *list, Qt::FindChildOptions options);
 Q_CORE_EXPORT void qt_qFindChildren_helper(const QObject *parent, const QRegularExpression &re,
                                            const QMetaObject &mo, QList<void *> *list, Qt::FindChildOptions options);
 Q_CORE_EXPORT QObject *qt_qFindChild_helper(const QObject *parent, const QString &name, const QMetaObject &mo, Qt::FindChildOptions options);
@@ -105,10 +69,16 @@ public:
     uint receiveChildEvents : 1;
     uint isWindow : 1; // for QWindow
     uint deleteLaterCalled : 1;
-    uint unused : 24;
-    int postedEvents;
+    uint isQuickItem : 1;
+    uint willBeWidget : 1; // for handling widget-specific bits in QObject's ctor
+    uint wasWidget : 1; // for properly cleaning up in QObject's dtor
+    uint unused : 21;
+    QAtomicInt postedEvents;
     QDynamicMetaObjectData *metaObject;
     QBindingStorage bindingStorage;
+
+    // ### Qt7: Make this return a const QMetaObject *. You should not mess with
+    //          the metaobjects of existing objects.
     QMetaObject *dynamicMetaObject() const;
 
 #ifdef QT_DEBUG
@@ -120,7 +90,8 @@ class Q_CORE_EXPORT QObject
 {
     Q_OBJECT
 
-    Q_PROPERTY(QString objectName READ objectName WRITE setObjectName NOTIFY objectNameChanged)
+    Q_PROPERTY(QString objectName READ objectName WRITE setObjectName NOTIFY objectNameChanged
+               BINDABLE bindableObjectName)
     Q_DECLARE_PRIVATE(QObject)
 
 public:
@@ -130,16 +101,23 @@ public:
     virtual bool event(QEvent *event);
     virtual bool eventFilter(QObject *watched, QEvent *event);
 
-#if defined(QT_NO_TRANSLATION) || defined(Q_CLANG_QDOC)
+#if defined(QT_NO_TRANSLATION) || defined(Q_QDOC)
     static QString tr(const char *sourceText, const char * = nullptr, int = -1)
         { return QString::fromUtf8(sourceText); }
 #endif // QT_NO_TRANSLATION
 
     QString objectName() const;
+#if QT_CORE_REMOVED_SINCE(6, 4)
     void setObjectName(const QString &name);
+#endif
+    Q_WEAK_OVERLOAD
+    void setObjectName(const QString &name) { doSetObjectName(name); }
+    void setObjectName(QAnyStringView name);
+    QBindable<QString> bindableObjectName();
 
     inline bool isWidgetType() const { return d_ptr->isWidget; }
     inline bool isWindowType() const { return d_ptr->isWindow; }
+    inline bool isQuickItemType() const { return d_ptr->isQuickItem; }
 
     inline bool signalsBlocked() const noexcept { return d_ptr->blockSig; }
     bool blockSignals(bool b) noexcept;
@@ -148,13 +126,11 @@ public:
     void moveToThread(QThread *thread);
 
     int startTimer(int interval, Qt::TimerType timerType = Qt::CoarseTimer);
-#if __has_include(<chrono>)
     Q_ALWAYS_INLINE
     int startTimer(std::chrono::milliseconds time, Qt::TimerType timerType = Qt::CoarseTimer)
     {
         return startTimer(int(time.count()), timerType);
     }
-#endif
     void killTimer(int id);
 
     template<typename T>
@@ -165,11 +141,21 @@ public:
     }
 
     template<typename T>
-    inline QList<T> findChildren(const QString &aName = QString(), Qt::FindChildOptions options = Qt::FindChildrenRecursively) const
+    inline QList<T> findChildren(const QString &aName, Qt::FindChildOptions options = Qt::FindChildrenRecursively) const
     {
         typedef typename std::remove_cv<typename std::remove_pointer<T>::type>::type ObjType;
         QList<T> list;
         qt_qFindChildren_helper(this, aName, ObjType::staticMetaObject,
+                                reinterpret_cast<QList<void *> *>(&list), options);
+        return list;
+    }
+
+    template<typename T>
+    QList<T> findChildren(Qt::FindChildOptions options = Qt::FindChildrenRecursively) const
+    {
+        typedef typename std::remove_cv<typename std::remove_pointer<T>::type>::type ObjType;
+        QList<T> list;
+        qt_qFindChildren_helper(this, ObjType::staticMetaObject,
                                 reinterpret_cast<QList<void *> *>(&list), options);
         return list;
     }
@@ -202,7 +188,7 @@ public:
     inline QMetaObject::Connection connect(const QObject *sender, const char *signal,
                         const char *member, Qt::ConnectionType type = Qt::AutoConnection) const;
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     template<typename PointerToMemberFunction>
     static QMetaObject::Connection connect(const QObject *sender, PointerToMemberFunction signal, const QObject *receiver, PointerToMemberFunction method, Qt::ConnectionType type = Qt::AutoConnection);
     template<typename PointerToMemberFunction, typename Functor>
@@ -283,7 +269,10 @@ public:
 
     //connect to a functor
     template <typename Func1, typename Func2>
-    static inline typename std::enable_if<QtPrivate::FunctionPointer<Func2>::ArgumentCount == -1, QMetaObject::Connection>::type
+    static inline typename std::enable_if<
+        QtPrivate::FunctionPointer<Func2>::ArgumentCount == -1 &&
+        !std::is_convertible_v<Func2, const char*>, // don't match old-style connect
+    QMetaObject::Connection>::type
             connect(const typename QtPrivate::FunctionPointer<Func1>::Object *sender, Func1 signal, Func2 slot)
     {
         return connect(sender, signal, sender, std::move(slot), Qt::DirectConnection);
@@ -291,7 +280,10 @@ public:
 
     //connect to a functor, with a "context" object defining in which event loop is going to be executed
     template <typename Func1, typename Func2>
-    static inline typename std::enable_if<QtPrivate::FunctionPointer<Func2>::ArgumentCount == -1, QMetaObject::Connection>::type
+    static inline typename std::enable_if<
+        QtPrivate::FunctionPointer<Func2>::ArgumentCount == -1 &&
+        !std::is_convertible_v<Func2, const char*>, // don't match old-style connect
+    QMetaObject::Connection>::type
             connect(const typename QtPrivate::FunctionPointer<Func1>::Object *sender, Func1 signal, const QObject *context, Func2 slot,
                     Qt::ConnectionType type = Qt::AutoConnection)
     {
@@ -319,7 +311,7 @@ public:
                                 typename SignalType::ReturnType>(std::move(slot)),
                            type, types, &SignalType::Object::staticMetaObject);
     }
-#endif //Q_CLANG_QDOC
+#endif //Q_QDOC
 
     static bool disconnect(const QObject *sender, const char *signal,
                            const QObject *receiver, const char *member);
@@ -332,7 +324,7 @@ public:
         { return disconnect(this, nullptr, receiver, member); }
     static bool disconnect(const QMetaObject::Connection &);
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     template<typename PointerToMemberFunction>
     static bool disconnect(const QObject *sender, PointerToMemberFunction signal, const QObject *receiver, PointerToMemberFunction method);
 #else
@@ -365,18 +357,16 @@ public:
         return disconnectImpl(sender, reinterpret_cast<void **>(&signal), receiver, zero,
                               &SignalType::Object::staticMetaObject);
     }
-#endif //Q_CLANG_QDOC
+#endif //Q_QDOC
 
     void dumpObjectTree() const;
     void dumpObjectInfo() const;
 
-#ifndef QT_NO_PROPERTIES
     bool setProperty(const char *name, const QVariant &value);
     QVariant property(const char *name) const;
     QList<QByteArray> dynamicPropertyNames() const;
     QBindingStorage *bindingStorage() { return &d_ptr->bindingStorage; }
     const QBindingStorage *bindingStorage() const { return &d_ptr->bindingStorage; }
-#endif // QT_NO_PROPERTIES
 
 Q_SIGNALS:
     void destroyed(QObject * = nullptr);
@@ -424,6 +414,7 @@ protected:
     friend class QThreadData;
 
 private:
+    void doSetObjectName(const QString &name);
     Q_DISABLE_COPY(QObject)
     Q_PRIVATE_SLOT(d_func(), void _q_reregisterTimers(void *))
 
@@ -461,8 +452,31 @@ inline T qobject_cast(const QObject *object)
 }
 
 
-template <class T> inline const char * qobject_interface_iid()
-{ return nullptr; }
+template <class T> constexpr const char * qobject_interface_iid() = delete;
+template <class T> inline T *
+qobject_iid_cast(QObject *object, const char *IId = qobject_interface_iid<T *>())
+{
+    return reinterpret_cast<T *>((object ? object->qt_metacast(IId) : nullptr));
+}
+template <class T> inline std::enable_if_t<std::is_const<T>::value, T *>
+qobject_iid_cast(const QObject *object)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    QObject *o = const_cast<QObject *>(object);
+    return qobject_iid_cast<std::remove_cv_t<T>>(o);
+}
+
+#if defined(Q_QDOC)
+#  define Q_DECLARE_INTERFACE(IFace, IId)
+#elif !defined(Q_MOC_RUN)
+#  define Q_DECLARE_INTERFACE(IFace, IId) \
+    template <> constexpr const char *qobject_interface_iid<IFace *>() \
+    { return IId; } \
+    template <> inline IFace *qobject_cast<IFace *>(QObject *object) \
+    { return qobject_iid_cast<IFace>(object); } \
+    template <> inline const IFace *qobject_cast<const IFace *>(const QObject *object) \
+    { return qobject_iid_cast<const IFace>(object); }
+#endif // Q_MOC_RUN
 
 inline const QBindingStorage *qGetBindingStorage(const QObject *o)
 {
@@ -472,18 +486,6 @@ inline QBindingStorage *qGetBindingStorage(QObject *o)
 {
     return o->bindingStorage();
 }
-
-#if defined(Q_CLANG_QDOC)
-#  define Q_DECLARE_INTERFACE(IFace, IId)
-#elif !defined(Q_MOC_RUN)
-#  define Q_DECLARE_INTERFACE(IFace, IId) \
-    template <> inline const char *qobject_interface_iid<IFace *>() \
-    { return IId; } \
-    template <> inline IFace *qobject_cast<IFace *>(QObject *object) \
-    { return reinterpret_cast<IFace *>((object ? object->qt_metacast(IId) : nullptr)); } \
-    template <> inline IFace *qobject_cast<IFace *>(const QObject *object) \
-    { return reinterpret_cast<IFace *>((object ? const_cast<QObject *>(object)->qt_metacast(IId) : nullptr)); }
-#endif // Q_MOC_RUN
 
 #ifndef QT_NO_DEBUG_STREAM
 Q_CORE_EXPORT QDebug operator<<(QDebug, const QObject *);
@@ -569,7 +571,7 @@ namespace QtPrivate {
     inline QObject & deref_for_methodcall(QObject &o) { return  o; }
     inline QObject & deref_for_methodcall(QObject *o) { return *o; }
 }
-#define Q_SET_OBJECT_NAME(obj) QT_PREPEND_NAMESPACE(QtPrivate)::deref_for_methodcall(obj).setObjectName(QLatin1String(#obj))
+#define Q_SET_OBJECT_NAME(obj) QT_PREPEND_NAMESPACE(QtPrivate)::deref_for_methodcall(obj).setObjectName(QLatin1StringView(#obj))
 
 QT_END_NAMESPACE
 

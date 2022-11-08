@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from windowchildgeometry.pro.
 
 #####################################################################
@@ -10,11 +13,9 @@ qt_internal_add_manual_test(windowchildgeometry
         ../windowflags/controls.cpp ../windowflags/controls.h
         controllerwidget.cpp controllerwidget.h
         main.cpp
-    DEFINES
-        QT_DISABLE_DEPRECATED_BEFORE=0
     INCLUDE_DIRECTORIES
         ../windowflags
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

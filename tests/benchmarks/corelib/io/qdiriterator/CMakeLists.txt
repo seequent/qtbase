@@ -1,4 +1,5 @@
-# Generated from qdiriterator.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## tst_bench_qdiriterator Binary:
@@ -6,9 +7,9 @@
 
 qt_internal_add_benchmark(tst_bench_qdiriterator
     SOURCES
-        main.cpp
+        tst_bench_qdiriterator.cpp
         qfilesystemiterator.cpp qfilesystemiterator.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Test
 )
 

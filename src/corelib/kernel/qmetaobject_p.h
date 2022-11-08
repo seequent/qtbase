@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QMETAOBJECT_P_H
 #define QMETAOBJECT_P_H
@@ -98,7 +62,9 @@ enum MethodFlags {
     MethodCompatibility = 0x10,
     MethodCloned = 0x20,
     MethodScriptable = 0x40,
-    MethodRevisioned = 0x80
+    MethodRevisioned = 0x80,
+
+    MethodIsConst = 0x100, // no use case for volatile so far
 };
 
 enum MetaObjectFlag {
@@ -165,14 +131,48 @@ Q_DECLARE_TYPEINFO(QArgumentType, Q_RELOCATABLE_TYPE);
 
 typedef QVarLengthArray<QArgumentType, 10> QArgumentTypeArray;
 
-class QMetaMethodPrivate;
+namespace { class QMetaMethodPrivate; }
+class QMetaMethodInvoker : public QMetaMethod
+{
+    QMetaMethodInvoker() = delete;
+
+public:
+    enum class InvokeFailReason : int {
+        // negative values mean a match was found but the invocation failed
+        // (and a warning has been printed)
+        ReturnTypeMismatch = -1,
+        DeadLockDetected = -2,
+        CallViaVirtualFailed = -3,  // no warning
+        ConstructorCallOnObject = -4,
+        ConstructorCallWithoutResult = -5,
+        ConstructorCallFailed = -6, // no warning
+
+        CouldNotQueueParameter = -0x1000,
+
+        // zero is success
+        None = 0,
+
+        // positive values mean the parameters did not match
+        TooFewArguments,
+        FormalParameterMismatch = 0x1000,
+    };
+
+    // shadows the public function
+    static InvokeFailReason Q_CORE_EXPORT
+    invokeImpl(QMetaMethod self, void *target, Qt::ConnectionType, qsizetype paramCount,
+               const void *const *parameters, const char *const *typeNames,
+               const QtPrivate::QMetaTypeInterface *const *metaTypes);
+};
 
 struct QMetaObjectPrivate
 {
     // revision 7 is Qt 5.0 everything lower is not supported
     // revision 8 is Qt 5.12: It adds the enum name to QMetaEnum
     // revision 9 is Qt 6.0: It adds the metatype of properties and methods
-    enum { OutputRevision = 9 }; // Used by moc, qmetaobjectbuilder and qdbus
+    // revision 10 is Qt 6.2: The metatype of the metaobject is stored in the metatypes array
+    //                        and metamethods store a flag stating whether they are const
+    // revision 11 is Qt 6.5: The metatype for void is stored in the metatypes array
+    enum { OutputRevision = 11 }; // Used by moc, qmetaobjectbuilder and qdbus
     enum { IntsPerMethod = QMetaMethod::Data::Size };
     enum { IntsPerEnum = QMetaEnum::Data::Size };
     enum { IntsPerProperty = QMetaProperty::Data::Size };

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Add a finalizer function for the current CMake list file.
 # It will be processed just before leaving the current source directory scope.
 #
@@ -8,7 +11,7 @@
 # because CMake's handling of empty list elements is a cruel joke.
 # For CMake < 3.18 the function qt_watch_current_list_dir must know about the finalizer.
 #
-# When using CMake 3.19 or higher, no more INGORE parameters are passed. Instead we
+# When using CMake 3.19 or higher, no more IGNORE parameters are passed. Instead we
 # use cmake_language(DEFER CALL) and pass arguments as usual.
 # qt_watch_current_list_dir also doesn't need to know about the finalizer
 function(qt_add_list_file_finalizer func)
@@ -74,6 +77,9 @@ function(qt_watch_current_list_dir variable access value current_list_file stack
                     qt_finalize_plugin(${a1} ${a2} ${a3} ${a4} ${a5} ${a6} ${a7} ${a8} ${a9})
                 elseif(func STREQUAL "qt_internal_finalize_app")
                     qt_internal_finalize_app(${a1} ${a2} ${a3} ${a4} ${a5} ${a6} ${a7} ${a8} ${a9})
+                elseif(func STREQUAL "qt_internal_export_additional_targets_file_finalizer")
+                    qt_internal_export_additional_targets_file_finalizer(
+                        ${a1} ${a2} ${a3} ${a4} ${a5} ${a6} ${a7} ${a8} ${a9})
                 else()
                     message(FATAL_ERROR "qt_watch_current_list_dir doesn't know about ${func}. Consider adding it.")
                 endif()

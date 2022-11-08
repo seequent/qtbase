@@ -1,3 +1,1 @@
-# Generated from animation.pro.
-
-add_subdirectory(easing)
+qt_internal_add_example(easing)

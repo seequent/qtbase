@@ -1,35 +1,11 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the tools applications of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QtCore/qglobal.h>
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 #include <qcommandlineoption.h>
 #include <qcommandlineparser.h>
@@ -46,8 +22,11 @@
 #include <qset.h>
 #include <qstring.h>
 #include <qstack.h>
+#include <qdatastream.h>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 using AutoGenHeaderMap = QMap<QString, QString>;
 using AutoGenSourcesList = QList<QString>;
@@ -73,9 +52,9 @@ static bool readAutogenInfoJson(AutoGenHeaderMap &headers, AutoGenSourcesList &s
     }
 
     QJsonObject rootObject = doc.object();
-    QJsonValue headersValue = rootObject.value(QLatin1String("HEADERS"));
-    QJsonValue sourcesValue = rootObject.value(QLatin1String("SOURCES"));
-    QJsonValue headerExtValue = rootObject.value(QLatin1String("HEADER_EXTENSIONS"));
+    QJsonValue headersValue = rootObject.value("HEADERS"_L1);
+    QJsonValue sourcesValue = rootObject.value("SOURCES"_L1);
+    QJsonValue headerExtValue = rootObject.value("HEADER_EXTENSIONS"_L1);
 
     if (!headersValue.isArray() || !sourcesValue.isArray() || !headerExtValue.isArray()) {
         fprintf(stderr,
@@ -152,20 +131,22 @@ static bool readParseCache(ParseCacheMap &entries, const QString &parseCacheFile
     // ....
 
     QTextStream textStream(&file);
-    const QString mmcKey = QString(QLatin1String(" mmc:"));
-    const QString miuKey = QString(QLatin1String(" miu:"));
-    const QString uicKey = QString(QLatin1String(" uic:"));
-    const QString midKey = QString(QLatin1String(" mid:"));
-    const QString mdpKey = QString(QLatin1String(" mdp:"));
-    const QString udpKey = QString(QLatin1String(" udp:"));
+    const QString mmcKey = QString(" mmc:"_L1);
+    const QString miuKey = QString(" miu:"_L1);
+    const QString uicKey = QString(" uic:"_L1);
+    const QString midKey = QString(" mid:"_L1);
+    const QString mdpKey = QString(" mdp:"_L1);
+    const QString udpKey = QString(" udp:"_L1);
     QString line;
     bool mmc_key_found = false;
     while (textStream.readLineInto(&line)) {
-        if (!line.startsWith(QLatin1Char(' '))) {
+        if (!line.startsWith(u' ')) {
             if (!mocEntries.isEmpty() || mmc_key_found || !mocIncludes.isEmpty()) {
                 entries.insert(source,
                                ParseCacheEntry { std::move(mocEntries), std::move(mocIncludes) });
                 source.clear();
+                mocEntries = {};
+                mocIncludes = {};
                 mmc_key_found = false;
             }
             source = line;
@@ -194,38 +175,52 @@ static bool readParseCache(ParseCacheMap &entries, const QString &parseCacheFile
     return true;
 }
 
-static bool readJsonFiles(QList<QString> &entries, const QString &filePath)
+static bool writeJsonFiles(const QList<QString> &fileList, const QString &fileListFilePath,
+                           const QString &timestampFilePath)
 {
-
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        fprintf(stderr, "Could not open: %s\n", qPrintable(filePath));
+    QFile timestampFile(timestampFilePath);
+    if (!timestampFile.open(QIODevice::ReadWrite)) {
+        fprintf(stderr, "Could not open: %s\n", qPrintable(timestampFilePath));
         return false;
     }
 
-    QTextStream textStream(&file);
-    QString line;
-    while (textStream.readLineInto(&line)) {
-        entries.push_back(line);
-    }
-    file.close();
-    return true;
-}
-
-static bool writeJsonFiles(const QList<QString> &fileList, const QString &fileListFilePath)
-{
-    QFile file(fileListFilePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        fprintf(stderr, "Could not open: %s\n", qPrintable(fileListFilePath));
-        return false;
+    qint64 timestamp = std::numeric_limits<qint64>::min();
+    QByteArray timestampBuffer = timestampFile.readAll();
+    if (timestampBuffer.size() == sizeof(timestamp)) {
+        QDataStream istream(&timestampBuffer, QIODevice::ReadOnly);
+        istream >> timestamp;
     }
 
-    QTextStream textStream(&file);
-    for (const auto &file : fileList) {
-        textStream << file << Qt::endl;
+    // Check if any of the metatype json files produced by automoc is newer than the last file
+    // processed by cmake_automoc parser
+    for (const auto &jsonFile : fileList) {
+        const qint64 jsonFileLastModified =
+                QFileInfo(jsonFile).lastModified().toMSecsSinceEpoch();
+        if (jsonFileLastModified > timestamp) {
+            timestamp = jsonFileLastModified;
+        }
     }
 
-    file.close();
+    if (timestamp != std::numeric_limits<qint64>::min() || !QFile::exists(fileListFilePath)) {
+        QFile file(fileListFilePath);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            fprintf(stderr, "Could not open: %s\n", qPrintable(fileListFilePath));
+            return false;
+        }
+
+        QTextStream textStream(&file);
+        for (const auto &jsonFile : fileList) {
+            textStream << jsonFile << Qt::endl;
+        }
+        textStream.flush();
+
+        // Update the timestamp according the newest json file timestamp.
+        timestampBuffer.clear();
+        QDataStream ostream(&timestampBuffer, QIODevice::WriteOnly);
+        ostream << timestamp;
+        timestampFile.resize(0);
+        timestampFile.write(timestampBuffer);
+    }
     return true;
 }
 
@@ -269,6 +264,13 @@ int main(int argc, char **argv)
     isMultiConfigOption.setDescription(
             QStringLiteral("Set this option when using CMake with a multi-config generator"));
     parser.addOption(isMultiConfigOption);
+
+    QCommandLineOption timestampFilePathOption(QStringLiteral("timestamp-file-path"));
+    timestampFilePathOption.setDescription(
+            QStringLiteral("The path to a timestamp file that determines whether the output"
+                           " file needs to be updated."));
+    timestampFilePathOption.setValueName(QStringLiteral("timestamp file"));
+    parser.addOption(timestampFilePathOption);
 
     QStringList arguments = QCoreApplication::arguments();
     parser.process(arguments);
@@ -323,7 +325,7 @@ int main(int argc, char **argv)
         const QString base = fileInfo.path() + fileInfo.completeBaseName();
         // 1a) erase header
         for (const auto &ext : headerExtList) {
-            const QString headerPath = base + QLatin1Char('.') + ext;
+            const QString headerPath = base + u'.' + ext;
             auto it = autoGenHeaders.find(headerPath);
             if (it != autoGenHeaders.end()) {
                 autoGenHeaders.erase(it);
@@ -331,19 +333,18 @@ int main(int argc, char **argv)
             }
         }
         // Add extra moc files
-        for (const auto &mocFile : it.value().mocFiles) {
-            jsonFileList.push_back(dir.filePath(mocFile) + QLatin1String(".json"));
-        }
+        for (const auto &mocFile : it.value().mocFiles)
+            jsonFileList.push_back(dir.filePath(mocFile) + ".json"_L1);
         // Add main moc files
         for (const auto &mocFile : it.value().mocIncludes) {
-            jsonFileList.push_back(dir.filePath(mocFile) + QLatin1String(".json"));
+            jsonFileList.push_back(dir.filePath(mocFile) + ".json"_L1);
             // 1b) Locate this header and delete it
             constexpr int mocKeyLen = 4; // length of "moc_"
             const QString headerBaseName =
                     QFileInfo(mocFile.right(mocFile.size() - mocKeyLen)).completeBaseName();
             bool breakFree = false;
             for (auto &ext : headerExtList) {
-                const QString headerSuffix = headerBaseName + QLatin1Char('.') + ext;
+                const QString headerSuffix = headerBaseName + u'.' + ext;
                 for (auto it = autoGenHeaders.begin(); it != autoGenHeaders.end(); ++it) {
                     if (it.key().endsWith(headerSuffix)
                         && QFileInfo(it.key()).completeBaseName() == headerBaseName) {
@@ -369,8 +370,7 @@ int main(int argc, char **argv)
         const QString pathPrefix = !isMultiConfig
             ? QStringLiteral("../")
             : QString();
-        const QString jsonPath =
-                dir.filePath(pathPrefix + mapIt.value() + QLatin1String(".json"));
+        const QString jsonPath = dir.filePath(pathPrefix + mapIt.value() + ".json"_L1);
         jsonFileList.push_back(jsonPath);
     }
 
@@ -378,19 +378,9 @@ int main(int argc, char **argv)
     jsonFileList.sort();
 
     // Read Previous file list (if any)
-    const QString fileListFilePath = parser.value(outputFileOption);
-    QList<QString> previousList;
-    QFile prev_file(fileListFilePath);
-
-    // Only try to open file if it exists to avoid error messages
-    if (prev_file.exists()) {
-        (void)readJsonFiles(previousList, fileListFilePath);
-    }
-
-    if (previousList != jsonFileList || !QFile(fileListFilePath).exists()) {
-        if (!writeJsonFiles(jsonFileList, fileListFilePath)) {
-            return EXIT_FAILURE;
-        }
+    if (!writeJsonFiles(jsonFileList, parser.value(outputFileOption),
+                        parser.value(timestampFilePathOption))) {
+        return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

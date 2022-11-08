@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdebug.pro.
 
 #####################################################################
@@ -7,6 +10,10 @@
 qt_internal_add_test(tst_qdebug
     SOURCES
         tst_qdebug.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Concurrent
 )
+
+if (APPLE)
+    target_compile_options(tst_qdebug PRIVATE -x objective-c++)
+endif()

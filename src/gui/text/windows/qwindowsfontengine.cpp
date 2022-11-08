@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qwindowsfontengine_p.h"
 #include "qwindowsnativeimage_p.h"
@@ -74,6 +38,9 @@
 
 QT_BEGIN_NAMESPACE
 
+QT_IMPL_METATYPE_EXTERN(HFONT)
+QT_IMPL_METATYPE_EXTERN(LOGFONT)
+
 //### mingw needed define
 #ifndef TT_PRIM_CSPLINE
 #define TT_PRIM_CSPLINE 3
@@ -88,18 +55,6 @@ QT_BEGIN_NAMESPACE
    )
 
 // common DC for all fonts
-
-typedef BOOL (WINAPI *PtrGetCharWidthI)(HDC, UINT, UINT, LPWORD, LPINT);
-static PtrGetCharWidthI ptrGetCharWidthI = 0;
-static bool resolvedGetCharWidthI = false;
-
-static void resolveGetCharWidthI()
-{
-    if (resolvedGetCharWidthI)
-        return;
-    resolvedGetCharWidthI = true;
-    ptrGetCharWidthI = (PtrGetCharWidthI)QSystemLibrary::resolve(QStringLiteral("gdi32"), "GetCharWidthI");
-}
 
 // general font engine
 
@@ -252,9 +207,6 @@ QWindowsFontEngine::QWindowsFontEngine(const QString &name,
     cache_cost = tm.tmHeight * tm.tmAveCharWidth * 2000;
     getCMap();
 
-    if (!resolvedGetCharWidthI)
-        resolveGetCharWidthI();
-
     hasUnreliableOutline = (tm.tmPitchAndFamily & (TMPF_TRUETYPE | TMPF_VECTOR)) == 0;
 }
 
@@ -326,8 +278,7 @@ bool QWindowsFontEngine::stringToCMap(const QChar *str, int len, QGlyphLayout *g
 
 inline void calculateTTFGlyphWidth(HDC hdc, UINT glyph, int &width)
 {
-    if (ptrGetCharWidthI)
-        ptrGetCharWidthI(hdc, glyph, 1, 0, &width);
+    GetCharWidthI(hdc, glyph, 1, 0, &width);
 }
 
 void QWindowsFontEngine::recalcAdvances(QGlyphLayout *glyphs, QFontEngine::ShaperFlags flags) const
@@ -399,18 +350,6 @@ void QWindowsFontEngine::recalcAdvances(QGlyphLayout *glyphs, QFontEngine::Shape
         if (oldFont)
             SelectObject(hdc, oldFont);
     }
-}
-
-glyph_metrics_t QWindowsFontEngine::boundingBox(const QGlyphLayout &glyphs)
-{
-    if (glyphs.numGlyphs == 0)
-        return glyph_metrics_t();
-
-    QFixed w = 0;
-    for (int i = 0; i < glyphs.numGlyphs; ++i)
-        w += glyphs.effectiveAdvance(i);
-
-    return glyph_metrics_t(0, -tm.tmAscent, w - lastRightBearing(glyphs), tm.tmHeight, w, 0);
 }
 
 bool QWindowsFontEngine::getOutlineMetrics(glyph_t glyph, const QTransform &t, glyph_metrics_t *metrics) const
@@ -675,8 +614,8 @@ qreal QWindowsFontEngine::minRightBearing() const
                     fmr = qMin(fmr,abc[i].abcfC);
                 }
             }
-            ml = int(fml - 0.9999);
-            mr = int(fmr - 0.9999);
+            ml = qFloor(fml);
+            mr = qFloor(fmr);
             delete [] abc;
         }
         lbearing = ml;
@@ -1043,7 +982,10 @@ QWindowsNativeImage *QWindowsFontEngine::drawGDIGlyph(HFONT font, glyph_t glyph,
     return ni;
 }
 
-glyph_metrics_t QWindowsFontEngine::alphaMapBoundingBox(glyph_t glyph, QFixed, const QTransform &matrix, GlyphFormat format)
+glyph_metrics_t QWindowsFontEngine::alphaMapBoundingBox(glyph_t glyph,
+                                                        const QFixedPoint &,
+                                                        const QTransform &matrix,
+                                                        GlyphFormat format)
 {
     int margin = 0;
     if (format == QFontEngine::Format_A32 || format == QFontEngine::Format_ARGB)
@@ -1108,7 +1050,9 @@ QImage QWindowsFontEngine::alphaMapForGlyph(glyph_t glyph, const QTransform &xfo
 #define SPI_GETFONTSMOOTHINGCONTRAST           0x200C
 #define SPI_SETFONTSMOOTHINGCONTRAST           0x200D
 
-QImage QWindowsFontEngine::alphaRGBMapForGlyph(glyph_t glyph, QFixed, const QTransform &t)
+QImage QWindowsFontEngine::alphaRGBMapForGlyph(glyph_t glyph,
+                                               const QFixedPoint &,
+                                               const QTransform &t)
 {
     HFONT font = hfont;
 

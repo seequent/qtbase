@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QtCore/qmath.h>
@@ -152,6 +127,8 @@ private slots:
 
     void properties();
     void metaTypes();
+
+    void structuredBinding();
 };
 
 // Test the creation of QVector2D objects in various ways:
@@ -2680,6 +2657,73 @@ void tst_QVectorND::metaTypes()
     QCOMPARE(qMetaTypeId<QVector2D>(), int(QMetaType::QVector2D));
     QCOMPARE(qMetaTypeId<QVector3D>(), int(QMetaType::QVector3D));
     QCOMPARE(qMetaTypeId<QVector4D>(), int(QMetaType::QVector4D));
+}
+
+void tst_QVectorND::structuredBinding()
+{
+    {
+        QVector2D v(1.0f, 2.0f);
+        auto [x, y] = v;
+        QCOMPARE(x, 1.0f);
+        QCOMPARE(y, 2.0f);
+    }
+    {
+        QVector2D v(1.0f, 2.0f);
+        auto &[x, y] = v;
+        QCOMPARE(x, 1.0f);
+        QCOMPARE(y, 2.0f);
+
+        x = 10.0f;
+        y = 20.0f;
+        QCOMPARE(v.x(), 10.0f);
+        QCOMPARE(v.y(), 20.0f);
+    }
+    {
+        QVector3D v(1.0f, 2.0f, 3.0);
+        auto [x, y, z] = v;
+        QCOMPARE(x, 1.0f);
+        QCOMPARE(y, 2.0f);
+        QCOMPARE(z, 3.0f);
+    }
+    {
+        QVector3D v(1.0f, 2.0f, 3.0);
+        auto &[x, y, z] = v;
+        QCOMPARE(x, 1.0f);
+        QCOMPARE(y, 2.0f);
+        QCOMPARE(z, 3.0f);
+
+        x = 10.0f;
+        y = 20.0f;
+        z = 30.0f;
+        QCOMPARE(v.x(), 10.0f);
+        QCOMPARE(v.y(), 20.0f);
+        QCOMPARE(v.z(), 30.0f);
+    }
+    {
+        QVector4D v(1.0f, 2.0f, 3.0, 4.0);
+        auto [x, y, z, w] = v;
+        QCOMPARE(x, 1.0f);
+        QCOMPARE(y, 2.0f);
+        QCOMPARE(z, 3.0f);
+        QCOMPARE(w, 4.0f);
+    }
+    {
+        QVector4D v(1.0f, 2.0f, 3.0, 4.0);
+        auto &[x, y, z, w] = v;
+        QCOMPARE(x, 1.0f);
+        QCOMPARE(y, 2.0f);
+        QCOMPARE(z, 3.0f);
+        QCOMPARE(w, 4.0f);
+
+        x = 10.0f;
+        y = 20.0f;
+        z = 30.0f;
+        w = 40.0f;
+        QCOMPARE(v.x(), 10.0f);
+        QCOMPARE(v.y(), 20.0f);
+        QCOMPARE(v.z(), 30.0f);
+        QCOMPARE(v.w(), 40.0f);
+    }
 }
 
 QTEST_APPLESS_MAIN(tst_QVectorND)

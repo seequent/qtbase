@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Qt Gui module
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qrhinull_p_p.h"
 #include <qmath.h>
@@ -59,8 +23,7 @@ QT_BEGIN_NAMESPACE
     The Null backend does not issue any graphics calls and creates no
     resources. All QRhi operations will succeed as normal so applications can
     still be run, albeit potentially at an unthrottled speed, depending on
-    their frame rendering strategy. The backend reports resources to
-    QRhiProfiler as usual.
+    their frame rendering strategy.
  */
 
 /*!
@@ -96,7 +59,7 @@ QRhiSwapChain *QRhiNull::createSwapChain()
     return new QNullSwapChain(this);
 }
 
-QRhiBuffer *QRhiNull::createBuffer(QRhiBuffer::Type type, QRhiBuffer::UsageFlags usage, int size)
+QRhiBuffer *QRhiNull::createBuffer(QRhiBuffer::Type type, QRhiBuffer::UsageFlags usage, quint32 size)
 {
     return new QNullBuffer(this, type, usage, size);
 }
@@ -162,10 +125,17 @@ int QRhiNull::resourceLimit(QRhi::ResourceLimit limit) const
         return 0;
     case QRhi::MaxThreadGroupZ:
         return 0;
-    default:
-        Q_UNREACHABLE();
-        return 0;
+    case QRhi::TextureArraySizeMax:
+        return 2048;
+    case QRhi::MaxUniformBufferRange:
+        return 65536;
+    case QRhi::MaxVertexInputs:
+        return 32;
+    case QRhi::MaxVertexOutputs:
+        return 32;
     }
+
+    Q_UNREACHABLE_RETURN(0);
 }
 
 const QRhiNativeHandles *QRhiNull::nativeHandles()
@@ -180,9 +150,9 @@ QRhiDriverInfo QRhiNull::driverInfo() const
     return info;
 }
 
-void QRhiNull::sendVMemStatsToProfiler()
+QRhiStats QRhiNull::statistics()
 {
-    // nothing to do here
+    return {};
 }
 
 bool QRhiNull::makeThreadLocalNativeContextCurrent()
@@ -201,6 +171,16 @@ bool QRhiNull::isDeviceLost() const
     return false;
 }
 
+QByteArray QRhiNull::pipelineCacheData()
+{
+    return QByteArray();
+}
+
+void QRhiNull::setPipelineCacheData(const QByteArray &data)
+{
+    Q_UNUSED(data);
+}
+
 QRhiRenderBuffer *QRhiNull::createRenderBuffer(QRhiRenderBuffer::Type type, const QSize &pixelSize,
                                                int sampleCount, QRhiRenderBuffer::Flags flags,
                                                QRhiTexture::Format backingFormatHint)
@@ -208,10 +188,11 @@ QRhiRenderBuffer *QRhiNull::createRenderBuffer(QRhiRenderBuffer::Type type, cons
     return new QNullRenderBuffer(this, type, pixelSize, sampleCount, flags, backingFormatHint);
 }
 
-QRhiTexture *QRhiNull::createTexture(QRhiTexture::Format format, const QSize &pixelSize,
+QRhiTexture *QRhiNull::createTexture(QRhiTexture::Format format,
+                                     const QSize &pixelSize, int depth, int arraySize,
                                      int sampleCount, QRhiTexture::Flags flags)
 {
-    return new QNullTexture(this, format, pixelSize, sampleCount, flags);
+    return new QNullTexture(this, format, pixelSize, depth, arraySize, sampleCount, flags);
 }
 
 QRhiSampler *QRhiNull::createSampler(QRhiSampler::Filter magFilter, QRhiSampler::Filter minFilter,
@@ -367,8 +348,6 @@ QRhi::FrameOpResult QRhiNull::beginFrame(QRhiSwapChain *swapChain, QRhi::BeginFr
 {
     Q_UNUSED(flags);
     currentSwapChain = swapChain;
-    QRhiProfilerPrivate *rhiP = profilerPrivateOrNull();
-    QRHI_PROF_F(beginSwapChainFrame(swapChain));
     return QRhi::FrameOpSuccess;
 }
 
@@ -376,9 +355,6 @@ QRhi::FrameOpResult QRhiNull::endFrame(QRhiSwapChain *swapChain, QRhi::EndFrameF
 {
     Q_UNUSED(flags);
     QNullSwapChain *swapChainD = QRHI_RES(QNullSwapChain, swapChain);
-    QRhiProfilerPrivate *rhiP = profilerPrivateOrNull();
-    QRHI_PROF_F(endSwapChainFrame(swapChain, swapChainD->frameCount + 1));
-    QRHI_PROF_F(swapChainFrameGpuTime(swapChain, 0.000666f));
     swapChainD->frameCount += 1;
     currentSwapChain = nullptr;
     return QRhi::FrameOpSuccess;
@@ -405,9 +381,9 @@ QRhi::FrameOpResult QRhiNull::finish()
 void QRhiNull::simulateTextureUpload(const QRhiResourceUpdateBatchPrivate::TextureOp &u)
 {
     QNullTexture *texD = QRHI_RES(QNullTexture, u.dst);
-    for (int layer = 0; layer < QRhi::MAX_LAYERS; ++layer) {
-        for (int level = 0; level < QRhi::MAX_LEVELS; ++level) {
-            for (const QRhiTextureSubresourceUploadDescription &subresDesc : qAsConst(u.subresDesc[layer][level])) {
+    for (int layer = 0, maxLayer = u.subresDesc.size(); layer < maxLayer; ++layer) {
+        for (int level = 0; level < QRhi::MAX_MIP_LEVELS; ++level) {
+            for (const QRhiTextureSubresourceUploadDescription &subresDesc : std::as_const(u.subresDesc[layer][level])) {
                 if (!subresDesc.image().isNull()) {
                     const QImage src = subresDesc.image();
                     QPainter painter(&texD->image[layer][level]);
@@ -427,12 +403,15 @@ void QRhiNull::simulateTextureUpload(const QRhiResourceUpdateBatchPrivate::Textu
                     // sourceTopLeft is not supported on this path as per QRhi docs
                     const char *src = subresDesc.data().constData();
                     const int srcBpl = w * 4;
+                    int srcStride = srcBpl;
+                    if (subresDesc.dataStride())
+                        srcStride = subresDesc.dataStride();
                     const QPoint dstOffset = subresDesc.destinationTopLeft();
                     uchar *dst = texD->image[layer][level].bits();
                     const int dstBpl = texD->image[layer][level].bytesPerLine();
                     for (int y = 0; y < h; ++y) {
                         memcpy(dst + dstOffset.x() * 4 + (y + dstOffset.y()) * dstBpl,
-                               src + y * srcBpl,
+                               src + y * srcStride,
                                size_t(srcBpl));
                     }
                 }
@@ -506,7 +485,7 @@ void QRhiNull::resourceUpdate(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *re
             }
             quint32 bytesPerLine = 0;
             quint32 byteSize = 0;
-            textureFormatInfo(result->format, result->pixelSize, &bytesPerLine, &byteSize);
+            textureFormatInfo(result->format, result->pixelSize, &bytesPerLine, &byteSize, nullptr);
             if (texD && texD->format() == QRhiTexture::RGBA8) {
                 result->data.resize(int(byteSize));
                 const QImage &src(texD->image[u.rb.layer()][u.rb.level()]);
@@ -535,12 +514,18 @@ void QRhiNull::beginPass(QRhiCommandBuffer *cb,
                          QRhiResourceUpdateBatch *resourceUpdates,
                          QRhiCommandBuffer::BeginPassFlags flags)
 {
-    Q_UNUSED(rt);
     Q_UNUSED(colorClearValue);
     Q_UNUSED(depthStencilClearValue);
     Q_UNUSED(flags);
+
     if (resourceUpdates)
         resourceUpdate(cb, resourceUpdates);
+
+    if (rt->resourceType() == QRhiRenderTarget::TextureRenderTarget) {
+        QNullTextureRenderTarget *rtTex = QRHI_RES(QNullTextureRenderTarget, rt);
+        if (!QRhiRenderTargetAttachmentTracker::isUpToDate<QNullTexture, QNullRenderBuffer>(rtTex->description(), rtTex->d.currentResIdList))
+            rtTex->create();
+    }
 }
 
 void QRhiNull::endPass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *resourceUpdates)
@@ -564,7 +549,7 @@ void QRhiNull::endComputePass(QRhiCommandBuffer *cb, QRhiResourceUpdateBatch *re
         resourceUpdate(cb, resourceUpdates);
 }
 
-QNullBuffer::QNullBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, int size)
+QNullBuffer::QNullBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, quint32 size)
     : QRhiBuffer(rhi, type, usage, size)
 {
 }
@@ -579,17 +564,22 @@ void QNullBuffer::destroy()
     delete[] data;
     data = nullptr;
 
-    QRHI_PROF;
-    QRHI_PROF_F(releaseBuffer(this));
+    QRHI_RES_RHI(QRhiNull);
+    if (rhiD)
+        rhiD->unregisterResource(this);
 }
 
 bool QNullBuffer::create()
 {
+    if (data)
+        destroy();
+
     data = new char[m_size];
     memset(data, 0, m_size);
 
-    QRHI_PROF;
-    QRHI_PROF_F(newBuffer(this, uint(m_size), 1, 0));
+    QRHI_RES_RHI(QRhiNull);
+    rhiD->registerResource(this);
+
     return true;
 }
 
@@ -613,14 +603,24 @@ QNullRenderBuffer::~QNullRenderBuffer()
 
 void QNullRenderBuffer::destroy()
 {
-    QRHI_PROF;
-    QRHI_PROF_F(releaseRenderBuffer(this));
+    valid = false;
+
+    QRHI_RES_RHI(QRhiNull);
+    if (rhiD)
+        rhiD->unregisterResource(this);
 }
 
 bool QNullRenderBuffer::create()
 {
-    QRHI_PROF;
-    QRHI_PROF_F(newRenderBuffer(this, false, false, 1));
+    if (valid)
+        destroy();
+
+    valid = true;
+    generation += 1;
+
+    QRHI_RES_RHI(QRhiNull);
+    rhiD->registerResource(this);
+
     return true;
 }
 
@@ -629,9 +629,9 @@ QRhiTexture::Format QNullRenderBuffer::backingFormat() const
     return m_type == Color ? QRhiTexture::RGBA8 : QRhiTexture::UnknownFormat;
 }
 
-QNullTexture::QNullTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize,
-                           int sampleCount, Flags flags)
-    : QRhiTexture(rhi, format, pixelSize, sampleCount, flags)
+QNullTexture::QNullTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize, int depth,
+                           int arraySize, int sampleCount, Flags flags)
+    : QRhiTexture(rhi, format, pixelSize, depth, arraySize, sampleCount, flags)
 {
 }
 
@@ -642,20 +642,33 @@ QNullTexture::~QNullTexture()
 
 void QNullTexture::destroy()
 {
-    QRHI_PROF;
-    QRHI_PROF_F(releaseTexture(this));
+    valid = false;
+
+    QRHI_RES_RHI(QRhiNull);
+    if (rhiD)
+        rhiD->unregisterResource(this);
 }
 
 bool QNullTexture::create()
 {
+    if (valid)
+        destroy();
+
+    valid = true;
+
     QRHI_RES_RHI(QRhiNull);
     const bool isCube = m_flags.testFlag(CubeMap);
+    const bool is3D = m_flags.testFlag(ThreeDimensional);
+    const bool isArray = m_flags.testFlag(TextureArray);
     const bool hasMipMaps = m_flags.testFlag(MipMapped);
     QSize size = m_pixelSize.isEmpty() ? QSize(1, 1) : m_pixelSize;
+    m_depth = qMax(1, m_depth);
     const int mipLevelCount = hasMipMaps ? rhiD->q->mipLevelsForSize(size) : 1;
-    const int layerCount = isCube ? 6 : 1;
+    m_arraySize = qMax(0, m_arraySize);
+    const int layerCount = is3D ? m_depth : (isCube ? 6 : (isArray ? m_arraySize : 1));
 
     if (m_format == RGBA8) {
+        image.resize(layerCount);
         for (int layer = 0; layer < layerCount; ++layer) {
             for (int level = 0; level < mipLevelCount; ++level) {
                 image[layer][level] = QImage(rhiD->q->sizeForMipLevel(level, size),
@@ -665,21 +678,26 @@ bool QNullTexture::create()
         }
     }
 
-    QRHI_PROF;
-    QRHI_PROF_F(newTexture(this, true, mipLevelCount, layerCount, 1));
+    generation += 1;
+
+    rhiD->registerResource(this);
+
     return true;
 }
 
 bool QNullTexture::createFrom(QRhiTexture::NativeTexture src)
 {
     Q_UNUSED(src);
+    if (valid)
+        destroy();
+
+    valid = true;
+
+    generation += 1;
+
     QRHI_RES_RHI(QRhiNull);
-    const bool isCube = m_flags.testFlag(CubeMap);
-    const bool hasMipMaps = m_flags.testFlag(MipMapped);
-    QSize size = m_pixelSize.isEmpty() ? QSize(1, 1) : m_pixelSize;
-    const int mipLevelCount = hasMipMaps ? rhiD->q->mipLevelsForSize(size) : 1;
-    QRHI_PROF;
-    QRHI_PROF_F(newTexture(this, false, mipLevelCount, isCube ? 6 : 1, 1));
+    rhiD->registerResource(this);
+
     return true;
 }
 
@@ -723,32 +741,42 @@ bool QNullRenderPassDescriptor::isCompatible(const QRhiRenderPassDescriptor *oth
     return true;
 }
 
-QNullReferenceRenderTarget::QNullReferenceRenderTarget(QRhiImplementation *rhi)
-    : QRhiRenderTarget(rhi),
+QRhiRenderPassDescriptor *QNullRenderPassDescriptor::newCompatibleRenderPassDescriptor() const
+{
+    return new QNullRenderPassDescriptor(m_rhi);
+}
+
+QVector<quint32> QNullRenderPassDescriptor::serializedFormat() const
+{
+    return {};
+}
+
+QNullSwapChainRenderTarget::QNullSwapChainRenderTarget(QRhiImplementation *rhi, QRhiSwapChain *swapchain)
+    : QRhiSwapChainRenderTarget(rhi, swapchain),
       d(rhi)
 {
 }
 
-QNullReferenceRenderTarget::~QNullReferenceRenderTarget()
+QNullSwapChainRenderTarget::~QNullSwapChainRenderTarget()
 {
     destroy();
 }
 
-void QNullReferenceRenderTarget::destroy()
+void QNullSwapChainRenderTarget::destroy()
 {
 }
 
-QSize QNullReferenceRenderTarget::pixelSize() const
+QSize QNullSwapChainRenderTarget::pixelSize() const
 {
     return d.pixelSize;
 }
 
-float QNullReferenceRenderTarget::devicePixelRatio() const
+float QNullSwapChainRenderTarget::devicePixelRatio() const
 {
     return d.dpr;
 }
 
-int QNullReferenceRenderTarget::sampleCount() const
+int QNullSwapChainRenderTarget::sampleCount() const
 {
     return 1;
 }
@@ -789,11 +817,15 @@ bool QNullTextureRenderTarget::create()
     } else if (m_desc.depthTexture()) {
         d.pixelSize = m_desc.depthTexture()->pixelSize();
     }
+    QRhiRenderTargetAttachmentTracker::updateResIdList<QNullTexture, QNullRenderBuffer>(m_desc, &d.currentResIdList);
     return true;
 }
 
 QSize QNullTextureRenderTarget::pixelSize() const
 {
+    if (!QRhiRenderTargetAttachmentTracker::isUpToDate<QNullTexture, QNullRenderBuffer>(m_desc, d.currentResIdList))
+        const_cast<QNullTextureRenderTarget *>(this)->create();
+
     return d.pixelSize;
 }
 
@@ -830,6 +862,11 @@ bool QNullShaderResourceBindings::create()
     rhiD->updateLayoutDesc(this);
 
     return true;
+}
+
+void QNullShaderResourceBindings::updateResources(UpdateFlags flags)
+{
+    Q_UNUSED(flags);
 }
 
 QNullGraphicsPipeline::QNullGraphicsPipeline(QRhiImplementation *rhi)
@@ -891,7 +928,7 @@ void QNullCommandBuffer::destroy()
 
 QNullSwapChain::QNullSwapChain(QRhiImplementation *rhi)
     : QRhiSwapChain(rhi),
-      rt(rhi),
+      rt(rhi, this),
       cb(rhi)
 {
 }
@@ -903,8 +940,9 @@ QNullSwapChain::~QNullSwapChain()
 
 void QNullSwapChain::destroy()
 {
-    QRHI_PROF;
-    QRHI_PROF_F(releaseSwapChain(this));
+    QRHI_RES_RHI(QRhiNull);
+    if (rhiD)
+        rhiD->unregisterResource(this);
 }
 
 QRhiCommandBuffer *QNullSwapChain::currentFrameCommandBuffer()
@@ -922,6 +960,11 @@ QSize QNullSwapChain::surfacePixelSize()
     return QSize(1280, 720);
 }
 
+bool QNullSwapChain::isFormatSupported(Format f)
+{
+    return f == SDR;
+}
+
 QRhiRenderPassDescriptor *QNullSwapChain::newCompatibleRenderPassDescriptor()
 {
     return new QNullRenderPassDescriptor(m_rhi);
@@ -929,12 +972,22 @@ QRhiRenderPassDescriptor *QNullSwapChain::newCompatibleRenderPassDescriptor()
 
 bool QNullSwapChain::createOrResize()
 {
+    const bool needsRegistration = !window || window != m_window;
+    if (window && window != m_window)
+        destroy();
+
+    window = m_window;
     m_currentPixelSize = surfacePixelSize();
+    rt.setRenderPassDescriptor(m_renderPassDesc); // for the public getter in QRhiRenderTarget
     rt.d.rp = QRHI_RES(QNullRenderPassDescriptor, m_renderPassDesc);
     rt.d.pixelSize = m_currentPixelSize;
     frameCount = 0;
-    QRHI_PROF;
-    QRHI_PROF_F(resizeSwapChain(this, 1, 0, 1));
+
+    if (needsRegistration) {
+        QRHI_RES_RHI(QRhiNull);
+        rhiD->registerResource(this);
+    }
+
     return true;
 }
 

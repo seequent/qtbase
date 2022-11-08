@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdrag.pro.
 
 #####################################################################
@@ -7,6 +10,6 @@
 qt_internal_add_test(tst_qdrag
     SOURCES
         tst_qdrag.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
 )

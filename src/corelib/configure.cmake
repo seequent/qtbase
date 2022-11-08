@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 
 
 #### Inputs
@@ -14,7 +17,14 @@ set_property(CACHE INPUT_libb2 PROPERTY STRINGS undefined no qt system)
 
 #### Libraries
 
-qt_find_package(WrapDoubleConversion PROVIDED_TARGETS WrapDoubleConversion::WrapDoubleConversion MODULE_NAME core QMAKE_LIB doubleconversion)
+if((UNIX AND NOT QNX) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+    # QNX's libbacktrace has an API wholly different from all the other Unix
+    # offerings
+    qt_find_package(WrapBacktrace PROVIDED_TARGETS WrapBacktrace::WrapBacktrace MODULE_NAME core QMAKE_LIB backtrace)
+endif()
+qt_find_package(WrapSystemDoubleConversion
+                PROVIDED_TARGETS WrapSystemDoubleConversion::WrapSystemDoubleConversion
+                MODULE_NAME core QMAKE_LIB doubleconversion)
 qt_find_package(GLIB2 PROVIDED_TARGETS GLIB2::GLIB2 MODULE_NAME core QMAKE_LIB glib)
 qt_find_package(ICU COMPONENTS i18n uc data PROVIDED_TARGETS ICU::i18n ICU::uc ICU::data MODULE_NAME core QMAKE_LIB icu)
 if(QT_FEATURE_dlopen)
@@ -40,8 +50,7 @@ qt_find_package(Slog2 PROVIDED_TARGETS Slog2::Slog2 MODULE_NAME core QMAKE_LIB s
 qt_config_compile_test(atomicfptr
     LABEL "working std::atomic for function pointers"
     CODE
-"
-#include <atomic>
+"#include <atomic>
 typedef void (*fptr)(int);
 typedef std::atomic<fptr> atomicfptr;
 void testfunction(int) { }
@@ -55,9 +64,9 @@ void test(volatile atomicfptr &a)
     }
     a.store(&testfunction, std::memory_order_release);
 }
-int main(int argc, char **argv)
+
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 atomicfptr fptr(testfunction);
 test(fptr);
@@ -72,13 +81,11 @@ qt_config_compile_test(clock_monotonic
     LIBRARIES
         WrapRt::WrapRt
     CODE
-"
-#include <unistd.h>
+"#include <unistd.h>
 #include <time.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 #if defined(_POSIX_MONOTONIC_CLOCK) && (_POSIX_MONOTONIC_CLOCK-0 >= 0)
 timespec ts;
@@ -101,9 +108,8 @@ qt_config_compile_test(cloexec
 #include <fcntl.h>
 #include <unistd.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 int pipes[2];
 (void) pipe2(pipes, O_CLOEXEC | O_NONBLOCK);
@@ -121,7 +127,7 @@ int pipes[2];
 
 # special case begin
 # cxx11_future
-if (UNIX AND NOT ANDROID AND NOT QNX)
+if (UNIX AND NOT ANDROID AND NOT QNX AND NOT INTEGRITY)
     set(cxx11_future_TEST_LIBRARIES pthread)
 endif()
 qt_config_compile_test(cxx11_future
@@ -129,12 +135,10 @@ qt_config_compile_test(cxx11_future
     LIBRARIES
      "${cxx11_future_TEST_LIBRARIES}"
     CODE
-"
-#include <future>
+"#include <future>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 std::future<int> f = std::async([]() { return 42; });
 (void)f.get();
@@ -148,12 +152,10 @@ std::future<int> f = std::async([]() { return 42; });
 qt_config_compile_test(cxx11_random
     LABEL "C++11 <random>"
     CODE
-"
-#include <random>
+"#include <random>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 std::mt19937 mt(0);
     /* END TEST: */
@@ -165,12 +167,10 @@ std::mt19937 mt(0);
 qt_config_compile_test(cxx17_filesystem
     LABEL "C++17 <filesystem>"
     CODE
-"
-#include <filesystem>
+"#include <filesystem>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 std::filesystem::copy(
     std::filesystem::path(\"./file\"),
@@ -178,19 +178,34 @@ std::filesystem::copy(
     /* END TEST: */
     return 0;
 }
-"# FIXME: qmake: CONFIG += c++17
+"
+)
+
+# dladdr
+qt_config_compile_test(dladdr
+    LABEL "dladdr"
+    LIBRARIES
+        dl
+    CODE
+"#define _GNU_SOURCE 1
+#include <dlfcn.h>
+int i = 0;
+int main(void)
+{
+    Dl_info info;
+    dladdr(&i, &info);
+    return 0;
+}"
 )
 
 # eventfd
 qt_config_compile_test(eventfd
     LABEL "eventfd"
     CODE
-"
-#include <sys/eventfd.h>
+"#include <sys/eventfd.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 eventfd_t value;
 int fd = eventfd(0, EFD_CLOEXEC);
@@ -205,12 +220,10 @@ eventfd_write(fd, value);
 qt_config_compile_test(futimens
     LABEL "futimens()"
     CODE
-"
-#include <sys/stat.h>
+"#include <sys/stat.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 futimens(-1, 0);
     /* END TEST: */
@@ -223,12 +236,10 @@ futimens(-1, 0);
 qt_config_compile_test(futimes
     LABEL "futimes()"
     CODE
-"
-#include <sys/time.h>
+"#include <sys/time.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 futimes(-1, 0);
     /* END TEST: */
@@ -240,12 +251,10 @@ futimes(-1, 0);
 qt_config_compile_test(getauxval
     LABEL "getauxval()"
     CODE
-"
-#include <sys/auxv.h>
+"#include <sys/auxv.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 (void) getauxval(AT_NULL);
     /* END TEST: */
@@ -257,12 +266,13 @@ int main(int argc, char **argv)
 qt_config_compile_test(getentropy
     LABEL "getentropy()"
     CODE
-"
-#include <unistd.h>
+"#include <unistd.h>
+#if __has_include(<sys/random.h>)
+#  include <sys/random.h>
+#endif
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 char buf[32];
 (void) getentropy(buf, sizeof(buf));
@@ -275,12 +285,10 @@ char buf[32];
 qt_config_compile_test(glibc
     LABEL "GNU libc"
     CODE
-"
-#include <stdlib.h>
+"#include <stdlib.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 return __GLIBC__;
     /* END TEST: */
@@ -292,12 +300,10 @@ return __GLIBC__;
 qt_config_compile_test(inotify
     LABEL "inotify"
     CODE
-"
-#include <sys/inotify.h>
+"#include <sys/inotify.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 inotify_init();
 inotify_add_watch(0, \"foobar\", IN_ACCESS);
@@ -311,16 +317,14 @@ inotify_rm_watch(0, 1);
 qt_config_compile_test(ipc_sysv
     LABEL "SysV IPC"
     CODE
-"
-#include <sys/types.h>
+"#include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <fcntl.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 key_t unix_key = ftok(\"test\", 'Q');
 semctl(semget(unix_key, 1, 0666 | IPC_CREAT | IPC_EXCL), 0, IPC_RMID, 0);
@@ -340,15 +344,13 @@ qt_config_compile_test(ipc_posix
     LIBRARIES
      "${ipc_posix_TEST_LIBRARIES}"
     CODE
-"
-#include <sys/types.h>
+"#include <sys/types.h>
 #include <sys/mman.h>
 #include <semaphore.h>
 #include <fcntl.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 sem_close(sem_open(\"test\", O_CREAT | O_EXCL, 0666, 0));
 shm_open(\"test\", O_RDWR | O_CREAT | O_EXCL, 0666);
@@ -366,9 +368,8 @@ qt_config_compile_test(linkat
 #include <fcntl.h>
 #include <unistd.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 linkat(AT_FDCWD, \"foo\", AT_FDCWD, \"bar\", AT_SYMLINK_FOLLOW);
     /* END TEST: */
@@ -380,13 +381,11 @@ linkat(AT_FDCWD, \"foo\", AT_FDCWD, \"bar\", AT_SYMLINK_FOLLOW);
 qt_config_compile_test(ppoll
     LABEL "ppoll()"
     CODE
-"
-#include <signal.h>
+"#include <signal.h>
 #include <poll.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 struct pollfd pfd;
 struct timespec ts;
@@ -401,14 +400,12 @@ ppoll(&pfd, 1, &ts, &sig);
 qt_config_compile_test(pollts
     LABEL "pollts()"
     CODE
-"
-#include <poll.h>
+"#include <poll.h>
 #include <signal.h>
 #include <time.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 struct pollfd pfd;
 struct timespec ts;
@@ -423,12 +420,10 @@ pollts(&pfd, 1, &ts, &sig);
 qt_config_compile_test(poll
     LABEL "poll()"
     CODE
-"
-#include <poll.h>
+"#include <poll.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 struct pollfd pfd;
 poll(&pfd, 1, 0);
@@ -445,9 +440,8 @@ qt_config_compile_test(renameat2
 #include <fcntl.h>
 #include <stdio.h>
 
-int main(int argc, char **argv)
+int main(int, char **argv)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 renameat2(AT_FDCWD, argv[1], AT_FDCWD, argv[2], RENAME_NOREPLACE | RENAME_WHITEOUT);
     /* END TEST: */
@@ -465,9 +459,8 @@ qt_config_compile_test(statx
 #include <unistd.h>
 #include <fcntl.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 struct statx statxbuf;
 unsigned int mask = STATX_BASIC_STATS;
@@ -481,12 +474,10 @@ return statx(AT_FDCWD, \"\", AT_STATX_SYNC_AS_STAT, mask, &statxbuf);
 qt_config_compile_test(syslog
     LABEL "syslog"
     CODE
-"
-#include <syslog.h>
+"#include <syslog.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 openlog(\"qt\", 0, LOG_USER);
 syslog(LOG_INFO, \"configure\");
@@ -496,13 +487,26 @@ closelog();
 }
 ")
 
+# cpp_winrt
+qt_config_compile_test(cpp_winrt
+    LABEL "cpp/winrt"
+    LIBRARIES
+        runtimeobject
+    CODE
+"// Including winrt/base.h causes an error in some configurations (Windows 10 SDK + c++20)
+#   include <winrt/base.h>
+
+int main(void)
+{
+    return 0;
+}
+")
+
 # xlocalescanprint
 qt_config_compile_test(xlocalescanprint
     LABEL "xlocale.h (or equivalents)"
     CODE
-"
-
-#define QT_BEGIN_NAMESPACE
+"#define QT_BEGIN_NAMESPACE
 #define QT_END_NAMESPACE
 
 #ifdef _MSVC_VER
@@ -512,9 +516,9 @@ qt_config_compile_test(xlocalescanprint
 #define QT_NO_DOUBLECONVERSION
 
 #include QDSP_P_H
-int main(int argc, char **argv)
+
+int main(void)
 {
-    (void)argc; (void)argv;
     /* BEGIN TEST: */
 #ifdef _MSVC_VER
 _locale_t invalidLocale = NULL;
@@ -549,7 +553,7 @@ qt_feature("doubleconversion" PUBLIC PRIVATE
 qt_feature_definition("doubleconversion" "QT_NO_DOUBLECONVERSION" NEGATE VALUE "1")
 qt_feature("system-doubleconversion" PRIVATE
     LABEL "  Using system DoubleConversion"
-    CONDITION QT_FEATURE_doubleconversion AND WrapDoubleConversion_FOUND
+    CONDITION QT_FEATURE_doubleconversion AND WrapSystemDoubleConversion_FOUND
     ENABLE INPUT_doubleconversion STREQUAL 'system'
     DISABLE INPUT_doubleconversion STREQUAL 'qt'
 )
@@ -560,6 +564,10 @@ qt_feature("cxx11_future" PUBLIC
 qt_feature("cxx17_filesystem" PUBLIC
     LABEL "C++17 <filesystem>"
     CONDITION TEST_cxx17_filesystem
+)
+qt_feature("dladdr" PRIVATE
+    LABEL "dladdr"
+    CONDITION QT_FEATURE_dlopen AND TEST_dladdr
 )
 qt_feature("eventfd" PUBLIC
     LABEL "eventfd"
@@ -590,7 +598,7 @@ qt_feature("glib" PUBLIC PRIVATE
 qt_feature_definition("glib" "QT_NO_GLIB" NEGATE VALUE "1")
 qt_feature("glibc" PRIVATE
     LABEL "GNU libc"
-    AUTODETECT LINUX
+    AUTODETECT ( LINUX OR HURD )
     CONDITION TEST_glibc
 )
 qt_feature("icu" PRIVATE
@@ -605,8 +613,8 @@ qt_feature("inotify" PUBLIC PRIVATE
 qt_feature_definition("inotify" "QT_NO_INOTIFY" NEGATE VALUE "1")
 qt_feature("ipc_posix"
     LABEL "Using POSIX IPC"
-    AUTODETECT NOT WIN32
-    CONDITION NOT TEST_ipc_sysv AND TEST_ipc_posix
+    AUTODETECT NOT WIN32 AND ( ( APPLE AND QT_FEATURE_appstore_compliant ) OR NOT TEST_ipc_sysv )
+    CONDITION TEST_ipc_posix
 )
 qt_feature_definition("ipc_posix" "QT_POSIX_IPC")
 qt_feature("journald" PRIVATE
@@ -624,7 +632,7 @@ qt_feature("system-libb2" PRIVATE
 # Currently only used by QTemporaryFile; linkat() exists on Android, but hardlink creation fails due to security rules
 qt_feature("linkat" PRIVATE
     LABEL "linkat()"
-    AUTODETECT LINUX AND NOT ANDROID
+    AUTODETECT ( LINUX AND NOT ANDROID ) OR HURD
     CONDITION TEST_linkat
 )
 qt_feature("std-atomic64" PUBLIC
@@ -681,7 +689,7 @@ qt_feature("qqnx_pps" PRIVATE
 )
 qt_feature("renameat2" PRIVATE
     LABEL "renameat2()"
-    CONDITION LINUX AND TEST_renameat2
+    CONDITION ( LINUX OR HURD ) AND TEST_renameat2
 )
 qt_feature("slog2" PRIVATE
     LABEL "slog2"
@@ -689,7 +697,7 @@ qt_feature("slog2" PRIVATE
 )
 qt_feature("statx" PRIVATE
     LABEL "statx() in libc"
-    CONDITION LINUX AND TEST_statx
+    CONDITION ( LINUX OR HURD ) AND TEST_statx
 )
 qt_feature("syslog" PRIVATE
     LABEL "syslog"
@@ -702,12 +710,6 @@ qt_feature("threadsafe-cloexec"
 )
 qt_feature_definition("threadsafe-cloexec" "QT_THREADSAFE_CLOEXEC" VALUE "1")
 qt_feature_config("threadsafe-cloexec" QMAKE_PUBLIC_QT_CONFIG)
-qt_feature("properties" PUBLIC
-    SECTION "Kernel"
-    LABEL "Properties"
-    PURPOSE "Supports scripting Qt-based applications."
-)
-qt_feature_definition("properties" "QT_NO_PROPERTIES" NEGATE VALUE "1")
 qt_feature("regularexpression" PUBLIC
     SECTION "Kernel"
     LABEL "QRegularExpression"
@@ -715,6 +717,10 @@ qt_feature("regularexpression" PUBLIC
     CONDITION QT_FEATURE_system_pcre2 OR QT_FEATURE_pcre2
 )
 qt_feature_definition("regularexpression" "QT_NO_REGULAREXPRESSION" NEGATE VALUE "1")
+qt_feature("backtrace" PRIVATE
+    LABEL "backtrace"
+    CONDITION UNIX AND QT_FEATURE_regularexpression AND WrapBacktrace_FOUND
+)
 qt_feature("sharedmemory" PUBLIC
     SECTION "Kernel"
     LABEL "QSharedMemory"
@@ -739,6 +745,11 @@ qt_feature("xmlstream" PUBLIC
     SECTION "Kernel"
     LABEL "XML Streaming APIs"
     PURPOSE "Provides a simple streaming API for XML."
+)
+qt_feature("cpp-winrt" PRIVATE PUBLIC
+    LABEL "cpp/winrt base"
+    PURPOSE "basic cpp/winrt language projection support"
+    CONDITION WIN32 AND TEST_cpp_winrt
 )
 qt_feature_definition("xmlstream" "QT_NO_XMLSTREAM" NEGATE VALUE "1")
 qt_feature("xmlstreamreader" PUBLIC
@@ -829,7 +840,7 @@ qt_feature("sortfilterproxymodel" PUBLIC
     SECTION "ItemViews"
     LABEL "QSortFilterProxyModel"
     PURPOSE "Supports sorting and filtering of data passed between another model and a view."
-    CONDITION QT_FEATURE_proxymodel
+    CONDITION QT_FEATURE_proxymodel AND QT_FEATURE_regularexpression
 )
 qt_feature_definition("sortfilterproxymodel" "QT_NO_SORTFILTERPROXYMODEL" NEGATE VALUE "1")
 qt_feature("identityproxymodel" PUBLIC
@@ -875,7 +886,7 @@ qt_feature("animation" PUBLIC
     SECTION "Utilities"
     LABEL "Animation"
     PURPOSE "Provides a framework for animations."
-    CONDITION QT_FEATURE_properties AND QT_FEATURE_easingcurve
+    CONDITION QT_FEATURE_easingcurve
 )
 qt_feature_definition("animation" "QT_NO_ANIMATION" NEGATE VALUE "1")
 qt_feature("gestures" PUBLIC
@@ -909,6 +920,7 @@ qt_feature("timezone" PUBLIC
     SECTION "Utilities"
     LABEL "QTimeZone"
     PURPOSE "Provides support for time-zone handling."
+    CONDITION NOT WASM
 )
 qt_feature("datetimeparser" PRIVATE
     SECTION "Utilities"
@@ -939,10 +951,6 @@ qt_feature("forkfd_pidfd" PRIVATE
     LABEL "CLONE_PIDFD support in forkfd"
     CONDITION LINUX
 )
-qt_feature("win32_system_libs"
-    LABEL "Windows System Libraries"
-    CONDITION WIN32 AND libs.advapi32 AND libs.gdi32 AND libs.kernel32 AND libs.netapi32 AND libs.ole32 AND libs.shell32 AND libs.uuid AND libs.user32 AND libs.winmm AND libs.ws2_32 OR FIXME
-)
 qt_feature("cborstreamreader" PUBLIC
     SECTION "Utilities"
     LABEL "CBOR stream reading"
@@ -953,13 +961,29 @@ qt_feature("cborstreamwriter" PUBLIC
     LABEL "CBOR stream writing"
     PURPOSE "Provides support for writing the CBOR binary format."
 )
+qt_feature("poll-exit-on-error" PUBLIC
+    LABEL "Poll exit on error"
+    AUTODETECT OFF
+    CONDITION UNIX
+    PURPOSE "Exit on error instead of just printing the error code and continue."
+)
+qt_feature_definition("poll-exit-on-error" "QT_POLL_EXIT_ON_ERROR")
+qt_feature("permissions" PUBLIC
+    SECTION "Utilities"
+    LABEL "Application permissions"
+    PURPOSE "Provides support for requesting user permission to access restricted data or APIs"
+    CONDITION APPLE
+)
 qt_configure_add_summary_section(NAME "Qt Core")
+qt_configure_add_summary_entry(ARGS "backtrace")
 qt_configure_add_summary_entry(ARGS "doubleconversion")
 qt_configure_add_summary_entry(ARGS "system-doubleconversion")
 qt_configure_add_summary_entry(ARGS "glib")
 qt_configure_add_summary_entry(ARGS "icu")
 qt_configure_add_summary_entry(ARGS "system-libb2")
 qt_configure_add_summary_entry(ARGS "mimetype-database")
+qt_configure_add_summary_entry(ARGS "cpp-winrt")
+qt_configure_add_summary_entry(ARGS "poll-exit-on-error")
 qt_configure_add_summary_entry(
     TYPE "firstAvailableFeature"
     ARGS "etw lttng"
@@ -980,6 +1004,7 @@ qt_configure_add_summary_entry(
     ARGS "forkfd_pidfd"
     CONDITION LINUX
 )
+qt_configure_add_summary_entry(ARGS "permissions")
 qt_configure_end_summary_section() # end of "Qt Core" section
 qt_configure_add_report_entry(
     TYPE NOTE
@@ -1005,4 +1030,9 @@ qt_configure_add_report_entry(
     TYPE ERROR
     MESSAGE "Qt requires poll(), ppoll(), poll_ts() or select() on this platform"
     CONDITION ( UNIX OR INTEGRITY ) AND ( NOT QT_FEATURE_poll_ppoll ) AND ( NOT QT_FEATURE_poll_pollts ) AND ( NOT QT_FEATURE_poll_poll ) AND ( NOT QT_FEATURE_poll_select )
+)
+qt_configure_add_report_entry(
+    TYPE WARNING
+    MESSAGE "Basic cpp/winrt support missing. Some features might not be available."
+    CONDITION MSVC AND NOT QT_FEATURE_cpp_winrt
 )

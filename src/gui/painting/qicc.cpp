@@ -1,46 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qicc_p.h"
 
 #include <qbuffer.h>
 #include <qbytearray.h>
+#include <qvarlengtharray.h>
+#include <qhash.h>
 #include <qdatastream.h>
 #include <qendian.h>
 #include <qloggingcategory.h>
@@ -52,7 +18,7 @@
 #include <array>
 
 QT_BEGIN_NAMESPACE
-Q_LOGGING_CATEGORY(lcIcc, "qt.gui.icc")
+Q_LOGGING_CATEGORY(lcIcc, "qt.gui.icc", QtWarningMsg)
 
 struct ICCProfileHeader
 {
@@ -165,18 +131,18 @@ struct XYZTagData : GenericTagData {
 
 struct CurvTagData : GenericTagData {
     quint32_be valueCount;
-    quint16_be value[1];
+    // followed by curv values: quint16_be[]
 };
 
 struct ParaTagData : GenericTagData {
     quint16_be curveType;
     quint16_be null2;
-    quint32_be parameter[1];
+    // followed by parameter values: quint32_be[1-7];
 };
 
 struct DescTagData : GenericTagData {
     quint32_be asciiDescriptionLength;
-    char asciiDescription[1];
+    // followed by ascii description: char[]
     // .. we ignore the rest
 };
 
@@ -237,18 +203,20 @@ static bool isValidIccProfile(const ICCProfileHeader &header)
     }
 
     if (header.profileClass != uint(ProfileClass::Input)
-        && header.profileClass != uint(ProfileClass::Display)) {
-        qCWarning(lcIcc, "Unsupported ICC profile class %x", quint32(header.profileClass));
+        && header.profileClass != uint(ProfileClass::Display)
+        && (header.profileClass != uint(ProfileClass::Output)
+            || header.inputColorSpace != uint(ColorSpaceType::Gray)))  {
+        qCInfo(lcIcc, "Unsupported ICC profile class 0x%x", quint32(header.profileClass));
         return false;
     }
     if (header.inputColorSpace != uint(ColorSpaceType::Rgb)
         && header.inputColorSpace != uint(ColorSpaceType::Gray)) {
-        qCWarning(lcIcc, "Unsupported ICC input color space %x", quint32(header.inputColorSpace));
+        qCInfo(lcIcc, "Unsupported ICC input color space 0x%x", quint32(header.inputColorSpace));
         return false;
     }
     if (header.pcs != 0x58595a20 /* 'XYZ '*/) {
         // ### support PCSLAB
-        qCWarning(lcIcc, "Unsupported ICC profile connection space %x", quint32(header.pcs));
+        qCInfo(lcIcc, "Unsupported ICC profile connection space 0x%x", quint32(header.pcs));
         return false;
     }
 
@@ -405,7 +373,7 @@ QByteArray toIccProfile(const QColorSpace &space)
     }
 
     descOffset = currentOffset;
-    QByteArray description = spaceDPtr->description.toUtf8();
+    QByteArray description = space.description().toUtf8();
     stream << uint(Tag::desc) << uint(0);
     stream << uint(description.size() + 1);
     stream.writeRawData(description.constData(), description.size() + 1);
@@ -468,25 +436,26 @@ bool parseTRC(const QByteArray &data, const TagEntry &tagEntry, QColorTrc &gamma
     const GenericTagData trcData = qFromUnaligned<GenericTagData>(data.constData()
                                                                   + tagEntry.offset);
     if (trcData.type == quint32(Tag::curv)) {
+        Q_STATIC_ASSERT(sizeof(CurvTagData) == 12);
         const CurvTagData curv = qFromUnaligned<CurvTagData>(data.constData() + tagEntry.offset);
         if (curv.valueCount > (1 << 16))
             return false;
         if (tagEntry.size - 12 < 2 * curv.valueCount)
             return false;
+        const auto valueOffset = tagEntry.offset + sizeof(CurvTagData);
         if (curv.valueCount == 0) {
             gamma.m_type = QColorTrc::Type::Function;
             gamma.m_fun = QColorTransferFunction(); // Linear
         } else if (curv.valueCount == 1) {
-            float g = curv.value[0] * (1.0f / 256.0f);
+            const quint16 v = qFromBigEndian<quint16>(data.constData() + valueOffset);
             gamma.m_type = QColorTrc::Type::Function;
-            gamma.m_fun = QColorTransferFunction::fromGamma(g);
+            gamma.m_fun = QColorTransferFunction::fromGamma(v * (1.0f / 256.0f));
         } else {
             QList<quint16> tabl;
             tabl.resize(curv.valueCount);
             static_assert(sizeof(GenericTagData) == 2 * sizeof(quint32_be),
                           "GenericTagData has padding. The following code is a subject to UB.");
-            const auto offset = tagEntry.offset + sizeof(GenericTagData) + sizeof(quint32_be);
-            qFromBigEndian<quint16>(data.constData() + offset, curv.valueCount, tabl.data());
+            qFromBigEndian<quint16>(data.constData() + valueOffset, curv.valueCount, tabl.data());
             QColorTransferTable table = QColorTransferTable(curv.valueCount, std::move(tabl));
             QColorTransferFunction curve;
             if (!table.checkValidity()) {
@@ -504,26 +473,26 @@ bool parseTRC(const QByteArray &data, const TagEntry &tagEntry, QColorTrc &gamma
         return true;
     }
     if (trcData.type == quint32(Tag::para)) {
-        if (tagEntry.size < sizeof(ParaTagData))
-            return false;
-        static_assert(sizeof(GenericTagData) == 2 * sizeof(quint32_be),
-                      "GenericTagData has padding. The following code is a subject to UB.");
+        Q_STATIC_ASSERT(sizeof(ParaTagData) == 12);
         const ParaTagData para = qFromUnaligned<ParaTagData>(data.constData() + tagEntry.offset);
-        // re-read first parameter for consistency:
-        const auto parametersOffset = tagEntry.offset + sizeof(GenericTagData)
-                                      + 2 * sizeof(quint16_be);
+        const auto parametersOffset = tagEntry.offset + sizeof(ParaTagData);
+        quint32 parameters[7];
         switch (para.curveType) {
         case 0: {
-            float g = fromFixedS1516(para.parameter[0]);
+            if (tagEntry.size < sizeof(ParaTagData) + 1 * 4)
+                return false;
+            qFromBigEndian<quint32>(data.constData() + parametersOffset, 1, parameters);
+            float g = fromFixedS1516(parameters[0]);
             gamma.m_type = QColorTrc::Type::Function;
             gamma.m_fun = QColorTransferFunction::fromGamma(g);
             break;
         }
         case 1: {
-            if (tagEntry.size < sizeof(ParaTagData) + 2 * 4)
+            if (tagEntry.size < sizeof(ParaTagData) + 3 * 4)
                 return false;
-            std::array<quint32_be, 3> parameters =
-                qFromUnaligned<decltype(parameters)>(data.constData() + parametersOffset);
+            qFromBigEndian<quint32>(data.constData() + parametersOffset, 3, parameters);
+            if (parameters[1] == 0)
+                return false;
             float g = fromFixedS1516(parameters[0]);
             float a = fromFixedS1516(parameters[1]);
             float b = fromFixedS1516(parameters[2]);
@@ -533,10 +502,11 @@ bool parseTRC(const QByteArray &data, const TagEntry &tagEntry, QColorTrc &gamma
             break;
         }
         case 2: {
-            if (tagEntry.size < sizeof(ParaTagData) + 3 * 4)
+            if (tagEntry.size < sizeof(ParaTagData) + 4 * 4)
                 return false;
-            std::array<quint32_be, 4> parameters =
-                qFromUnaligned<decltype(parameters)>(data.constData() + parametersOffset);
+            qFromBigEndian<quint32>(data.constData() + parametersOffset, 4, parameters);
+            if (parameters[1] == 0)
+                return false;
             float g = fromFixedS1516(parameters[0]);
             float a = fromFixedS1516(parameters[1]);
             float b = fromFixedS1516(parameters[2]);
@@ -547,10 +517,9 @@ bool parseTRC(const QByteArray &data, const TagEntry &tagEntry, QColorTrc &gamma
             break;
         }
         case 3: {
-            if (tagEntry.size < sizeof(ParaTagData) + 4 * 4)
+            if (tagEntry.size < sizeof(ParaTagData) + 5 * 4)
                 return false;
-            std::array<quint32_be, 5> parameters =
-                qFromUnaligned<decltype(parameters)>(data.constData() + parametersOffset);
+            qFromBigEndian<quint32>(data.constData() + parametersOffset, 5, parameters);
             float g = fromFixedS1516(parameters[0]);
             float a = fromFixedS1516(parameters[1]);
             float b = fromFixedS1516(parameters[2]);
@@ -561,10 +530,9 @@ bool parseTRC(const QByteArray &data, const TagEntry &tagEntry, QColorTrc &gamma
             break;
         }
         case 4: {
-            if (tagEntry.size < sizeof(ParaTagData) + 6 * 4)
+            if (tagEntry.size < sizeof(ParaTagData) + 7 * 4)
                 return false;
-            std::array<quint32_be, 7> parameters =
-                qFromUnaligned<decltype(parameters)>(data.constData() + parametersOffset);
+            qFromBigEndian<quint32>(data.constData() + parametersOffset, 7, parameters);
             float g = fromFixedS1516(parameters[0]);
             float a = fromFixedS1516(parameters[1]);
             float b = fromFixedS1516(parameters[2]);
@@ -592,18 +560,14 @@ bool parseDesc(const QByteArray &data, const TagEntry &tagEntry, QString &descNa
 
     // Either 'desc' (ICCv2) or 'mluc' (ICCv4)
     if (tag.type == quint32(Tag::desc)) {
-        if (tagEntry.size < sizeof(DescTagData))
-            return false;
+        Q_STATIC_ASSERT(sizeof(DescTagData) == 12);
         const DescTagData desc = qFromUnaligned<DescTagData>(data.constData() + tagEntry.offset);
         const quint32 len = desc.asciiDescriptionLength;
         if (len < 1)
             return false;
         if (tagEntry.size - 12 < len)
             return false;
-        static_assert(sizeof(GenericTagData) == 2 * sizeof(quint32_be),
-                      "GenericTagData has padding. The following code is a subject to UB.");
-        const char *asciiDescription = data.constData() + tagEntry.offset + sizeof(GenericTagData)
-                                       + sizeof(quint32_be);
+        const char *asciiDescription = data.constData() + tagEntry.offset + sizeof(DescTagData);
         if (asciiDescription[len - 1] != '\0')
             return false;
         descName = QString::fromLatin1(asciiDescription, len - 1);
@@ -646,7 +610,7 @@ bool fromIccProfile(const QByteArray &data, QColorSpace *colorSpace)
     const ICCProfileHeader header = qFromUnaligned<ICCProfileHeader>(data.constData());
     if (!isValidIccProfile(header))
         return false; // if failed we already printing a warning
-    if (qsizetype(header.profileSize) > data.size()) {
+    if (qsizetype(header.profileSize) > data.size() || qsizetype(header.profileSize) < qsizetype(sizeof(ICCProfileHeader))) {
         qCWarning(lcIcc) << "fromIccProfile: failed size sanity 2";
         return false;
     }
@@ -698,7 +662,7 @@ bool fromIccProfile(const QByteArray &data, QColorSpace *colorSpace)
         if (!tagIndex.contains(Tag::rXYZ) || !tagIndex.contains(Tag::gXYZ) || !tagIndex.contains(Tag::bXYZ) ||
             !tagIndex.contains(Tag::rTRC) || !tagIndex.contains(Tag::gTRC) || !tagIndex.contains(Tag::bTRC) ||
             !tagIndex.contains(Tag::wtpt)) {
-            qCWarning(lcIcc) << "fromIccProfile: Unsupported ICC profile - not three component matrix based";
+            qCInfo(lcIcc) << "fromIccProfile: Unsupported ICC profile - not three component matrix based";
             return false;
         }
     } else {
@@ -744,7 +708,7 @@ bool fromIccProfile(const QByteArray &data, QColorSpace *colorSpace)
         QColorVector whitePoint;
         if (!parseXyzData(data, tagIndex[Tag::wtpt], whitePoint))
             return false;
-        if (!qFuzzyCompare(whitePoint.y, 1.0f) || (1.0f + whitePoint.z - whitePoint.x) == 0.0f) {
+        if (!qFuzzyCompare(whitePoint.y, 1.0f) || (1.0f + whitePoint.z + whitePoint.x) == 0.0f) {
             qCWarning(lcIcc) << "fromIccProfile: Invalid ICC profile - gray white-point not normalized";
             return false;
         }
@@ -753,12 +717,12 @@ bool fromIccProfile(const QByteArray &data, QColorSpace *colorSpace)
         } else {
             colorspaceDPtr->primaries = QColorSpace::Primaries::Custom;
             // Calculate chromaticity from xyz (assuming y == 1.0f).
-            float y = 1.0f / (1.0f + whitePoint.z - whitePoint.x);
+            float y = 1.0f / (1.0f + whitePoint.z + whitePoint.x);
             float x = whitePoint.x * y;
             QColorSpacePrimaries primaries(QColorSpace::Primaries::SRgb);
             primaries.whitePoint = QPointF(x,y);
             if (!primaries.areValid()) {
-                qCWarning(lcIcc) << "fromIccProfile: Invalid ICC profile - invalid white-point";
+                qCWarning(lcIcc, "fromIccProfile: Invalid ICC profile - invalid white-point(%f, %f)", x, y);
                 return false;
             }
             colorspaceDPtr->toXyz = primaries.toXyzMatrix();

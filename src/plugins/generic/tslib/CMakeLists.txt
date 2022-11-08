@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from tslib.pro.
 
 qt_find_package(Tslib) # special case
@@ -8,11 +11,11 @@ qt_find_package(Tslib) # special case
 
 qt_internal_add_plugin(QTsLibPlugin
     OUTPUT_NAME qtslibplugin
-    TYPE generic
+    PLUGIN_TYPE generic
     DEFAULT_IF FALSE
     SOURCES
         main.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         PkgConfig::Tslib
         Qt::Core
         Qt::CorePrivate

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <qoperatingsystemversion.h>
@@ -35,11 +10,17 @@ class tst_QOperatingSystemVersion : public QObject
 private slots:
     void construction_data();
     void construction();
+    void globals_data();
+    void globals();
 
     void anyOf();
 
     void comparison_data();
     void comparison();
+    void comparison2_data();
+    void comparison2();
+
+    void mixedComparison();
 };
 
 void tst_QOperatingSystemVersion::construction_data()
@@ -73,6 +54,34 @@ void tst_QOperatingSystemVersion::construction()
     QCOMPARE(systemVersion.microVersion(), microVersion);
     if (osType != QOperatingSystemVersion::OSType::Unknown)
         QVERIFY(!systemVersion.name().isEmpty());
+}
+
+void tst_QOperatingSystemVersion::globals_data()
+{
+    QTest::addColumn<QOperatingSystemVersion>("osver");
+    QTest::addColumn<QOperatingSystemVersion::OSType>("osType");
+
+#define ADDROW(os)  QTest::newRow(#os) << QOperatingSystemVersion(QOperatingSystemVersion::os)
+    // legacy ones (global variables)
+    ADDROW(Windows7) << QOperatingSystemVersion::Windows;
+    ADDROW(Windows10) << QOperatingSystemVersion::Windows;
+    ADDROW(OSXMavericks) << QOperatingSystemVersion::MacOS;
+    ADDROW(MacOSMonterey) << QOperatingSystemVersion::MacOS;
+    ADDROW(AndroidJellyBean) << QOperatingSystemVersion::Android;
+    ADDROW(Android11) << QOperatingSystemVersion::Android;
+
+    // new ones (static constexpr)
+    ADDROW(Windows11) << QOperatingSystemVersion::Windows;
+    ADDROW(Android12) << QOperatingSystemVersion::Android;
+#undef ADDROW
+}
+
+void tst_QOperatingSystemVersion::globals()
+{
+    QFETCH(QOperatingSystemVersion, osver);
+    QFETCH(QOperatingSystemVersion::OSType, osType);
+    QCOMPARE(osver.type(), osType);
+    QCOMPARE_NE(osver.majorVersion(), 0);
 }
 
 void tst_QOperatingSystemVersion::anyOf()
@@ -175,6 +184,73 @@ void tst_QOperatingSystemVersion::comparison()
 
     QFETCH(bool, moreEqualResult);
     QCOMPARE(lhsSystemInfo >= rhsSystemInfo, moreEqualResult);
+}
+
+void tst_QOperatingSystemVersion::comparison2_data()
+{
+    QTest::addColumn<QOperatingSystemVersion>("lhs");
+    QTest::addColumn<QOperatingSystemVersion>("rhs");
+    QTest::addColumn<int>("result");
+
+#define ADDROW(os1, os2)    \
+    QTest::newRow(#os1 "-vs-" #os2) << QOperatingSystemVersion(QOperatingSystemVersion::os1) \
+                                    << QOperatingSystemVersion(QOperatingSystemVersion::os2)
+
+    // Cross-OS testing: not comparables.
+    ADDROW(Windows10, MacOSMonterey) << -128;
+    ADDROW(Windows11, MacOSMonterey) << -128;
+    ADDROW(MacOSMonterey, Windows10) << -128;
+    ADDROW(MacOSMonterey, Windows11) << -128;
+    ADDROW(Windows10, MacOSVentura) << -128;
+    ADDROW(Windows11, MacOSVentura) << -128;
+    ADDROW(MacOSVentura, Windows10) << -128;
+    ADDROW(MacOSVentura, Windows11) << -128;
+    ADDROW(Windows10, Android10) << -128;
+    ADDROW(Windows11, Android11) << -128;
+
+    // Same-OS tests. This list does not have to be exhaustive.
+    ADDROW(Windows7, Windows7) << 0;
+    ADDROW(Windows7, Windows8) << -1;
+    ADDROW(Windows8, Windows7) << 1;
+    ADDROW(Windows8, Windows10) << -1;
+    ADDROW(Windows10, Windows8) << 1;
+    ADDROW(Windows10, Windows10_21H1) << -1;
+    ADDROW(Windows10_21H1, Windows10) << 1;
+    ADDROW(Windows10, Windows11) << -1;
+    ADDROW(MacOSCatalina, MacOSCatalina) << 0;
+    ADDROW(MacOSCatalina, MacOSBigSur) << -1;
+    ADDROW(MacOSBigSur, MacOSCatalina) << 1;
+    ADDROW(MacOSMonterey, MacOSVentura) << -1;
+    ADDROW(MacOSVentura, MacOSVentura) << 0;
+    ADDROW(MacOSVentura, MacOSMonterey) << 1;
+#undef ADDROW
+}
+
+void tst_QOperatingSystemVersion::comparison2()
+{
+    QFETCH(QOperatingSystemVersion, lhs);
+    QFETCH(QOperatingSystemVersion, rhs);
+    QFETCH(int, result);
+
+    QEXPECT_FAIL("Windows10-vs-Windows10_21H1", "QTBUG-107907: Unexpected behavior", Abort);
+    QEXPECT_FAIL("Windows10-vs-Windows11", "QTBUG-107907: Unexpected behavior", Abort);
+
+    // value -128 indicates "not comparable"
+    bool comparable = (result != -128);
+    QCOMPARE(lhs < rhs, result < 0 && comparable);
+    QEXPECT_FAIL("Windows10_21H1-vs-Windows10", "QTBUG-107907: Unexpected behavior", Abort);
+    QCOMPARE(lhs <= rhs, result <= 0 && comparable);
+    QCOMPARE(lhs > rhs, result > 0 && comparable);
+    QCOMPARE(lhs >= rhs, result >= 0 && comparable);
+}
+
+void tst_QOperatingSystemVersion::mixedComparison()
+{
+    // ==
+    QVERIFY(QOperatingSystemVersion::Windows10
+            >= QOperatingSystemVersionBase(QOperatingSystemVersionBase::Windows, 10, 0));
+    QVERIFY(QOperatingSystemVersion::Windows10
+            <= QOperatingSystemVersionBase(QOperatingSystemVersionBase::Windows, 10, 0));
 }
 
 QTEST_MAIN(tst_QOperatingSystemVersion)

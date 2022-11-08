@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QPIXMAP_H
 #define QPIXMAP_H
@@ -77,7 +41,7 @@ public:
     QPixmap &operator=(const QPixmap &);
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QPixmap)
     inline void swap(QPixmap &other) noexcept
-    { qSwap(data, other.data); }
+    { data.swap(other.data); }
     bool operator==(const QPixmap &) const = delete;
     bool operator!=(const QPixmap &) const = delete;
 
@@ -101,6 +65,7 @@ public:
 
     qreal devicePixelRatio() const;
     void setDevicePixelRatio(qreal scaleFactor);
+    QSizeF deviceIndependentSize() const;
 
     bool hasAlpha() const;
     bool hasAlphaChannel() const;
@@ -164,7 +129,6 @@ private:
 
     QPixmap(const QSize &s, int type);
     void doInit(int, int, int);
-    Q_DUMMY_COMPARISON_OPERATOR(QPixmap)
     friend class QPlatformPixmap;
     friend class QBitmap;
     friend class QPaintDevice;
@@ -199,7 +163,7 @@ inline void QPixmap::scroll(int dx, int dy, int ax, int ay, int awidth, int ahei
 inline bool QPixmap::loadFromData(const QByteArray &buf, const char *format,
                                   Qt::ImageConversionFlags flags)
 {
-    return loadFromData(reinterpret_cast<const uchar *>(buf.constData()), buf.size(), format, flags);
+    return loadFromData(reinterpret_cast<const uchar *>(buf.constData()), uint(buf.size()), format, flags);
 }
 
 

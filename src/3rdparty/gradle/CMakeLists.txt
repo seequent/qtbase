@@ -1,10 +1,13 @@
-# special case begin
-# special case skip regeneration
-
 qt_path_join(destination ${QT_INSTALL_DIR} "src/3rdparty/gradle")
 qt_copy_or_install(
-    FILES
+    PROGRAMS
         gradlew
+    DESTINATION
+        "${destination}"
+)
+
+qt_copy_or_install(
+    FILES
         gradlew.bat
         gradle.properties
     DESTINATION
@@ -17,5 +20,3 @@ qt_copy_or_install(
     DESTINATION
         "${destination}"
 )
-
-# special case end

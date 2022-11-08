@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qtextbrowser.pro.
 
 #####################################################################
@@ -22,9 +25,10 @@ list(APPEND test_data ${test_data_glob})
 qt_internal_add_test(tst_qtextbrowser
     SOURCES
         tst_qtextbrowser.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
+        Qt::WidgetsPrivate
     TESTDATA ${test_data}
 )
 

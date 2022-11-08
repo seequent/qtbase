@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from windowgeometry.pro.
 
 #####################################################################
@@ -12,7 +15,7 @@ qt_internal_add_manual_test(windowgeometry
         main.cpp
     INCLUDE_DIRECTORIES
         ../windowflags
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

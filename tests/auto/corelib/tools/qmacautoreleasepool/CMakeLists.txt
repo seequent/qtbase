@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qmacautoreleasepool.pro.
 
 #####################################################################
@@ -7,6 +10,7 @@
 qt_internal_add_test(tst_qmacautoreleasepool
     SOURCES
         tst_qmacautoreleasepool.mm
-    PUBLIC_LIBRARIES
+    LIBRARIES
+        Qt::CorePrivate
         ${FWFoundation}
 )

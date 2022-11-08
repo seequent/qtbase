@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qsharedmemory.h"
 #include "qsharedmemory_p.h"
@@ -47,9 +11,22 @@
 #  include <qt_windows.h>
 #endif
 
+#if defined(Q_OS_DARWIN)
+#  include "qcore_mac_p.h"
+#  if !defined(SHM_NAME_MAX)
+     // Based on PSEMNAMLEN in XNU's posix_sem.c, which would
+     // indicate the max length is 31, _excluding_ the zero
+     // terminator. But in practice (possibly due to an off-
+     // by-one bug in the kernel) the usable bytes are only 30.
+#    define SHM_NAME_MAX 30
+#  endif
+#endif
+
 QT_BEGIN_NAMESPACE
 
-#if !(defined(QT_NO_SHAREDMEMORY) && defined(QT_NO_SYSTEMSEMAPHORE))
+using namespace Qt::StringLiterals;
+
+#if QT_CONFIG(sharedmemory) || QT_CONFIG(systemsemaphore)
 /*!
     \internal
 
@@ -65,27 +42,43 @@ QSharedMemoryPrivate::makePlatformSafeKey(const QString &key,
     if (key.isEmpty())
         return QString();
 
-    QString result = prefix;
+    QByteArray hex = QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha1).toHex();
 
+#if defined(Q_OS_DARWIN) && defined(QT_POSIX_IPC)
+    if (qt_apple_isSandboxed()) {
+        // Sandboxed applications on Apple platforms require the shared memory name
+        // to be in the form <application group identifier>/<custom identifier>.
+        // Since we don't know which application group identifier the user wants
+        // to apply, we instead document that requirement, and use the key directly.
+        return key;
+    } else {
+        // The shared memory name limit on Apple platforms is very low (30 characters),
+        // so we can't use the logic below of combining the prefix, key, and a hash,
+        // to ensure a unique and valid name. Instead we use the first part of the
+        // hash, which should still long enough to avoid collisions in practice.
+        return u'/' + hex.left(SHM_NAME_MAX - 1);
+    }
+#endif
+
+    QString result = prefix;
     for (QChar ch : key) {
-        if ((ch >= QLatin1Char('a') && ch <= QLatin1Char('z')) ||
-           (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z')))
+        if ((ch >= u'a' && ch <= u'z') ||
+           (ch >= u'A' && ch <= u'Z'))
            result += ch;
     }
+    result.append(QLatin1StringView(hex));
 
-    QByteArray hex = QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha1).toHex();
-    result.append(QLatin1String(hex));
 #ifdef Q_OS_WIN
     return result;
 #elif defined(QT_POSIX_IPC)
-    return QLatin1Char('/') + result;
+    return u'/' + result;
 #else
-    return QDir::tempPath() + QLatin1Char('/') + result;
+    return QDir::tempPath() + u'/' + result;
 #endif
 }
-#endif // QT_NO_SHAREDMEMORY && QT_NO_SHAREDMEMORY
+#endif // QT_CONFIG(sharedmemory) || QT_CONFIG(systemsemaphore)
 
-#ifndef QT_NO_SHAREDMEMORY
+#if QT_CONFIG(sharedmemory)
 
 /*!
   \class QSharedMemory
@@ -103,23 +96,66 @@ QSharedMemoryPrivate::makePlatformSafeKey(const QString &key,
 
   \list
 
-  \li Windows: QSharedMemory does not "own" the shared memory segment.
-  When all threads or processes that have an instance of QSharedMemory
-  attached to a particular shared memory segment have either destroyed
-  their instance of QSharedMemory or exited, the Windows kernel
-  releases the shared memory segment automatically.
+    \li Windows: QSharedMemory does not "own" the shared memory segment.
+    When all threads or processes that have an instance of QSharedMemory
+    attached to a particular shared memory segment have either destroyed
+    their instance of QSharedMemory or exited, the Windows kernel
+    releases the shared memory segment automatically.
 
-  \li Unix: QSharedMemory "owns" the shared memory segment. When the
-  last thread or process that has an instance of QSharedMemory
-  attached to a particular shared memory segment detaches from the
-  segment by destroying its instance of QSharedMemory, the Unix kernel
-  release the shared memory segment. But if that last thread or
-  process crashes without running the QSharedMemory destructor, the
-  shared memory segment survives the crash.
+    \li Unix: QSharedMemory "owns" the shared memory segment. When the
+    last thread or process that has an instance of QSharedMemory
+    attached to a particular shared memory segment detaches from the
+    segment by destroying its instance of QSharedMemory, the destructor
+    releases the shared memory segment. But if that last thread or
+    process crashes without running the QSharedMemory destructor, the
+    shared memory segment survives the crash.
 
-  \li HP-UX: Only one attach to a shared memory segment is allowed per
-  process. This means that QSharedMemory should not be used across
-  multiple threads in the same process in HP-UX.
+    \li Unix: QSharedMemory can be implemented by one of two different
+    backends, selected at Qt build time: System V or POSIX. Qt defaults to
+    using the System V API if it is available, and POSIX if not. These two
+    backends do not interoperate, so two applications must ensure they use the
+    same one, even if the native key (see setNativeKey()) is the same.
+
+    The POSIX backend can be explicitly selected using the
+    \c{-feature-ipc_posix} option to the Qt configure script. If it is enabled,
+    the \c{QT_POSIX_IPC} macro will be defined.
+
+    \li Sandboxed applications on Apple platforms (including apps
+    shipped through the Apple App Store): This environment requires
+    the use of POSIX shared memory (instead of System V shared memory).
+
+    Qt for iOS is built with support for POSIX shared memory out of the box.
+    However, Qt for \macos builds (including those from the Qt installer) default
+    to System V, making them unsuitable for App Store submission if QSharedMemory
+    is needed. See above for instructions to explicitly select the POSIX backend
+    when building Qt.
+
+    In addition, in a sandboxed environment, the following caveats apply:
+
+    \list
+      \li The key must be in the form \c {<application group identifier>/<custom identifier>},
+      as documented \l {https://developer.apple.com/library/archive/documentation/Security/Conceptual/AppSandboxDesignGuide/AppSandboxInDepth/AppSandboxInDepth.html#//apple_ref/doc/uid/TP40011183-CH3-SW24}
+      {here} and \l {https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_application-groups}
+      {here}.
+
+      \li The key length is limited to 30 characters.
+
+      \li On process exit, the named shared memory entries are not
+      cleaned up, so restarting the application and re-creating the
+      shared memory under the same name will fail. To work around this,
+      fall back to attaching to the existing shared memory entry:
+
+      \code
+
+          QSharedMemory shm("DEVTEAMID.app-group/shared");
+          if (!shm.create(42) && shm.error() == QSharedMemory::AlreadyExists)
+              shm.attach();
+
+      \endcode
+
+    \endlist
+
+    \li Android: QSharedMemory is not supported.
 
   \endlist
 
@@ -134,9 +170,79 @@ QSharedMemoryPrivate::makePlatformSafeKey(const QString &key,
   \warning QSharedMemory changes the key in a Qt-specific way, unless otherwise
   specified. Interoperation with non-Qt applications is achieved by first creating
   a default shared memory with QSharedMemory() and then setting a native key with
-  setNativeKey(). When using native keys, shared memory is not protected against
-  multiple accesses on it (for example, unable to lock()) and a user-defined mechanism
+  setNativeKey(), after ensuring they use the same low-level API (System V or
+  POSIX). When using native keys, shared memory is not protected against multiple
+  accesses on it (for example, unable to lock()) and a user-defined mechanism
   should be used to achieve such protection.
+
+  \section2 Alternative: Memory-Mapped File
+
+  Another way to share memory between processes is by opening the same file
+  using \l QFile and mapping it into memory using QFile::map() (without
+  specifying the QFileDevice::MapPrivateOption option). Any writes to the
+  mapped segment will be observed by all other processes that have mapped the
+  same file. This solution has the major advantages of being independent of the
+  backend API and of being simpler to interoperate with from non-Qt
+  applications. And since \l{QTemporaryFile} is a \l{QFile}, applications can
+  use that class to achieve clean-up semantics and to create unique shared
+  memory segments too.
+
+  To achieve locking of the shared memory segment, applications will need to
+  deploy their own mechanisms. This can be achieved by using \l
+  QBasicAtomicInteger or \c{std::atomic} in a pre-determined offset in the
+  segment itself. Higher-level locking primitives may be available on some
+  operating systems; for example, on Linux, \c{pthread_mutex_create()} can be
+  passed a flag to indicate that the mutex resides in a shared memory segment.
+
+  A major drawback of using file-backed shared memory is that the operating
+  system will attempt to write the data to permanent storage, possibly causing
+  noticeable performance penalties. To avoid this, applications should locate a
+  RAM-backed filesystem, such as \c{tmpfs} on Linux (see
+  QStorageInfo::fileSystemType()), or pass a flag to the native file-opening
+  function to inform the OS to avoid committing the contents to storage.
+
+  File-backed shared memory must be used with care if another process
+  participating is untrusted. The files may be truncated/shrunk and cause
+  applications accessing memory beyond the file's size to crash.
+
+  \section3 Linux hints on memory-mapped files
+
+  On modern Linux systems, while the \c{/tmp} directory is often a \c{tmpfs}
+  mount point, that is not a requirement. However, the \c{/dev/shm} directory
+  is required to be a \c{tmpfs} and exists for this very purpose. Do note that
+  it is world-readable and writable (like \c{/tmp} and \c{/var/tmp}), so one
+  must be careful of the contents revealed there. Another alternative is to use
+  the XDG Runtime Directory (see QStandardPaths::writableLocation() and
+  \l{QStandardPaths::RuntimeLocation}), which on Linux systems using systemd is
+  a user-specific \c{tmpfs}.
+
+  An even more secure solution is to create a "memfd" using \c{memfd_create(2)}
+  and use interprocess communication to pass the file descriptor, like
+  \l{QDBusUnixFileDescriptor} or by letting the child process of a \l{QProcess}
+  inherit it. "memfds" can also be sealed against being shrunk, so they are
+  safe to be used when communicating with processes with a different privilege
+  level.
+
+  \section3 FreeBSD hints on memory-mapped files
+
+  FreeBSD also has \c{memfd_create(2)} and can pass file descriptors to other
+  processes using the same techniques as Linux. It does not have temporary
+  filesystems mounted by default.
+
+  \section3 Windows hints on memory-mapped files
+
+  On Windows, the application can request the operating system avoid committing
+  the file's contents to permanent storage. This request is performed by
+  passing the \c{FILE_ATTRIBUTE_TEMPORARY} flag in the \c{dwFlagsAndAttributes}
+  \c{CreateFile} Win32 function, the \c{_O_SHORT_LIVED} flag to \c{_open()}
+  low-level function, or by including the modifier "T" to the \c{fopen()} C
+  runtime function.
+
+  There's also a flag to inform the operating system to delete the file when
+  the last handle to it is closed (\c{FILE_FLAG_DELETE_ON_CLOSE},
+  \c{_O_TEMPORARY}, and the "D" modifier), but do note that all processes
+  attempting to open the file must agree on using this flag or not using it. A
+  mismatch will likely cause a sharing violation and failure to open the file.
  */
 
 /*!
@@ -151,17 +257,11 @@ QSharedMemoryPrivate::makePlatformSafeKey(const QString &key,
   \sa setKey()
  */
 
-#ifndef QT_NO_QOBJECT
 QSharedMemory::QSharedMemory(QObject *parent)
   : QObject(*new QSharedMemoryPrivate, parent)
 {
 }
-#else
-QSharedMemory::QSharedMemory()
-    : d_ptr(new QSharedMemoryPrivate)
-{
-}
-#endif
+
 /*!
   Constructs a shared memory object with the given \a parent and with
   its key set to \a key. Because its key is set, its create() and
@@ -169,19 +269,11 @@ QSharedMemory::QSharedMemory()
 
   \sa setKey(), create(), attach()
  */
-#ifndef QT_NO_QOBJECT
 QSharedMemory::QSharedMemory(const QString &key, QObject *parent)
     : QObject(*new QSharedMemoryPrivate, parent)
 {
     setKey(key);
 }
-#else
-QSharedMemory::QSharedMemory(const QString &key)
-    : d_ptr(new QSharedMemoryPrivate)
-{
-    setKey(key);
-}
-#endif
 
 /*!
   The destructor clears the key, which forces the shared memory object
@@ -260,11 +352,11 @@ bool QSharedMemoryPrivate::initKey()
 {
     if (!cleanHandle())
         return false;
-#ifndef QT_NO_SYSTEMSEMAPHORE
+#if QT_CONFIG(systemsemaphore)
     systemSemaphore.setKey(QString(), 1);
     systemSemaphore.setKey(key, 1);
     if (systemSemaphore.error() != QSystemSemaphore::NoError) {
-        QString function = QLatin1String("QSharedMemoryPrivate::initKey");
+        QString function = "QSharedMemoryPrivate::initKey"_L1;
         errorString = QSharedMemory::tr("%1: unable to set key on lock").arg(function);
         switch(systemSemaphore.error()) {
         case QSystemSemaphore::PermissionDenied:
@@ -347,7 +439,7 @@ bool QSharedMemory::create(qsizetype size, AccessMode mode)
     if (!d->initKey())
         return false;
 
-#ifndef QT_NO_SYSTEMSEMAPHORE
+#if QT_CONFIG(systemsemaphore)
 #ifndef Q_OS_WIN
     // Take ownership and force set initialValue because the semaphore
     // might have already existed from a previous crash.
@@ -355,8 +447,8 @@ bool QSharedMemory::create(qsizetype size, AccessMode mode)
 #endif
 #endif
 
-    QString function = QLatin1String("QSharedMemory::create");
-#ifndef QT_NO_SYSTEMSEMAPHORE
+    QString function = "QSharedMemory::create"_L1;
+#if QT_CONFIG(systemsemaphore)
     QSharedMemoryLocker lock(this);
     if (!d->key.isNull() && !d->tryLocker(&lock, function))
         return false;
@@ -420,9 +512,9 @@ bool QSharedMemory::attach(AccessMode mode)
 
     if (isAttached() || !d->initKey())
         return false;
-#ifndef QT_NO_SYSTEMSEMAPHORE
+#if QT_CONFIG(systemsemaphore)
     QSharedMemoryLocker lock(this);
-    if (!d->key.isNull() && !d->tryLocker(&lock, QLatin1String("QSharedMemory::attach")))
+    if (!d->key.isNull() && !d->tryLocker(&lock, "QSharedMemory::attach"_L1))
         return false;
 #endif
 
@@ -460,9 +552,9 @@ bool QSharedMemory::detach()
     if (!isAttached())
         return false;
 
-#ifndef QT_NO_SYSTEMSEMAPHORE
+#if QT_CONFIG(systemsemaphore)
     QSharedMemoryLocker lock(this);
-    if (!d->key.isNull() && !d->tryLocker(&lock, QLatin1String("QSharedMemory::detach")))
+    if (!d->key.isNull() && !d->tryLocker(&lock, "QSharedMemory::detach"_L1))
         return false;
 #endif
 
@@ -508,7 +600,7 @@ const void *QSharedMemory::data() const
     return d->memory;
 }
 
-#ifndef QT_NO_SYSTEMSEMAPHORE
+#if QT_CONFIG(systemsemaphore)
 /*!
   This is a semaphore that locks the shared memory segment for access
   by this process and returns \c true. If another process has locked the
@@ -531,7 +623,7 @@ bool QSharedMemory::lock()
         d->lockedByMe = true;
         return true;
     }
-    QString function = QLatin1String("QSharedMemory::lock");
+    const auto function = "QSharedMemory::lock"_L1;
     d->errorString = QSharedMemory::tr("%1: unable to lock").arg(function);
     d->error = QSharedMemory::LockError;
     return false;
@@ -553,12 +645,12 @@ bool QSharedMemory::unlock()
     d->lockedByMe = false;
     if (d->systemSemaphore.release())
         return true;
-    QString function = QLatin1String("QSharedMemory::unlock");
+    const auto function = "QSharedMemory::unlock"_L1;
     d->errorString = QSharedMemory::tr("%1: unable to unlock").arg(function);
     d->error = QSharedMemory::LockError;
     return false;
 }
-#endif // QT_NO_SYSTEMSEMAPHORE
+#endif // QT_CONFIG(systemsemaphore)
 
 /*!
   \enum QSharedMemory::SharedMemoryError
@@ -615,10 +707,8 @@ QString QSharedMemory::errorString() const
     return d->errorString;
 }
 
-#endif // QT_NO_SHAREDMEMORY
+#endif // QT_CONFIG(sharedmemory)
 
 QT_END_NAMESPACE
 
-#ifndef QT_NO_QOBJECT
 #include "moc_qsharedmemory.cpp"
-#endif

@@ -1,43 +1,7 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2020 Intel Corporation.
-** Copyright (C) 2019 Klarälvdalens Datakonsult AB.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2022 Intel Corporation.
+// Copyright (C) 2019 Klarälvdalens Datakonsult AB.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef Q_QDOC
 
@@ -62,12 +26,16 @@ QT_END_NAMESPACE
 
 #include <new>
 #include <QtCore/qatomic.h>
-#include <QtCore/qobject.h>    // for qobject_cast
 #include <QtCore/qhashfunctions.h>
+#include <QtCore/qmetatype.h> // for IsPointerToTypeDerivedFromQObject
 
 #include <memory>
 
 QT_BEGIN_NAMESPACE
+
+class QObject;
+template <class T>
+T qobject_cast(const QObject *object);
 
 //
 // forward declarations
@@ -153,6 +121,12 @@ namespace QtSharedPointer {
         inline void checkQObjectShared(...) { }
         inline void setQObjectShared(...) { }
 
+        // Normally, only subclasses of ExternalRefCountData are allocated
+        // One exception exists in getAndRef; that uses the global operator new
+        // to prevent a mismatch with the custom operator delete
+        inline void *operator new(std::size_t) = delete;
+        // placement new
+        inline void *operator new(std::size_t, void *ptr) noexcept { return ptr; }
         inline void operator delete(void *ptr) { ::operator delete(ptr); }
         inline void operator delete(void *, void *) { }
     };
@@ -457,6 +431,7 @@ public:
     DECLARE_COMPARE_SET(const QSharedPointer &p1, p1.data(), std::nullptr_t, nullptr)
     DECLARE_COMPARE_SET(std::nullptr_t, nullptr, const QSharedPointer &p2, p2.data())
 #undef DECLARE_TEMPLATE_COMPARE_SET
+#undef DECLARE_COMPARE_SET
 
 private:
     explicit QSharedPointer(Qt::Initialization) {}
@@ -501,17 +476,13 @@ private:
 
     void internalSwap(QSharedPointer &other) noexcept
     {
-        qSwap(d, other.d);
-        qSwap(this->value, other.value);
+        qt_ptr_swap(d, other.d);
+        qt_ptr_swap(this->value, other.value);
     }
 
-#if defined(Q_NO_TEMPLATE_FRIENDS)
-public:
-#else
     template <class X> friend class QSharedPointer;
     template <class X> friend class QWeakPointer;
     template <class X, class Y> friend QSharedPointer<X> QtSharedPointer::copyAndSetPointer(X * ptr, const QSharedPointer<Y> &src);
-#endif
     void ref() const noexcept { d->weakref.ref(); d->strongref.ref(); }
 
     inline void internalSet(Data *o, T *actual)
@@ -535,8 +506,8 @@ public:
             }
         }
 
-        qSwap(d, o);
-        qSwap(this->value, actual);
+        qt_ptr_swap(d, o);
+        qt_ptr_swap(this->value, actual);
         if (!d || d->strongref.loadRelaxed() == 0)
             this->value = nullptr;
 
@@ -568,7 +539,7 @@ public:
     explicit operator bool() const noexcept { return !isNull(); }
     bool operator !() const noexcept { return isNull(); }
 
-    inline QWeakPointer() noexcept : d(nullptr), value(nullptr) { }
+    constexpr QWeakPointer() noexcept : d(nullptr), value(nullptr) { }
     inline ~QWeakPointer() { if (d && !d->weakref.deref()) delete d; }
 
     QWeakPointer(const QWeakPointer &other) noexcept : d(other.d), value(other.value)
@@ -580,6 +551,23 @@ public:
         other.value = nullptr;
     }
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QWeakPointer)
+
+    template <class X, IfCompatible<X> = true>
+    QWeakPointer(QWeakPointer<X> &&other) noexcept
+        : d(other.d), value(other.value)
+    {
+        other.d = nullptr;
+        other.value = nullptr;
+    }
+
+    template <class X, IfCompatible<X> = true>
+    QWeakPointer &operator=(QWeakPointer<X> &&other) noexcept
+    {
+        QWeakPointer moved(std::move(other));
+        swap(moved);
+        return *this;
+    }
+
     QWeakPointer &operator=(const QWeakPointer &other) noexcept
     {
         QWeakPointer copy(other);
@@ -589,8 +577,8 @@ public:
 
     void swap(QWeakPointer &other) noexcept
     {
-        qSwap(this->d, other.d);
-        qSwap(this->value, other.value);
+        qt_ptr_swap(this->d, other.d);
+        qt_ptr_swap(this->value, other.value);
     }
 
     inline QWeakPointer(const QSharedPointer<T> &o) : d(o.d), value(o.data())
@@ -631,10 +619,6 @@ public:
     // std::weak_ptr compatibility:
     inline QSharedPointer<T> lock() const { return toStrongRef(); }
 
-#if defined(QWEAKPOINTER_ENABLE_ARROW)
-    inline T *operator->() const { return data(); }
-#endif
-
     template <class X>
     bool operator==(const QWeakPointer<X> &o) const noexcept
     { return d == o.d && value == static_cast<const T *>(o.value); }
@@ -658,18 +642,20 @@ public:
     friend bool operator!=(const QSharedPointer<X> &p1, const QWeakPointer &p2) noexcept
     { return p2 != p1; }
 
-    DECLARE_COMPARE_SET(const QWeakPointer &p1, p1.d, std::nullptr_t, nullptr)
-    DECLARE_COMPARE_SET(std::nullptr_t, nullptr, const QWeakPointer &p2, p2.data())
-#undef DECLARE_COMPARE_SET
+    friend bool operator==(const QWeakPointer &p, std::nullptr_t)
+    { return p.isNull(); }
+    friend bool operator==(std::nullptr_t, const QWeakPointer &p)
+    { return p.isNull(); }
+    friend bool operator!=(const QWeakPointer &p, std::nullptr_t)
+    { return !p.isNull(); }
+    friend bool operator!=(std::nullptr_t, const QWeakPointer &p)
+    { return !p.isNull(); }
 
 private:
     friend struct QtPrivate::EnableInternalData;
-#if defined(Q_NO_TEMPLATE_FRIENDS)
-public:
-#else
     template <class X> friend class QSharedPointer;
+    template <class X> friend class QWeakPointer;
     template <class X> friend class QPointer;
-#endif
 
     template <class X>
     inline QWeakPointer &assign(X *ptr)
@@ -726,12 +712,8 @@ public:
     inline QSharedPointer<T> sharedFromThis() { return QSharedPointer<T>(weakPointer); }
     inline QSharedPointer<const T> sharedFromThis() const { return QSharedPointer<const T>(weakPointer); }
 
-#ifndef Q_NO_TEMPLATE_FRIENDS
 private:
     template <class X> friend class QSharedPointer;
-#else
-public:
-#endif
     template <class X>
     inline void initializeFromSharedPointer(const QSharedPointer<X> &ptr) const
     {
@@ -788,7 +770,7 @@ Q_INLINE_TEMPLATE bool operator<(T *ptr1, const QSharedPointer<X> &ptr2)
 template <class T>
 Q_INLINE_TEMPLATE size_t qHash(const QSharedPointer<T> &ptr, size_t seed = 0)
 {
-    return QT_PREPEND_NAMESPACE(qHash)(ptr.data(), seed);
+    return qHash(ptr.data(), seed);
 }
 
 
@@ -919,15 +901,11 @@ std::shared_ptr<X> qobject_pointer_cast(std::shared_ptr<T> &&src)
     using element_type = typename std::shared_ptr<X>::element_type;
     auto castResult = qobject_cast<element_type *>(src.get());
     if (castResult) {
-        auto result = std::shared_ptr<X>(std::move(src), castResult);
-#if __cplusplus <= 201703L
         // C++2a's move aliasing constructor will leave src empty.
         // Before C++2a we don't really know if the compiler has support for it.
         // The move aliasing constructor is the resolution for LWG2996,
         // which does not impose a feature-testing macro. So: clear src.
-        src.reset();
-#endif
-        return result;
+        return std::shared_ptr<X>(std::exchange(src, nullptr), castResult);
     }
     return std::shared_ptr<X>();
 }

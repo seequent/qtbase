@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qlistview.pro.
 
 #####################################################################
@@ -7,7 +10,7 @@
 qt_internal_add_test(tst_qlistview
     SOURCES
         tst_qlistview.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -20,6 +23,6 @@ qt_internal_add_test(tst_qlistview
 #####################################################################
 
 qt_internal_extend_target(tst_qlistview CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         user32
 )

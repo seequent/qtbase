@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qpainterpath.h"
 #include "qpainterpath_p.h"
@@ -87,15 +51,6 @@ static bool hasValidCoords(QRectF r)
 {
     return isValidCoord(r.x()) && isValidCoord(r.y()) && isValidCoord(r.width()) && isValidCoord(r.height());
 }
-
-struct QPainterPathPrivateDeleter
-{
-    static inline void cleanup(QPainterPathPrivate *d)
-    {
-        if (d && !d->ref.deref())
-            delete d;
-    }
-};
 
 // This value is used to determine the length of control point vectors
 // when approximating arc segments as curves. The factor is multiplied
@@ -554,12 +509,7 @@ QPainterPath::QPainterPath() noexcept
 
     \sa operator=()
 */
-QPainterPath::QPainterPath(const QPainterPath &other)
-    : d_ptr(other.d_ptr.data())
-{
-    if (d_ptr)
-        d_ptr->ref.ref();
-}
+QPainterPath::QPainterPath(const QPainterPath &other) = default;
 
 /*!
     Creates a QPainterPath object with the given \a startPoint as its
@@ -575,18 +525,8 @@ QPainterPath::QPainterPath(const QPointF &startPoint)
 
 void QPainterPath::detach()
 {
-    if (d_ptr->ref.loadRelaxed() != 1)
-        detach_helper();
+    d_ptr.detach();
     setDirty(true);
-}
-
-/*!
-    \internal
-*/
-void QPainterPath::detach_helper()
-{
-    QPainterPathPrivate *data = new QPainterPathPrivate(*d_func());
-    d_ptr.reset(data);
 }
 
 /*!
@@ -611,12 +551,8 @@ void QPainterPath::ensureData_helper()
 */
 QPainterPath &QPainterPath::operator=(const QPainterPath &other)
 {
-    if (other.d_func() != d_func()) {
-        QPainterPathPrivate *data = other.d_func();
-        if (data)
-            data->ref.ref();
-        d_ptr.reset(data);
-    }
+    QPainterPath copy(other);
+    swap(copy);
     return *this;
 }
 
@@ -1199,6 +1135,9 @@ void QPainterPath::addEllipse(const QRectF &boundingRect)
     that the left end of the text's baseline lies at the specified \a
     point.
 
+    Some fonts may yield overlapping subpaths and will require the
+    \c Qt::WindingFill fill rule for correct rendering.
+
     \table 100%
     \row
     \li \inlineimage qpainterpath-addtext.png
@@ -1207,7 +1146,7 @@ void QPainterPath::addEllipse(const QRectF &boundingRect)
     \endtable
 
     \sa QPainter::drawText(), {QPainterPath#Composing a
-    QPainterPath}{Composing a QPainterPath}
+    QPainterPath}{Composing a QPainterPath}, setFillRule()
 */
 void QPainterPath::addText(const QPointF &point, const QFont &f, const QString &text)
 {
@@ -1250,7 +1189,7 @@ void QPainterPath::addText(const QPointF &point, const QFont &f, const QString &
 
         if (si.analysis.flags < QScriptAnalysis::TabOrObject) {
             QGlyphLayout glyphs = eng->shapedGlyphs(&si);
-            QFontEngine *fe = f.d->engineForScript(si.analysis.script);
+            QFontEngine *fe = eng->fontEngine(si);
             Q_ASSERT(fe);
             fe->addOutlineToPath(x, y, glyphs, this,
                                  si.analysis.bidiLevel % 2
@@ -1369,7 +1308,7 @@ void QPainterPath::addRegion(const QRegion &region)
 */
 Qt::FillRule QPainterPath::fillRule() const
 {
-    return isEmpty() ? Qt::OddEvenFill : d_func()->fillRule;
+    return !d_func() ? Qt::OddEvenFill : d_func()->fillRule;
 }
 
 /*!
@@ -2154,7 +2093,7 @@ bool QPainterPath::intersects(const QRectF &rect) const
 
     Q_D(QPainterPath);
 
-    // Check if the rectangle surounds any subpath...
+    // Check if the rectangle surrounds any subpath...
     for (int i=0; i<d->elements.size(); ++i) {
         const Element &e = d->elements.at(i);
         if (e.type == QPainterPath::MoveToElement && rect.contains(e))

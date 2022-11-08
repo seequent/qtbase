@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qmimedatabase-xml.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -12,7 +15,7 @@ qt_internal_add_test(tst_qmimedatabase-xml
     SOURCES
         ../tst_qmimedatabase.h
         tst_qmimedatabase-xml.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Concurrent
 )
 
@@ -23,47 +26,17 @@ qt_internal_add_test(tst_qmimedatabase-xml
     #"mime/packages/freedesktop.org.xml"
 #)
 # special case end
-set_source_files_properties("../invalid-magic1.xml"
-    PROPERTIES QT_RESOURCE_ALIAS "invalid-magic1.xml"
-)
-set_source_files_properties("../invalid-magic2.xml"
-    PROPERTIES QT_RESOURCE_ALIAS "invalid-magic2.xml"
-)
-set_source_files_properties("../invalid-magic3.xml"
-    PROPERTIES QT_RESOURCE_ALIAS "invalid-magic3.xml"
-)
-set_source_files_properties("../magic-and-hierarchy.foo"
-    PROPERTIES QT_RESOURCE_ALIAS "magic-and-hierarchy.foo"
-)
-set_source_files_properties("../magic-and-hierarchy.xml"
-    PROPERTIES QT_RESOURCE_ALIAS "magic-and-hierarchy.xml"
-)
-set_source_files_properties("../magic-and-hierarchy2.foo"
-    PROPERTIES QT_RESOURCE_ALIAS "magic-and-hierarchy2.foo"
-)
-set_source_files_properties("../qml-again.xml"
-    PROPERTIES QT_RESOURCE_ALIAS "qml-again.xml"
-)
-set_source_files_properties("../test.qml"
-    PROPERTIES QT_RESOURCE_ALIAS "test.qml"
-)
-set_source_files_properties("../text-x-objcsrc.xml"
-    PROPERTIES QT_RESOURCE_ALIAS "text-x-objcsrc.xml"
-)
-set_source_files_properties("../yast2-metapackage-handler-mimetypes.xml"
-    PROPERTIES QT_RESOURCE_ALIAS "yast2-metapackage-handler-mimetypes.xml"
-)
 set(testdata_resource_files
-    "invalid-magic1.xml"
-    "invalid-magic2.xml"
-    "invalid-magic3.xml"
-    "magic-and-hierarchy.foo"
-    "magic-and-hierarchy.xml"
-    "magic-and-hierarchy2.foo"
-    "qml-again.xml"
-    "test.qml"
-    "text-x-objcsrc.xml"
-    "yast2-metapackage-handler-mimetypes.xml"
+    "../invalid-magic1.xml"
+    "../invalid-magic2.xml"
+    "../invalid-magic3.xml"
+    "../magic-and-hierarchy.foo"
+    "../magic-and-hierarchy.xml"
+    "../magic-and-hierarchy2.foo"
+    "../qml-again.xml"
+    "../test.qml"
+    "../text-x-objcsrc.xml"
+    "../yast2-metapackage-handler-mimetypes.xml"
 )
 
 qt_internal_add_resource(tst_qmimedatabase-xml "testdata"

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtPrintSupport module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QtPrintSupport/qtprintsupportglobal.h>
 
@@ -49,6 +13,9 @@
 #include <private/qfont_p.h>
 #include <private/qfontengine_p.h>
 #include <private/qpainter_p.h>
+#if QT_CONFIG(directwrite)
+#  include <private/qwindowsfontenginedirectwrite_p.h>
+#endif
 
 #include <qpa/qplatformprintplugin.h>
 #include <qpa/qplatformprintersupport.h>
@@ -290,8 +257,22 @@ void QWin32PrintEngine::drawTextItem(const QPointF &p, const QTextItem &textItem
                     || d->txop >= QTransform::TxProject
                     || !d->embed_fonts;
 
-    if (!fallBack && ti.fontEngine->type() == QFontEngine::Win) {
-        if (HFONT hfont = static_cast<HFONT>(ti.fontEngine->handle())) {
+    if (!fallBack) {
+        bool deleteFont = false;
+        HFONT hfont = NULL;
+        if (ti.fontEngine->type() == QFontEngine::Win) {
+            hfont = static_cast<HFONT>(ti.fontEngine->handle());
+        }
+#if QT_CONFIG(directwrite)
+        else if (ti.fontEngine->type() == QFontEngine::DirectWrite) {
+            QWindowsFontEngineDirectWrite *fedw = static_cast<QWindowsFontEngineDirectWrite *>(ti.fontEngine);
+            hfont = fedw->createHFONT();
+            if (hfont)
+                deleteFont = true;
+        }
+#endif
+
+        if (hfont) {
             // Try selecting the font to see if we get a substitution font
             SelectObject(d->hdc, hfont);
             if (GetDeviceCaps(d->hdc, TECHNOLOGY) != DT_CHARSTREAM) {
@@ -302,7 +283,12 @@ void QWin32PrintEngine::drawTextItem(const QPointF &p, const QTextItem &textItem
                 GetTextFace(d->hdc, 64, n);
                 fallBack = QString::fromWCharArray(n)
                     != QString::fromWCharArray(logFont.lfFaceName);
+
+                if (deleteFont)
+                    DeleteObject(hfont);
             }
+        } else {
+            fallBack = true;
         }
     }
 
@@ -577,6 +563,7 @@ void QWin32PrintEngine::drawPixmap(const QRectF &targetRect,
             QImage img(QSize(imgw, imgh), QImage::Format_RGB32);
             img.fill(Qt::white);
             QPainter painter(&img);
+            img.setDevicePixelRatio(pixmap.devicePixelRatio());
             painter.drawPixmap(0,0, pixmap, tileSize * x, tileSize * y, imgw, imgh);
             QPixmap p = QPixmap::fromImage(img);
 
@@ -1720,11 +1707,20 @@ static void draw_text_item_win(const QPointF &pos, const QTextItemInt &ti, HDC h
     const bool has_kerning = ti.f && ti.f->kerning();
 
     HFONT hfont = 0;
+    bool deleteFont = false;
 
     if (ti.fontEngine->type() == QFontEngine::Win) {
         if (ti.fontEngine->supportsTransformation(QTransform::fromScale(0.5, 0.5))) // is TrueType font?
             hfont = static_cast<HFONT>(ti.fontEngine->handle());
     }
+#if QT_CONFIG(directwrite)
+    else if (ti.fontEngine->type() == QFontEngine::DirectWrite) {
+        QWindowsFontEngineDirectWrite *fedw = static_cast<QWindowsFontEngineDirectWrite *>(ti.fontEngine);
+        hfont = fedw->createHFONT();
+        if (hfont)
+            deleteFont = true;
+    }
+#endif
 
     if (!hfont)
         hfont = (HFONT)GetStockObject(ANSI_VAR_FONT);
@@ -1797,6 +1793,9 @@ static void draw_text_item_win(const QPointF &pos, const QTextItemInt &ti, HDC h
         SetWorldTransform(hdc, &win_xform);
 
     SelectObject(hdc, old_font);
+
+    if (deleteFont)
+        DeleteObject(hfont);
 }
 
 QT_END_NAMESPACE

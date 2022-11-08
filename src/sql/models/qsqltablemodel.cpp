@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtSql module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qsqltablemodel.h"
 
@@ -53,6 +17,8 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 typedef QSqlTableModelSql Sql;
 
 QSqlTableModelPrivate::~QSqlTableModelPrivate()
@@ -66,7 +32,7 @@ QSqlTableModelPrivate::~QSqlTableModelPrivate()
 QSqlRecord QSqlTableModelPrivate::record(const QList<QVariant> &values) const
 {
     QSqlRecord r = rec;
-    for (int i = 0; i < r.count() && i < values.count(); ++i)
+    for (int i = 0; i < r.count() && i < values.size(); ++i)
         r.setValue(i, values.at(i));
     return r;
 }
@@ -333,7 +299,7 @@ void QSqlTableModel::setTable(const QString &tableName)
     d->initRecordAndPrimaryIndex();
 
     if (d->rec.count() == 0)
-        d->error = QSqlError(QLatin1String("Unable to find table ") + d->tableName, QString(),
+        d->error = QSqlError("Unable to find table "_L1 + d->tableName, QString(),
                              QSqlError::StatementError);
 
     // Remember the auto index column if there is one now.
@@ -376,10 +342,9 @@ bool QSqlTableModel::select()
 
     d->clearCache();
 
-    QSqlQuery qu(query, d->db);
-    setQuery(qu);
+    setQuery(query, d->db);
 
-    if (!qu.isActive() || lastError().isValid()) {
+    if (!d->query.isActive() || lastError().isValid()) {
         // something went wrong - revert to non-select state
         d->initRecordAndPrimaryIndex();
         endResetModel();
@@ -416,7 +381,7 @@ bool QSqlTableModel::selectRow(int row)
                                               false);
     static const QString wh = Sql::where() + Sql::sp();
     if (d->filter.startsWith(wh, Qt::CaseInsensitive))
-        d->filter.remove(0, wh.length());
+        d->filter.remove(0, wh.size());
 
     QString stmt;
 
@@ -493,9 +458,9 @@ QVariant QSqlTableModel::headerData(int section, Qt::Orientation orientation, in
     if (orientation == Qt::Vertical && role == Qt::DisplayRole) {
         const QSqlTableModelPrivate::Op op = d->cache.value(section).op();
         if (op == QSqlTableModelPrivate::Insert)
-            return QLatin1String("*");
+            return "*"_L1;
         else if (op == QSqlTableModelPrivate::Delete)
-            return QLatin1String("!");
+            return "!"_L1;
     }
     return QSqlQueryModel::headerData(section, orientation, role);
 }
@@ -616,18 +581,6 @@ bool QSqlTableModel::clearItemData(const QModelIndex &index)
 }
 
 /*!
-    This function simply calls QSqlQueryModel::setQuery(\a query).
-    You should normally not call it on a QSqlTableModel. Instead, use
-    setTable(), setSort(), setFilter(), etc., to set up the query.
-
-    \sa selectStatement()
-*/
-void QSqlTableModel::setQuery(const QSqlQuery &query)
-{
-    QSqlQueryModel::setQuery(query);
-}
-
-/*!
     Updates the given \a row in the currently active database table
     with the specified \a values. Returns \c true if successful; otherwise
     returns \c false.
@@ -657,8 +610,7 @@ bool QSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
                                                        whereValues, prepStatement);
 
     if (stmt.isEmpty() || where.isEmpty() || row < 0 || row >= rowCount()) {
-        d->error = QSqlError(QLatin1String("No Fields to update"), QString(),
-                                 QSqlError::StatementError);
+        d->error = QSqlError("No Fields to update"_L1, QString(), QSqlError::StatementError);
         return false;
     }
 
@@ -690,8 +642,7 @@ bool QSqlTableModel::insertRowIntoTable(const QSqlRecord &values)
                                                       rec, prepStatement);
 
     if (stmt.isEmpty()) {
-        d->error = QSqlError(QLatin1String("No Fields to update"), QString(),
-                                 QSqlError::StatementError);
+        d->error = QSqlError("No Fields to update"_L1, QString(), QSqlError::StatementError);
         return false;
     }
 
@@ -727,8 +678,7 @@ bool QSqlTableModel::deleteRowFromTable(int row)
                                                        prepStatement);
 
     if (stmt.isEmpty() || where.isEmpty()) {
-        d->error = QSqlError(QLatin1String("Unable to delete row"), QString(),
-                             QSqlError::StatementError);
+        d->error = QSqlError("Unable to delete row"_L1, QString(), QSqlError::StatementError);
         return false;
     }
 
@@ -1001,7 +951,8 @@ QString QSqlTableModel::orderByClause() const
 
     //we can safely escape the field because it would have been obtained from the database
     //and have the correct case
-    QString field = d->tableName + QLatin1Char('.')
+    QString field = d->db.driver()->escapeIdentifier(d->tableName, QSqlDriver::TableName)
+            + u'.'
             + d->db.driver()->escapeIdentifier(f.name(), QSqlDriver::FieldName);
     field = d->sortOrder == Qt::AscendingOrder ? Sql::asc(field) : Sql::desc(field);
     return Sql::orderBy(field);
@@ -1028,12 +979,11 @@ QString QSqlTableModel::selectStatement() const
 {
     Q_D(const QSqlTableModel);
     if (d->tableName.isEmpty()) {
-        d->error = QSqlError(QLatin1String("No table name given"), QString(),
-                             QSqlError::StatementError);
+        d->error = QSqlError("No table name given"_L1, QString(), QSqlError::StatementError);
         return QString();
     }
     if (d->rec.isEmpty()) {
-        d->error = QSqlError(QLatin1String("Unable to find table ") + d->tableName, QString(),
+        d->error = QSqlError("Unable to find table "_L1 + d->tableName, QString(),
                              QSqlError::StatementError);
         return QString();
     }
@@ -1043,7 +993,7 @@ QString QSqlTableModel::selectStatement() const
                                                       d->rec,
                                                       false);
     if (stmt.isEmpty()) {
-        d->error = QSqlError(QLatin1String("Unable to select fields from table ") + d->tableName,
+        d->error = QSqlError("Unable to select fields from table "_L1 + d->tableName,
                              QString(), QSqlError::StatementError);
         return stmt;
     }
@@ -1103,12 +1053,8 @@ bool QSqlTableModel::removeColumns(int column, int count, const QModelIndex &par
 bool QSqlTableModel::removeRows(int row, int count, const QModelIndex &parent)
 {
     Q_D(QSqlTableModel);
-    if (parent.isValid() || row < 0 || count <= 0)
+    if (parent.isValid() || row < 0 || count <= 0 || row + count > rowCount())
         return false;
-    else if (row + count > rowCount())
-        return false;
-    else if (!count)
-        return true;
 
     if (d->strategy != OnManualSubmit)
         if (count > 1 || (d->cache.value(row).submitted() && isDirty()))
@@ -1469,3 +1415,5 @@ QSqlRecord QSqlTableModel::primaryValues(int row) const
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qsqltablemodel.cpp"

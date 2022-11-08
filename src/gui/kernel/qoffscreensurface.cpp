@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qoffscreensurface.h"
 
@@ -49,6 +13,8 @@
 #include <private/qwindow_p.h>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 /*!
     \class QOffscreenSurface
@@ -162,7 +128,7 @@ void QOffscreenSurface::create()
             // violate the minimum title bar width on the platform.
             d->offscreenWindow->setFlags(d->offscreenWindow->flags()
                                          | Qt::CustomizeWindowHint | Qt::FramelessWindowHint);
-            d->offscreenWindow->setObjectName(QLatin1String("QOffscreenSurface"));
+            d->offscreenWindow->setObjectName("QOffscreenSurface"_L1);
             // Remove this window from the global list since we do not want it to be destroyed when closing the app.
             // The QOffscreenSurface has to be usable even after exiting the event loop.
             QGuiApplicationPrivate::window_list.removeOne(d->offscreenWindow);
@@ -203,7 +169,7 @@ void QOffscreenSurface::destroy()
 /*!
     Returns \c true if this offscreen surface is valid; otherwise returns \c false.
 
-    The offscreen surface is valid if the platform resources have been successfuly allocated.
+    The offscreen surface is valid if the platform resources have been successfully allocated.
 
     \sa create()
 */
@@ -369,4 +335,22 @@ QPlatformSurface *QOffscreenSurface::surfaceHandle() const
     return d->platformOffscreenSurface;
 }
 
+using namespace QNativeInterface;
+
+void *QOffscreenSurface::resolveInterface(const char *name, int revision) const
+{
+    Q_UNUSED(name); Q_UNUSED(revision);
+
+    Q_D(const QOffscreenSurface);
+    Q_UNUSED(d);
+
+#if defined(Q_OS_ANDROID)
+    QT_NATIVE_INTERFACE_RETURN_IF(QAndroidOffscreenSurface, d->platformOffscreenSurface);
+#endif
+
+    return nullptr;
+}
+
 QT_END_NAMESPACE
+
+#include "moc_qoffscreensurface.cpp"

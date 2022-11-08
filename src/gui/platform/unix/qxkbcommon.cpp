@@ -1,47 +1,14 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qxkbcommon_p.h"
 
 #include <private/qmakearray_p.h>
 
+#include <QtCore/private/qstringiterator_p.h>
+#include <QtCore/qvarlengtharray.h>
 #include <QtCore/QMetaMethod>
+
 #include <QtGui/QKeyEvent>
 #include <QtGui/private/qguiapplication_p.h>
 
@@ -93,6 +60,7 @@ static constexpr const auto KeyTbl = qMakeArray(
         Xkb2Qt<XKB_KEY_Clear,                   Qt::Key_Delete>,
         Xkb2Qt<XKB_KEY_Pause,                   Qt::Key_Pause>,
         Xkb2Qt<XKB_KEY_Print,                   Qt::Key_Print>,
+        Xkb2Qt<XKB_KEY_Sys_Req,                 Qt::Key_SysReq>,
         Xkb2Qt<0x1005FF60,                      Qt::Key_SysReq>,         // hardcoded Sun SysReq
         Xkb2Qt<0x1007ff00,                      Qt::Key_SysReq>,         // hardcoded X386 SysReq
 
@@ -468,7 +436,7 @@ QList<xkb_keysym_t> QXkbCommon::toKeysym(QKeyEvent *event)
     } else if (event->modifiers() & Qt::KeypadModifier) {
         if (qtKey >= Qt::Key_0 && qtKey <= Qt::Key_9)
             keysyms.append(XKB_KEY_KP_0 + (qtKey - Qt::Key_0));
-    } else if (isLatin(qtKey) && event->text().isUpper()) {
+    } else if (isLatin1(qtKey) && event->text().isUpper()) {
         keysyms.append(qtKey);
     }
 
@@ -493,7 +461,7 @@ QList<xkb_keysym_t> QXkbCommon::toKeysym(QKeyEvent *event)
     // From libxkbcommon keysym-utf.c:
     // "We allow to represent any UCS character in the range U-00000000 to
     // U-00FFFFFF by a keysym value in the range 0x01000000 to 0x01ffffff."
-    for (uint utf32 : qAsConst(ucs4))
+    for (uint utf32 : std::as_const(ucs4))
         keysyms.append(utf32 | 0x01000000);
 
     return keysyms;
@@ -520,7 +488,7 @@ int QXkbCommon::keysymToQtKey(xkb_keysym_t keysym, Qt::KeyboardModifiers modifie
         // With standard shortcuts we should prefer a latin character, this is
         // for checks like "some qkeyevent == QKeySequence::Copy" to work even
         // when using for example 'russian' keyboard layout.
-        if (!QXkbCommon::isLatin(keysym)) {
+        if (!QXkbCommon::isLatin1(keysym)) {
             xkb_keysym_t latinKeysym = QXkbCommon::lookupLatinKeysym(state, code);
             if (latinKeysym != XKB_KEY_NoSymbol)
                 keysym = latinKeysym;
@@ -543,14 +511,28 @@ static int keysymToQtKey_internal(xkb_keysym_t keysym, Qt::KeyboardModifiers mod
     } else if (keysym >= XKB_KEY_KP_0 && keysym <= XKB_KEY_KP_9) {
         // numeric keypad keys
         qtKey = Qt::Key_0 + (keysym - XKB_KEY_KP_0);
-    } else if (QXkbCommon::isLatin(keysym)) {
+    } else if (QXkbCommon::isLatin1(keysym)) {
+        // Upper-case first, since Qt::Keys are defined in terms of their
+        // upper-case versions.
         qtKey = QXkbCommon::qxkbcommon_xkb_keysym_to_upper(keysym);
+        // Upper-casing a Latin1 character might move it out of Latin1 range,
+        // for example U+00B5 MICRO SIGN, which upper-case equivalent is
+        // U+039C GREEK CAPITAL LETTER MU. If that's the case, then map the
+        // original lower-case character.
+        if (!QXkbCommon::isLatin1(qtKey))
+            qtKey = keysym;
     } else {
         // check if we have a direct mapping
         xkb2qt_t searchKey{keysym, 0};
         auto it = std::lower_bound(KeyTbl.cbegin(), KeyTbl.cend(), searchKey);
         if (it != KeyTbl.end() && !(searchKey < *it))
             qtKey = it->qt;
+
+        // translate Super/Hyper keys to Meta if we're using them as the MetaModifier
+        if (superAsMeta && (qtKey == Qt::Key_Super_L || qtKey == Qt::Key_Super_R))
+            qtKey = Qt::Key_Meta;
+        if (hyperAsMeta && (qtKey == Qt::Key_Hyper_L || qtKey == Qt::Key_Hyper_R))
+            qtKey = Qt::Key_Meta;
     }
 
     if (qtKey)
@@ -573,15 +555,11 @@ static int keysymToQtKey_internal(xkb_keysym_t keysym, Qt::KeyboardModifiers mod
              // e.g CTRL + ۲ (arabic two), is mapped to CTRL + Qt::Key_2.
              qtKey = Qt::Key_0 + text.unicode()->digitValue();
          } else {
-             qtKey = text.unicode()->toUpper().unicode();
+             text = text.toUpper();
+             QStringIterator i(text);
+             qtKey = i.next(0);
          }
     }
-
-    // translate Super/Hyper keys to Meta if we're using them as the MetaModifier
-    if (superAsMeta && (qtKey == Qt::Key_Super_L || qtKey == Qt::Key_Super_R))
-        qtKey = Qt::Key_Meta;
-    if (hyperAsMeta && (qtKey == Qt::Key_Hyper_L || qtKey == Qt::Key_Hyper_R))
-        qtKey = Qt::Key_Meta;
 
     return qtKey;
 }
@@ -676,7 +654,7 @@ QList<int> QXkbCommon::possibleKeys(xkb_state *state, const QKeyEvent *event,
         Qt::KeyboardModifiers neededMods = ModsTbl[i];
         if ((modifiers & neededMods) == neededMods) {
             if (i == 8) {
-                if (isLatin(baseQtKey))
+                if (isLatin1(baseQtKey))
                     continue;
                 // add a latin key as a fall back key
                 sym = lookupLatinKeysym(state, keycode);
@@ -704,7 +682,7 @@ QList<int> QXkbCommon::possibleKeys(xkb_state *state, const QKeyEvent *event,
             // catch only more specific shortcuts, i.e. Ctrl+Shift+= also generates Ctrl++ and +,
             // but Ctrl++ is more specific than +, so we should skip the last one
             bool ambiguous = false;
-            for (int shortcut : qAsConst(result)) {
+            for (int shortcut : std::as_const(result)) {
                 if (int(shortcut & ~Qt::KeyboardModifierMask) == qtKey && (shortcut & mods) == mods) {
                     ambiguous = true;
                     break;
@@ -731,7 +709,7 @@ void QXkbCommon::verifyHasLatinLayout(xkb_keymap *keymap)
     for (xkb_layout_index_t layout = 0; layout < layoutCount; ++layout) {
         for (xkb_keycode_t code = minKeycode; code < maxKeycode; ++code) {
             xkb_keymap_key_get_syms_by_level(keymap, code, layout, 0, &keysyms);
-            if (keysyms && isLatin(keysyms[0]))
+            if (keysyms && isLatin1(keysyms[0]))
                 nrLatinKeys++;
             if (nrLatinKeys > 10) // arbitrarily chosen threshold
                 return;
@@ -740,7 +718,7 @@ void QXkbCommon::verifyHasLatinLayout(xkb_keymap *keymap)
     // This means that lookupLatinKeysym() will not find anything and latin
     // key shortcuts might not work. This is a bug in the affected desktop
     // environment. Usually can be solved via system settings by adding e.g. 'us'
-    // layout to the list of seleced layouts, or by using command line, "setxkbmap
+    // layout to the list of selected layouts, or by using command line, "setxkbmap
     // -layout rus,en". The position of latin key based layout in the list of the
     // selected layouts is irrelevant. Properly functioning desktop environments
     // handle this behind the scenes, even if no latin key based layout has been
@@ -764,7 +742,7 @@ xkb_keysym_t QXkbCommon::lookupLatinKeysym(xkb_state *state, xkb_keycode_t keyco
         xkb_level_index_t level = xkb_state_key_get_level(state, keycode, layout);
         if (xkb_keymap_key_get_syms_by_level(keymap, keycode, layout, level, &syms) != 1)
             continue;
-        if (isLatin(syms[0])) {
+        if (isLatin1(syms[0])) {
             sym = syms[0];
             break;
         }
@@ -809,7 +787,7 @@ void QXkbCommon::setXkbContext(QPlatformInputContext *inputContext, struct xkb_c
     const char *const inputContextClassName = "QComposeInputContext";
     const char *const normalizedSignature = "setXkbContext(xkb_context*)";
 
-    if (inputContext->objectName() != QLatin1String(inputContextClassName))
+    if (inputContext->objectName() != QLatin1StringView(inputContextClassName))
         return;
 
     static const QMetaMethod setXkbContext = [&]() {

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qurlinternal.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -12,7 +15,7 @@ qt_internal_add_test(tst_qurlinternal
     SOURCES
         tst_qurlinternal.cpp
         utf8data.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
 )
 

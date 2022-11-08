@@ -1,4 +1,15 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 function(qt_internal_add_resource target resourceName)
+    if(NOT TARGET "${target}")
+        qt_internal_is_in_test_batch(in_batch ${target})
+        if(NOT in_batch)
+            message(FATAL_ERROR "Trying to add resource to a non-existing target \"${target}\".")
+        endif()
+        _qt_internal_test_batch_target_name(target)
+    endif()
+
     # Don't try to add resources when cross compiling, and the target is actually a host target
     # (like a tool).
     qt_is_imported_target("${target}" is_imported)
@@ -6,7 +17,7 @@ function(qt_internal_add_resource target resourceName)
         return()
     endif()
 
-    qt_parse_all_arguments(arg "qt_add_resource" "" "PREFIX;LANG;BASE" "FILES" ${ARGN})
+    qt_parse_all_arguments(arg "qt_add_resource" "" "PREFIX;LANG;BASE;OUTPUT_TARGETS" "FILES" ${ARGN})
 
     _qt_internal_process_resource(${target} ${resourceName}
         PREFIX "${arg_PREFIX}"
@@ -21,15 +32,24 @@ function(qt_internal_add_resource target resourceName)
             EXPORT "${INSTALL_CMAKE_NAMESPACE}${target}Targets"
             DESTINATION "${INSTALL_LIBDIR}"
         )
+        qt_internal_add_targets_to_additional_targets_export_file(
+            TARGETS ${out_targets}
+            EXPORT_NAME_PREFIX "${INSTALL_CMAKE_NAMESPACE}${target}"
+        )
 
+        qt_internal_install_resource_pdb_files("${out_targets}")
         qt_internal_record_rcc_object_files("${target}" "${out_targets}"
-                                            INSTALL_LOCATION "${INSTALL_LIBDIR}")
+                                            INSTALL_DIRECTORY "${INSTALL_LIBDIR}")
+   endif()
+
+   if (arg_OUTPUT_TARGETS)
+       set(${arg_OUTPUT_TARGETS} "${out_targets}" PARENT_SCOPE)
    endif()
 endfunction()
 
 function(qt_internal_record_rcc_object_files target resource_targets)
     set(args_optional "")
-    set(args_single INSTALL_LOCATION)
+    set(args_single INSTALL_DIRECTORY)
     set(args_multi "")
 
     cmake_parse_arguments(arg
@@ -48,7 +68,7 @@ function(qt_internal_record_rcc_object_files target resource_targets)
             # Compute the install location of a resource object file in a prefix build.
             # It's comprised of thee following path parts:
             #
-            # part (1) INSTALL_LOCATION.
+            # part (1) INSTALL_DIRECTORY.
             #          A usual value is '${INSTALL_LIBDIR}/' for libraries
             #          and '${INSTALL_QMLDIR}/foo/bar/' for qml plugin resources.
             #
@@ -70,9 +90,9 @@ function(qt_internal_record_rcc_object_files target resource_targets)
             set(object_file_name "${generated_cpp_file_relative_path}${CMAKE_CXX_OUTPUT_EXTENSION}")
             qt_path_join(rcc_object_file_path
                 "objects-$<CONFIG>" ${out_target} "${object_file_name}")
-            if(arg_INSTALL_LOCATION)
+            if(arg_INSTALL_DIRECTORY)
                 qt_path_join(rcc_object_file_path
-                             "${arg_INSTALL_LOCATION}" "${rcc_object_file_path}")
+                             "${arg_INSTALL_DIRECTORY}" "${rcc_object_file_path}")
             else()
                 message(FATAL_ERROR "No install location given for object files to be installed"
                                     " for the following resource target: '${out_target}'")
@@ -83,10 +103,23 @@ function(qt_internal_record_rcc_object_files target resource_targets)
         endif()
         set_property(TARGET ${target} APPEND PROPERTY _qt_rcc_objects "${rcc_object_file_path}")
 
-        # Make sure that the target cpp files are compiled with the regular Qt internal compile
-        # flags, needed for building iOS apps with qmake where bitcode is involved.
-        target_link_libraries("${out_target}" PRIVATE Qt::PlatformModuleInternal)
+        qt_internal_link_internal_platform_for_object_library("${out_target}")
+    endforeach()
+endfunction()
 
-        qt_set_common_target_properties(${out_target})
+function(qt_internal_install_resource_pdb_files objlib_targets)
+    if(NOT MSVC OR NOT QT_WILL_INSTALL)
+        return()
+    endif()
+
+    foreach(target IN LISTS objlib_targets)
+        qt_internal_set_compile_pdb_names(${target})
+
+        get_target_property(generated_cpp_file_relative_path
+            ${target}
+            _qt_resource_generated_cpp_relative_path)
+        get_filename_component(rel_obj_file_dir "${generated_cpp_file_relative_path}" DIRECTORY)
+        qt_internal_install_pdb_files(${target}
+            "${INSTALL_LIBDIR}/objects-$<CONFIG>/${target}/${rel_obj_file_dir}")
     endforeach()
 endfunction()

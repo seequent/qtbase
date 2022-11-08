@@ -1,10 +1,13 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from fbconvenience.pro.
 
 #####################################################################
-## FbSupport Module:
+## FbSupportPrivate Module:
 #####################################################################
 
-qt_internal_add_module(FbSupport
+qt_internal_add_module(FbSupportPrivate
     CONFIG_MODULE_NAME fb_support
     STATIC
     INTERNAL_MODULE

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from chip.pro.
 
 #####################################################################
@@ -11,7 +14,7 @@ qt_internal_add_benchmark(chip
         main.cpp
         mainwindow.cpp mainwindow.h
         view.cpp view.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
 )
 
@@ -43,6 +46,6 @@ qt_internal_add_resource(chip "images"
 #####################################################################
 
 qt_internal_extend_target(chip CONDITION TARGET Qt::OpenGL
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::OpenGL
 )

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 
 #include "qspiapplicationadaptor_p.h"
@@ -44,9 +8,11 @@
 #include <QtDBus/qdbuspendingreply.h>
 #include <qdebug.h>
 
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
 #include "deviceeventcontroller_adaptor.h"
 #include "atspi/atspi-constants.h"
+
+#include <xcb/xproto.h>
 
 //#define KEYBOARD_DEBUG
 
@@ -62,7 +28,7 @@ QT_BEGIN_NAMESPACE
 */
 
 QSpiApplicationAdaptor::QSpiApplicationAdaptor(const QDBusConnection &connection, QObject *parent)
-    : QObject(parent), dbusConnection(connection), inCapsLock(false)
+    : QObject(parent), dbusConnection(connection)
 {
 }
 
@@ -143,13 +109,9 @@ bool QSpiApplicationAdaptor::eventFilter(QObject *target, QEvent *event)
             de.text = QStringLiteral("Escape");
         else if (keyEvent->key() == Qt::Key_Space)
             de.text = QStringLiteral("space");
-        else if (keyEvent->key() == Qt::Key_CapsLock) {
+        else if (keyEvent->key() == Qt::Key_CapsLock)
             de.text = QStringLiteral("Caps_Lock");
-            if (event->type() == QEvent::KeyPress)
-                inCapsLock = true;
-            else
-                inCapsLock = false;
-        } else if (keyEvent->key() == Qt::Key_NumLock)
+        else if (keyEvent->key() == Qt::Key_NumLock)
             de.text = QStringLiteral("Num_Lock");
         else if (keyEvent->key() == Qt::Key_Insert)
             de.text = QStringLiteral("Insert");
@@ -161,9 +123,10 @@ bool QSpiApplicationAdaptor::eventFilter(QObject *target, QEvent *event)
         de.isText = !de.text.isEmpty();
 
         de.modifiers = 0;
-        if (!inCapsLock && keyEvent->modifiers() & Qt::ShiftModifier)
+        if ((keyEvent->modifiers() & Qt::ShiftModifier) && (keyEvent->key() != Qt::Key_Shift))
             de.modifiers |= 1 << ATSPI_MODIFIER_SHIFT;
-        if (inCapsLock && (keyEvent->key() != Qt::Key_CapsLock))
+        // TODO rather introduce Qt::CapslockModifier into KeyboardModifier
+        if (keyEvent->nativeModifiers() & XCB_MOD_MASK_LOCK )
             de.modifiers |= 1 << ATSPI_MODIFIER_SHIFTLOCK;
         if ((keyEvent->modifiers() & Qt::ControlModifier) && (keyEvent->key() != Qt::Key_Control))
             de.modifiers |= 1 << ATSPI_MODIFIER_CONTROL;
@@ -210,11 +173,11 @@ QKeyEvent* QSpiApplicationAdaptor::copyKeyEvent(QKeyEvent* old)
 
 void QSpiApplicationAdaptor::notifyKeyboardListenerCallback(const QDBusMessage& message)
 {
-    if (!keyEvents.length()) {
+    if (!keyEvents.size()) {
         qWarning("QSpiApplication::notifyKeyboardListenerCallback with no queued key called");
         return;
     }
-    Q_ASSERT(message.arguments().length() == 1);
+    Q_ASSERT(message.arguments().size() == 1);
     if (message.arguments().at(0).toBool() == true) {
         QPair<QPointer<QObject>, QKeyEvent*> event = keyEvents.dequeue();
         delete event.second;
@@ -237,4 +200,6 @@ void QSpiApplicationAdaptor::notifyKeyboardListenerError(const QDBusError& error
 
 QT_END_NAMESPACE
 
-#endif //QT_NO_ACCESSIBILITY
+#include "moc_qspiapplicationadaptor_p.cpp"
+
+#endif // QT_CONFIG(accessibility)

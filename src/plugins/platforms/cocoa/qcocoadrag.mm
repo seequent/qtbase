@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <AppKit/AppKit.h>
 
@@ -43,11 +7,15 @@
 #include "qmacclipboard.h"
 #include "qcocoahelpers.h"
 #include <QtGui/private/qcoregraphics_p.h>
+#include <QtGui/private/qmacmime_p.h>
 #include <QtCore/qsysinfo.h>
+#include <QtCore/private/qcore_mac_p.h>
 
 #include <vector>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 static const int dragImageMaxChars = 26;
 
@@ -130,8 +98,8 @@ Qt::DropAction QCocoaDrag::drag(QDrag *o)
     m_drag = o;
     m_executed_drop_action = Qt::IgnoreAction;
 
-    QMacPasteboard dragBoard(CFStringRef(NSPasteboardNameDrag), QMacInternalPasteboardMime::MIME_DND);
-    m_drag->mimeData()->setData(QLatin1String("application/x-qt-mime-type-name"), QByteArray("dummy"));
+    QMacPasteboard dragBoard(CFStringRef(NSPasteboardNameDrag), QMacMime::HandlerScope::DnD);
+    m_drag->mimeData()->setData("application/x-qt-mime-type-name"_L1, QByteArray("dummy"));
     dragBoard.setMimeData(m_drag->mimeData(), QMacPasteboard::LazyRequest);
 
     if (maybeDragMultipleItems())
@@ -175,13 +143,11 @@ bool QCocoaDrag::maybeDragMultipleItems()
 
     const QMacAutoReleasePool pool;
 
-    NSWindow *theWindow = [m_lastEvent window];
-    Q_ASSERT(theWindow);
-
-    if (![theWindow.contentView respondsToSelector:@selector(draggingSession:sourceOperationMaskForDraggingContext:)])
+    NSView *view = m_lastView ? m_lastView : m_lastEvent.window.contentView;
+    if (![view respondsToSelector:@selector(draggingSession:sourceOperationMaskForDraggingContext:)])
         return false;
 
-    auto *sourceView = static_cast<NSView<NSDraggingSource>*>(theWindow.contentView);
+    auto *sourceView = static_cast<NSView<NSDraggingSource>*>(view);
 
     const auto &qtUrls = m_drag->mimeData()->urls();
     NSPasteboard *dragBoard = [NSPasteboard pasteboardWithName:NSPasteboardNameDrag];
@@ -220,6 +186,12 @@ bool QCocoaDrag::maybeDragMultipleItems()
     // contains a combined picture for all urls we drag.
     auto imageOrNil = dragImage;
     for (const auto &qtUrl : qtUrls) {
+        if (!qtUrl.isValid())
+            continue;
+
+        if (qtUrl.isRelative()) // NSPasteboardWriting rejects such items.
+            continue;
+
         NSURL *nsUrl = qtUrl.toNSURL();
         auto *newItem = [[[NSDraggingItem alloc] initWithPasteboardWriter:nsUrl] autorelease];
         const NSRect itemFrame = NSMakeRect(itemLocation.x, itemLocation.y,
@@ -333,11 +305,11 @@ QStringList QCocoaDropData::formats_sys() const
         qDebug("DnD: Cannot get PasteBoard!");
         return formats;
     }
-    formats = QMacPasteboard(board, QMacInternalPasteboardMime::MIME_DND).formats();
+    formats = QMacPasteboard(board, QMacMime::HandlerScope::DnD).formats();
     return formats;
 }
 
-QVariant QCocoaDropData::retrieveData_sys(const QString &mimeType, QMetaType type) const
+QVariant QCocoaDropData::retrieveData_sys(const QString &mimeType, QMetaType) const
 {
     QVariant data;
     PasteboardRef board;
@@ -345,7 +317,7 @@ QVariant QCocoaDropData::retrieveData_sys(const QString &mimeType, QMetaType typ
         qDebug("DnD: Cannot get PasteBoard!");
         return data;
     }
-    data = QMacPasteboard(board, QMacInternalPasteboardMime::MIME_DND).retrieveData(mimeType, type);
+    data = QMacPasteboard(board, QMacMime::HandlerScope::DnD).retrieveData(mimeType);
     CFRelease(board);
     return data;
 }
@@ -358,7 +330,7 @@ bool QCocoaDropData::hasFormat_sys(const QString &mimeType) const
         qDebug("DnD: Cannot get PasteBoard!");
         return has;
     }
-    has = QMacPasteboard(board, QMacInternalPasteboardMime::MIME_DND).hasFormat(mimeType);
+    has = QMacPasteboard(board, QMacMime::HandlerScope::DnD).hasFormat(mimeType);
     CFRelease(board);
     return has;
 }

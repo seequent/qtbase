@@ -1,5 +1,7 @@
-# Generated from qprocess.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
+add_subdirectory(test)
 add_subdirectory(testProcessCrash)
 add_subdirectory(testProcessEcho)
 add_subdirectory(testProcessEcho2)
@@ -13,18 +15,15 @@ add_subdirectory(testProcessEOF)
 add_subdirectory(testExitCodes)
 add_subdirectory(testForwarding)
 add_subdirectory(testForwardingHelper)
-# special case begin
 if(TARGET Qt::Widgets)
     add_subdirectory(testGuiProcess)
 endif()
-# special case end
 add_subdirectory(testDetached)
 add_subdirectory(fileWriterProcess)
 add_subdirectory(testSetWorkingDirectory)
 add_subdirectory(testSoftExit)
 add_subdirectory(testProcessSpacesArgs)
 add_subdirectory(testSpaceInName)
-add_subdirectory(test)
 if(WIN32)
     add_subdirectory(testProcessEchoGui)
     add_subdirectory(testSetNamedPipeHandleState)

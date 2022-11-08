@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from xcb_egl.pro.
 
 #####################################################################
@@ -8,7 +11,7 @@ qt_find_package(EGL) # special case
 
 qt_internal_add_plugin(QXcbEglIntegrationPlugin
     OUTPUT_NAME qxcb-egl-integration
-    TYPE xcbglintegrations
+    PLUGIN_TYPE xcbglintegrations
     SOURCES
         qxcbeglcontext.h
         qxcbeglintegration.cpp qxcbeglintegration.h
@@ -20,7 +23,7 @@ qt_internal_add_plugin(QXcbEglIntegrationPlugin
     INCLUDE_DIRECTORIES
         ..
         ../..
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui

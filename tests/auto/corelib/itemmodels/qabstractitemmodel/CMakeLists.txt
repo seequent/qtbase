@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qabstractitemmodel.pro.
 
 #####################################################################
@@ -8,10 +11,8 @@ qt_internal_add_test(tst_qabstractitemmodel
     SOURCES
         ../../../other/qabstractitemmodelutils/dynamictreemodel.cpp ../../../other/qabstractitemmodelutils/dynamictreemodel.h
         tst_qabstractitemmodel.cpp
-    DEFINES
-        QT_DISABLE_DEPRECATED_BEFORE=0
     INCLUDE_DIRECTORIES
         ../../../other/qabstractitemmodelutils
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
 )

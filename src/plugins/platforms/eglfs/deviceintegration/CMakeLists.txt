@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from deviceintegration.pro.
 
 if(QT_FEATURE_eglfs_x11)
@@ -31,7 +34,7 @@ if(QT_FEATURE_eglfs_viv_wl)
     add_subdirectory(eglfs_viv_wl)
 endif()
 if(QT_FEATURE_eglfs_openwfd)
-    # add_subdirectory(eglfs_openwfd) # special case TODO
+    add_subdirectory(eglfs_openwfd)
 endif()
 if(QT_FEATURE_opengl)
     add_subdirectory(eglfs_emu)

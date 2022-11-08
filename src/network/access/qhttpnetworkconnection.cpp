@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtNetwork module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qhttpnetworkconnection_p.h"
 #include <private/qabstractsocket_p.h>
@@ -48,6 +12,7 @@
 #include <qnetworkproxy.h>
 #include <qauthenticator.h>
 #include <qcoreapplication.h>
+#include <private/qdecompresshelper_p.h>
 
 #include <qbuffer.h>
 #include <qpair.h>
@@ -64,6 +29,8 @@
 
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 const int QHttpNetworkConnectionPrivate::defaultHttpChannelCount = 6;
 
@@ -257,15 +224,16 @@ void QHttpNetworkConnectionPrivate::prepareRequest(HttpMessagePair &messagePair)
 
     // add missing fields for the request
     QByteArray value;
+#ifndef Q_OS_WASM
     // check if Content-Length is provided
     QNonContiguousByteDevice* uploadByteDevice = request.uploadByteDevice();
-#ifndef Q_OS_WASM
     if (uploadByteDevice) {
         const qint64 contentLength = request.contentLength();
         const qint64 uploadDeviceSize = uploadByteDevice->size();
         if (contentLength != -1 && uploadDeviceSize != -1) {
-            // both values known, take the smaller one.
-            request.setContentLength(qMin(uploadDeviceSize, contentLength));
+            // Both values known: use the smaller one.
+            if (uploadDeviceSize < contentLength)
+                request.setContentLength(uploadDeviceSize);
         } else if (contentLength == -1 && uploadDeviceSize != -1) {
             // content length not supplied by user, but the upload device knows it
             request.setContentLength(uploadDeviceSize);
@@ -316,12 +284,12 @@ void QHttpNetworkConnectionPrivate::prepareRequest(HttpMessagePair &messagePair)
     if (value.isEmpty()) {
         QString systemLocale = QLocale::system().name().replace(QChar::fromLatin1('_'),QChar::fromLatin1('-'));
         QString acceptLanguage;
-        if (systemLocale == QLatin1String("C"))
+        if (systemLocale == "C"_L1)
             acceptLanguage = QString::fromLatin1("en,*");
-        else if (systemLocale.startsWith(QLatin1String("en-")))
-            acceptLanguage = systemLocale + QLatin1String(",*");
+        else if (systemLocale.startsWith("en-"_L1))
+            acceptLanguage = systemLocale + ",*"_L1;
         else
-            acceptLanguage = systemLocale + QLatin1String(",en,*");
+            acceptLanguage = systemLocale + ",en,*"_L1;
         request.setHeaderField("Accept-Language", std::move(acceptLanguage).toLatin1());
     }
 
@@ -397,10 +365,12 @@ void QHttpNetworkConnectionPrivate::copyCredentials(int fromChannel, QAuthentica
     // NTLM and Negotiate do multi-phase authentication.
     // Copying credentialsbetween authenticators would mess things up.
     if (fromChannel >= 0) {
-        const QHttpNetworkConnectionChannel &channel = channels[fromChannel];
-        const QAuthenticatorPrivate::Method method = isProxy ? channel.proxyAuthMethod : channel.authMethod;
-        if (method == QAuthenticatorPrivate::Ntlm || method == QAuthenticatorPrivate::Negotiate)
+        QAuthenticatorPrivate *priv = QAuthenticatorPrivate::getPrivate(*auth);
+        if (priv
+            && (priv->method == QAuthenticatorPrivate::Ntlm
+                || priv->method == QAuthenticatorPrivate::Negotiate)) {
             return;
+        }
     }
 
     // select another channel
@@ -432,19 +402,16 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
     //create the response header to be used with QAuthenticatorPrivate.
     QList<QPair<QByteArray, QByteArray> > fields = reply->header();
 
-    //find out the type of authentication protocol requested.
-    QAuthenticatorPrivate::Method authMethod = reply->d_func()->authenticationMethod(isProxy);
-    if (authMethod != QAuthenticatorPrivate::None) {
+    // Check that any of the proposed authenticate methods are supported
+    const QByteArray header = isProxy ? "proxy-authenticate" : "www-authenticate";
+    const QByteArrayList &authenticationMethods = reply->d_func()->headerFieldValues(header);
+    const bool isSupported = std::any_of(authenticationMethods.begin(), authenticationMethods.end(),
+                                         QAuthenticatorPrivate::isMethodSupported);
+    if (isSupported) {
         int i = indexOf(socket);
         //Use a single authenticator for all domains. ### change later to use domain/realm
-        QAuthenticator* auth = nullptr;
-        if (isProxy) {
-            auth = &channels[i].proxyAuthenticator;
-            channels[i].proxyAuthMethod = authMethod;
-        } else {
-            auth = &channels[i].authenticator;
-            channels[i].authMethod = authMethod;
-        }
+        QAuthenticator *auth = isProxy ? &channels[i].proxyAuthenticator
+                                       : &channels[i].authenticator;
         //proceed with the authentication.
         if (auth->isNull())
             auth->detach();
@@ -453,12 +420,13 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
         // Update method in case it changed
         if (priv->method == QAuthenticatorPrivate::None)
             return false;
-        if (isProxy)
-            channels[i].proxyAuthMethod = priv->method;
-        else
-            channels[i].authMethod = priv->method;
 
-        if (priv->phase == QAuthenticatorPrivate::Done) {
+        if (priv->phase == QAuthenticatorPrivate::Done ||
+                (priv->phase == QAuthenticatorPrivate::Start
+                    && priv->method == QAuthenticatorPrivate::Ntlm)) {
+            if (priv->phase == QAuthenticatorPrivate::Start)
+                priv->phase = QAuthenticatorPrivate::Phase1;
+
             pauseConnection();
             if (!isProxy) {
                 if (channels[i].authenticationCredentialsSent) {
@@ -506,8 +474,8 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
                 channels[i].authenticator = QAuthenticator();
 
             // authentication is cancelled, send the current contents to the user.
-            emit channels[i].reply->headerChanged();
-            emit channels[i].reply->readyRead();
+            emit reply->headerChanged();
+            emit reply->readyRead();
             QNetworkReply::NetworkError errorCode =
                 isProxy
                 ? QNetworkReply::ProxyAuthenticationRequiredError
@@ -524,10 +492,23 @@ bool QHttpNetworkConnectionPrivate::handleAuthenticateChallenge(QAbstractSocket 
     return false;
 }
 
-QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socket, QHttpNetworkReply *reply)
+// Used by the HTTP1 code-path
+QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socket,
+                                                          QHttpNetworkReply *reply)
+{
+    ParseRedirectResult result = parseRedirectResponse(reply);
+    if (result.errorCode != QNetworkReply::NoError) {
+        emitReplyError(socket, reply, result.errorCode);
+        return {};
+    }
+    return std::move(result.redirectUrl);
+}
+
+QHttpNetworkConnectionPrivate::ParseRedirectResult
+QHttpNetworkConnectionPrivate::parseRedirectResponse(QHttpNetworkReply *reply)
 {
     if (!reply->request().isFollowRedirects())
-        return QUrl();
+        return {{}, QNetworkReply::NoError};
 
     QUrl redirectUrl;
     const QList<QPair<QByteArray, QByteArray> > fields = reply->header();
@@ -538,17 +519,13 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
         }
     }
 
-    // If the location url is invalid/empty, we emit ProtocolUnknownError
-    if (!redirectUrl.isValid()) {
-        emitReplyError(socket, reply, QNetworkReply::ProtocolUnknownError);
-        return QUrl();
-    }
+    // If the location url is invalid/empty, we return ProtocolUnknownError
+    if (!redirectUrl.isValid())
+        return {{}, QNetworkReply::ProtocolUnknownError};
 
     // Check if we have exceeded max redirects allowed
-    if (reply->request().redirectCount() <= 0) {
-        emitReplyError(socket, reply, QNetworkReply::TooManyRedirectsError);
-        return QUrl();
-    }
+    if (reply->request().redirectCount() <= 0)
+        return {{}, QNetworkReply::TooManyRedirectsError};
 
     // Resolve the URL if it's relative
     if (redirectUrl.isRelative())
@@ -556,7 +533,7 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
 
     // Check redirect url protocol
     const QUrl priorUrl(reply->request().url());
-    if (redirectUrl.scheme() == QLatin1String("http") || redirectUrl.scheme() == QLatin1String("https")) {
+    if (redirectUrl.scheme() == "http"_L1 || redirectUrl.scheme() == "https"_L1) {
         switch (reply->request().redirectPolicy()) {
         case QNetworkRequest::NoLessSafeRedirectPolicy:
             // Here we could handle https->http redirects as InsecureProtocolError.
@@ -569,8 +546,7 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
             if (priorUrl.host() != redirectUrl.host()
                 || priorUrl.scheme() != redirectUrl.scheme()
                 || priorUrl.port() != redirectUrl.port()) {
-                emitReplyError(socket, reply, QNetworkReply::InsecureRedirectError);
-                return QUrl();
+                return {{}, QNetworkReply::InsecureRedirectError};
             }
             break;
         case QNetworkRequest::UserVerifiedRedirectPolicy:
@@ -579,40 +555,53 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
             Q_ASSERT(!"Unexpected redirect policy");
         }
     } else {
-        emitReplyError(socket, reply, QNetworkReply::ProtocolUnknownError);
-        return QUrl();
+        return {{}, QNetworkReply::ProtocolUnknownError};
     }
-    return redirectUrl;
+    return {std::move(redirectUrl), QNetworkReply::NoError};
 }
 
 void QHttpNetworkConnectionPrivate::createAuthorization(QAbstractSocket *socket, QHttpNetworkRequest &request)
 {
     Q_ASSERT(socket);
 
-    int i = indexOf(socket);
+    QHttpNetworkConnectionChannel &channel = channels[indexOf(socket)];
 
+    QAuthenticator *authenticator = &channel.authenticator;
+    QAuthenticatorPrivate *priv = QAuthenticatorPrivate::getPrivate(*authenticator);
     // Send "Authorization" header, but not if it's NTLM and the socket is already authenticated.
-    if (channels[i].authMethod != QAuthenticatorPrivate::None) {
-        if ((channels[i].authMethod != QAuthenticatorPrivate::Ntlm && request.headerField("Authorization").isEmpty()) || channels[i].lastStatus == 401) {
-            QAuthenticatorPrivate *priv = QAuthenticatorPrivate::getPrivate(channels[i].authenticator);
-            if (priv && priv->method != QAuthenticatorPrivate::None) {
-                QByteArray response = priv->calculateResponse(request.methodName(), request.uri(false), request.url().host());
-                request.setHeaderField("Authorization", response);
-                channels[i].authenticationCredentialsSent = true;
-            }
+    if (priv && priv->method != QAuthenticatorPrivate::None) {
+        const bool ntlmNego = priv->method == QAuthenticatorPrivate::Ntlm
+                || priv->method == QAuthenticatorPrivate::Negotiate;
+        const bool authNeeded = channel.lastStatus == 401;
+        const bool ntlmNegoOk = ntlmNego && authNeeded
+                && (priv->phase != QAuthenticatorPrivate::Done
+                    || !channel.authenticationCredentialsSent);
+        const bool otherOk =
+                !ntlmNego && (authNeeded || request.headerField("Authorization").isEmpty());
+        if (ntlmNegoOk || otherOk) {
+            QByteArray response = priv->calculateResponse(request.methodName(), request.uri(false),
+                                                          request.url().host());
+            request.setHeaderField("Authorization", response);
+            channel.authenticationCredentialsSent = true;
         }
     }
 
 #if QT_CONFIG(networkproxy)
+    authenticator = &channel.proxyAuthenticator;
+    priv = QAuthenticatorPrivate::getPrivate(*authenticator);
     // Send "Proxy-Authorization" header, but not if it's NTLM and the socket is already authenticated.
-    if (channels[i].proxyAuthMethod != QAuthenticatorPrivate::None) {
-        if (!(channels[i].proxyAuthMethod == QAuthenticatorPrivate::Ntlm && channels[i].lastStatus != 407)) {
-            QAuthenticatorPrivate *priv = QAuthenticatorPrivate::getPrivate(channels[i].proxyAuthenticator);
-            if (priv && priv->method != QAuthenticatorPrivate::None) {
-                QByteArray response = priv->calculateResponse(request.methodName(), request.uri(false), networkProxy.hostName());
-                request.setHeaderField("Proxy-Authorization", response);
-                channels[i].proxyCredentialsSent = true;
-            }
+    if (priv && priv->method != QAuthenticatorPrivate::None) {
+        const bool ntlmNego = priv->method == QAuthenticatorPrivate::Ntlm
+                || priv->method == QAuthenticatorPrivate::Negotiate;
+        const bool proxyAuthNeeded = channel.lastStatus == 407;
+        const bool ntlmNegoOk = ntlmNego && proxyAuthNeeded
+                && (priv->phase != QAuthenticatorPrivate::Done || !channel.proxyCredentialsSent);
+        const bool otherOk = !ntlmNego;
+        if (ntlmNegoOk || otherOk) {
+            QByteArray response = priv->calculateResponse(request.methodName(), request.uri(false),
+                                                          networkProxy.hostName());
+            request.setHeaderField("Proxy-Authorization", response);
+            channel.proxyCredentialsSent = true;
         }
     }
 #endif // QT_CONFIG(networkproxy)
@@ -751,6 +740,15 @@ QHttpNetworkRequest QHttpNetworkConnectionPrivate::predictNextRequest() const
     return QHttpNetworkRequest();
 }
 
+QHttpNetworkReply* QHttpNetworkConnectionPrivate::predictNextRequestsReply() const
+{
+    if (!highPriorityQueue.isEmpty())
+        return highPriorityQueue.last().second;
+    if (!lowPriorityQueue.isEmpty())
+        return lowPriorityQueue.last().second;
+    return nullptr;
+}
+
 // this is called from _q_startNextRequest and when a request has been sent down a socket from the channel
 void QHttpNetworkConnectionPrivate::fillPipeline(QAbstractSocket *socket)
 {
@@ -764,7 +762,7 @@ void QHttpNetworkConnectionPrivate::fillPipeline(QAbstractSocket *socket)
     if (channels[i].reply == nullptr)
         return;
 
-    if (! (defaultPipelineLength - channels[i].alreadyPipelinedRequests.length() >= defaultRePipelineLength)) {
+    if (! (defaultPipelineLength - channels[i].alreadyPipelinedRequests.size() >= defaultRePipelineLength)) {
         return;
     }
 
@@ -805,28 +803,28 @@ void QHttpNetworkConnectionPrivate::fillPipeline(QAbstractSocket *socket)
 
     int lengthBefore;
     while (!highPriorityQueue.isEmpty()) {
-        lengthBefore = channels[i].alreadyPipelinedRequests.length();
+        lengthBefore = channels[i].alreadyPipelinedRequests.size();
         fillPipeline(highPriorityQueue, channels[i]);
 
-        if (channels[i].alreadyPipelinedRequests.length() >= defaultPipelineLength) {
+        if (channels[i].alreadyPipelinedRequests.size() >= defaultPipelineLength) {
             channels[i].pipelineFlush();
             return;
         }
 
-        if (lengthBefore == channels[i].alreadyPipelinedRequests.length())
+        if (lengthBefore == channels[i].alreadyPipelinedRequests.size())
             break; // did not process anything, now do the low prio queue
     }
 
     while (!lowPriorityQueue.isEmpty()) {
-        lengthBefore = channels[i].alreadyPipelinedRequests.length();
+        lengthBefore = channels[i].alreadyPipelinedRequests.size();
         fillPipeline(lowPriorityQueue, channels[i]);
 
-        if (channels[i].alreadyPipelinedRequests.length() >= defaultPipelineLength) {
+        if (channels[i].alreadyPipelinedRequests.size() >= defaultPipelineLength) {
             channels[i].pipelineFlush();
             return;
         }
 
-        if (lengthBefore == channels[i].alreadyPipelinedRequests.length())
+        if (lengthBefore == channels[i].alreadyPipelinedRequests.size())
             break; // did not process anything
     }
 
@@ -840,7 +838,7 @@ bool QHttpNetworkConnectionPrivate::fillPipeline(QList<HttpMessagePair> &queue, 
     if (queue.isEmpty())
         return true;
 
-    for (int i = queue.count() - 1; i >= 0; --i) {
+    for (int i = queue.size() - 1; i >= 0; --i) {
         HttpMessagePair messagePair = queue.at(i);
         const QHttpNetworkRequest &request = messagePair.first;
 
@@ -907,6 +905,8 @@ QString QHttpNetworkConnectionPrivate::errorDetail(QNetworkReply::NetworkError e
         break;
     case QNetworkReply::SslHandshakeFailedError:
         errorString = QCoreApplication::translate("QHttp", "SSL handshake failed");
+        if (socket)
+            errorString += QStringLiteral(": ") + socket->errorString();
         break;
     case QNetworkReply::TooManyRedirectsError:
         errorString = QCoreApplication::translate("QHttp", "Too many redirects");
@@ -960,7 +960,7 @@ void QHttpNetworkConnectionPrivate::removeReply(QHttpNetworkReply *reply)
         }
 
         // is the reply inside the pipeline of this channel already?
-        for (int j = 0; j < channels[i].alreadyPipelinedRequests.length(); j++) {
+        for (int j = 0; j < channels[i].alreadyPipelinedRequests.size(); j++) {
             if (channels[i].alreadyPipelinedRequests.at(j).second == reply) {
                // Remove that HttpMessagePair
                channels[i].alreadyPipelinedRequests.removeAt(j);
@@ -994,7 +994,7 @@ void QHttpNetworkConnectionPrivate::removeReply(QHttpNetworkReply *reply)
     }
     // remove from the high priority queue
     if (!highPriorityQueue.isEmpty()) {
-        for (int j = highPriorityQueue.count() - 1; j >= 0; --j) {
+        for (int j = highPriorityQueue.size() - 1; j >= 0; --j) {
             HttpMessagePair messagePair = highPriorityQueue.at(j);
             if (messagePair.second == reply) {
                 highPriorityQueue.removeAt(j);
@@ -1005,7 +1005,7 @@ void QHttpNetworkConnectionPrivate::removeReply(QHttpNetworkReply *reply)
     }
     // remove from the low priority queue
     if (!lowPriorityQueue.isEmpty()) {
-        for (int j = lowPriorityQueue.count() - 1; j >= 0; --j) {
+        for (int j = lowPriorityQueue.size() - 1; j >= 0; --j) {
             HttpMessagePair messagePair = lowPriorityQueue.at(j);
             if (messagePair.second == reply) {
                 lowPriorityQueue.removeAt(j);
@@ -1108,7 +1108,7 @@ void QHttpNetworkConnectionPrivate::_q_startNextRequest()
     // If there is not already any connected channels we need to connect a new one.
     // We do not pair the channel with the request until we know if it is
     // connected or not. This is to reuse connected channels before we connect new once.
-    int queuedRequests = highPriorityQueue.count() + lowPriorityQueue.count();
+    int queuedRequests = highPriorityQueue.size() + lowPriorityQueue.size();
 
     // in case we have in-flight preconnect requests and normal requests,
     // we only need one socket for each (preconnect, normal request) pair
@@ -1117,30 +1117,49 @@ void QHttpNetworkConnectionPrivate::_q_startNextRequest()
         int normalRequests = queuedRequests - preConnectRequests;
         neededOpenChannels = qMax(normalRequests, preConnectRequests);
     }
-    for (int i = 0; i < activeChannelCount && neededOpenChannels > 0; ++i) {
-        bool connectChannel = false;
-        if (channels[i].socket) {
-            if ((channels[i].socket->state() == QAbstractSocket::ConnectingState)
-                    || (channels[i].socket->state() == QAbstractSocket::HostLookupState)
-                    || channels[i].pendingEncrypt) // pendingEncrypt == "EncryptingState"
-                neededOpenChannels--;
 
-            if (neededOpenChannels <= 0)
-                break;
-            if (!channels[i].reply && !channels[i].isSocketBusy() && (channels[i].socket->state() == QAbstractSocket::UnconnectedState))
-                connectChannel = true;
-        } else { // not previously used channel
-            connectChannel = true;
+    if (neededOpenChannels <= 0)
+        return;
+
+    QQueue<int> channelsToConnect;
+
+    // use previously used channels first
+    for (int i = 0; i < activeChannelCount && neededOpenChannels > 0; ++i) {
+        if (!channels[i].socket)
+            continue;
+
+        if ((channels[i].socket->state() == QAbstractSocket::ConnectingState)
+            || (channels[i].socket->state() == QAbstractSocket::HostLookupState)
+            || channels[i].pendingEncrypt) { // pendingEncrypt == "EncryptingState"
+            neededOpenChannels--;
+            continue;
         }
 
-        if (connectChannel) {
-            if (networkLayerState == IPv4)
-                channels[i].networkLayerPreference = QAbstractSocket::IPv4Protocol;
-            else if (networkLayerState == IPv6)
-                channels[i].networkLayerPreference = QAbstractSocket::IPv6Protocol;
-            channels[i].ensureConnection();
+        if (!channels[i].reply && !channels[i].isSocketBusy()
+            && (channels[i].socket->state() == QAbstractSocket::UnconnectedState)) {
+            channelsToConnect.enqueue(i);
             neededOpenChannels--;
         }
+    }
+
+    // use other channels
+    for (int i = 0; i < activeChannelCount && neededOpenChannels > 0; ++i) {
+        if (channels[i].socket)
+            continue;
+
+        channelsToConnect.enqueue(i);
+        neededOpenChannels--;
+    }
+
+    while (!channelsToConnect.isEmpty()) {
+        const int channel = channelsToConnect.dequeue();
+
+        if (networkLayerState == IPv4)
+            channels[channel].networkLayerPreference = QAbstractSocket::IPv4Protocol;
+        else if (networkLayerState == IPv6)
+            channels[channel].networkLayerPreference = QAbstractSocket::IPv6Protocol;
+
+        channels[channel].ensureConnection();
     }
 }
 
@@ -1242,18 +1261,17 @@ void QHttpNetworkConnectionPrivate::_q_hostLookupFinished(const QHostInfo &info)
             networkLayerState = QHttpNetworkConnectionPrivate::Unknown;
         } else if (connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2
                    || connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
-            for (const HttpMessagePair &h2Pair : qAsConst(channels[0].h2RequestsToSend)) {
+            for (const HttpMessagePair &h2Pair : std::as_const(channels[0].h2RequestsToSend)) {
                 // emit error for all replies
                 QHttpNetworkReply *currentReply = h2Pair.second;
                 Q_ASSERT(currentReply);
                 emitReplyError(channels[0].socket, currentReply, QNetworkReply::HostNotFoundError);
             }
         } else {
-            // Should not happen: we start a host lookup before sending a request,
-            // so it's natural to have requests either in HTTP/2 queue, or in low/high
-            // priority queues.
-            qWarning("QHttpNetworkConnectionPrivate::_q_hostLookupFinished"
-                     " could not de-queue request, failed to report HostNotFoundError");
+            // We can end up here if a request has been aborted or otherwise failed (e.g. timeout)
+            // before the host lookup was finished.
+            qDebug("QHttpNetworkConnectionPrivate::_q_hostLookupFinished"
+                   " could not de-queue request, failed to report HostNotFoundError");
             networkLayerState = QHttpNetworkConnectionPrivate::Unknown;
         }
     }
@@ -1312,7 +1330,7 @@ QHttpNetworkConnection::QHttpNetworkConnection(const QString &hostName, quint16 
 {
     Q_D(QHttpNetworkConnection);
     d->init();
-    if (QNetworkStatusMonitor::isEnabled()) {
+    if (QNetworkConnectionMonitor::isEnabled()) {
         connect(&d->connectionMonitor, &QNetworkConnectionMonitor::reachabilityChanged,
                 this, &QHttpNetworkConnection::onlineStateChanged, Qt::QueuedConnection);
     }
@@ -1326,7 +1344,7 @@ QHttpNetworkConnection::QHttpNetworkConnection(quint16 connectionCount, const QS
 {
     Q_D(QHttpNetworkConnection);
     d->init();
-    if (QNetworkStatusMonitor::isEnabled()) {
+    if (QNetworkConnectionMonitor::isEnabled()) {
         connect(&d->connectionMonitor, &QNetworkConnectionMonitor::reachabilityChanged,
                 this, &QHttpNetworkConnection::onlineStateChanged, Qt::QueuedConnection);
     }
@@ -1378,7 +1396,7 @@ void QHttpNetworkConnection::setCacheProxy(const QNetworkProxy &networkProxy)
     d->networkProxy = networkProxy;
     // update the authenticator
     if (!d->networkProxy.user().isEmpty()) {
-        for (int i = 0; i < d->activeChannelCount; ++i) {
+        for (int i = 0; i < d->channelCount; ++i) {
             d->channels[i].proxyAuthenticator.setUser(d->networkProxy.user());
             d->channels[i].proxyAuthenticator.setPassword(d->networkProxy.password());
         }
@@ -1394,7 +1412,7 @@ QNetworkProxy QHttpNetworkConnection::cacheProxy() const
 void QHttpNetworkConnection::setTransparentProxy(const QNetworkProxy &networkProxy)
 {
     Q_D(QHttpNetworkConnection);
-    for (int i = 0; i < d->activeChannelCount; ++i)
+    for (int i = 0; i < d->channelCount; ++i)
         d->channels[i].setProxy(networkProxy);
 }
 
@@ -1442,13 +1460,13 @@ void QHttpNetworkConnection::setSslConfiguration(const QSslConfiguration &config
         d->channels[i].setSslConfiguration(config);
 }
 
-QSharedPointer<QSslContext> QHttpNetworkConnection::sslContext()
+std::shared_ptr<QSslContext> QHttpNetworkConnection::sslContext()
 {
     Q_D(QHttpNetworkConnection);
     return d->sslContext;
 }
 
-void QHttpNetworkConnection::setSslContext(QSharedPointer<QSslContext> context)
+void QHttpNetworkConnection::setSslContext(std::shared_ptr<QSslContext> context)
 {
     Q_D(QHttpNetworkConnection);
     d->sslContext = std::move(context);
@@ -1540,12 +1558,12 @@ void QHttpNetworkConnectionPrivate::emitProxyAuthenticationRequired(const QHttpN
     pauseConnection();
     QHttpNetworkReply *reply;
     if ((connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2
-         && (chan->switchedToHttp2 || chan->h2RequestsToSend.count() > 0))
+         && (chan->switchedToHttp2 || chan->h2RequestsToSend.size() > 0))
         || connectionType == QHttpNetworkConnection::ConnectionTypeHTTP2Direct) {
         // we choose the reply to emit the proxyAuth signal from somewhat arbitrarily,
         // but that does not matter because the signal will ultimately be emitted
         // by the QNetworkAccessManager.
-        Q_ASSERT(chan->h2RequestsToSend.count() > 0);
+        Q_ASSERT(chan->h2RequestsToSend.size() > 0);
         reply = chan->h2RequestsToSend.cbegin().value().second;
     } else { // HTTP
         reply = chan->reply;

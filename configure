@@ -1,32 +1,7 @@
 #!/bin/sh
-#############################################################################
-##
-## Copyright (C) 2016 The Qt Company Ltd.
-## Copyright (C) 2016 Intel Corporation.
-## Contact: https://www.qt.io/licensing/
-##
-## This file is the build configuration utility of the Qt Toolkit.
-##
-## $QT_BEGIN_LICENSE:GPL-EXCEPT$
-## Commercial License Usage
-## Licensees holding valid commercial Qt licenses may use this file in
-## accordance with the commercial license agreement provided with the
-## Software or, alternatively, in accordance with the terms contained in
-## a written agreement between you and The Qt Company. For licensing terms
-## and conditions see https://www.qt.io/terms-conditions. For further
-## information use the contact form at https://www.qt.io/contact-us.
-##
-## GNU General Public License Usage
-## Alternatively, this file may be used under the terms of the GNU
-## General Public License version 3 as published by the Free Software
-## Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-## included in the packaging of this file. Please review the following
-## information to ensure the GNU General Public License requirements will
-## be met: https://www.gnu.org/licenses/gpl-3.0.html.
-##
-## $QT_END_LICENSE$
-##
-#############################################################################
+# Copyright (C) 2016 The Qt Company Ltd.
+# Copyright (C) 2016 Intel Corporation.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #-------------------------------------------------------------------------------
 # script initialization
@@ -159,11 +134,8 @@ while [ "$#" -gt 0 ]; do
     -examplesdir| \
     -testsdir| \
     -hostdatadir| \
-    -hostbindir| \
-    -hostlibdir| \
     -extprefix| \
     -sysroot| \
-    -external-hostbindir| \
     -make| \
     -nomake| \
     -skip| \
@@ -175,7 +147,6 @@ while [ "$#" -gt 0 ]; do
     -android-sdk| \
     -android-ndk| \
     -android-ndk-platform| \
-    -android-ndk-host| \
     -android-arch)
         VAR=`echo $1 | sed 's,^-\(.*\),\1,'`
         shift
@@ -191,17 +162,6 @@ while [ "$#" -gt 0 ]; do
         VAR=`echo $1 | sed 's,^-[^-]*-\(.*\),\1,'`
         VAL=`echo $1 | sed 's,^-\([^-]*\)-.*,\1,'`
         ;;
-    #Options that cannot be generalized
-    -hostprefix)
-        VAR=`echo $1 | sed 's,^-\(.*\),\1,'`
-        # this option may or may not be followed by an argument
-        if [ -z "$2" ] || echo "$2" | grep '^-' >/dev/null 2>&1; then
-            VAL=$outpath
-        else
-            shift;
-            VAL=$1
-        fi
-	;;
     #General options, including Qt style yes options
     -*)
         VAR=`echo $1 | sed 's,^-\(.*\),\1,'`
@@ -218,28 +178,11 @@ while [ "$#" -gt 0 ]; do
 
     UNKNOWN_OPT=no
     case "$VAR" in
-    external-hostbindir)
-        CFG_HOST_QT_TOOLS_PATH="$VAL"
-        ;;
     h|help)
         if [ "$VAL" = "yes" ]; then
             OPT_HELP="$VAL"
         else
             UNKNOWN_OPT=yes
-        fi
-        ;;
-    cmake)
-        # Ignore. Kept to keep build scripts working. Consider removal in Qt 6.2.
-        ;;
-    qmake)
-        echo >&2 "ERROR: You cannot configure Qt 6 with qmake anymore."
-        ERROR=yes
-        ;;
-    redo)
-        if [ -f ${outpathPrefix}config.opt ]; then
-            if grep -e ^-cmake <${outpathPrefix}config.opt >/dev/null 2>&1; then
-                BUILD_WITH_CMAKE=yes
-            fi
         fi
         ;;
     *)

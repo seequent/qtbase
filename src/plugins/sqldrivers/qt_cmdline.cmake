@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 qt_commandline_option(mysql_config TYPE string)
 qt_commandline_option(psql_config TYPE string)
 qt_commandline_option(sqlite TYPE enum NAME system-sqlite MAPPING qt no system yes)
@@ -15,4 +18,3 @@ qt_commandline_option(plugin-sql-oci TYPE void NAME sql-oci)
 qt_commandline_option(plugin-sql-odbc TYPE void NAME sql-odbc)
 qt_commandline_option(plugin-sql-psql TYPE void NAME sql-psql)
 qt_commandline_option(plugin-sql-sqlite TYPE void NAME sql-sqlite)
-qt_commandline_assignment(MYSQL_PATH mysql.prefix)

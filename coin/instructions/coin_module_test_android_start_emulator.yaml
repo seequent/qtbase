@@ -3,10 +3,10 @@ instructions:
   - type: Group
     instructions:
       - type: ExecuteCommand
-        command: "sh {{.InstallDir}}/libexec/android_emulator_launcher.sh"
-        maxTimeInSeconds: 300
+        command: "{{.Env.LIBEXEC_INSTALL_DIR}}/android_emulator_launcher.sh"
+        maxTimeInSeconds: 600
         maxTimeBetweenOutput: 300
-        userMessageOnFailure: "Failed to start emulator, check logs."
+        userMessageOnFailure: "Failed to start emulator, check coin log and ~/emulator.log"
     enable_if:
       condition: property
       property: features

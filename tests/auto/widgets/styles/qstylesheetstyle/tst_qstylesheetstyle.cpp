@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QCheckBox>
@@ -64,6 +39,8 @@
 #include <private/qhighdpiscaling_p.h>
 #include <QtTest/private/qtesthelpers_p.h>
 
+#include <QtWidgets/private/qapplication_p.h>
+
 using namespace QTestPrivate;
 
 class tst_QStyleSheetStyle : public QObject
@@ -77,6 +54,7 @@ private slots:
     void cleanup();
     void repolish();
     void repolish_without_crashing();
+    void repolish_children();
     void numinstances();
     void widgetsBeforeAppStyleSheet();
     void widgetsAfterAppStyleSheet();
@@ -92,6 +70,7 @@ private slots:
     void layoutSpacing();
 #endif
     void qproperty();
+    void qproperty_styleSheet();
     void palettePropagation_data();
     void palettePropagation();
     void fontPropagation_data();
@@ -106,6 +85,8 @@ private slots:
 #endif
     void background();
     void tabAlignment();
+    void tabFont_data();
+    void tabFont();
     void attributesList();
     void minmaxSizes();
     void task206238_twice();
@@ -125,6 +106,8 @@ private slots:
     void QTBUG36933_brokenPseudoClassLookup();
     void styleSheetChangeBeforePolish();
     void placeholderColor();
+    void enumPropertySelector_data();
+    void enumPropertySelector();
     //at the end because it mess with the style.
     void widgetStyle();
     void appStyle();
@@ -134,6 +117,9 @@ private slots:
 
     void highdpiImages_data();
     void highdpiImages();
+
+    void iconSizes_data();
+    void iconSizes();
 
 private:
     static QColor COLOR(const QWidget &w)
@@ -435,6 +421,19 @@ void tst_QStyleSheetStyle::repolish_without_crashing()
     QCOMPARE(COLOR(*label), QColor(Qt::red));
 }
 
+void tst_QStyleSheetStyle::repolish_children()
+{
+    QWidget parent;
+    parent.setStyleSheet("QPushButton { color: red; background: white }");
+    QPushButton p2(&parent);
+    // a layout would call show, triggering a polish of the child while
+    // the parent on which the style sheet is set remains unpolished
+    p2.show();
+    QCOMPARE(BACKGROUND(p2), Qt::white);
+    parent.setStyleSheet("QPushButton { color: red; background: red }");
+    QCOMPARE(BACKGROUND(p2), Qt::red);
+}
+
 void tst_QStyleSheetStyle::widgetStyle()
 {
     qApp->setStyleSheet(QString());
@@ -668,6 +667,23 @@ void tst_QStyleSheetStyle::qproperty()
     QCOMPARE(pb.text(), QString("hello"));
     QCOMPARE(pb.isCheckable(), true);
     QCOMPARE(pb.isChecked(), false);
+}
+
+void tst_QStyleSheetStyle::qproperty_styleSheet()
+{
+    QWidget w;
+    auto checkBox = new QCheckBox("check", &w);
+    QString sheet = R"(QCheckBox { qproperty-styleSheet: "QCheckBox { qproperty-text: foobar; }"; })";
+
+    QVERIFY(w.property("styleSheet").toString().isEmpty());
+
+    w.setStyleSheet(sheet);
+    QCOMPARE(checkBox->text(), "check");
+
+    //recursion crash
+    w.ensurePolished();
+    QCOMPARE(w.property("styleSheet").toString(), sheet);
+    QCOMPARE(checkBox->text(), "foobar");
 }
 
 namespace ns {
@@ -945,7 +961,7 @@ void tst_QStyleSheetStyle::focusColors()
     // ten pixels of the right color requires quite a many characters, as the
     // majority of the pixels will have slightly different colors due to the
     // anti-aliasing effect.
-#if !defined(Q_OS_WIN32) && !(defined(Q_OS_LINUX) && defined(Q_CC_GNU) && !defined(Q_CC_INTEL))
+#if !defined(Q_OS_WIN32) && !(defined(Q_OS_LINUX) && defined(Q_CC_GNU))
     QSKIP("This is a fragile test which fails on many esoteric platforms because of focus problems"
           " (for example, QTBUG-33959)."
           "That doesn't mean that the feature doesn't work in practice.");
@@ -960,7 +976,7 @@ void tst_QStyleSheetStyle::focusColors()
     centerOnScreen(&frame);
     frame.show();
 
-    QApplication::setActiveWindow(&frame);
+    QApplicationPrivate::setActiveWindow(&frame);
     QVERIFY(QTest::qWaitForWindowActive(&frame));
 
     for (QWidget *widget : frame.widgets()) {
@@ -1006,7 +1022,7 @@ void tst_QStyleSheetStyle::hoverColors()
     QCursor::setPos(frame.geometry().topLeft() - QPoint(100, 0));
     frame.show();
 
-    QApplication::setActiveWindow(&frame);
+    QApplicationPrivate::setActiveWindow(&frame);
     QVERIFY(QTest::qWaitForWindowActive(&frame));
 
     QWindow *frameWindow = frame.windowHandle();
@@ -1177,6 +1193,100 @@ void tst_QStyleSheetStyle::tabAlignment()
     tabWidget.setStyleSheet("QTabWidget::tab-bar { alignment: center ; }");
     QVERIFY(bar->geometry().bottom() < 300);
     QVERIFY(bar->geometry().top() > 100);
+}
+
+void tst_QStyleSheetStyle::tabFont_data()
+{
+    QTest::addColumn<QFont>("tabFont");
+    QTest::addColumn<QTabWidget::TabPosition>("tabPosition");
+    QTest::addColumn<bool>("closable");
+
+    QFont medium;
+    medium.setPixelSize(24);
+    QFont large;
+    large.setPixelSize(36);
+    QFont bold;
+    bold.setBold(true);
+
+    QTest::newRow("medium, horizontal") << medium << QTabWidget::North << false;
+    QTest::newRow("large, vertical") << large << QTabWidget::West << false;
+    QTest::newRow("bold, horizontal, closable") << bold << QTabWidget::North << true;
+    QTest::newRow("bold, vertical, closable") << bold << QTabWidget::West << true;
+}
+
+void tst_QStyleSheetStyle::tabFont()
+{
+    QFETCH(QFont, tabFont);
+    QFETCH(QTabWidget::TabPosition, tabPosition);
+    QFETCH(bool, closable);
+    const bool vertical = tabPosition == QTabWidget::West || tabPosition == QTabWidget::East;
+    const QString tab0Text("Tab title");
+    const QString tab1Text("Very Long Tab title");
+
+    // macOS style centers tabs and messes up the test
+    QWindowsStyle windowsStyle;
+    QWidget topLevel;
+    topLevel.setStyle(&windowsStyle);
+    topLevel.setWindowTitle(QTest::currentTestFunction());
+    QTabWidget tabWidget;
+    tabWidget.setStyle(&windowsStyle);
+    tabWidget.setTabPosition(tabPosition);
+    tabWidget.addTab(new QWidget, tab0Text);
+    tabWidget.addTab(new QWidget, tab1Text);
+    QTabWidget styledWidget;
+    styledWidget.setStyle(&windowsStyle);
+    styledWidget.setTabPosition(tabPosition);
+    styledWidget.addTab(new QWidget, tab0Text);
+    styledWidget.addTab(new QWidget, tab1Text);
+
+    QTabBar *bar = tabWidget.tabBar();
+    QTabBar *styledBar = styledWidget.tabBar();
+    QVERIFY(bar && styledBar);
+    bar->setStyle(&windowsStyle);
+    bar->setTabsClosable(closable);
+    styledBar->setStyle(&windowsStyle);
+    styledBar->setTabsClosable(closable);
+
+    QBoxLayout box(vertical ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+    box.addWidget(&tabWidget);
+    box.addWidget(&styledWidget);
+    topLevel.setLayout(&box);
+
+    topLevel.resize(600, 600);
+    centerOnScreen(&topLevel);
+    topLevel.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
+
+    const QFont defaultFont = tabWidget.font();
+    if (QFontMetrics(defaultFont).size(Qt::TextShowMnemonic, tab0Text).width() >=
+        QFontMetrics(tabFont).size(Qt::TextShowMnemonic, tab0Text).width()) {
+        QSKIP("The used font is not larger when bold");
+    }
+
+    const QRect defaultRect = bar->tabRect(0);
+    QCOMPARE(styledBar->tabRect(0), defaultRect);
+
+    tabWidget.setFont(tabFont);
+    const QRect rectWithFont = bar->tabRect(0);
+    if (vertical)
+        QVERIFY(rectWithFont.height() > defaultRect.height());
+    else
+        QVERIFY(rectWithFont.width() > defaultRect.width());
+
+    QString styleSheet = "QTabBar::tab:first {";
+    if (tabFont.pixelSize() != -1)
+        styleSheet += QString(" font-size: %1px;").arg(tabFont.pixelSize());
+    if (tabFont.bold())
+        styleSheet += " font-weight: bold;";
+    styleSheet += "}";
+
+    styledWidget.setStyleSheet(styleSheet);
+    const QRect rectWithStyle = styledBar->tabRect(0);
+
+    if (vertical)
+        QCOMPARE(rectWithStyle.height(), rectWithFont.height());
+    else
+        QCOMPARE(rectWithStyle.width(), rectWithFont.width());
 }
 
 void tst_QStyleSheetStyle::attributesList()
@@ -1587,7 +1697,7 @@ void tst_QStyleSheetStyle::toolTip()
 
     centerOnScreen(&w);
     w.show();
-    QApplication::setActiveWindow(&w);
+    QApplicationPrivate::setActiveWindow(&w);
     QVERIFY(QTest::qWaitForWindowActive(&w));
 
     const QColor normalToolTip = QToolTip::palette().color(QPalette::Inactive, QPalette::ToolTipBase);
@@ -1599,7 +1709,7 @@ void tst_QStyleSheetStyle::toolTip()
                                  normalToolTip };
 
     QWidgetList topLevels;
-    for (int i = 0; i < widgets.count() ; ++i) {
+    for (int i = 0; i < widgets.size() ; ++i) {
         QWidget *wid = widgets.at(i);
         QColor col = colors.at(i);
 
@@ -1607,7 +1717,7 @@ void tst_QStyleSheetStyle::toolTip()
 
         topLevels = QApplication::topLevelWidgets();
         QWidget *tooltip = nullptr;
-        for (QWidget *widget : qAsConst(topLevels)) {
+        for (QWidget *widget : std::as_const(topLevels)) {
             if (widget->inherits("QTipLabel")) {
                 tooltip = widget;
                 break;
@@ -1623,7 +1733,7 @@ void tst_QStyleSheetStyle::toolTip()
     delete wid3; //should not crash;
     QTest::qWait(10);
     topLevels = QApplication::topLevelWidgets();
-    for (QWidget *widget : qAsConst(topLevels))
+    for (QWidget *widget : std::as_const(topLevels))
         widget->update(); //should not crash either
 }
 
@@ -1733,7 +1843,7 @@ void tst_QStyleSheetStyle::complexWidgetFocus()
 
     centerOnScreen(&frame);
     frame.show();
-    QApplication::setActiveWindow(&frame);
+    QApplicationPrivate::setActiveWindow(&frame);
     QVERIFY(QTest::qWaitForWindowActive(&frame));
     for (QWidget *widget : widgets) {
         widget->setFocus();
@@ -1822,7 +1932,7 @@ void tst_QStyleSheetStyle::task232085_spinBoxLineEditBg()
 
     centerOnScreen(&frame);
     frame.show();
-    QApplication::setActiveWindow(&frame);
+    QApplicationPrivate::setActiveWindow(&frame);
     spinbox->setFocus();
     QVERIFY(QTest::qWaitForWindowActive(&frame));
 
@@ -1958,7 +2068,7 @@ void tst_QStyleSheetStyle::QTBUG36933_brokenPseudoClassLookup()
     QVERIFY(QTest::qWaitForWindowExposed(&widget));
 
     widget.activateWindow();
-    QApplication::setActiveWindow(&widget);
+    QApplicationPrivate::setActiveWindow(&widget);
     QVERIFY(QTest::qWaitForWindowActive(&widget));
 
     QHeaderView *verticalHeader = widget.verticalHeader();
@@ -2231,11 +2341,117 @@ void tst_QStyleSheetStyle::placeholderColor()
     QLineEdit le2;
     le2.setEnabled(false);
     le1.ensurePolished();
-    QCOMPARE(le1.palette().placeholderText(), red);
+    QColor phColor = le1.palette().placeholderText().color();
+    QCOMPARE(phColor.rgb(), red.rgb());
+    QVERIFY(phColor.alpha() < red.alpha());
+
     le2.ensurePolished();
-    QCOMPARE(le2.palette().placeholderText(), red);
+    phColor = le2.palette().placeholderText().color();
+    QCOMPARE(phColor.rgb(), red.rgb());
+    QVERIFY(phColor.alpha() < red.alpha());
+
     le2.setEnabled(true);
-    QCOMPARE(le2.palette().placeholderText(), red);
+    phColor = le2.palette().placeholderText().color();
+    QCOMPARE(phColor.rgb(), red.rgb());
+    QVERIFY(phColor.alpha() < red.alpha());
+
+    const char *phSpec = "#aabbccdd";
+    le1.setStyleSheet(QString("QLineEdit { placeholder-text-color: %1; }").arg(phSpec));
+    QCOMPARE(le1.palette().placeholderText().color(), QColor(phSpec));
+}
+
+void tst_QStyleSheetStyle::enumPropertySelector_data()
+{
+    QTest::addColumn<QString>("styleSheet");
+
+    QTest::addRow("Enum value") << R"(QToolButton[popupMode=MenuButtonPopup] { padding-right: 40px; })";
+    QTest::addRow("Int value") << R"(QToolButton[popupMode="1"] { padding-right: 40px; })";
+}
+
+void tst_QStyleSheetStyle::enumPropertySelector()
+{
+    QFETCH(QString, styleSheet);
+
+    QToolButton button;
+    QMenu menu;
+    menu.addAction("Action1");
+    QPixmap pm(50, 50);
+    pm.fill(Qt::red);
+    button.setIcon(pm);
+    button.setMenu(&menu);
+    button.setPopupMode(QToolButton::MenuButtonPopup);
+
+    button.show();
+    const QSize unstyledSizeHint = button.sizeHint();
+
+    qApp->setStyleSheet(styleSheet);
+    const QSize styledSizeHint = button.sizeHint();
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QEXPECT_FAIL("Enum value", "In Qt 5, style sheet selectors have to use integer enum values", Continue);
+#endif
+
+    QVERIFY(styledSizeHint.width() > unstyledSizeHint.width());
+}
+
+void tst_QStyleSheetStyle::iconSizes_data()
+{
+    QTest::addColumn<QString>("styleSheet");
+    QTest::addColumn<QFont>("font");
+    QTest::addColumn<QSize>("iconSize");
+
+    const int defaultSize = QApplication::style()->pixelMetric(QStyle::PM_ButtonIconSize);
+
+    QFont smallFont;
+    smallFont.setPointSizeF(9.0);
+    QFont largeFont;
+    largeFont.setPointSizeF(24.0);
+    QFont hugeFont;
+    hugeFont.setPointSizeF(40.0);
+
+    QTest::addRow("default") << QString() << QFont() << QSize(defaultSize, defaultSize);
+    QTest::addRow("pixels") << "icon-size: 50px" << QFont() << QSize(50, 50);
+    QTest::addRow("points") << "icon-size: 20pt" << QFont() << QSize(15, 15);
+    QTest::addRow("pixels with font") << "icon-size: 50px" << smallFont << QSize(50, 50);
+    QTest::addRow("points with font") << "icon-size: 20pt" << largeFont << QSize(15, 15);
+
+    const QFontMetrics defaultMetrics{QFont()};
+    const QFontMetrics smallMetrics(smallFont);
+    const QFontMetrics largeMetrics(largeFont);
+    const QFontMetrics hugeMetrics(hugeFont);
+    QTest::addRow("1em, default font") << "icon-size: 1em"
+        << QFont() << QSize(defaultMetrics.height(), defaultMetrics.height());
+    QTest::addRow("1em, small font") << "icon-size: 1em"
+        << smallFont << QSize(smallMetrics.height(), smallMetrics.height());
+    QTest::addRow("1em, large font") << "icon-size: 1em"
+        << largeFont << QSize(largeMetrics.height(), largeMetrics.height());
+    QTest::addRow("1.5em, lage font") << "icon-size: 1.5em"
+        << largeFont << QSize(largeMetrics.height(), largeMetrics.height()) * 1.5;
+    QTest::addRow("2em with styled font") << "font-size: 40pt; icon-size: 2em"
+        << QFont() << QSize(hugeMetrics.height(), hugeMetrics.height()) * 2;
+
+    QTest::addRow("1ex, default font") << "icon-size: 1ex"
+        << QFont() << QSize(defaultMetrics.xHeight(), defaultMetrics.xHeight());
+    QTest::addRow("1ex, small font") << "icon-size: 1ex"
+        << smallFont << QSize(smallMetrics.xHeight(), smallMetrics.xHeight());
+    QTest::addRow("1ex, large font") << "icon-size: 1ex"
+        << largeFont << QSize(largeMetrics.xHeight(), largeMetrics.xHeight());
+    QTest::addRow("1.5ex, lage font") << "icon-size: 1.5ex"
+        << largeFont << QSize(largeMetrics.xHeight(), largeMetrics.xHeight()) * 1.5;
+    QTest::addRow("2ex with styled font") << "font-size: 40pt; icon-size: 2ex"
+        << QFont() << QSize(hugeMetrics.xHeight(), hugeMetrics.xHeight()) * 2;
+}
+
+void tst_QStyleSheetStyle::iconSizes()
+{
+    QFETCH(QString, styleSheet);
+    QFETCH(QFont, font);
+    QFETCH(QSize, iconSize);
+
+    QPushButton button;
+    button.setFont(font);
+    button.setStyleSheet(styleSheet);
+    QCOMPARE(button.iconSize(), iconSize);
 }
 
 QTEST_MAIN(tst_QStyleSheetStyle)

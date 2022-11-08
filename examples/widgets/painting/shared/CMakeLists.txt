@@ -1,13 +1,5 @@
-# special case skip regeneration
-# Port of shared.pri to be included by painting examples
-
-if(NOT TARGET Qt::Widgets)
-    find_package(Qt6 REQUIRED COMPONENTS Widgets)
-endif()
-
-if(NOT TARGET Qt::OpenGL)
-    find_package(Qt6 OPTIONAL_COMPONENTS OpenGL)
-endif()
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 add_library(painting_shared OBJECT)
 add_library(painting_shared::painting_shared ALIAS painting_shared)
@@ -18,6 +10,7 @@ target_sources(painting_shared PRIVATE
     hoverpoints.cpp hoverpoints.h
     ${moc_files}
 )
+
 target_link_libraries(painting_shared PUBLIC Qt::Widgets)
 target_include_directories(painting_shared PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 

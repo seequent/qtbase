@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from mac.pro.
 
 #####################################################################
@@ -6,14 +9,13 @@
 
 qt_internal_add_plugin(QMacStylePlugin
     OUTPUT_NAME qmacstyle
-    TYPE styles
+    PLUGIN_TYPE styles
     SOURCES
         main.mm
         qmacstyle_mac.mm qmacstyle_mac_p.h
         qmacstyle_mac_p_p.h
     LIBRARIES
         ${FWAppKit}
-    PUBLIC_LIBRARIES
         Qt::Core
         Qt::Gui
         Qt::WidgetsPrivate

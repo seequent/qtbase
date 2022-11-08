@@ -1,6 +1,7 @@
-# Generated from widgets.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-add_subdirectory(toplevel)
-add_subdirectory(childwidget)
-add_subdirectory(windowlayout)
-add_subdirectory(nestedlayouts)
+qt_internal_add_example(toplevel)
+qt_internal_add_example(childwidget)
+qt_internal_add_example(windowlayout)
+qt_internal_add_example(nestedlayouts)

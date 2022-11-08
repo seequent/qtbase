@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qnetworkcookiejar.pro.
 
 #####################################################################
@@ -5,12 +8,12 @@
 #####################################################################
 
 # Collect test data
-list(APPEND test_data "parser.json")
+list(APPEND test_data "parser.json" "testdata/publicsuffix/public_suffix_list.dafsa")
 
 qt_internal_add_test(tst_qnetworkcookiejar
     SOURCES
         tst_qnetworkcookiejar.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Network
         Qt::NetworkPrivate

@@ -1,20 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qvariant.pro.
 
 #####################################################################
 ## tst_qvariant Test:
 #####################################################################
-
-qt_internal_add_test(tst_qvariant
-    SOURCES
-        tst_qvariant.cpp
-    DEFINES
-        QT_DISABLE_DEPRECATED_BEFORE=0
-    INCLUDE_DIRECTORIES
-        ../../../other/qvariant_common
-    PUBLIC_LIBRARIES
-        Qt::CorePrivate
-        Qt::Gui
-)
 
 # Resources:
 set(qvariant_resource_files
@@ -22,13 +13,17 @@ set(qvariant_resource_files
     "stream/qt5.0/"
 )
 
-qt_internal_add_resource(tst_qvariant "qvariant"
-    PREFIX
-        "/"
-    FILES
-        ${qvariant_resource_files}
+qt_internal_add_test(tst_qvariant
+    SOURCES
+        tst_qvariant.cpp
+    INCLUDE_DIRECTORIES
+        ../../../other/qvariant_common
+    LIBRARIES
+        Qt::CorePrivate
+        Qt::Gui
+    TESTDATA ${qvariant_resource_files}
+    BUILTIN_TESTDATA
 )
-
 
 ## Scopes:
 #####################################################################

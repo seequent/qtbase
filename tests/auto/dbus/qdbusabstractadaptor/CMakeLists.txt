@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdbusabstractadaptor.pro.
 
 add_subdirectory(qmyserver)
@@ -12,3 +15,4 @@ qt_internal_add_test(tst_qdbusabstractadaptor
         Qt::DBus
 )
 # special case end
+add_dependencies(tst_qdbusabstractadaptor qmyserver)

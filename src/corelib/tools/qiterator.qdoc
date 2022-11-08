@@ -1,29 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the documentation of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:FDL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Free Documentation License Usage
-** Alternatively, this file may be used under the terms of the GNU Free
-** Documentation License version 1.3 as published by the Free Software
-** Foundation and appearing in the file included in the packaging of
-** this file. Please review the following information to ensure
-** the GNU Free Documentation License version 1.3 requirements
-** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 /*! \class QKeyValueIterator
     \inmodule QtCore
@@ -108,7 +84,7 @@
 /*!
     \fn template<typename Key, typename T, class Iterator> QKeyValueIterator &QKeyValueIterator<Key, T, Iterator>::operator++()
 
-    The prefix ++ operator (\c{++i}) advances the iterator to the
+    The prefix \c{++} operator (\c{++i}) advances the iterator to the
     next item in the container and returns the iterator.
 
     \note Advancing the iterator past its container's end() constitutes
@@ -121,7 +97,7 @@
 
     \overload
 
-    The postfix ++ operator (\c{i++}) advances the iterator to the
+    The postfix \c{++} operator (\c{i++}) advances the iterator to the
     next item in the container and returns the iterator's prior value.
 
     \note Advancing the iterator past its container's end() constitutes
@@ -130,7 +106,7 @@
 
 /*! \fn template<typename Key, typename T, class Iterator> QKeyValueIterator &QKeyValueIterator<Key, T, Iterator>::operator--()
 
-    The prefix -- operator (\c{--i}) backs the iterator up to the previous item
+    The prefix c{--} operator (\c{--i}) backs the iterator up to the previous item
     in the container and returns the iterator.
 
     \note Backing up an iterator to before its container's begin() constitutes
@@ -143,7 +119,7 @@
 
     \overload
 
-    The postfix -- operator (\c{i--}) backs the iterator up to the previous item
+    The postfix c{--} operator (\c{i--}) backs the iterator up to the previous item
     in the container and returns the iterator's prior value.
 
     \note Backing up an iterator to before its container's begin() constitutes

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from kernel.pro.
 
 if(QT_FEATURE_action)
@@ -22,7 +25,9 @@ add_subdirectory(qpalette)
 add_subdirectory(qscreen)
 add_subdirectory(qsurfaceformat)
 add_subdirectory(qwindow)
-add_subdirectory(qguiapplication)
+if(QT_FEATURE_private_tests)
+    add_subdirectory(qguiapplication)
+endif()
 add_subdirectory(qpixelformat)
 add_subdirectory(qrasterwindow)
 add_subdirectory(qaddpostroutine)
@@ -43,12 +48,7 @@ if(TARGET Qt::Widgets)
     add_subdirectory(qtouchevent)
 endif()
 if(QT_FEATURE_opengl)
-    # special case begin
-    # QTBUG-85364
-    if(NOT LINUX)
-        add_subdirectory(qopenglwindow)
-    endif()
-    # special case end
+    add_subdirectory(qopenglwindow)
 endif()
 if(TARGET Qt::Network AND WIN32)
     add_subdirectory(noqteventloop)

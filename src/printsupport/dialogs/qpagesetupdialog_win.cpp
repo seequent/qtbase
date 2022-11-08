@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qpagesetupdialog.h"
 
@@ -134,10 +98,35 @@ int QPageSetupDialog::exec()
     QDialog::setVisible(false);
     if (result) {
         engine->setGlobalDevMode(psd.hDevNames, psd.hDevMode);
-        d->printer->setPageSize(QPageSize(QSizeF(psd.ptPaperSize.x / multiplier, psd.ptPaperSize.y / multiplier),
-                                layout.units() == QPageLayout::Inch ? QPageSize::Inch : QPageSize::Millimeter));
+        QPageSize pageSize;
+        // try to read orientation and paper size ID from the dialog's devmode struct
+        if (psd.hDevMode) {
+            DEVMODE *rDevmode = reinterpret_cast<DEVMODE*>(GlobalLock(psd.hDevMode));
+            if (rDevmode->dmFields & DM_ORIENTATION) {
+                layout.setOrientation(rDevmode->dmOrientation == DMORIENT_PORTRAIT
+                                      ? QPageLayout::Portrait : QPageLayout::Landscape);
+            }
+            if (rDevmode->dmFields & DM_PAPERSIZE)
+                pageSize = QPageSize::id(rDevmode->dmPaperSize);
+            GlobalUnlock(rDevmode);
+        }
+        // fall back to use our own matching, and assume that paper that's wider than long means landscape
+        if (!pageSize.isValid() || pageSize.id() == QPageSize::Custom) {
+            QSizeF unitSize(psd.ptPaperSize.x / multiplier, psd.ptPaperSize.y / multiplier);
+            if (unitSize.width() > unitSize.height()) {
+                layout.setOrientation(QPageLayout::Landscape);
+                unitSize.transpose();
+            } else {
+                layout.setOrientation(QPageLayout::Portrait);
+            }
+            pageSize = QPageSize(unitSize, layout.units() == QPageLayout::Inch
+                                                           ? QPageSize::Inch : QPageSize::Millimeter);
+        }
+        layout.setPageSize(pageSize);
+
         const QMarginsF margins(psd.rtMargin.left, psd.rtMargin.top, psd.rtMargin.right, psd.rtMargin.bottom);
-        d->printer->setPageMargins(margins / multiplier, layout.units());
+        layout.setMargins(margins / multiplier);
+        d->printer->setPageLayout(layout);
 
         // copy from our temp DEVMODE struct
         if (!engine->globalDevMode() && hDevMode) {

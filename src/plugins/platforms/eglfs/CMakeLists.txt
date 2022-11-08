@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from eglfs.pro.
 # special case begin
 qt_find_package(EGL)
@@ -10,16 +13,18 @@ elseif(QT_FEATURE_eglfs_viv)
     set(_device_integration "eglfs_viv")
 elseif(QT_FEATURE_eglfs_brcm)
     set(_device_integration "eglfs_brcm")
+elseif(QT_FEATURE_eglfs_openwfd)
+    set(_device_integration "eglfs_openwfd")
 endif()
 
 set(QT_QPA_DEFAULT_EGLFS_INTEGRATION "${_device_integration}" CACHE STRING "Default EGLFS device integration plugin")
 # special case end
 
 #####################################################################
-## EglFSDeviceIntegration Module:
+## EglFSDeviceIntegrationPrivate Module:
 #####################################################################
 
-qt_internal_add_module(EglFSDeviceIntegration
+qt_internal_add_module(EglFSDeviceIntegrationPrivate
     INTERNAL_MODULE
     SOURCES
         api/qeglfsdeviceintegration.cpp api/qeglfsdeviceintegration_p.h
@@ -41,6 +46,8 @@ qt_internal_add_module(EglFSDeviceIntegration
         Qt::FbSupportPrivate
         Qt::GuiPrivate
         EGL::EGL # special case
+    HEADER_SYNC_SOURCE_DIRECTORY
+        "${CMAKE_CURRENT_SOURCE_DIR}/api"
 )
 
 #### Keys ignored in scope 2:.:.:eglfsdeviceintegration.pro:<TRUE>:
@@ -49,12 +56,17 @@ qt_internal_add_module(EglFSDeviceIntegration
 ## Scopes:
 #####################################################################
 
-qt_internal_extend_target(EglFSDeviceIntegration CONDITION TARGET Qt::InputSupportPrivate
+qt_internal_extend_target(EglFSDeviceIntegrationPrivate CONDITION TARGET Qt::InputSupportPrivate
     PUBLIC_LIBRARIES
         Qt::InputSupportPrivate
 )
 
-qt_internal_extend_target(EglFSDeviceIntegration CONDITION QT_FEATURE_opengl
+qt_internal_extend_target(EglFSDeviceIntegrationPrivate CONDITION INTEGRITY AND TARGET IntegrityPlatformGraphics::IntegrityPlatformGraphics
+    LIBRARIES
+        IntegrityPlatformGraphics::IntegrityPlatformGraphics
+)
+
+qt_internal_extend_target(EglFSDeviceIntegrationPrivate CONDITION QT_FEATURE_opengl
     SOURCES
         api/qeglfscontext.cpp api/qeglfscontext_p.h
         api/qeglfscursor.cpp api/qeglfscursor_p.h
@@ -64,12 +76,12 @@ qt_internal_extend_target(EglFSDeviceIntegration CONDITION QT_FEATURE_opengl
 
 # special case begin
 # comment out
-#qt_internal_extend_target(EglFSDeviceIntegration CONDITION NOT EGLFS_PLATFORM_HOOKS_SOURCES_ISEMPTY
+#qt_internal_extend_target(EglFSDeviceIntegrationPrivate CONDITION NOT EGLFS_PLATFORM_HOOKS_SOURCES_ISEMPTY
     #DEFINES
         #EGLFS_PLATFORM_HOOKS
 #)
 
-#qt_internal_extend_target(EglFSDeviceIntegration CONDITION NOT EGLFS_DEVICE_INTEGRATION_ISEMPTY
+#qt_internal_extend_target(EglFSDeviceIntegrationPrivate CONDITION NOT EGLFS_DEVICE_INTEGRATION_ISEMPTY
     #DEFINES
         #EGLFS_PREFERRED_PLUGIN=
 #)
@@ -82,7 +94,7 @@ if(QT_FEATURE_cursor)
         "cursor.json"
     )
 
-    qt_internal_add_resource(EglFSDeviceIntegration "cursor"
+    qt_internal_add_resource(EglFSDeviceIntegrationPrivate "cursor"
         PREFIX
             "/"
         FILES
@@ -90,24 +102,19 @@ if(QT_FEATURE_cursor)
     )
 endif()
 
-qt_internal_extend_target(EglFSDeviceIntegration CONDITION QT_FEATURE_vulkan
-    SOURCES
-        api/vulkan/qeglfsvulkaninstance.cpp api/vulkan/qeglfsvulkaninstance_p.h
-        api/vulkan/qeglfsvulkanwindow.cpp api/vulkan/qeglfsvulkanwindow_p.h
-)
 #####################################################################
 ## QEglFSIntegrationPlugin Plugin:
 #####################################################################
 
 qt_internal_add_plugin(QEglFSIntegrationPlugin
     OUTPUT_NAME qeglfs
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES eglfs # special case
     SOURCES
         qeglfsmain.cpp
     DEFINES
         QT_EGL_NO_X11
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate # special case
         Qt::EglFSDeviceIntegrationPrivate
         EGL::EGL # special case

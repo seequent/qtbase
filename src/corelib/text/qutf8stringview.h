@@ -1,54 +1,20 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
-** Contact: http://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 #ifndef QUTF8STRINGVIEW_H
 #define QUTF8STRINGVIEW_H
 
+#if 0
+#pragma qt_class(QUtf8StringView)
+#endif
+
 #include <QtCore/qstringalgorithms.h>
+#include <QtCore/qstringfwd.h>
 #include <QtCore/qarraydata.h> // for QContainerImplHelper
+#include <QtCore/qbytearrayview.h>
 
 #include <string>
 
 QT_BEGIN_NAMESPACE
-
-template <bool> class QBasicUtf8StringView;
-class QByteArray;
-class QLatin1String;
 
 namespace QtPrivate {
 template <typename Char>
@@ -98,7 +64,7 @@ struct IsContainerCompatibleWithQUtf8StringView<T, std::enable_if_t<std::conjunc
         std::negation<std::is_same<std::decay_t<T>, QByteArray>>,
 
         // This has a compatible value_type, but explicitly a different encoding
-        std::negation<std::is_same<std::decay_t<T>, QLatin1String>>,
+        std::negation<std::is_same<std::decay_t<T>, QLatin1StringView>>,
 
         // Don't make an accidental copy constructor
         std::negation<std::disjunction<
@@ -117,7 +83,7 @@ struct wrap_char { using type = char; };
 
 } // namespace QtPrivate
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
 #define QBasicUtf8StringView QUtf8StringView
 #else
 template <bool UseChar8T>
@@ -125,7 +91,7 @@ template <bool UseChar8T>
 class QBasicUtf8StringView
 {
 public:
-#ifndef Q_CLANG_QDOC
+#ifndef Q_QDOC
     using storage_type = typename std::conditional<UseChar8T,
             QtPrivate::hide_char8_t,
             QtPrivate::wrap_char
@@ -196,7 +162,7 @@ public:
     constexpr QBasicUtf8StringView(const Char *f, const Char *l)
         : QBasicUtf8StringView(f, l - f) {}
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     template <typename Char, size_t N>
     constexpr QBasicUtf8StringView(const Char (&array)[N]) noexcept;
 
@@ -209,7 +175,7 @@ public:
             str ? std::char_traits<std::remove_cv_t<std::remove_pointer_t<Pointer>>>::length(str) : 0) {}
 #endif
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     QBasicUtf8StringView(const QByteArray &str) noexcept;
 #else
     template <typename String, if_compatible_qstring_like<String> = true>
@@ -234,7 +200,7 @@ public:
 
     [[nodiscard]] constexpr qsizetype size() const noexcept { return m_size; }
     [[nodiscard]] const_pointer data() const noexcept { return reinterpret_cast<const_pointer>(m_data); }
-#if defined(__cpp_char8_t) || defined(Q_CLANG_QDOC)
+#if defined(__cpp_char8_t) || defined(Q_QDOC)
     [[nodiscard]] const char8_t *utf8() const noexcept { return reinterpret_cast<const char8_t*>(m_data); }
 #endif
 
@@ -285,6 +251,11 @@ public:
     constexpr void chop(qsizetype n)
     { verify(n); m_size -= n; }
 
+    [[nodiscard]] inline bool isValidUtf8() const noexcept
+    {
+        return QByteArrayView(reinterpret_cast<const char *>(data()), size()).isValidUtf8();
+    }
+
     //
     // STL compatibility API:
     //
@@ -306,12 +277,8 @@ public:
     //
     [[nodiscard]] constexpr bool isNull() const noexcept { return !m_data; }
     [[nodiscard]] constexpr bool isEmpty() const noexcept { return empty(); }
-#if QT_DEPRECATED_SINCE(6, 0)
-    [[nodiscard]]
-    Q_DECL_DEPRECATED_X("Use size() and port callers to qsizetype.")
-    constexpr int length() const /* not nothrow! */
-    { return Q_ASSERT(int(size()) == size()), int(size()); }
-#endif
+    [[nodiscard]] constexpr qsizetype length() const noexcept
+    { return size(); }
 
 private:
     [[nodiscard]] static inline int compare(QBasicUtf8StringView lhs, QBasicUtf8StringView rhs) noexcept
@@ -322,8 +289,9 @@ private:
 
     [[nodiscard]] friend inline bool operator==(QBasicUtf8StringView lhs, QBasicUtf8StringView rhs) noexcept
     {
-        return QtPrivate::equalStrings(QBasicUtf8StringView<false>(lhs.data(), lhs.size()),
-                                       QBasicUtf8StringView<false>(rhs.data(), rhs.size()));
+        return lhs.size() == rhs.size()
+               && QtPrivate::equalStrings(QBasicUtf8StringView<false>(lhs.data(), lhs.size()),
+                                          QBasicUtf8StringView<false>(rhs.data(), rhs.size()));
     }
     [[nodiscard]] friend inline bool operator!=(QBasicUtf8StringView lhs, QBasicUtf8StringView rhs) noexcept
     { return !operator==(lhs, rhs); }
@@ -353,20 +321,12 @@ private:
     qsizetype m_size;
 };
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
 #undef QBasicUtf8StringView
 #else
 template <bool UseChar8T>
 Q_DECLARE_TYPEINFO_BODY(QBasicUtf8StringView<UseChar8T>, Q_PRIMITIVE_TYPE);
-
-QT_BEGIN_NO_CHAR8_T_NAMESPACE
-using QUtf8StringView = QBasicUtf8StringView<false>;
-QT_END_NO_CHAR8_T_NAMESPACE
-
-QT_BEGIN_HAS_CHAR8_T_NAMESPACE
-using QUtf8StringView = QBasicUtf8StringView<true>;
-QT_END_HAS_CHAR8_T_NAMESPACE
-#endif // Q_CLANG_QDOC
+#endif // Q_QDOC
 
 template <typename QStringLike, std::enable_if_t<std::is_same_v<QStringLike, QByteArray>, bool> = true>
 [[nodiscard]] inline q_no_char8_t::QUtf8StringView qToUtf8StringViewIgnoringNull(const QStringLike &s) noexcept

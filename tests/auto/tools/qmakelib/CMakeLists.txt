@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qmakelib.pro.
 
 #####################################################################
@@ -24,7 +27,7 @@ qt_internal_add_test(tst_qmakelib
         QT_USE_QSTRINGBUILDER
     INCLUDE_DIRECTORIES
         ../../../../qmake/library
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
 )
 
@@ -32,6 +35,6 @@ qt_internal_add_test(tst_qmakelib
 #####################################################################
 
 qt_internal_extend_target(tst_qmakelib CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         advapi32
 )

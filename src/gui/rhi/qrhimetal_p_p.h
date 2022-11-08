@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Qt Gui module
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QRHIMETAL_P_H
 #define QRHIMETAL_P_H
@@ -64,7 +28,7 @@ struct QMetalBufferData;
 
 struct QMetalBuffer : public QRhiBuffer
 {
-    QMetalBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, int size);
+    QMetalBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, quint32 size);
     ~QMetalBuffer();
     void destroy() override;
     bool create() override;
@@ -77,6 +41,9 @@ struct QMetalBuffer : public QRhiBuffer
     int lastActiveFrameSlot = -1;
     friend class QRhiMetal;
     friend struct QMetalShaderResourceBindings;
+
+    static constexpr int WorkBufPoolUsage = 1 << 8;
+    static_assert(WorkBufPoolUsage > QRhiBuffer::StorageBuffer);
 };
 
 struct QMetalRenderBufferData;
@@ -102,8 +69,8 @@ struct QMetalTextureData;
 
 struct QMetalTexture : public QRhiTexture
 {
-    QMetalTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize,
-                  int sampleCount, Flags flags);
+    QMetalTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize, int depth,
+                  int arraySize, int sampleCount, Flags flags);
     ~QMetalTexture();
     void destroy() override;
     bool create() override;
@@ -145,6 +112,10 @@ struct QMetalRenderPassDescriptor : public QRhiRenderPassDescriptor
     ~QMetalRenderPassDescriptor();
     void destroy() override;
     bool isCompatible(const QRhiRenderPassDescriptor *other) const override;
+    QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() const override;
+    QVector<quint32> serializedFormat() const override;
+
+    void updateSerializedFormat();
 
     // there is no MTLRenderPassDescriptor here as one will be created for each pass in beginPass()
 
@@ -154,14 +125,15 @@ struct QMetalRenderPassDescriptor : public QRhiRenderPassDescriptor
     bool hasDepthStencil = false;
     int colorFormat[MAX_COLOR_ATTACHMENTS];
     int dsFormat;
+    QVector<quint32> serializedFormatData;
 };
 
 struct QMetalRenderTargetData;
 
-struct QMetalReferenceRenderTarget : public QRhiRenderTarget
+struct QMetalSwapChainRenderTarget : public QRhiSwapChainRenderTarget
 {
-    QMetalReferenceRenderTarget(QRhiImplementation *rhi);
-    ~QMetalReferenceRenderTarget();
+    QMetalSwapChainRenderTarget(QRhiImplementation *rhi, QRhiSwapChain *swapchain);
+    ~QMetalSwapChainRenderTarget();
     void destroy() override;
 
     QSize pixelSize() const override;
@@ -194,6 +166,7 @@ struct QMetalShaderResourceBindings : public QRhiShaderResourceBindings
     ~QMetalShaderResourceBindings();
     void destroy() override;
     bool create() override;
+    void updateResources(UpdateFlags flags) override;
 
     QVarLengthArray<QRhiShaderResourceBinding, 8> sortedBindings;
     int maxBinding = -1;
@@ -234,6 +207,7 @@ struct QMetalShaderResourceBindings : public QRhiShaderResourceBindings
 };
 
 struct QMetalGraphicsPipelineData;
+struct QMetalCommandBuffer;
 
 struct QMetalGraphicsPipeline : public QRhiGraphicsPipeline
 {
@@ -241,6 +215,13 @@ struct QMetalGraphicsPipeline : public QRhiGraphicsPipeline
     ~QMetalGraphicsPipeline();
     void destroy() override;
     bool create() override;
+
+    void makeActiveForCurrentRenderPassEncoder(QMetalCommandBuffer *cbD);
+    void setupAttachmentsInMetalRenderPassDescriptor(void *metalRpDesc, QMetalRenderPassDescriptor *rpD);
+    void setupMetalDepthStencilDescriptor(void *metalDsDesc);
+    void mapStates();
+    bool createVertexFragmentPipeline();
+    bool createTessellationPipelines(const QShader &tessVert, const QShader &tesc, const QShader &tese, const QShader &tessFrag);
 
     QMetalGraphicsPipelineData *d;
     uint generation = 0;
@@ -286,17 +267,18 @@ struct QMetalCommandBuffer : public QRhiCommandBuffer
     QRhiRenderTarget *currentTarget;
 
     // per-pass (render or compute command encoder) volatile (cached) state
-    QRhiGraphicsPipeline *currentGraphicsPipeline;
-    QRhiComputePipeline *currentComputePipeline;
+    QMetalGraphicsPipeline *currentGraphicsPipeline;
+    QMetalComputePipeline *currentComputePipeline;
     uint currentPipelineGeneration;
-    QRhiShaderResourceBindings *currentGraphicsSrb;
-    QRhiShaderResourceBindings *currentComputeSrb;
+    QMetalShaderResourceBindings *currentGraphicsSrb;
+    QMetalShaderResourceBindings *currentComputeSrb;
     uint currentSrbGeneration;
     int currentResSlot;
-    QRhiBuffer *currentIndexBuffer;
+    QMetalBuffer *currentIndexBuffer;
     quint32 currentIndexOffset;
     QRhiCommandBuffer::IndexFormat currentIndexFormat;
     int currentCullMode;
+    int currentTriangleFillMode;
     int currentFrontFaceWinding;
     QPair<float, float> currentDepthBiasValues;
 
@@ -317,10 +299,13 @@ struct QMetalSwapChain : public QRhiSwapChain
     QRhiCommandBuffer *currentFrameCommandBuffer() override;
     QRhiRenderTarget *currentFrameRenderTarget() override;
     QSize surfacePixelSize() override;
+    bool isFormatSupported(Format f) override;
 
     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
 
     bool createOrResize() override;
+
+    virtual QRhiSwapChainHdrInfo hdrInfo() override;
 
     void chooseFormats();
 
@@ -329,7 +314,7 @@ struct QMetalSwapChain : public QRhiSwapChain
     int currentFrameSlot = 0; // 0..QMTL_FRAMES_IN_FLIGHT-1
     int frameCount = 0;
     int samples = 1;
-    QMetalReferenceRenderTarget rtWrapper;
+    QMetalSwapChainRenderTarget rtWrapper;
     QMetalCommandBuffer cbWrapper;
     QMetalRenderBuffer *ds = nullptr;
     QMetalSwapChainData *d = nullptr;
@@ -343,6 +328,8 @@ public:
     QRhiMetal(QRhiMetalInitParams *params, QRhiMetalNativeHandles *importDevice = nullptr);
     ~QRhiMetal();
 
+    static bool probe(QRhiMetalInitParams *params);
+
     bool create(QRhi::Flags flags) override;
     void destroy() override;
 
@@ -351,7 +338,7 @@ public:
     QRhiShaderResourceBindings *createShaderResourceBindings() override;
     QRhiBuffer *createBuffer(QRhiBuffer::Type type,
                              QRhiBuffer::UsageFlags usage,
-                             int size) override;
+                             quint32 size) override;
     QRhiRenderBuffer *createRenderBuffer(QRhiRenderBuffer::Type type,
                                          const QSize &pixelSize,
                                          int sampleCount,
@@ -359,6 +346,8 @@ public:
                                          QRhiTexture::Format backingFormatHint) override;
     QRhiTexture *createTexture(QRhiTexture::Format format,
                                const QSize &pixelSize,
+                               int depth,
+                               int arraySize,
                                int sampleCount,
                                QRhiTexture::Flags flags) override;
     QRhiSampler *createSampler(QRhiSampler::Filter magFilter,
@@ -439,10 +428,13 @@ public:
     int resourceLimit(QRhi::ResourceLimit limit) const override;
     const QRhiNativeHandles *nativeHandles() override;
     QRhiDriverInfo driverInfo() const override;
-    void sendVMemStatsToProfiler() override;
+    QRhiStats statistics() override;
     bool makeThreadLocalNativeContextCurrent() override;
     void releaseCachedResources() override;
     bool isDeviceLost() const override;
+
+    QByteArray pipelineCacheData() override;
+    void setPipelineCacheData(const QByteArray &data) override;
 
     void executeDeferredReleases(bool forced = false);
     void finishActiveReadbacks(bool forced = false);
@@ -461,16 +453,50 @@ public:
                                        bool offsetOnlyChange,
                                        const QShader::NativeResourceBindingMap *nativeResourceBindingMaps[SUPPORTED_STAGES]);
     int effectiveSampleCount(int sampleCount) const;
+    struct TessDrawArgs {
+        QMetalCommandBuffer *cbD;
+        enum {
+            NonIndexed,
+            U16Indexed,
+            U32Indexed
+        } type;
+        struct NonIndexedArgs {
+            quint32 vertexCount;
+            quint32 instanceCount;
+            quint32 firstVertex;
+            quint32 firstInstance;
+        };
+        struct IndexedArgs {
+            quint32 indexCount;
+            quint32 instanceCount;
+            quint32 firstIndex;
+            qint32 vertexOffset;
+            quint32 firstInstance;
+            void *indexBuffer;
+        };
+        union {
+            NonIndexedArgs draw;
+            IndexedArgs drawIndexed;
+        };
+    };
+    void tessellatedDraw(const TessDrawArgs &args);
 
+    QRhi::Flags rhiFlags;
     bool importedDevice = false;
     bool importedCmdQueue = false;
     QMetalSwapChain *currentSwapChain = nullptr;
     QSet<QMetalSwapChain *> swapchains;
     QRhiMetalNativeHandles nativeHandlesStruct;
     QRhiDriverInfo driverInfoStruct;
+    quint32 osMajor = 0;
+    quint32 osMinor = 0;
 
     struct {
         int maxTextureSize = 4096;
+        bool baseVertexAndInstance = true;
+        QVector<int> supportedSampleCounts;
+        bool isAppleGPU = false;
+        int maxThreadGroupSize = 512;
     } caps;
 
     QRhiMetalData *d = nullptr;

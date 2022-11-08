@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # This script reads Qt configure arguments from config.opt,
 # translates the arguments to CMake arguments and calls CMake.
 #
@@ -25,11 +28,34 @@ macro(pop_path_argument)
     file(TO_CMAKE_PATH "${path}" path)
 endmacro()
 
+function(is_non_empty_valid_arg arg value)
+    if(value STREQUAL "")
+        message(FATAL_ERROR "Value supplied to command line option '${arg}' is empty.")
+    elseif(value MATCHES "^-.*")
+        message(FATAL_ERROR
+                "Value supplied to command line option '${arg}' is invalid: ${value}")
+    endif()
+endfunction()
+
+function(warn_in_per_repo_build arg)
+    if(NOT TOP_LEVEL)
+        message(WARNING "Command line option ${arg} is only effective in top-level builds")
+    endif()
+endfunction()
+
+function(is_valid_qt_hex_version arg version)
+    if(NOT version MATCHES "^0x[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$")
+        message(FATAL_ERROR "Incorrect version ${version} specified for ${arg}")
+    endif()
+endfunction()
+
 if("${MODULE_ROOT}" STREQUAL "")
     # If MODULE_ROOT is not set, assume that we want to build qtbase or top-level.
     get_filename_component(MODULE_ROOT ".." ABSOLUTE BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+    set(qtbase_or_top_level_build TRUE)
 else()
     file(TO_CMAKE_PATH "${MODULE_ROOT}" MODULE_ROOT)
+    set(qtbase_or_top_level_build FALSE)
 endif()
 set(configure_filename "configure.cmake")
 set(commandline_filename "qt_cmdline.cmake")
@@ -43,19 +69,24 @@ else()
     set(commandline_files "${MODULE_ROOT}/${commandline_filename}")
 endif()
 file(STRINGS "${OPTFILE}" configure_args)
+
+# list(TRANSFORM ...) unexpectedly removes semicolon escaping in list items. So the list arguments
+# seem to be broken. The 'bracket argument' suppresses this behavior. Right before forwarding
+# command line arguments to the cmake call, 'bracket arguments' are replaced by escaped semicolons
+# back.
+list(TRANSFORM configure_args REPLACE ";" "[[;]]")
+
 list(FILTER configure_args EXCLUDE REGEX "^[ \t]*$")
 list(TRANSFORM configure_args STRIP)
-list(TRANSFORM configure_args REPLACE "\\\\" "\\\\\\\\")
 unset(generator)
-set(auto_detect_generator TRUE)
 set(auto_detect_compiler TRUE)
+set(auto_detect_generator ${qtbase_or_top_level_build})
 unset(device_options)
+unset(options_json_file)
 set_property(GLOBAL PROPERTY UNHANDLED_ARGS "")
 while(NOT "${configure_args}" STREQUAL "")
     list(POP_FRONT configure_args arg)
-    if(arg STREQUAL "-cmake")
-        # ignore
-    elseif(arg STREQUAL "-cmake-generator")
+    if(arg STREQUAL "-cmake-generator")
         list(POP_FRONT configure_args generator)
     elseif(arg STREQUAL "-cmake-use-default-generator")
         set(auto_detect_generator FALSE)
@@ -63,15 +94,24 @@ while(NOT "${configure_args}" STREQUAL "")
         set(auto_detect_compiler FALSE)
     elseif(arg STREQUAL "-list-features")
         set(list_features TRUE)
+    elseif(arg MATCHES "^-h(elp)?$")
+        set(display_module_help TRUE)
+    elseif(arg STREQUAL "-write-options-for-conan")
+        list(POP_FRONT configure_args options_json_file)
     elseif(arg STREQUAL "-skip")
-        list(POP_FRONT configure_args qtrepo)
-        push("-DBUILD_${qtrepo}=OFF")
-    elseif(arg STREQUAL "-hostprefix")
-        message(FATAL_ERROR "${arg} is not supported in the CMake build.")
-    elseif(arg STREQUAL "-external-hostbindir")
-        # This points to the bin directory of the Qt installation.
-        # This can be multiple levels deep and we cannot deduce the QT_HOST_PATH safely.
-        message(FATAL_ERROR "${arg} is not supported anymore. Use -qt-host-path <dir> instead.")
+        warn_in_per_repo_build("${arg}")
+        list(POP_FRONT configure_args qtrepos)
+        is_non_empty_valid_arg("${arg}" "${qtrepos}")
+        list(TRANSFORM qtrepos REPLACE "," ";")
+        foreach(qtrepo IN LISTS qtrepos)
+            push("-DBUILD_${qtrepo}=OFF")
+        endforeach()
+    elseif(arg STREQUAL "-submodules")
+        warn_in_per_repo_build("${arg}")
+        list(POP_FRONT configure_args submodules)
+        is_non_empty_valid_arg("${arg}" "${submodules}")
+        list(TRANSFORM submodules REPLACE "," "[[;]]")
+        push("-DQT_BUILD_SUBMODULES=${submodules}")
     elseif(arg STREQUAL "-qt-host-path")
         pop_path_argument()
         push("-DQT_HOST_PATH=${path}")
@@ -81,11 +121,23 @@ while(NOT "${configure_args}" STREQUAL "")
             string(APPEND path "/mkspecs")
         endif()
         push("-DINSTALL_MKSPECSDIR=${path}")
-    elseif(arg MATCHES "^-host.*dir")
-        message(FATAL_ERROR "${arg} is not supported anymore.")
+    elseif(arg STREQUAL "-developer-build")
+        set(developer_build TRUE)
+        # Treat this argument as "unhandled" to process it further.
+        set_property(GLOBAL APPEND PROPERTY UNHANDLED_ARGS "${arg}")
+    elseif(arg STREQUAL "-cmake-file-api")
+        set(cmake_file_api TRUE)
+    elseif(arg STREQUAL "-no-cmake-file-api")
+        set(cmake_file_api FALSE)
+    elseif(arg STREQUAL "-verbose")
+        list(APPEND cmake_args "--log-level=STATUS")
+    elseif(arg STREQUAL "-disable-deprecated-up-to")
+        list(POP_FRONT configure_args version)
+        is_valid_qt_hex_version("${arg}" "${version}")
+        push("-DQT_DISABLE_DEPRECATED_UP_TO=${version}")
     elseif(arg STREQUAL "--")
         # Everything after this argument will be passed to CMake verbatim.
-        push(${configure_args})
+        list(APPEND cmake_args "${configure_args}")
         break()
     else()
         set_property(GLOBAL APPEND PROPERTY UNHANDLED_ARGS "${arg}")
@@ -107,6 +159,11 @@ function(qt_feature feature)
     set_property(GLOBAL APPEND PROPERTY COMMANDLINE_KNOWN_FEATURES "${feature}")
     set_property(GLOBAL PROPERTY COMMANDLINE_FEATURE_PURPOSE_${feature} "${arg_PURPOSE}")
     set_property(GLOBAL PROPERTY COMMANDLINE_FEATURE_SECTION_${feature} "${arg_SECTION}")
+endfunction()
+
+function(find_package)
+    message(FATAL_ERROR "find_package must not be used directly in configure.cmake. "
+        "Use qt_find_package or guard the call with an if(NOT QT_CONFIGURE_RUNNING) block.")
 endfunction()
 
 macro(defstub name)
@@ -133,15 +190,16 @@ defstub(qt_feature_definition)
 defstub(qt_find_package)
 defstub(set_package_properties)
 defstub(qt_qml_find_python)
-
+defstub(qt_set01)
+defstub(qt_internal_check_if_linker_is_available)
 
 ####################################################################################################
 # Define functions/macros that are called in qt_cmdline.cmake files
 ####################################################################################################
 
+unset(commandline_known_options)
 unset(commandline_custom_handlers)
 set(commandline_nr_of_prefixes 0)
-set(commandline_nr_of_assignments 0)
 
 macro(qt_commandline_subconfig subconfig)
     list(APPEND commandline_subconfigs "${subconfig}")
@@ -157,6 +215,7 @@ function(qt_commandline_option name)
     set(multiValueArgs VALUES MAPPING)
     cmake_parse_arguments(arg "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+    set(commandline_known_options "${commandline_known_options};${name}" PARENT_SCOPE)
     set(commandline_option_${name} "${arg_TYPE}" PARENT_SCOPE)
     if(NOT "${arg_NAME}" STREQUAL "")
         set(commandline_option_${name}_variable "${arg_NAME}" PARENT_SCOPE)
@@ -178,12 +237,9 @@ function(qt_commandline_prefix arg var)
     set(commandline_nr_of_prefixes ${n} PARENT_SCOPE)
 endfunction()
 
-function(qt_commandline_assignment var internal_var)
-    set(idx ${commandline_nr_of_assignments})
-    set(commandline_assignment_${idx} "${var}" "${internal_var}" PARENT_SCOPE)
-    math(EXPR n "${commandline_nr_of_assignments} + 1")
-    set(commandline_nr_of_assignments ${n} PARENT_SCOPE)
-endfunction()
+# Check the following variable in configure.cmake files to guard code that is not covered by the
+# stub functions above.
+set(QT_CONFIGURE_RUNNING ON)
 
 
 ####################################################################################################
@@ -361,7 +417,7 @@ function(qt_commandline_addString arg val nextok)
     qtConfValidateValue("${arg}" "${val}" success)
     if(success)
         if(DEFINED command_line_option_${arg}_variable)
-            set(opt ${command_line_option_${arg}_variable)
+            set(arg ${command_line_option_${arg}_variable})
         endif()
         set_property(GLOBAL APPEND PROPERTY "INPUT_${arg}" "${val}")
         set_property(GLOBAL APPEND PROPERTY CONFIG_INPUTS ${arg})
@@ -417,6 +473,26 @@ function(qt_call_function func)
     endif()
 endfunction()
 
+if(display_module_help)
+    message([[
+Options:
+  -help, -h ............ Display this help screen
+
+  -feature-<feature> ... Enable <feature>
+  -no-feature-<feature>  Disable <feature> [none]
+  -list-features ....... List available features. Note that some features
+                         have dedicated command line options as well.
+]])
+
+    set(help_file "${MODULE_ROOT}/config_help.txt")
+    if(EXISTS "${help_file}")
+        file(READ "${help_file}" content)
+        message("${content}")
+    endif()
+
+    return()
+endif()
+
 if(list_features)
     unset(lines)
     foreach(feature ${commandline_known_features})
@@ -437,6 +513,78 @@ if(list_features)
     return()
 endif()
 
+function(write_options_json_file)
+    if(qtbase_or_top_level_build)
+        # Add options that are handled directly by this script.
+        qt_commandline_option(qt-host-path TYPE string)
+        qt_commandline_option(no-guess-compiler TYPE void)
+    endif()
+
+    set(indent "    ")
+    set(content
+        "{"
+        "${indent}\"options\": {")
+    string(APPEND indent "    ")
+    list(LENGTH commandline_known_options commandline_known_options_length)
+    set(i 1)
+    foreach(opt ${commandline_known_options})
+        list(APPEND content "${indent}\"${opt}\": {")
+        string(APPEND indent "    ")
+        list(APPEND content "${indent}\"type\": \"${commandline_option_${opt}}\",")
+        if(NOT "${commandline_option_${opt}_values}" STREQUAL "")
+            set(values "${commandline_option_${opt}_values}")
+            list(TRANSFORM values PREPEND "\"")
+            list(TRANSFORM values APPEND "\"")
+            list(JOIN values ", " values)
+            list(APPEND content "${indent}\"values\": [${values}]")
+        elseif(NOT "${commandline_option_${opt}_mapping}" STREQUAL "")
+            list(LENGTH commandline_option_${opt}_mapping last)
+            math(EXPR last "${last} - 1")
+            set(values "")
+            list(APPEND content "${indent}\"values\": [")
+            foreach(k RANGE 0 "${last}" 2)
+                list(GET commandline_option_${opt}_mapping ${k} value)
+                list(APPEND values ${value})
+            endforeach()
+            list(TRANSFORM values PREPEND "\"")
+            list(TRANSFORM values APPEND "\"")
+            list(JOIN values ", " values)
+            list(APPEND content
+                "${indent}    ${values}"
+                "${indent}]")
+        else()
+            list(APPEND content "${indent}\"values\": []")
+        endif()
+        string(SUBSTRING "${indent}" 4 -1 indent)
+        math(EXPR i "${i} + 1")
+        if(i LESS commandline_known_options_length)
+            list(APPEND content "${indent}},")
+        else()
+            list(APPEND content "${indent}}")
+        endif()
+    endforeach()
+    string(SUBSTRING "${indent}" 4 -1 indent)
+
+    set(features ${commandline_known_features})
+    list(TRANSFORM features PREPEND "\"")
+    list(TRANSFORM features APPEND "\"")
+    list(JOIN features ", " features)
+
+    list(APPEND content
+        "${indent}},"
+        "${indent}\"features\": [${features}]"
+        "}")
+    string(REPLACE ";" "\n" content "${content}")
+    file(WRITE "${options_json_file}" "${content}")
+endfunction()
+
+if(options_json_file)
+    write_options_json_file()
+    return()
+endif()
+
+set(cmake_var_assignments)
+
 while(1)
     qtConfHasNextCommandlineArg(has_next)
     if(NOT has_next)
@@ -455,24 +603,9 @@ while(1)
         continue()
     endif()
 
-    if(arg MATCHES "^([A-Z0-9_]+)=(.*)")
-        set(lhs "${CMAKE_MATCH_1}")
-        set(rhs "${CMAKE_MATCH_2}")
-        math(EXPR n "${commandline_nr_of_assignments} - 1")
-        foreach(i RANGE ${n})
-            list(GET commandline_assignment_${i} 0 var)
-            list(GET commandline_assignment_${i} 1 internal_var)
-            if(lhs STREQUAL var)
-                set(handled TRUE)
-                qtConfCommandlineSetInput("${internal_var}" "${rhs}")
-                break()
-            endif()
-        endforeach()
-        if(NOT handled)
-            message(FATAL_ERROR "Assigning unknown variable '${lhs}' on command line.")
-        endif()
-    endif()
-    if(handled)
+    # Handle variable assignments
+    if(arg MATCHES "^([a-zA-Z0-9_][a-zA-Z0-9_-]*)=(.*)")
+        list(APPEND cmake_var_assignments "${arg}")
         continue()
     endif()
 
@@ -481,6 +614,10 @@ while(1)
     if(arg MATCHES "^--?enable-(.*)")
         set(opt "${CMAKE_MATCH_1}")
         set(val "yes")
+    # Handle -no-prefix so it's not interpreted as the negation of -prefix
+    elseif(arg MATCHES "-(no-prefix)")
+        set(opt "${CMAKE_MATCH_1}")
+        set(val "")
     elseif(arg MATCHES "^--?(disable|no)-(.*)")
         set(opt "${CMAKE_MATCH_2}")
         set(val "no")
@@ -581,24 +718,67 @@ endmacro()
 
 macro(translate_list_input name cmake_var)
     if(DEFINED INPUT_${name})
-        list(JOIN INPUT_${name} "\\;" value)
+        list(JOIN INPUT_${name} "[[;]]" value)
         list(APPEND cmake_args "-D${cmake_var}=${value}")
         drop_input(${name})
     endif()
 endmacro()
 
+# Check whether to guess the compiler for the given language.
+#
+# Sets ${out_var} to FALSE if one of the following holds:
+# - the environment variable ${env_var} is non-empty
+# - the CMake variable ${cmake_var} is set on the command line
+#
+# Otherwise, ${out_var} is set to TRUE.
+function(check_whether_to_guess_compiler out_var env_var cmake_var)
+    set(result TRUE)
+    if(NOT "$ENV{${env_var}}" STREQUAL "")
+        set(result FALSE)
+    else()
+        set(filtered_args ${cmake_args})
+        list(FILTER filtered_args INCLUDE REGEX "^(-D)?${cmake_var}=")
+        if(NOT "${filtered_args}" STREQUAL "")
+            set(result FALSE)
+        endif()
+    endif()
+    set(${out_var} ${result} PARENT_SCOPE)
+endfunction()
+
+# Try to guess the mkspec from the -platform configure argument.
 function(guess_compiler_from_mkspec)
     if(NOT auto_detect_compiler)
         return()
     endif()
+
+    check_whether_to_guess_compiler(guess_c_compiler CC CMAKE_C_COMPILER)
+    check_whether_to_guess_compiler(guess_cxx_compiler CXX CMAKE_CXX_COMPILER)
+    if(NOT guess_c_compiler AND NOT guess_cxx_compiler)
+        return()
+    endif()
+
     string(REGEX MATCH "(^|;)-DQT_QMAKE_TARGET_MKSPEC=\([^;]+\)" m "${cmake_args}")
     set(mkspec ${CMAKE_MATCH_2})
-    if(mkspec MATCHES "-clang(-|$)" AND NOT mkspec MATCHES "android")
-        push("-DCMAKE_C_COMPILER=clang")
-        push("-DCMAKE_CXX_COMPILER=clang++")
-    elseif(mkspec MATCHES "-icc(-|$)")
-        push("-DCMAKE_C_COMPILER=icc")
-        push("-DCMAKE_CXX_COMPILER=icpc")
+    set(c_compiler "")
+    set(cxx_compiler "")
+    if(mkspec MATCHES "-clang-msvc$")
+        set(c_compiler "clang-cl")
+        set(cxx_compiler "clang-cl")
+    elseif(mkspec MATCHES "-clang(-|$)" AND NOT mkspec MATCHES "android")
+        set(c_compiler "clang")
+        set(cxx_compiler "clang++")
+    elseif(mkspec MATCHES "-msvc(-|$)")
+        set(c_compiler "cl")
+        set(cxx_compiler "cl")
+    endif()
+    if(guess_c_compiler AND NOT c_compiler STREQUAL "")
+        push("-DCMAKE_C_COMPILER=${c_compiler}")
+    endif()
+    if(guess_cxx_compiler AND NOT cxx_compiler STREQUAL "")
+        push("-DCMAKE_CXX_COMPILER=${cxx_compiler}")
+    endif()
+    if(mkspec MATCHES "-libc\\+\\+$")
+        push("-DINPUT_stdlib_libcpp=ON")
     endif()
     set(cmake_args "${cmake_args}" PARENT_SCOPE)
 endfunction()
@@ -610,7 +790,7 @@ function(check_qt_build_parts type)
         set(buildFlag "FALSE")
     endif()
 
-    list(APPEND knownParts "tests" "examples" "benchmarks")
+    list(APPEND knownParts "tests" "examples" "benchmarks" "manual-tests" "minimal-static-tests")
 
     foreach(part ${${input}})
         if(part IN_LIST knownParts)
@@ -638,12 +818,13 @@ translate_string_input(qt_libinfix QT_LIBINFIX)
 translate_string_input(qreal QT_COORD_TYPE)
 translate_path_input(prefix CMAKE_INSTALL_PREFIX)
 translate_path_input(extprefix CMAKE_STAGING_PREFIX)
-foreach(kind bin lib archdata libexec qml data doc translation sysconf examples tests)
+foreach(kind bin lib archdata libexec qml data doc sysconf examples tests)
     string(TOUPPER ${kind} uc_kind)
     translate_path_input(${kind}dir INSTALL_${uc_kind}DIR)
 endforeach()
 translate_path_input(headerdir INSTALL_INCLUDEDIR)
 translate_path_input(plugindir INSTALL_PLUGINSDIR)
+translate_path_input(translationdir INSTALL_TRANSLATIONSDIR)
 
 if(NOT "${INPUT_device}" STREQUAL "")
     push("-DQT_QMAKE_TARGET_MKSPEC=devices/${INPUT_device}")
@@ -653,20 +834,12 @@ translate_string_input(platform QT_QMAKE_TARGET_MKSPEC)
 translate_string_input(xplatform QT_QMAKE_TARGET_MKSPEC)
 guess_compiler_from_mkspec()
 translate_string_input(qpa_default_platform QT_QPA_DEFAULT_PLATFORM)
-translate_list_input(sanitize ECM_ENABLE_SANITIZERS)
 
 translate_path_input(android-sdk ANDROID_SDK_ROOT)
 translate_path_input(android-ndk ANDROID_NDK_ROOT)
-if(DEFINED INPUT_android-ndk-host)
-    drop_input(android-ndk-host)
-    qtConfAddWarning("The -android-ndk-host option is not supported with the CMake build. "
-        "Determining the right host platform is handled by the CMake toolchain file that is "
-        "located in your NDK.")
-endif()
 if(DEFINED INPUT_android-ndk-platform)
     drop_input(android-ndk-platform)
-    string(REGEX REPLACE "^android-" "" INPUT_android-ndk-platform "${INPUT_android-ndk-platform}")
-    push("-DANDROID_NATIVE_API_LEVEL=${INPUT_android-ndk-platform}")
+    push("-DANDROID_PLATFORM=${INPUT_android-ndk-platform}")
 endif()
 if(DEFINED INPUT_android-abis)
     if(INPUT_android-abis MATCHES ",")
@@ -678,8 +851,10 @@ endif()
 translate_string_input(android-javac-source QT_ANDROID_JAVAC_SOURCE)
 translate_string_input(android-javac-target QT_ANDROID_JAVAC_TARGET)
 
+# FIXME: config_help.txt says -sdk should apply to macOS as well.
 translate_string_input(sdk QT_UIKIT_SDK)
-if(DEFINED INPUT_sdk OR (DEFINED INPUT_xplatform AND INPUT_xplatform STREQUAL "macx-ios-clang"))
+if(DEFINED INPUT_sdk OR (DEFINED INPUT_xplatform AND INPUT_xplatform STREQUAL "macx-ios-clang")
+    OR (DEFINED INPUT_platform AND INPUT_platform STREQUAL "macx-ios-clang"))
     push("-DCMAKE_SYSTEM_NAME=iOS")
 endif()
 
@@ -710,7 +885,7 @@ if(nr_of_build_configs EQUAL 1)
     push("-DCMAKE_BUILD_TYPE=${build_configs}")
 elseif(nr_of_build_configs GREATER 1)
     set(multi_config ON)
-    string(REPLACE ";" "\\;" escaped_build_configs "${build_configs}")
+    string(REPLACE ";" "[[;]]" escaped_build_configs "${build_configs}")
     # We must not use the push macro here to avoid variable expansion.
     # That would destroy our escaping.
     list(APPEND cmake_args "-DCMAKE_CONFIGURATION_TYPES=${escaped_build_configs}")
@@ -726,11 +901,6 @@ if("${INPUT_ltcg}" STREQUAL "yes")
     endforeach()
 endif()
 
-if(NOT "${INPUT_opengl}" STREQUAL "")
-    drop_input(opengl)
-    push("-DINPUT_opengl=${INPUT_opengl}")
-endif()
-
 translate_list_input(device-option QT_QMAKE_DEVICE_OPTIONS)
 translate_list_input(defines QT_EXTRA_DEFINES)
 translate_list_input(fpaths QT_EXTRA_FRAMEWORKPATHS)
@@ -738,17 +908,20 @@ translate_list_input(includes QT_EXTRA_INCLUDEPATHS)
 translate_list_input(lpaths QT_EXTRA_LIBDIRS)
 translate_list_input(rpaths QT_EXTRA_RPATHS)
 
-foreach(feature ${commandline_known_features})
-    qt_feature_normalize_name("${feature}" cmake_feature)
-    if(${feature} IN_LIST config_inputs)
-        translate_boolean_input(${feature} INPUT_${cmake_feature})
-    endif()
-endforeach()
+if(cmake_file_api OR (developer_build AND NOT DEFINED cmake_file_api))
+    foreach(file cache-v2 cmakeFiles-v1 codemodel-v2 toolchains-v1)
+        file(WRITE "${CMAKE_BINARY_DIR}/.cmake/api/v1/query/${file}" "")
+    endforeach()
+endif()
 
 foreach(input ${config_inputs})
     qt_feature_normalize_name("${input}" cmake_input)
     push("-DINPUT_${cmake_input}=${INPUT_${input}}")
 endforeach()
+
+if(DEFINED INPUT_no-prefix AND DEFINED INPUT_prefix)
+    qtConfAddError("Can't specify both -prefix and -no-prefix options at the same time.")
+endif()
 
 if(NOT generator AND auto_detect_generator)
     find_program(ninja ninja)
@@ -788,7 +961,15 @@ if(generator)
     push(-G "${generator}")
 endif()
 
+# Add CMake variable assignments near the end to allow users to overwrite what configure sets.
+foreach(arg IN LISTS cmake_var_assignments)
+    push("-D${arg}")
+endforeach()
+
 push("${MODULE_ROOT}")
+
+# Restore the escaped semicolons in arguments that are lists
+list(TRANSFORM cmake_args REPLACE "\\[\\[;\\]\\]" "\\\\;")
 
 execute_process(COMMAND "${CMAKE_COMMAND}" ${cmake_args}
     COMMAND_ECHO STDOUT

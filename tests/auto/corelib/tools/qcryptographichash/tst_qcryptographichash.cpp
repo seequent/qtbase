@@ -1,36 +1,16 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QtCore/QCoreApplication>
 #include <QTest>
+#include <QScopeGuard>
 #include <QCryptographicHash>
 #include <QtCore/QMetaEnum>
+
+#if QT_CONFIG(cxx11_future)
+#  include <thread>
+#endif
 
 Q_DECLARE_METATYPE(QCryptographicHash::Algorithm)
 
@@ -49,7 +29,15 @@ private slots:
     void blake2();
     void files_data();
     void files();
+    void hashLength_data();
     void hashLength();
+    void move();
+    void swap();
+    // keep last
+    void moreThan4GiBOfData_data();
+    void moreThan4GiBOfData();
+private:
+    std::vector<char> large;
 };
 
 void tst_QCryptographicHash::repeated_result_data()
@@ -63,19 +51,23 @@ void tst_QCryptographicHash::repeated_result()
     QCryptographicHash::Algorithm _algo = QCryptographicHash::Algorithm(algo);
     QCryptographicHash hash(_algo);
 
+    QCOMPARE_EQ(hash.algorithm(), _algo);
+
     QFETCH(QByteArray, first);
     hash.addData(first);
 
     QFETCH(QByteArray, hash_first);
-    QByteArray result = hash.result();
+    QByteArrayView result = hash.resultView();
     QCOMPARE(result, hash_first);
+    QCOMPARE(result, hash.resultView());
     QCOMPARE(result, hash.result());
 
     hash.reset();
     hash.addData(first);
-    result = hash.result();
+    result = hash.resultView();
     QCOMPARE(result, hash_first);
     QCOMPARE(result, hash.result());
+    QCOMPARE(result, hash.resultView());
 }
 
 void tst_QCryptographicHash::intermediary_result_data()
@@ -168,16 +160,14 @@ void tst_QCryptographicHash::intermediary_result()
     hash.addData(first);
 
     QFETCH(QByteArray, hash_first);
-    QByteArray result = hash.result();
-    QCOMPARE(result, hash_first);
+    QCOMPARE(hash.resultView(), hash_first);
 
     // don't reset
     QFETCH(QByteArray, second);
     QFETCH(QByteArray, hash_firstsecond);
     hash.addData(second);
 
-    result = hash.result();
-    QCOMPARE(result, hash_firstsecond);
+    QCOMPARE(hash.resultView(), hash_firstsecond);
 
     hash.reset();
 }
@@ -198,10 +188,7 @@ void tst_QCryptographicHash::sha1()
 
 //  SHA1(A million repetitions of "a") =
 //      34AA973C D4C4DAA4 F61EEB2B DBAD2731 6534016F
-    QByteArray as;
-    for (int i = 0; i < 1000000; ++i)
-        as += 'a';
-    QCOMPARE(QCryptographicHash::hash(as, QCryptographicHash::Sha1).toHex().toUpper(),
+    QCOMPARE(QCryptographicHash::hash(QByteArray(1'000'000, 'a'), QCryptographicHash::Sha1).toHex().toUpper(),
              QByteArray("34AA973CD4C4DAA4F61EEB2BDBAD27316534016F"));
 }
 
@@ -400,14 +387,134 @@ void tst_QCryptographicHash::files()
     }
 }
 
-void tst_QCryptographicHash::hashLength()
+void tst_QCryptographicHash::hashLength_data()
 {
+    QTest::addColumn<QCryptographicHash::Algorithm>("algorithm");
     auto metaEnum = QMetaEnum::fromType<QCryptographicHash::Algorithm>();
     for (int i = 0, value = metaEnum.value(i); value != -1; value = metaEnum.value(++i)) {
         auto algorithm = QCryptographicHash::Algorithm(value);
-        QByteArray output = QCryptographicHash::hash(QByteArrayLiteral("test"), algorithm);
-        QCOMPARE(QCryptographicHash::hashLength(algorithm), output.length());
+        QTest::addRow("%s", metaEnum.key(i)) << algorithm;
     }
+}
+
+void tst_QCryptographicHash::hashLength()
+{
+    QFETCH(const QCryptographicHash::Algorithm, algorithm);
+
+    QByteArray output = QCryptographicHash::hash("test", algorithm);
+    QCOMPARE(QCryptographicHash::hashLength(algorithm), output.size());
+}
+
+void tst_QCryptographicHash::move()
+{
+    QCryptographicHash hash1(QCryptographicHash::Sha1);
+    hash1.addData("a");
+
+    // move constructor
+    auto hash2(std::move(hash1));
+    hash2.addData("b");
+
+    // move assign operator
+    QCryptographicHash hash3(QCryptographicHash::Sha256);
+    hash3.addData("no effect on the end result");
+    hash3 = std::move(hash2);
+    hash3.addData("c");
+
+    QCOMPARE(hash3.resultView(), QByteArray::fromHex("A9993E364706816ABA3E25717850C26C9CD0D89D"));
+}
+
+void tst_QCryptographicHash::swap()
+{
+    QCryptographicHash hash1(QCryptographicHash::Sha1);
+    QCryptographicHash hash2(QCryptographicHash::Sha256);
+
+    hash1.addData("da");
+    hash2.addData("te");
+
+    hash1.swap(hash2);
+
+    hash2.addData("ta");
+    hash1.addData("st");
+
+    QCOMPARE(hash2.result(), QCryptographicHash::hash("data", QCryptographicHash::Sha1));
+    QCOMPARE(hash1.result(), QCryptographicHash::hash("test", QCryptographicHash::Sha256));
+}
+
+void tst_QCryptographicHash::moreThan4GiBOfData_data()
+{
+#if QT_POINTER_SIZE > 4
+    QElapsedTimer timer;
+    timer.start();
+    const size_t GiB = 1024 * 1024 * 1024;
+    try {
+        large.resize(4 * GiB + 1, '\0');
+    } catch (const std::bad_alloc &) {
+        QSKIP("Could not allocate 4GiB plus one byte of RAM.");
+    }
+    QCOMPARE(large.size(), 4 * GiB + 1);
+    large.back() = '\1';
+    qDebug("created dataset in %lld ms", timer.elapsed());
+
+    QTest::addColumn<QCryptographicHash::Algorithm>("algorithm");
+    auto me = QMetaEnum::fromType<QCryptographicHash::Algorithm>();
+    auto row = [me] (QCryptographicHash::Algorithm algo) {
+        QTest::addRow("%s", me.valueToKey(int(algo))) << algo;
+    };
+    // these are reasonably fast (O(secs))
+    row(QCryptographicHash::Md4);
+    row(QCryptographicHash::Md5);
+    row(QCryptographicHash::Sha1);
+    if (!qgetenv("QTEST_ENVIRONMENT").split(' ').contains("ci")) {
+        // This is important but so slow (O(minute)) that, on CI, it tends to time out.
+        // Retain it for manual runs, all the same, as most dev machines will be fast enough.
+        row(QCryptographicHash::Sha512);
+    }
+    // the rest is just too slow
+#else
+    QSKIP("This test is 64-bit only.");
+#endif
+}
+
+void tst_QCryptographicHash::moreThan4GiBOfData()
+{
+    QFETCH(const QCryptographicHash::Algorithm, algorithm);
+
+# if QT_CONFIG(cxx11_future)
+    using MaybeThread = std::thread;
+# else
+    struct MaybeThread {
+        std::function<void()> func;
+        void join() { func(); }
+    };
+# endif
+
+    QElapsedTimer timer;
+    timer.start();
+    const auto sg = qScopeGuard([&] {
+        qDebug() << algorithm << "test finished in" << timer.restart() << "ms";
+    });
+
+    const auto view = QByteArrayView{large};
+    const auto first = view.first(view.size() / 2);
+    const auto last = view.sliced(view.size() / 2);
+
+    QByteArray single;
+    QByteArray chunked;
+
+    auto t = MaybeThread{[&] {
+        QCryptographicHash h(algorithm);
+        h.addData(view);
+        single = h.result();
+    }};
+    {
+        QCryptographicHash h(algorithm);
+        h.addData(first);
+        h.addData(last);
+        chunked = h.result();
+    }
+    t.join();
+
+    QCOMPARE(single, chunked);
 }
 
 QTEST_MAIN(tst_QCryptographicHash)

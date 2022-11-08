@@ -1,43 +1,7 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Copyright (C) 2019 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// Copyright (C) 2019 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qbytearray.h"
 #include "qbytearraymatcher.h"
@@ -51,29 +15,27 @@
 #include "qstringalgorithms_p.h"
 #include "qscopedpointer.h"
 #include "qbytearray_p.h"
+#include "qstringconverter_p.h"
 #include <qdatastream.h>
 #include <qmath.h>
 
 #ifndef QT_NO_COMPRESS
 #include <zconf.h>
 #include <zlib.h>
+#include <qxpfunctional.h>
 #endif
 #include <ctype.h>
 #include <limits.h>
 #include <string.h>
 #include <stdlib.h>
 
+#include <algorithm>
+
 #define IS_RAW_DATA(d) ((d)->flags() & QArrayData::RawDataType)
 
 QT_BEGIN_NAMESPACE
 
-template <typename T, typename Cmp = std::less<>>
-static constexpr bool points_into_range(const T *p, const T *b, const T *e, Cmp less = {}) noexcept
-{
-    return !less(p, b) && less(p, e);
-}
-
-const char QByteArray::_empty = '\0';
+Q_CONSTINIT const char QByteArray::_empty = '\0';
 
 // ASCII case system, used by QByteArray::to{Upper,Lower}() and qstr(n)icmp():
 static constexpr inline uchar asciiUpper(uchar c)
@@ -275,7 +237,7 @@ int qstricmp(const char *str1, const char *str2)
         max += offset;
         do {
             uchar c = s1[offset];
-            if (int res = asciiLower(c) - asciiLower(s2[offset]))
+            if (int res = QtMiscUtils::caseCompareAscii(c, s2[offset]))
                 return res;
             if (!c)
                 return 0;
@@ -358,7 +320,7 @@ int qstrnicmp(const char *str1, const char *str2, size_t len)
         return s1 ? 1 : (s2 ? -1 : 0);
     for (; len--; ++s1, ++s2) {
         const uchar c = *s1;
-        if (int res = asciiLower(c) - asciiLower(*s2))
+        if (int res = QtMiscUtils::caseCompareAscii(c, *s2))
             return res;
         if (!c)                                // strings are equal
             break;
@@ -399,7 +361,7 @@ int qstrnicmp(const char *str1, qsizetype len1, const char *str2, qsizetype len2
             if (!c)
                 return 1;
 
-            if (int res = asciiLower(s1[i]) - asciiLower(c))
+            if (int res = QtMiscUtils::caseCompareAscii(s1[i], c))
                 return res;
         }
         return s2[i] ? -1 : 0;
@@ -407,7 +369,7 @@ int qstrnicmp(const char *str1, qsizetype len1, const char *str2, qsizetype len2
         // not null-terminated
         const qsizetype len = qMin(len1, len2);
         for (qsizetype i = 0; i < len; ++i) {
-            if (int res = asciiLower(s1[i]) - asciiLower(s2[i]))
+            if (int res = QtMiscUtils::caseCompareAscii(s1[i], s2[i]))
                 return res;
         }
         if (len1 == len2)
@@ -430,6 +392,14 @@ int QtPrivate::compareMemory(QByteArrayView lhs, QByteArrayView rhs)
     // they matched qMin(l1, l2) bytes
     // so the longer one is lexically after the shorter one
     return lhs.size() == rhs.size() ? 0 : lhs.size() > rhs.size() ? 1 : -1;
+}
+
+/*!
+    \internal
+*/
+bool QtPrivate::isValidUtf8(QByteArrayView s) noexcept
+{
+    return QUtf8::isValidUtf8(s).isValidUtf8;
 }
 
 // the CRC table below is created by the following piece of code
@@ -539,7 +509,9 @@ quint16 qChecksum(QByteArrayView data, Qt::ChecksumType standard)
     \sa qUncompress(const QByteArray &data)
 */
 
-/*! \relates QByteArray
+/*!
+    \fn QByteArray qCompress(const uchar* data, qsizetype nbytes, int compressionLevel)
+    \relates QByteArray
 
     \overload
 
@@ -548,44 +520,196 @@ quint16 qChecksum(QByteArrayView data, Qt::ChecksumType standard)
 */
 
 #ifndef QT_NO_COMPRESS
+using CompressSizeHint_t = quint32; // 32-bit BE, historically
+
+enum class ZLibOp : bool { Compression, Decompression };
+
+Q_DECL_COLD_FUNCTION
+static const char *zlibOpAsString(ZLibOp op)
+{
+    switch (op) {
+    case ZLibOp::Compression: return "qCompress";
+    case ZLibOp::Decompression: return "qUncompress";
+    }
+    Q_UNREACHABLE_RETURN(nullptr);
+}
+
+Q_DECL_COLD_FUNCTION
+static QByteArray zlibError(ZLibOp op, const char *what)
+{
+    qWarning("%s: %s", zlibOpAsString(op), what);
+    return QByteArray();
+}
+
+Q_DECL_COLD_FUNCTION
+static QByteArray dataIsNull(ZLibOp op)
+{
+    return zlibError(op, "Data is null");
+}
+
+Q_DECL_COLD_FUNCTION
+static QByteArray lengthIsNegative(ZLibOp op)
+{
+    return zlibError(op, "Input length is negative");
+}
+
+Q_DECL_COLD_FUNCTION
+static QByteArray tooMuchData(ZLibOp op)
+{
+    return zlibError(op, "Not enough memory");
+}
+
+Q_DECL_COLD_FUNCTION
+static QByteArray invalidCompressedData()
+{
+    return zlibError(ZLibOp::Decompression, "Input data is corrupted");
+}
+
+Q_DECL_COLD_FUNCTION
+static QByteArray unexpectedZlibError(ZLibOp op, int err, const char *msg)
+{
+    qWarning("%s unexpected zlib error: %s (%d)",
+             zlibOpAsString(op),
+             msg ? msg : "",
+             err);
+    return QByteArray();
+}
+
+static QByteArray xxflate(ZLibOp op, QArrayDataPointer<char> out, QByteArrayView input,
+                          qxp::function_ref<int(z_stream *) const> init,
+                          qxp::function_ref<int(z_stream *, size_t) const> processChunk,
+                          qxp::function_ref<void(z_stream *) const> deinit)
+{
+    if (out.data() == nullptr) // allocation failed
+        return tooMuchData(op);
+    qsizetype capacity = out.allocatedCapacity();
+
+    const auto initalSize = out.size;
+
+    z_stream zs = {};
+    zs.next_in = reinterpret_cast<uchar *>(const_cast<char *>(input.data())); // 1980s C API...
+    if (const int err = init(&zs); err != Z_OK)
+        return unexpectedZlibError(op, err, zs.msg);
+    const auto sg = qScopeGuard([&] { deinit(&zs); });
+
+    using ZlibChunkSize_t = decltype(zs.avail_in);
+    static_assert(!std::is_signed_v<ZlibChunkSize_t>);
+    static_assert(std::is_same_v<ZlibChunkSize_t, decltype(zs.avail_out)>);
+    constexpr auto MaxChunkSize = std::numeric_limits<ZlibChunkSize_t>::max();
+    [[maybe_unused]]
+    constexpr auto MaxStatisticsSize = std::numeric_limits<decltype(zs.total_out)>::max();
+
+    size_t inputLeft = size_t(input.size());
+
+    int res;
+    do {
+        Q_ASSERT(out.freeSpaceAtBegin() == 0); // ensure prepend optimization stays out of the way
+        Q_ASSERT(capacity == out.allocatedCapacity());
+
+        if (zs.avail_out == 0) {
+            Q_ASSERT(size_t(out.size) - initalSize > MaxStatisticsSize || // total_out overflow
+                     size_t(out.size) - initalSize == zs.total_out);
+            Q_ASSERT(out.size <= capacity);
+
+            qsizetype avail_out = capacity - out.size;
+            if (avail_out == 0) {
+                out->reallocateAndGrow(QArrayData::GrowsAtEnd, 1); // grow to next natural capacity
+                if (out.data() == nullptr) // reallocation failed
+                    return tooMuchData(op);
+                capacity = out.allocatedCapacity();
+                avail_out = capacity - out.size;
+            }
+            zs.next_out = reinterpret_cast<uchar *>(out.data()) + out.size;
+            zs.avail_out = size_t(avail_out) > size_t(MaxChunkSize) ? MaxChunkSize
+                                                                    : ZlibChunkSize_t(avail_out);
+            out.size += zs.avail_out;
+
+            Q_ASSERT(zs.avail_out > 0);
+        }
+
+        if (zs.avail_in == 0) {
+            // zs.next_in is kept up-to-date by processChunk(), so nothing to do
+            zs.avail_in = inputLeft > MaxChunkSize ? MaxChunkSize : ZlibChunkSize_t(inputLeft);
+            inputLeft -= zs.avail_in;
+        }
+
+        res = processChunk(&zs, inputLeft);
+    } while (res == Z_OK);
+
+    switch (res) {
+    case Z_STREAM_END:
+        out.size -= zs.avail_out;
+        Q_ASSERT(size_t(out.size) - initalSize > MaxStatisticsSize || // total_out overflow
+                 size_t(out.size) - initalSize == zs.total_out);
+        Q_ASSERT(out.size <= out.allocatedCapacity());
+        out.data()[out.size] = '\0';
+        return QByteArray(std::move(out));
+
+    case Z_MEM_ERROR:
+        return tooMuchData(op);
+
+    case Z_BUF_ERROR:
+        Q_UNREACHABLE(); // cannot happen - we supply a buffer that can hold the result,
+                         // or else error out early
+
+    case Z_DATA_ERROR:   // can only happen on decompression
+        Q_ASSERT(op == ZLibOp::Decompression);
+        return invalidCompressedData();
+
+    default:
+        return unexpectedZlibError(op, res, zs.msg);
+    }
+}
+
 QByteArray qCompress(const uchar* data, qsizetype nbytes, int compressionLevel)
 {
+    constexpr qsizetype HeaderSize = sizeof(CompressSizeHint_t);
     if (nbytes == 0) {
-        return QByteArray(4, '\0');
+        return QByteArray(HeaderSize, '\0');
     }
-    if (!data) {
-        qWarning("qCompress: Data is null");
-        return QByteArray();
-    }
+    if (!data)
+        return dataIsNull(ZLibOp::Compression);
+
+    if (nbytes < 0)
+        return lengthIsNegative(ZLibOp::Compression);
+
     if (compressionLevel < -1 || compressionLevel > 9)
         compressionLevel = -1;
 
-    ulong len = nbytes + nbytes / 100 + 13;
-    QByteArray bazip;
-    int res;
-    do {
-        bazip.resize(len + 4);
-        res = ::compress2((uchar*)bazip.data()+4, &len, data, nbytes, compressionLevel);
-
-        switch (res) {
-        case Z_OK:
-            bazip.resize(len + 4);
-            bazip[0] = (nbytes & 0xff000000) >> 24;
-            bazip[1] = (nbytes & 0x00ff0000) >> 16;
-            bazip[2] = (nbytes & 0x0000ff00) >> 8;
-            bazip[3] = (nbytes & 0x000000ff);
-            break;
-        case Z_MEM_ERROR:
-            qWarning("qCompress: Z_MEM_ERROR: Not enough memory");
-            bazip.resize(0);
-            break;
-        case Z_BUF_ERROR:
-            len *= 2;
-            break;
+    QArrayDataPointer out = [&] {
+        constexpr qsizetype SingleAllocLimit = 256 * 1024; // the maximum size for which we use
+                                                           // zlib's compressBound() to guarantee
+                                                           // the output buffer size is sufficient
+                                                           // to hold result
+        qsizetype capacity = HeaderSize;
+        if (nbytes < SingleAllocLimit) {
+            // use maximum size
+            capacity += compressBound(uLong(nbytes)); // cannot overflow (both times)!
+            return QArrayDataPointer{QTypedArrayData<char>::allocate(capacity)};
         }
-    } while (res == Z_BUF_ERROR);
 
-    return bazip;
+        // for larger buffers, assume it compresses optimally, and
+        // grow geometrically from there:
+        constexpr qsizetype MaxCompressionFactor = 1024; // max theoretical factor is 1032
+                                                         // cf. http://www.zlib.org/zlib_tech.html,
+                                                         // but use a nearby power-of-two (faster)
+        capacity += std::max(qsizetype(compressBound(uLong(SingleAllocLimit))),
+                             nbytes / MaxCompressionFactor);
+        return QArrayDataPointer{QTypedArrayData<char>::allocate(capacity, QArrayData::Grow)};
+    }();
+
+    if (out.data() == nullptr) // allocation failed
+      return tooMuchData(ZLibOp::Compression);
+
+    qToBigEndian(qt_saturate<CompressSizeHint_t>(nbytes), out.data());
+    out.size = HeaderSize;
+
+    return xxflate(ZLibOp::Compression, std::move(out), {data, nbytes},
+                   [=] (z_stream *zs) { return deflateInit(zs, compressionLevel); },
+                   [] (z_stream *zs, size_t inputLeft) {
+                       return deflate(zs, inputLeft ? Z_NO_FLUSH : Z_FINISH);
+                   },
+                   [] (z_stream *zs) { deflateEnd(zs); });
 }
 #endif
 
@@ -607,18 +731,21 @@ QByteArray qCompress(const uchar* data, qsizetype nbytes, int compressionLevel)
     data that was compressed using zlib, you first need to prepend a four
     byte header to the byte array containing the data. The header must
     contain the expected length (in bytes) of the uncompressed data,
-    expressed as an unsigned, big-endian, 32-bit integer.
+    expressed as an unsigned, big-endian, 32-bit integer. This number is
+    just a hint for the initial size of the output buffer size,
+    though. If the indicated size is too small to hold the result, the
+    output buffer size will still be increased until either the output
+    fits or the system runs out of memory. So, despite the 32-bit
+    header, this function, on 64-bit platforms, can produce more than
+    4GiB of output.
+
+    \note In Qt versions prior to Qt 6.5, more than 2GiB of data
+    worked unreliably; in Qt versions prior to Qt 6.0, not at all.
 
     \sa qCompress()
 */
 
 #ifndef QT_NO_COMPRESS
-static QByteArray invalidCompressedData()
-{
-    qWarning("qUncompress: Input data is corrupted");
-    return QByteArray();
-}
-
 /*! \relates QByteArray
 
     \overload
@@ -628,64 +755,39 @@ static QByteArray invalidCompressedData()
 */
 QByteArray qUncompress(const uchar* data, qsizetype nbytes)
 {
-    if (!data) {
-        qWarning("qUncompress: Data is null");
-        return QByteArray();
-    }
-    if (nbytes <= 4) {
-        if (nbytes < 4 || (data[0]!=0 || data[1]!=0 || data[2]!=0 || data[3]!=0))
-            qWarning("qUncompress: Input data is corrupted");
-        return QByteArray();
-    }
-    size_t expectedSize = size_t((data[0] << 24) | (data[1] << 16) |
-                                 (data[2] <<  8) | (data[3]      ));
-    size_t len = qMax(expectedSize, 1ul);
-    const size_t maxPossibleSize = MaxAllocSize - sizeof(QByteArray::Data);
-    if (Q_UNLIKELY(len >= maxPossibleSize)) {
-        // QByteArray does not support that huge size anyway.
-        return invalidCompressedData();
-    }
+    if (!data)
+        return dataIsNull(ZLibOp::Decompression);
 
-    QByteArray::DataPointer d(QByteArray::Data::allocate(len));
-    if (Q_UNLIKELY(d.data() == nullptr))
+    if (nbytes < 0)
+        return lengthIsNegative(ZLibOp::Decompression);
+
+    constexpr qsizetype HeaderSize = sizeof(CompressSizeHint_t);
+    if (nbytes < HeaderSize)
         return invalidCompressedData();
 
-    forever {
-        const auto alloc = len;
-        int res = ::uncompress((uchar*)d.data(), reinterpret_cast<uLongf*>(&len),
-                               data+4, nbytes-4);
-
-        switch (res) {
-        case Z_OK: {
-            Q_ASSERT(len <= alloc);
-            Q_UNUSED(alloc);
-            d.data()[len] = '\0';
-            d.size = len;
-            return QByteArray(d);
-        }
-
-        case Z_MEM_ERROR:
-            qWarning("qUncompress: Z_MEM_ERROR: Not enough memory");
-            return QByteArray();
-
-        case Z_BUF_ERROR:
-            len *= 2;
-            if (Q_UNLIKELY(len >= maxPossibleSize)) {
-                // QByteArray does not support that huge size anyway.
-                return invalidCompressedData();
-            } else {
-                // grow the block
-                d->reallocate(d->allocatedCapacity()*2, QArrayData::Grow);
-                if (Q_UNLIKELY(d.data() == nullptr))
-                    return invalidCompressedData();
-            }
-            continue;
-
-        case Z_DATA_ERROR:
-            qWarning("qUncompress: Z_DATA_ERROR: Input data is corrupted");
-            return QByteArray();
-        }
+    const auto expectedSize = qFromBigEndian<CompressSizeHint_t>(data);
+    if (nbytes == HeaderSize) {
+        if (expectedSize != 0)
+            return invalidCompressedData();
+        return QByteArray();
     }
+
+    constexpr auto MaxDecompressedSize = size_t(MaxByteArraySize);
+    if constexpr (MaxDecompressedSize < std::numeric_limits<CompressSizeHint_t>::max()) {
+        if (expectedSize > MaxDecompressedSize)
+            return tooMuchData(ZLibOp::Decompression);
+    }
+
+    // expectedSize may be truncated, so always use at least nbytes
+    // (larger by at most 1%, according to zlib docs)
+    qsizetype capacity = std::max(qsizetype(expectedSize), // cannot overflow!
+                                  nbytes);
+
+    QArrayDataPointer d(QTypedArrayData<char>::allocate(capacity, QArrayData::KeepSize));
+    return xxflate(ZLibOp::Decompression, std::move(d), {data + HeaderSize, nbytes - HeaderSize},
+                   [] (z_stream *zs) { return inflateInit(zs); },
+                   [] (z_stream *zs, size_t) { return inflate(zs, Z_NO_FLUSH); },
+                   [] (z_stream *zs) { inflateEnd(zs); });
 }
 #endif
 
@@ -905,17 +1007,18 @@ QByteArray qUncompress(const uchar* data, qsizetype nbytes)
     \section2 Spacing Characters
 
     A frequent requirement is to remove spacing characters from a byte array
-    ('\\n', '\\t', ' ', etc.). If you want to remove spacing from both ends of a
-    QByteArray, use trimmed(). If you want to also replace each run of spacing
-    characters with a single space character within the byte array, use
+    (\c{'\n'}, \c{'\t'}, \c{' '}, etc.). If you want to remove spacing from both
+    ends of a QByteArray, use trimmed(). If you want to also replace each run of
+    spacing characters with a single space character within the byte array, use
     simplified(). Only ASCII spacing characters are recognized for these
     purposes.
 
     \section2 Number-String Conversions
 
-    Functions that perform conversions between numeric data types and strings
-    are performed in the C locale, regardless of the user's locale settings. Use
-    QLocale to perform locale-aware conversions between numbers and strings.
+    Functions that perform conversions between numeric data types and string
+    representations are performed in the C locale, regardless of the user's
+    locale settings. Use QLocale to perform locale-aware conversions between
+    numbers and strings.
 
     \section2 Character Case
 
@@ -923,13 +1026,13 @@ QByteArray qUncompress(const uchar* data, qsizetype nbytes)
     comparison is limited to ASCII. Non-ASCII characters are treated as
     caseless, since their case depends on encoding. This affects functions that
     support a case insensitive option or that change the case of their
-    arguments. Functions that this affects include contains(), indexOf(),
-    lastIndexOf(), isLower(), isUpper(), toLower() and toUpper().
+    arguments. Functions that this affects include compare(), isLower(),
+    isUpper(), toLower() and toUpper().
 
     This issue does not apply to \l{QString}s since they represent characters
     using Unicode.
 
-    \sa  QByteArrayView, QString, QBitArray
+    \sa QByteArrayView, QString, QBitArray
 */
 
 /*!
@@ -1168,6 +1271,21 @@ QByteArray::iterator QByteArray::erase(QByteArray::const_iterator first, QByteAr
     return begin() + start;
 }
 
+/*!
+    \fn QByteArray::iterator QByteArray::erase(QByteArray::const_iterator it)
+
+    \since 6.5
+
+    Removes the character denoted by \c it from the byte array.
+    Returns an iterator to the character immediately after the
+    erased character.
+
+    \code
+    QByteArray ba = "abcdefg";
+    auto it = ba.erase(ba.cbegin()); // ba is now "bcdefg" and it points to "b"
+    \endcode
+*/
+
 /*! \fn QByteArray::QByteArray(const QByteArray &other)
 
     Constructs a copy of \a other.
@@ -1260,7 +1378,7 @@ QByteArray &QByteArray::operator=(const char *str)
     you can use the return value of data() and constData() as arguments to
     functions that expect '\\0'-terminated strings. If the QByteArray object was
     created from a \l{fromRawData()}{raw data} that didn't include the trailing
-    '\\0'-termination byte, then QByteArray doesn't add it automaticall unless a
+    '\\0'-termination byte, then QByteArray doesn't add it automatically unless a
     \l{deep copy} is created.
 
     Example:
@@ -1754,6 +1872,31 @@ void QByteArray::resize(qsizetype size)
 }
 
 /*!
+    \since 6.4
+
+    Sets the size of the byte array to \a newSize bytes.
+
+    If \a newSize is greater than the current size, the byte array is
+    extended to make it \a newSize bytes with the extra bytes added to
+    the end. The new bytes are initialized to \a c.
+
+    If \a newSize is less than the current size, bytes beyond position
+    \a newSize are excluded from the byte array.
+
+    \note While resize() will grow the capacity if needed, it never shrinks
+    capacity. To shed excess capacity, use squeeze().
+
+    \sa size(), truncate(), squeeze()
+*/
+void QByteArray::resize(qsizetype newSize, char c)
+{
+    const auto old = d.size;
+    resize(newSize);
+    if (old < d.size)
+        memset(d.data() + old, c, d.size - old);
+}
+
+/*!
     Sets every byte in the byte array to \a ch. If \a size is different from -1
     (the default), the byte array is resized to size \a size beforehand.
 
@@ -1813,26 +1956,6 @@ void QByteArray::reallocGrowData(qsizetype n)
 void QByteArray::expand(qsizetype i)
 {
     resize(qMax(i + 1, size()));
-}
-
-/*!
-   \internal
-   Return a QByteArray that is sure to be '\\0'-terminated.
-
-   By default, all QByteArray have an extra NUL at the end,
-   guaranteeing that assumption. However, if QByteArray::fromRawData
-   is used, then the NUL is there only if the user put it there. We
-   can't be sure.
-*/
-QByteArray QByteArray::nulTerminated() const
-{
-    // is this fromRawData?
-    if (d.isMutable())
-        return *this;           // no, then we're sure we're zero terminated
-
-    QByteArray copy(*this);
-    copy.detach();
-    return copy;
 }
 
 /*!
@@ -1977,8 +2100,7 @@ QByteArray &QByteArray::append(const QByteArray &ba)
 
 QByteArray& QByteArray::append(char ch)
 {
-    if (d->needsDetach() || !d->freeSpaceAtEnd())
-        reallocGrowData(1);
+    d.detachAndGrow(QArrayData::GrowsAtEnd, 1, nullptr, nullptr);
     d->copyAppend(1, ch);
     d.data()[d.size] = '\0';
     return *this;
@@ -2018,19 +2140,15 @@ QByteArray &QByteArray::insert(qsizetype i, QByteArrayView data)
         // defer a call to free() so that it comes after we copied the data from
         // the old memory:
         DataPointer detached{};  // construction is free
-        if (d->needsDetach() || i + size - d->size > d.freeSpaceAtEnd()) {
-            detached = DataPointer::allocateGrow(d, i + size - d->size, Data::GrowsAtEnd);
-            Q_CHECK_PTR(detached.data());
-            detached->copyAppend(d.constBegin(), d.constEnd());
-            d.swap(detached);
-        }
+        d.detachAndGrow(Data::GrowsAtEnd, (i - d.size) + size, &str, &detached);
+        Q_CHECK_PTR(d.data());
         d->copyAppend(i - d->size, ' ');
         d->copyAppend(str, str + size);
         d.data()[d.size] = '\0';
         return *this;
     }
 
-    if (!d->needsDetach() && points_into_range(str, d.data(), d.data() + d.size)) {
+    if (!d->needsDetach() && QtPrivate::q_points_into_range(str, d.data(), d.data() + d.size)) {
         QVarLengthArray a(str, str + size);
         return insert(i, a);
     }
@@ -2100,12 +2218,8 @@ QByteArray &QByteArray::insert(qsizetype i, qsizetype count, char ch)
 
     if (i >= d->size) {
         // handle this specially, as QArrayDataOps::insert() doesn't handle out of bounds positions
-        if (d->needsDetach() || i + count - d->size > d.freeSpaceAtEnd()) {
-            DataPointer detached(DataPointer::allocateGrow(d, i + count - d->size, Data::GrowsAtEnd));
-            Q_CHECK_PTR(detached.data());
-            detached->copyAppend(d.constBegin(), d.constEnd());
-            d.swap(detached);
-        }
+        d.detachAndGrow(Data::GrowsAtEnd, (i - d.size) + count, nullptr, nullptr);
+        Q_CHECK_PTR(d.data());
         d->copyAppend(i - d->size, ' ');
         d->copyAppend(count, ch);
         d.data()[d.size] = '\0';
@@ -2139,11 +2253,20 @@ QByteArray &QByteArray::remove(qsizetype pos, qsizetype len)
 {
     if (len <= 0  || pos < 0 || size_t(pos) >= size_t(size()))
         return *this;
-    detach();
     if (pos + len > d->size)
         len = d->size - pos;
-    d->erase(d.begin() + pos, len);
-    d.data()[d.size] = '\0';
+
+    auto begin = d.begin();
+    if (!d->isShared()) {
+        d->erase(begin + pos, len);
+        d.data()[d.size] = '\0';
+    } else {
+        QByteArray copy{size() - len, Qt::Uninitialized};
+        const auto toRemove_start = d.begin() + pos;
+        copy.d->copyRanges({{d.begin(), toRemove_start},
+                           {toRemove_start + len, d.end()}});
+        swap(copy);
+    }
     return *this;
 }
 
@@ -2169,13 +2292,16 @@ QByteArray &QByteArray::remove(qsizetype pos, qsizetype len)
 
 QByteArray &QByteArray::replace(qsizetype pos, qsizetype len, QByteArrayView after)
 {
-    if (points_into_range(after.data(), d.data(), d.data() + d.size)) {
+    if (QtPrivate::q_points_into_range(after.data(), d.data(), d.data() + d.size)) {
         QVarLengthArray copy(after.data(), after.data() + after.size());
         return replace(pos, len, QByteArrayView{copy});
     }
     if (len == after.size() && (pos + len <= size())) {
-        detach();
-        memmove(d.data() + pos, after.data(), len*sizeof(char));
+        // same size: in-place replacement possible
+        if (len > 0) {
+            detach();
+            memcpy(d.data() + pos, after.data(), len*sizeof(char));
+        }
         return *this;
     } else {
         // ### optimize me
@@ -2226,11 +2352,11 @@ QByteArray &QByteArray::replace(QByteArrayView before, QByteArrayView after)
         return *this;
 
     // protect against before or after being part of this
-    if (points_into_range(a, d.data(), d.data() + d.size)) {
+    if (QtPrivate::q_points_into_range(a, d.data(), d.data() + d.size)) {
         QVarLengthArray copy(a, a + asize);
         return replace(before, QByteArrayView{copy});
     }
-    if (points_into_range(b, d.data(), d.data() + d.size)) {
+    if (QtPrivate::q_points_into_range(b, d.data(), d.data() + d.size)) {
         QVarLengthArray copy(b, b + bsize);
         return replace(QByteArrayView{copy}, after);
     }
@@ -2436,12 +2562,17 @@ static inline qsizetype findCharHelper(QByteArrayView haystack, qsizetype from, 
 qsizetype QtPrivate::findByteArray(QByteArrayView haystack, qsizetype from, QByteArrayView needle) noexcept
 {
     const auto ol = needle.size();
-    if (ol == 0)
-        return from;
+    const auto l = haystack.size();
+    if (ol == 0) {
+        if (from < 0)
+            return qMax(from + l, 0);
+        else
+            return from > l ? -1 : from;
+    }
+
     if (ol == 1)
         return findCharHelper(haystack, from, needle.front());
 
-    const auto l = haystack.size();
     if (from > l || ol + from > l)
         return -1;
 
@@ -2476,7 +2607,7 @@ qsizetype QtPrivate::findByteArray(QByteArrayView haystack, qsizetype from, QByt
 
 qsizetype QByteArray::indexOf(char ch, qsizetype from) const
 {
-    return static_cast<int>(findCharHelper(*this, from, ch));
+    return qToByteArrayViewIgnoringNull(*this).indexOf(ch, from);
 }
 
 static qsizetype lastIndexOfHelper(const char *haystack, qsizetype l, const char *needle,
@@ -2515,6 +2646,8 @@ static qsizetype lastIndexOfHelper(const char *haystack, qsizetype l, const char
 
 static inline qsizetype lastIndexOfCharHelper(QByteArrayView haystack, qsizetype from, char needle) noexcept
 {
+    if (haystack.size() == 0)
+        return -1;
     if (from < 0)
         from += haystack.size();
     else if (from > haystack.size())
@@ -2532,8 +2665,11 @@ static inline qsizetype lastIndexOfCharHelper(QByteArrayView haystack, qsizetype
 
 qsizetype QtPrivate::lastIndexOf(QByteArrayView haystack, qsizetype from, QByteArrayView needle) noexcept
 {
-    if (haystack.isEmpty())
-        return !needle.size() ? 0 : -1;
+    if (haystack.isEmpty()) {
+        if (needle.isEmpty() && from == 0)
+            return 0;
+        return -1;
+    }
     const auto ol = needle.size();
     if (ol == 1)
         return lastIndexOfCharHelper(haystack, from, needle.front());
@@ -2546,8 +2682,30 @@ qsizetype QtPrivate::lastIndexOf(QByteArrayView haystack, qsizetype from, QByteA
 
     Returns the index position of the start of the last occurrence of the
     sequence of bytes viewed by \a bv in this byte array, searching backward
-    from index position \a from. If \a from is -1 (the default), the search
-    starts from the end of the byte array. Returns -1 if no match is found.
+    from index position \a from. If \a from is -1, the search starts at
+    the last character; if \a from is -2, at the next to last character
+    and so on. Returns -1 if no match is found.
+
+    Example:
+    \snippet code/src_corelib_text_qbytearray.cpp 23
+
+    \note When searching for a 0-length \a bv, the match at the end of
+    the data is excluded from the search by a negative \a from, even
+    though \c{-1} is normally thought of as searching from the end of
+    the byte array: the match at the end is \e after the last character, so
+    it is excluded. To include such a final empty match, either give a
+    positive value for \a from or omit the \a from parameter entirely.
+
+    \sa indexOf(), contains(), count()
+*/
+
+/*! \fn qsizetype QByteArray::lastIndexOf(QByteArrayView bv) const
+    \since 6.2
+    \overload
+
+    Returns the index position of the start of the last occurrence of the
+    sequence of bytes viewed by \a bv in this byte array, searching backward
+    from the end of the byte array. Returns -1 if no match is found.
 
     Example:
     \snippet code/src_corelib_text_qbytearray.cpp 23
@@ -2571,7 +2729,7 @@ qsizetype QtPrivate::lastIndexOf(QByteArrayView haystack, qsizetype from, QByteA
 
 qsizetype QByteArray::lastIndexOf(char ch, qsizetype from) const
 {
-    return static_cast<int>(lastIndexOfCharHelper(*this, from, ch));
+    return qToByteArrayViewIgnoringNull(*this).lastIndexOf(ch, from);
 }
 
 static inline qsizetype countCharHelper(QByteArrayView haystack, char needle) noexcept
@@ -2586,14 +2744,17 @@ static inline qsizetype countCharHelper(QByteArrayView haystack, char needle) no
 
 qsizetype QtPrivate::count(QByteArrayView haystack, QByteArrayView needle) noexcept
 {
+    if (needle.size() == 0)
+        return haystack.size() + 1;
+
     if (needle.size() == 1)
         return countCharHelper(haystack, needle[0]);
 
     qsizetype num = 0;
     qsizetype i = -1;
     if (haystack.size() > 500 && needle.size() > 5) {
-        QByteArrayMatcher matcher(needle.data(), needle.size());
-        while ((i = matcher.indexIn(haystack.data(), haystack.size(), i + 1)) != -1)
+        QByteArrayMatcher matcher(needle);
+        while ((i = matcher.indexIn(haystack, i + 1)) != -1)
             ++num;
     } else {
         while ((i = haystack.indexOf(needle, i + 1)) != -1)
@@ -2621,15 +2782,17 @@ qsizetype QtPrivate::count(QByteArrayView haystack, QByteArrayView needle) noexc
 
 qsizetype QByteArray::count(char ch) const
 {
-    return static_cast<int>(countCharHelper(*this, ch));
+    return countCharHelper(*this, ch);
 }
 
+#if QT_DEPRECATED_SINCE(6, 4)
 /*! \fn qsizetype QByteArray::count() const
-
+    \deprecated [6.4] Use size() or length() instead.
     \overload
 
     Same as size().
 */
+#endif
 
 /*!
     \fn int QByteArray::compare(QByteArrayView bv, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
@@ -2710,28 +2873,6 @@ static constexpr inline bool isUpperCaseAscii(char c)
     return c >= 'A' && c <= 'Z';
 }
 
-/*!
-    Returns \c true if this byte array contains only ASCII uppercase letters,
-    otherwise returns \c false.
-    \since 5.12
-
-    \sa isLower(), toUpper()
-*/
-bool QByteArray::isUpper() const
-{
-    if (isEmpty())
-        return false;
-
-    const char *d = data();
-
-    for (qsizetype i = 0, max = size(); i < max; ++i) {
-        if (!isUpperCaseAscii(d[i]))
-            return false;
-    }
-
-    return true;
-}
-
 /*
     Returns true if \a c is an lowercase ASCII letter.
  */
@@ -2741,26 +2882,45 @@ static constexpr inline bool isLowerCaseAscii(char c)
 }
 
 /*!
-    Returns \c true if this byte array contains only lowercase ASCII letters,
-    otherwise returns \c false.
+    Returns \c true if this byte array is uppercase, that is, if
+    it's identical to its toUpper() folding.
+
+    Note that this does \e not mean that the byte array only contains
+    uppercase letters; only that it contains no ASCII lowercase letters.
+
+    \since 5.12
+
+    \sa isLower(), toUpper()
+*/
+bool QByteArray::isUpper() const
+{
+    return std::none_of(begin(), end(), isLowerCaseAscii);
+}
+
+/*!
+    Returns \c true if this byte array is lowercase, that is, if
+    it's identical to its toLower() folding.
+
+    Note that this does \e not mean that the byte array only contains
+    lowercase letters; only that it contains no ASCII uppercase letters.
+
     \since 5.12
 
     \sa isUpper(), toLower()
  */
 bool QByteArray::isLower() const
 {
-    if (isEmpty())
-        return false;
-
-    const char *d = data();
-
-    for (qsizetype i = 0, max = size(); i < max; ++i) {
-        if (!isLowerCaseAscii(d[i]))
-            return false;
-    }
-
-    return true;
+    return std::none_of(begin(), end(), isUpperCaseAscii);
 }
+
+/*!
+    \fn QByteArray::isValidUtf8() const
+
+    Returns \c true if this byte array contains valid UTF-8 encoded data,
+    or \c false otherwise.
+
+    \since 6.3
+*/
 
 /*!
     Returns a byte array that contains the first \a len bytes of this byte
@@ -2839,8 +2999,7 @@ QByteArray QByteArray::mid(qsizetype pos, qsizetype len) const
     case QContainerImplHelper::Subset:
         return QByteArray(d.data() + p, l);
     }
-    Q_UNREACHABLE();
-    return QByteArray();
+    Q_UNREACHABLE_RETURN(QByteArray());
 }
 
 /*!
@@ -2924,11 +3083,7 @@ QByteArray QByteArray::mid(qsizetype pos, qsizetype len) const
     \sa isLower(), toUpper(), {Character Case}
 */
 
-// prevent the compiler from inlining the function in each of
-// toLower and toUpper when the only difference is the table being used
-// (even with constant propagation, there's no gain in performance).
 template <typename T>
-Q_NEVER_INLINE
 static QByteArray toCase_template(T &input, uchar (*lookup)(uchar))
 {
     // find the first bad character in input
@@ -2999,7 +3154,7 @@ void QByteArray::clear()
     d.clear();
 }
 
-#if !defined(QT_NO_DATASTREAM) || (defined(QT_BOOTSTRAPPED) && !defined(QT_BUILD_QMAKE))
+#if !defined(QT_NO_DATASTREAM) || defined(QT_BOOTSTRAPPED)
 
 /*! \relates QByteArray
 
@@ -3399,6 +3554,13 @@ QByteArray QByteArray::trimmed_helper(QByteArray &a)
     return QStringAlgorithms<QByteArray>::trimmed_helper(a);
 }
 
+QByteArrayView QtPrivate::trimmed(QByteArrayView view) noexcept
+{
+    auto start = view.begin();
+    auto stop = view.end();
+    QStringAlgorithms<QByteArrayView>::trimmed_helper_positions(start, stop);
+    return QByteArrayView(start, stop);
+}
 
 /*!
     Returns a byte array of size \a width that contains this byte array padded
@@ -3474,46 +3636,40 @@ QByteArray QByteArray::rightJustified(qsizetype width, char fill, bool truncate)
     return result;
 }
 
-bool QByteArray::isNull() const
+auto QtPrivate::toSignedInteger(QByteArrayView data, int base) -> ParsedNumber<qlonglong>
 {
-    return d->isNull();
-}
-
-static qlonglong toIntegral_helper(const char *data, bool *ok, int base, qlonglong)
-{
-    return QLocaleData::bytearrayToLongLong(data, base, ok);
-}
-
-static qulonglong toIntegral_helper(const char *data, bool *ok, int base, qulonglong)
-{
-    return QLocaleData::bytearrayToUnsLongLong(data, base, ok);
-}
-
-template <typename T> static inline
-T toIntegral_helper(const char *data, bool *ok, int base)
-{
-    using Int64 = typename std::conditional<std::is_unsigned<T>::value, qulonglong, qlonglong>::type;
-
 #if defined(QT_CHECK_RANGE)
     if (base != 0 && (base < 2 || base > 36)) {
         qWarning("QByteArray::toIntegral: Invalid base %d", base);
         base = 10;
     }
 #endif
-    if (!data) {
-        if (ok)
-            *ok = false;
-        return 0;
-    }
+    if (data.isEmpty())
+        return {};
 
-    // we select the right overload by the last, unused parameter
-    Int64 val = toIntegral_helper(data, ok, base, Int64());
-    if (T(val) != val) {
-        if (ok)
-            *ok = false;
-        val = 0;
+    bool ok = false;
+    const auto i = QLocaleData::bytearrayToLongLong(data, base, &ok);
+    if (ok)
+        return ParsedNumber(i);
+    return {};
+}
+
+auto QtPrivate::toUnsignedInteger(QByteArrayView data, int base) -> ParsedNumber<qulonglong>
+{
+#if defined(QT_CHECK_RANGE)
+    if (base != 0 && (base < 2 || base > 36)) {
+        qWarning("QByteArray::toIntegral: Invalid base %d", base);
+        base = 10;
     }
-    return T(val);
+#endif
+    if (data.isEmpty())
+        return {};
+
+    bool ok = false;
+    const auto u = QLocaleData::bytearrayToUnsLongLong(data, base, &ok);
+    if (ok)
+        return ParsedNumber(u);
+    return {};
 }
 
 /*!
@@ -3523,8 +3679,9 @@ T toIntegral_helper(const char *data, bool *ok, int base)
 
     If \a base is 0, the base is determined automatically using the following
     rules: If the byte array begins with "0x", it is assumed to be hexadecimal
-    (base 16); otherwise, if it begins with "0", it is assumed to be octal (base
-    8); otherwise it is assumed to be decimal.
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3535,12 +3692,14 @@ T toIntegral_helper(const char *data, bool *ok, int base)
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 
 qlonglong QByteArray::toLongLong(bool *ok, int base) const
 {
-    return toIntegral_helper<qlonglong>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<qlonglong>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
 
 /*!
@@ -3550,8 +3709,9 @@ qlonglong QByteArray::toLongLong(bool *ok, int base) const
 
     If \a base is 0, the base is determined automatically using the following
     rules: If the byte array begins with "0x", it is assumed to be hexadecimal
-    (base 16); otherwise, if it begins with "0", it is assumed to be octal (base
-    8); otherwise it is assumed to be decimal.
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3562,12 +3722,14 @@ qlonglong QByteArray::toLongLong(bool *ok, int base) const
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 
 qulonglong QByteArray::toULongLong(bool *ok, int base) const
 {
-    return toIntegral_helper<qulonglong>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<qulonglong>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
 
 /*!
@@ -3577,8 +3739,9 @@ qulonglong QByteArray::toULongLong(bool *ok, int base) const
 
     If \a base is 0, the base is determined automatically using the following
     rules: If the byte array begins with "0x", it is assumed to be hexadecimal
-    (base 16); otherwise, if it begins with "0", it is assumed to be octal (base
-    8); otherwise it is assumed to be decimal.
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3591,12 +3754,14 @@ qulonglong QByteArray::toULongLong(bool *ok, int base) const
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 
 int QByteArray::toInt(bool *ok, int base) const
 {
-    return toIntegral_helper<int>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<int>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
 
 /*!
@@ -3606,8 +3771,9 @@ int QByteArray::toInt(bool *ok, int base) const
 
     If \a base is 0, the base is determined automatically using the following
     rules: If the byte array begins with "0x", it is assumed to be hexadecimal
-    (base 16); otherwise, if it begins with "0", it is assumed to be octal (base
-    8); otherwise it is assumed to be decimal.
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3618,12 +3784,14 @@ int QByteArray::toInt(bool *ok, int base) const
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 
 uint QByteArray::toUInt(bool *ok, int base) const
 {
-    return toIntegral_helper<uint>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<uint>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
 
 /*!
@@ -3635,8 +3803,9 @@ uint QByteArray::toUInt(bool *ok, int base) const
 
     If \a base is 0, the base is determined automatically using the following
     rules: If the byte array begins with "0x", it is assumed to be hexadecimal
-    (base 16); otherwise, if it begins with "0", it is assumed to be octal (base
-    8); otherwise it is assumed to be decimal.
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3649,11 +3818,13 @@ uint QByteArray::toUInt(bool *ok, int base) const
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 long QByteArray::toLong(bool *ok, int base) const
 {
-    return toIntegral_helper<long>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<long>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
 
 /*!
@@ -3665,8 +3836,9 @@ long QByteArray::toLong(bool *ok, int base) const
 
     If \a base is 0, the base is determined automatically using the following
     rules: If the byte array begins with "0x", it is assumed to be hexadecimal
-    (base 16); otherwise, if it begins with "0", it is assumed to be octal (base
-    8); otherwise it is assumed to be decimal.
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3677,11 +3849,13 @@ long QByteArray::toLong(bool *ok, int base) const
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 ulong QByteArray::toULong(bool *ok, int base) const
 {
-    return toIntegral_helper<ulong>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<ulong>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
 
 /*!
@@ -3690,9 +3864,10 @@ ulong QByteArray::toULong(bool *ok, int base) const
     digits beyond 9; A is ten, B is eleven and so on.
 
     If \a base is 0, the base is determined automatically using the following
-    rules: If the byte array begins with "0x", it is assumed to be hexadecimal;
-    otherwise, if it begins with "0", it is assumed to be octal; otherwise it is
-    assumed to be decimal.
+    rules: If the byte array begins with "0x", it is assumed to be hexadecimal
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3703,12 +3878,14 @@ ulong QByteArray::toULong(bool *ok, int base) const
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 
 short QByteArray::toShort(bool *ok, int base) const
 {
-    return toIntegral_helper<short>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<short>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
 
 /*!
@@ -3717,9 +3894,10 @@ short QByteArray::toShort(bool *ok, int base) const
     letters for digits beyond 9; A is ten, B is eleven and so on.
 
     If \a base is 0, the base is determined automatically using the following
-    rules: If the byte array begins with "0x", it is assumed to be hexadecimal;
-    otherwise, if it begins with "0", it is assumed to be octal; otherwise it is
-    assumed to be decimal.
+    rules: If the byte array begins with "0x", it is assumed to be hexadecimal
+    (base 16); otherwise, if it begins with "0b", it is assumed to be binary
+    (base 2); otherwise, if it begins with "0", it is assumed to be octal
+    (base 8); otherwise it is assumed to be decimal.
 
     Returns 0 if the conversion fails.
 
@@ -3730,14 +3908,15 @@ short QByteArray::toShort(bool *ok, int base) const
     regardless of the user's locale. Use QLocale to perform locale-aware
     conversions between numbers and strings.
 
+    \note Support for the "0b" prefix was added in Qt 6.4.
+
     \sa number()
 */
 
 ushort QByteArray::toUShort(bool *ok, int base) const
 {
-    return toIntegral_helper<ushort>(nulTerminated().constData(), ok, base);
+    return QtPrivate::toIntegral<ushort>(qToByteArrayViewIgnoringNull(*this), ok, base);
 }
-
 
 /*!
     Returns the byte array converted to a \c double value.
@@ -3766,13 +3945,18 @@ ushort QByteArray::toUShort(bool *ok, int base) const
 
 double QByteArray::toDouble(bool *ok) const
 {
+    return QByteArrayView(*this).toDouble(ok);
+}
+
+auto QtPrivate::toDouble(QByteArrayView a) noexcept -> ParsedNumber<double>
+{
     bool nonNullOk = false;
     int processed = 0;
-    double d = qt_asciiToDouble(constData(), size(),
-                                nonNullOk, processed, WhitespacesAllowed);
-    if (ok)
-        *ok = nonNullOk;
-    return d;
+    double d = qt_asciiToDouble(a.data(), a.size(), nonNullOk, processed, WhitespacesAllowed);
+    if (nonNullOk)
+        return ParsedNumber{d};
+    else
+        return {};
 }
 
 /*!
@@ -3805,6 +3989,17 @@ float QByteArray::toFloat(bool *ok) const
     return QLocaleData::convertDoubleToFloat(toDouble(ok), ok);
 }
 
+auto QtPrivate::toFloat(QByteArrayView a) noexcept -> ParsedNumber<float>
+{
+    if (const auto r = toDouble(a)) {
+        bool ok = true;
+        const auto f = QLocaleData::convertDoubleToFloat(*r, &ok);
+        if (ok)
+            return ParsedNumber(f);
+    }
+    return {};
+}
+
 /*!
     \since 5.2
 
@@ -3826,19 +4021,21 @@ QByteArray QByteArray::toBase64(Base64Options options) const
     const char padchar = '=';
     qsizetype padlen = 0;
 
-    QByteArray tmp((size() + 2) / 3 * 4, Qt::Uninitialized);
+    const qsizetype sz = size();
+
+    QByteArray tmp((sz + 2) / 3 * 4, Qt::Uninitialized);
 
     qsizetype i = 0;
     char *out = tmp.data();
-    while (i < size()) {
+    while (i < sz) {
         // encode 3 bytes at a time
         int chunk = 0;
         chunk |= int(uchar(data()[i++])) << 16;
-        if (i == size()) {
+        if (i == sz) {
             padlen = 2;
         } else {
             chunk |= int(uchar(data()[i++])) << 8;
-            if (i == size())
+            if (i == sz)
                 padlen = 1;
             else
                 chunk |= int(uchar(data()[i++]));
@@ -3873,10 +4070,12 @@ QByteArray QByteArray::toBase64(Base64Options options) const
 /*!
     \fn QByteArray &QByteArray::setNum(int n, int base)
 
-    Sets the byte array to the printed value of \a n in base \a base (ten by
-    default) and returns a reference to the byte array. Bases 2 through 36 are
+    Represent the whole number \a n as text.
+
+    Sets this byte array to a string representing \a n in base \a base (ten by
+    default) and returns a reference to this byte array. Bases 2 through 36 are
     supported, using letters for digits beyond 9; A is ten, B is eleven and so
-    on. For bases other than ten, n is treated as an unsigned integer.
+    on.
 
     Example:
     \snippet code/src_corelib_text_qbytearray.cpp 40
@@ -3952,7 +4151,8 @@ QByteArray &QByteArray::setNum(qlonglong n, int base)
     char buff[buffsize];
     char *p;
 
-    if (n < 0 && base == 10) {
+    if (n < 0) {
+        // Take care to avoid overflow on negating min value:
         p = qulltoa2(buff + buffsize, qulonglong(-(1 + n)) + 1, base);
         *--p = '-';
     } else {
@@ -3984,82 +4184,39 @@ QByteArray &QByteArray::setNum(qulonglong n, int base)
 /*!
     \overload
 
-    Sets the byte array to the printed value of \a n, formatted in format
-    \a f with precision \a prec, and returns a reference to the
-    byte array.
+    Represent the floating-point number \a n as text.
 
-    The format \a f can be any of the following:
+    Sets this byte array to a string representing \a n, with a given \a format
+    and \a precision (with the same meanings as for \l {QString::number(double,
+    char, int)}), and returns a reference to this byte array.
 
-    \table
-    \header \li Format \li Meaning
-    \row \li \c e \li format as [-]9.9e[+|-]999
-    \row \li \c E \li format as [-]9.9E[+|-]999
-    \row \li \c f \li format as [-]9.9
-    \row \li \c g \li use \c e or \c f format, whichever is the most concise
-    \row \li \c G \li use \c E or \c f format, whichever is the most concise
-    \endtable
-
-    With 'e', 'E', and 'f', \a prec is the number of digits after the
-    decimal point. With 'g' and 'G', \a prec is the maximum number of
-    significant digits (trailing zeroes are omitted).
-
-    \note The format of the number is not localized; the default C locale is
-    used regardless of the user's locale. Use QLocale to perform locale-aware
-    conversions between numbers and strings.
-
-    \sa toDouble()
+    \sa toDouble(), QLocale::FloatingPointPrecisionOption
 */
 
-QByteArray &QByteArray::setNum(double n, char f, int prec)
+QByteArray &QByteArray::setNum(double n, char format, int precision)
 {
-    QLocaleData::DoubleForm form = QLocaleData::DFDecimal;
-    uint flags = QLocaleData::ZeroPadExponent;
-
-    char lower = asciiLower(uchar(f));
-    if (f != lower)
-        flags |= QLocaleData::CapitalEorX;
-    f = lower;
-
-    switch (f) {
-        case 'f':
-            form = QLocaleData::DFDecimal;
-            break;
-        case 'e':
-            form = QLocaleData::DFExponent;
-            break;
-        case 'g':
-            form = QLocaleData::DFSignificantDigits;
-            break;
-        default:
-#if defined(QT_CHECK_RANGE)
-            qWarning("QByteArray::setNum: Invalid format char '%c'", f);
-#endif
-            break;
-    }
-
-    *this = QLocaleData::c()->doubleToString(n, prec, form, -1, flags).toUtf8();
-    return *this;
+    return *this = QByteArray::number(n, format, precision);
 }
 
 /*!
-    \fn QByteArray &QByteArray::setNum(float n, char f, int prec)
+    \fn QByteArray &QByteArray::setNum(float n, char format, int precision)
     \overload
 
-    Sets the byte array to the printed value of \a n, formatted in format
-    \a f with precision \a prec, and returns a reference to the
-    byte array.
+    Represent the floating-point number \a n as text.
 
-    \note The format of the number is not localized; the default C locale is
-    used regardless of the user's locale. Use QLocale to perform locale-aware
-    conversions between numbers and strings.
+    Sets this byte array to a string representing \a n, with a given \a format
+    and \a precision (with the same meanings as for \l {QString::number(double,
+    char, int)}), and returns a reference to this byte array.
 
     \sa toFloat()
 */
 
 /*!
-    Returns a byte array containing the printed value of the number \a n to base
-    \a base (ten by default). Bases 2 through 36 are supported, using letters
-    for digits beyond 9: A is ten, B is eleven and so on.
+    Returns a byte-array representing the whole number \a n as text.
+
+    Returns a byte array containing a string representing \a n, using the
+    specified \a base (ten by default). Bases 2 through 36 are supported, using
+    letters for digits beyond 9: A is ten, B is eleven and so on.
 
     Example:
     \snippet code/src_corelib_text_qbytearray.cpp 41
@@ -4139,39 +4296,38 @@ QByteArray QByteArray::number(qulonglong n, int base)
 
 /*!
     \overload
+    Returns a byte-array representing the floating-point number \a n as text.
 
-    Returns a byte array that contains the printed value of \a n,
-    formatted in format \a f with precision \a prec.
-
-    Argument \a n is formatted according to the \a f format specified,
-    which is \c g by default, and can be any of the following:
-
-    \table
-    \header \li Format \li Meaning
-    \row \li \c e \li format as [-]9.9e[+|-]999
-    \row \li \c E \li format as [-]9.9E[+|-]999
-    \row \li \c f \li format as [-]9.9
-    \row \li \c g \li use \c e or \c f format, whichever is the most concise
-    \row \li \c G \li use \c E or \c f format, whichever is the most concise
-    \endtable
-
-    With 'e', 'E', and 'f', \a prec is the number of digits after the
-    decimal point. With 'g' and 'G', \a prec is the maximum number of
-    significant digits (trailing zeroes are omitted).
+    Returns a byte array containing a string representing \a n, with a given \a
+    format and \a precision, with the same meanings as for \l
+    {QString::number(double, char, int)}. For example:
 
     \snippet code/src_corelib_text_qbytearray.cpp 42
 
-    \note The format of the number is not localized; the default C locale is
-    used regardless of the user's locale. Use QLocale to perform locale-aware
-    conversions between numbers and strings.
-
-    \sa toDouble()
+    \sa toDouble(), QLocale::FloatingPointPrecisionOption
 */
-QByteArray QByteArray::number(double n, char f, int prec)
+QByteArray QByteArray::number(double n, char format, int precision)
 {
-    QByteArray s;
-    s.setNum(n, f, prec);
-    return s;
+    QLocaleData::DoubleForm form = QLocaleData::DFDecimal;
+
+    switch (QtMiscUtils::toAsciiLower(format)) {
+        case 'f':
+            form = QLocaleData::DFDecimal;
+            break;
+        case 'e':
+            form = QLocaleData::DFExponent;
+            break;
+        case 'g':
+            form = QLocaleData::DFSignificantDigits;
+            break;
+        default:
+#if defined(QT_CHECK_RANGE)
+            qWarning("QByteArray::setNum: Invalid format char '%c'", format);
+#endif
+            break;
+    }
+
+    return qdtoAscii(n, form, precision, isUpperCaseAscii(format));
 }
 
 /*!
@@ -4344,7 +4500,7 @@ QByteArray::FromBase64Result QByteArray::fromBase64Encoding(QByteArray &&base64,
                                                     base64.size(),
                                                     base64.data(), // in-place
                                                     options);
-        base64.truncate(int(base64result.decodedLength));
+        base64.truncate(base64result.decodedLength);
         return { std::move(base64), base64result.status };
     }
 
@@ -4360,7 +4516,7 @@ QByteArray::FromBase64Result QByteArray::fromBase64Encoding(const QByteArray &ba
                                                 base64Size,
                                                 const_cast<char *>(result.constData()),
                                                 options);
-    result.truncate(int(base64result.decodedLength));
+    result.truncate(base64result.decodedLength);
     return { std::move(result), base64result.status };
 }
 
@@ -4473,7 +4629,7 @@ static void q_fromPercentEncoding(QByteArray *ba, char percent)
     const char *inputPtr = data;
 
     qsizetype i = 0;
-    qsizetype len = ba->count();
+    qsizetype len = ba->size();
     qsizetype outlen = 0;
     int a, b;
     char c;
@@ -4504,20 +4660,17 @@ static void q_fromPercentEncoding(QByteArray *ba, char percent)
         ba->truncate(outlen);
 }
 
-void q_fromPercentEncoding(QByteArray *ba)
-{
-    q_fromPercentEncoding(ba, '%');
-}
-
 /*!
-    \since 4.4
+    \since 6.4
 
-    Returns a decoded copy of the URI/URL-style percent-encoded \a input.
-    The \a percent parameter allows you to replace the '%' character for
-    another (for instance, '_' or '=').
+    Decodes URI/URL-style percent-encoding.
+
+    Returns a byte array containing the decoded text. The \a percent parameter
+    allows use of a different character than '%' (for instance, '_' or '=') as
+    the escape character.
 
     For example:
-    \snippet code/src_corelib_text_qbytearray.cpp 51
+    \snippet code/src_corelib_text_qbytearray.cpp 54
 
     \note Given invalid input (such as a string containing the sequence "%G5",
     which is not a valid hexadecimal number) the output will be invalid as
@@ -4525,16 +4678,33 @@ void q_fromPercentEncoding(QByteArray *ba)
 
     \sa toPercentEncoding(), QUrl::fromPercentEncoding()
 */
-QByteArray QByteArray::fromPercentEncoding(const QByteArray &input, char percent)
+QByteArray QByteArray::percentDecoded(char percent) const
 {
-    if (input.isNull())
-        return QByteArray();       // preserve null
-    if (input.isEmpty())
-        return QByteArray(input.data(), 0);
+    if (isEmpty())
+        return *this; // Preserves isNull().
 
-    QByteArray tmp = input;
+    QByteArray tmp = *this;
     q_fromPercentEncoding(&tmp, percent);
     return tmp;
+}
+
+/*!
+    \since 4.4
+
+    Decodes \a input from URI/URL-style percent-encoding.
+
+    Returns a byte array containing the decoded text. The \a percent parameter
+    allows use of a different character than '%' (for instance, '_' or '=') as
+    the escape character. Equivalent to input.percentDecoded(percent).
+
+    For example:
+    \snippet code/src_corelib_text_qbytearray.cpp 51
+
+    \sa percentDecoded()
+*/
+QByteArray QByteArray::fromPercentEncoding(const QByteArray &input, char percent)
+{
+    return input.percentDecoded(percent);
 }
 
 /*! \fn QByteArray QByteArray::fromStdString(const std::string &str)
@@ -4544,6 +4714,10 @@ QByteArray QByteArray::fromPercentEncoding(const QByteArray &input, char percent
 
     \sa toStdString(), QString::fromStdString()
 */
+QByteArray QByteArray::fromStdString(const std::string &s)
+{
+    return QByteArray(s.data(), qsizetype(s.size()));
+}
 
 /*!
     \fn std::string QByteArray::toStdString() const
@@ -4557,68 +4731,9 @@ QByteArray QByteArray::fromPercentEncoding(const QByteArray &input, char percent
 
     \sa fromStdString(), QString::toStdString()
 */
-
-static inline bool q_strchr(const char str[], char chr)
+std::string QByteArray::toStdString() const
 {
-    if (!str) return false;
-
-    const char *ptr = str;
-    char c;
-    while ((c = *ptr++))
-        if (c == chr)
-            return true;
-    return false;
-}
-
-static void q_toPercentEncoding(QByteArray *ba, const char *dontEncode, const char *alsoEncode, char percent)
-{
-    if (ba->isEmpty())
-        return;
-
-    QByteArray input = *ba;
-    qsizetype len = input.count();
-    const char *inputData = input.constData();
-    char *output = nullptr;
-    qsizetype length = 0;
-
-    for (qsizetype i = 0; i < len; ++i) {
-        unsigned char c = *inputData++;
-        if (((c >= 0x61 && c <= 0x7A) // ALPHA
-             || (c >= 0x41 && c <= 0x5A) // ALPHA
-             || (c >= 0x30 && c <= 0x39) // DIGIT
-             || c == 0x2D // -
-             || c == 0x2E // .
-             || c == 0x5F // _
-             || c == 0x7E // ~
-             || q_strchr(dontEncode, c))
-            && !q_strchr(alsoEncode, c)) {
-            if (output)
-                output[length] = c;
-            ++length;
-        } else {
-            if (!output) {
-                // detach now
-                ba->resize(len*3); // worst case
-                output = ba->data();
-            }
-            output[length++] = percent;
-            output[length++] = QtMiscUtils::toHexUpper((c & 0xf0) >> 4);
-            output[length++] = QtMiscUtils::toHexUpper(c & 0xf);
-        }
-    }
-    if (output)
-        ba->truncate(length);
-}
-
-void q_toPercentEncoding(QByteArray *ba, const char *exclude, const char *include)
-{
-    q_toPercentEncoding(ba, exclude, include, '%');
-}
-
-void q_normalizePercentEncoding(QByteArray *ba, const char *exclude)
-{
-    q_fromPercentEncoding(ba, '%');
-    q_toPercentEncoding(ba, exclude, nullptr, '%');
+    return std::string(data(), size_t(size()));
 }
 
 /*!
@@ -4653,19 +4768,42 @@ QByteArray QByteArray::toPercentEncoding(const QByteArray &exclude, const QByteA
     if (isEmpty())
         return QByteArray(data(), 0);
 
-    QByteArray include2 = include;
-    if (percent != '%')                        // the default
-        if ((percent >= 0x61 && percent <= 0x7A) // ALPHA
-            || (percent >= 0x41 && percent <= 0x5A) // ALPHA
-            || (percent >= 0x30 && percent <= 0x39) // DIGIT
-            || percent == 0x2D // -
-            || percent == 0x2E // .
-            || percent == 0x5F // _
-            || percent == 0x7E) // ~
-        include2 += percent;
+    const auto contains = [](const QByteArray &view, char c) {
+        // As view.contains(c), but optimised to bypass a lot of overhead:
+        return view.size() > 0 && memchr(view.data(), c, view.size()) != nullptr;
+    };
 
     QByteArray result = *this;
-    q_toPercentEncoding(&result, exclude.nulTerminated().constData(), include2.nulTerminated().constData(), percent);
+    char *output = nullptr;
+    qsizetype length = 0;
+
+    for (unsigned char c : *this) {
+        if (char(c) != percent
+            && ((c >= 0x61 && c <= 0x7A) // ALPHA
+                || (c >= 0x41 && c <= 0x5A) // ALPHA
+                || (c >= 0x30 && c <= 0x39) // DIGIT
+                || c == 0x2D // -
+                || c == 0x2E // .
+                || c == 0x5F // _
+                || c == 0x7E // ~
+                || contains(exclude, c))
+            && !contains(include, c)) {
+            if (output)
+                output[length] = c;
+            ++length;
+        } else {
+            if (!output) {
+                // detach now
+                result.resize(size() * 3); // worst case
+                output = result.data();
+            }
+            output[length++] = percent;
+            output[length++] = QtMiscUtils::toHexUpper((c & 0xf0) >> 4);
+            output[length++] = QtMiscUtils::toHexUpper(c & 0xf);
+        }
+    }
+    if (output)
+        result.truncate(length);
 
     return result;
 }
@@ -4764,6 +4902,57 @@ QByteArray QByteArray::toPercentEncoding(const QByteArray &exclude, const QByteA
     at compile time.
 
     \sa QStringLiteral
+*/
+
+#if QT_DEPRECATED_SINCE(6, 8)
+/*!
+  \fn QtLiterals::operator""_qba(const char *str, size_t size)
+
+  \relates QByteArray
+  \since 6.2
+  \deprecated [6.8] Use \c _ba from Qt::StringLiterals namespace instead.
+
+  Literal operator that creates a QByteArray out of the first \a size characters
+  in the char string literal \a str.
+
+  The QByteArray is created at compile time, and the generated string data is stored
+  in the read-only segment of the compiled object file. Duplicate literals may share
+  the same read-only memory. This functionality is interchangeable with
+  QByteArrayLiteral, but saves typing when many string literals are present in the
+  code.
+
+  The following code creates a QByteArray:
+  \code
+  auto str = "hello"_qba;
+  \endcode
+
+  \sa QByteArrayLiteral, QtLiterals::operator""_qs(const char16_t *str, size_t size)
+*/
+#endif // QT_DEPRECATED_SINCE(6, 8)
+
+/*!
+    \fn Qt::Literals::StringLiterals::operator""_ba(const char *str, size_t size)
+
+    \relates QByteArray
+    \since 6.4
+
+    Literal operator that creates a QByteArray out of the first \a size characters
+    in the char string literal \a str.
+
+    The QByteArray is created at compile time, and the generated string data is stored
+    in the read-only segment of the compiled object file. Duplicate literals may share
+    the same read-only memory. This functionality is interchangeable with
+    QByteArrayLiteral, but saves typing when many string literals are present in the
+    code.
+
+    The following code creates a QByteArray:
+    \code
+    using namespace Qt::Literals::StringLiterals;
+
+    auto str = "hello"_ba;
+    \endcode
+
+    \sa Qt::Literals::StringLiterals
 */
 
 /*!

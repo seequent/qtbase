@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from modal.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ qt_internal_add_executable(modal_helper  # special case
         main.cpp
     OUTPUT_DIRECTORY # special case
         ${CMAKE_CURRENT_BINARY_DIR}/.. # special case
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

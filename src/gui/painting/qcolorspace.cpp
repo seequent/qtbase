@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qcolorspace.h"
 #include "qcolorspace_p.h"
@@ -54,9 +18,9 @@
 
 QT_BEGIN_NAMESPACE
 
-QBasicMutex QColorSpacePrivate::s_lutWriteLock;
+Q_CONSTINIT QBasicMutex QColorSpacePrivate::s_lutWriteLock;
 
-static QAtomicPointer<QColorSpacePrivate> s_predefinedColorspacePrivates[QColorSpace::ProPhotoRgb] = {};
+Q_CONSTINIT static QAtomicPointer<QColorSpacePrivate> s_predefinedColorspacePrivates[QColorSpace::ProPhotoRgb] = {};
 static void cleanupPredefinedColorspaces()
 {
     for (QAtomicPointer<QColorSpacePrivate> &ptr : s_predefinedColorspacePrivates) {
@@ -146,13 +110,17 @@ QColorMatrix QColorSpacePrimaries::toXyzMatrix() const
         QColorVector srcCone = abrad.map(wXyz);
         QColorVector dstCone = abrad.map(wXyzD50);
 
-        QColorMatrix wToD50 = { { dstCone.x / srcCone.x, 0, 0 },
-                                { 0, dstCone.y / srcCone.y, 0 },
-                                { 0, 0, dstCone.z / srcCone.z } };
+        if (srcCone.x && srcCone.y && srcCone.z) {
+            QColorMatrix wToD50 = { { dstCone.x / srcCone.x, 0, 0 },
+                                    { 0, dstCone.y / srcCone.y, 0 },
+                                    { 0, 0, dstCone.z / srcCone.z } };
 
 
-        QColorMatrix chromaticAdaptation = abradinv * (wToD50 * abrad);
-        toXyz = chromaticAdaptation * toXyz;
+            QColorMatrix chromaticAdaptation = abradinv * (wToD50 * abrad);
+            toXyz = chromaticAdaptation * toXyz;
+        } else {
+            toXyz.r = {0, 0, 0}; // set to invalid value
+        }
     }
 
     return toXyz;
@@ -403,6 +371,7 @@ void QColorSpacePrivate::setTransferFunctionTables(const QList<uint16_t> &redTra
         trc[2].m_type = QColorTrc::Type::Table;
         trc[2].m_table = blueTable;
     }
+    lut.generated.storeRelease(0);
 }
 
 void QColorSpacePrivate::setTransferFunction()
@@ -438,6 +407,7 @@ void QColorSpacePrivate::setTransferFunction()
     }
     trc[1] = trc[0];
     trc[2] = trc[0];
+    lut.generated.storeRelease(0);
 }
 
 QColorTransform QColorSpacePrivate::transformationToColorSpace(const QColorSpacePrivate *out) const
@@ -449,7 +419,20 @@ QColorTransform QColorSpacePrivate::transformationToColorSpace(const QColorSpace
     ptr->colorSpaceIn = this;
     ptr->colorSpaceOut = out;
     ptr->colorMatrix = out->toXyz.inverted() * toXyz;
+    if (ptr->isIdentity())
+        return QColorTransform();
     return combined;
+}
+
+QColorTransform QColorSpacePrivate::transformationToXYZ() const
+{
+    QColorTransform transform;
+    auto ptr = new QColorTransformPrivate;
+    transform.d = ptr;
+    ptr->colorSpaceIn = this;
+    ptr->colorSpaceOut = this;
+    ptr->colorMatrix = toXyz;
+    return transform;
 }
 
 /*!
@@ -476,7 +459,7 @@ QColorTransform QColorSpacePrivate::transformationToColorSpace(const QColorSpace
     the transfer function how values are mapped on the axes.
     The primaries are defined by three primary colors that represent exactly how red, green,
     and blue look in this particular color space, and a white color that represents where
-    and how bright pure white is. The range of colors expressable by the primary colors is
+    and how bright pure white is. The range of colors expressible by the primary colors is
     called the gamut, and a color space that can represent a wider range of colors is also
     known as a wide-gamut color space.
 
@@ -1000,6 +983,9 @@ QColorTransform QColorSpace::transformationToColorSpace(const QColorSpace &color
     if (!isValid() || !colorspace.isValid())
         return QColorTransform();
 
+    if (*this == colorspace)
+        return QColorTransform();
+
     return d_ptr->transformationToColorSpace(colorspace.d_ptr.get());
 }
 
@@ -1010,6 +996,35 @@ QColorTransform QColorSpace::transformationToColorSpace(const QColorSpace &color
 QColorSpace::operator QVariant() const
 {
     return QVariant::fromValue(*this);
+}
+
+/*!
+    Returns the name or short description. If a description hasn't been given
+    in setDescription(), the original name of the profile is returned if the
+    profile is unmodified, a guessed name is returned if the profile has been
+    recognized as a known color space, otherwise an empty string is returned.
+
+    \since 6.2
+*/
+QString QColorSpace::description() const noexcept
+{
+    if (d_ptr)
+        return d_ptr->userDescription.isEmpty() ? d_ptr->description : d_ptr->userDescription;
+    return QString();
+}
+
+/*!
+    Sets the name or short description of the color space to \a description.
+
+    If set to empty description() will return original or guessed descriptions
+    instead.
+
+    \since 6.2
+*/
+void QColorSpace::setDescription(const QString &description)
+{
+    detach();
+    d_ptr->userDescription = description;
 }
 
 /*****************************************************************************
@@ -1068,3 +1083,5 @@ QDebug operator<<(QDebug dbg, const QColorSpace &colorSpace)
 #endif
 
 QT_END_NAMESPACE
+
+#include "moc_qcolorspace.cpp"

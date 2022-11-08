@@ -1,44 +1,10 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qgenericunixservices_p.h"
 #include <QtGui/private/qtguiglobal_p.h>
+#include "qguiapplication.h"
+#include "qwindow.h"
 
 #include <QtCore/QDebug>
 #include <QtCore/QFile>
@@ -72,6 +38,8 @@
 #include <stdlib.h>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 #if QT_CONFIG(multiprocess)
 
@@ -142,9 +110,11 @@ static inline bool detectWebBrowser(const QByteArray &desktop,
     }
 
     if (desktop == QByteArray("KDE")) {
+        if (checkExecutable(QStringLiteral("kde-open5"), browser))
+            return true;
         // Konqueror launcher
         if (checkExecutable(QStringLiteral("kfmclient"), browser)) {
-            browser->append(QLatin1String(" exec"));
+            browser->append(" exec"_L1);
             return true;
         }
     } else if (desktop == QByteArray("GNOME")) {
@@ -153,18 +123,18 @@ static inline bool detectWebBrowser(const QByteArray &desktop,
     }
 
     for (size_t i = 0; i < sizeof(browsers)/sizeof(char *); ++i)
-        if (checkExecutable(QLatin1String(browsers[i]), browser))
+        if (checkExecutable(QLatin1StringView(browsers[i]), browser))
             return true;
     return false;
 }
 
 static inline bool launch(const QString &launcher, const QUrl &url)
 {
-    const QString command = launcher + QLatin1Char(' ') + QLatin1String(url.toEncoded());
+    const QString command = launcher + u' ' + QLatin1StringView(url.toEncoded());
     if (debug)
         qDebug("Launching %s", qPrintable(command));
 #if !QT_CONFIG(process)
-    const bool ok = ::system(qPrintable(command + QLatin1String(" &")));
+    const bool ok = ::system(qPrintable(command + " &"_L1));
 #else
     QStringList args = QProcess::splitCommand(command);
     bool ok = false;
@@ -181,18 +151,10 @@ static inline bool launch(const QString &launcher, const QUrl &url)
 #if QT_CONFIG(dbus)
 static inline bool checkNeedPortalSupport()
 {
-    return !QStandardPaths::locate(QStandardPaths::RuntimeLocation, QLatin1String("flatpak-info")).isEmpty() || qEnvironmentVariableIsSet("SNAP");
+    return !QStandardPaths::locate(QStandardPaths::RuntimeLocation, "flatpak-info"_L1).isEmpty() || qEnvironmentVariableIsSet("SNAP");
 }
 
-static inline bool isPortalReturnPermanent(const QDBusError &error)
-{
-    // A service unknown error isn't permanent, it just indicates that we
-    // should fall back to the regular way. This check includes
-    // QDBusError::NoError.
-    return error.type() != QDBusError::ServiceUnknown && error.type() != QDBusError::AccessDenied;
-}
-
-static inline QDBusMessage xdgDesktopPortalOpenFile(const QUrl &url)
+static inline QDBusMessage xdgDesktopPortalOpenFile(const QUrl &url, const QString &parentWindow)
 {
     // DBus signature:
     // OpenFile (IN   s      parent_window,
@@ -206,29 +168,29 @@ static inline QDBusMessage xdgDesktopPortalOpenFile(const QUrl &url)
 #ifdef O_PATH
     const int fd = qt_safe_open(QFile::encodeName(url.toLocalFile()), O_PATH);
     if (fd != -1) {
-        QDBusMessage message = QDBusMessage::createMethodCall(QLatin1String("org.freedesktop.portal.Desktop"),
-                                                              QLatin1String("/org/freedesktop/portal/desktop"),
-                                                              QLatin1String("org.freedesktop.portal.OpenURI"),
-                                                              QLatin1String("OpenFile"));
+        QDBusMessage message = QDBusMessage::createMethodCall("org.freedesktop.portal.Desktop"_L1,
+                                                              "/org/freedesktop/portal/desktop"_L1,
+                                                              "org.freedesktop.portal.OpenURI"_L1,
+                                                              "OpenFile"_L1);
 
         QDBusUnixFileDescriptor descriptor;
         descriptor.giveFileDescriptor(fd);
 
-        const QVariantMap options = {{QLatin1String("writable"), true}};
+        const QVariantMap options = {{"writable"_L1, true}};
 
-        // FIXME parent_window_id
-        message << QString() << QVariant::fromValue(descriptor) << options;
+        message << parentWindow << QVariant::fromValue(descriptor) << options;
 
         return QDBusConnection::sessionBus().call(message);
     }
 #else
     Q_UNUSED(url);
+    Q_UNUSED(parentWindow)
 #endif
 
     return QDBusMessage::createError(QDBusError::InternalError, qt_error_string());
 }
 
-static inline QDBusMessage xdgDesktopPortalOpenUrl(const QUrl &url)
+static inline QDBusMessage xdgDesktopPortalOpenUrl(const QUrl &url, const QString &parentWindow)
 {
     // DBus signature:
     // OpenURI (IN   s      parent_window,
@@ -241,17 +203,17 @@ static inline QDBusMessage xdgDesktopPortalOpenUrl(const QUrl &url)
     //                This key only takes effect the uri points to a local file that is exported in the document portal,
     //                and the chosen application is sandboxed itself.
 
-    QDBusMessage message = QDBusMessage::createMethodCall(QLatin1String("org.freedesktop.portal.Desktop"),
-                                                          QLatin1String("/org/freedesktop/portal/desktop"),
-                                                          QLatin1String("org.freedesktop.portal.OpenURI"),
-                                                          QLatin1String("OpenURI"));
+    QDBusMessage message = QDBusMessage::createMethodCall("org.freedesktop.portal.Desktop"_L1,
+                                                          "/org/freedesktop/portal/desktop"_L1,
+                                                          "org.freedesktop.portal.OpenURI"_L1,
+                                                          "OpenURI"_L1);
     // FIXME parent_window_id and handle writable option
-    message << QString() << url.toString() << QVariantMap();
+    message << parentWindow << url.toString() << QVariantMap();
 
     return QDBusConnection::sessionBus().call(message);
 }
 
-static inline QDBusMessage xdgDesktopPortalSendEmail(const QUrl &url)
+static inline QDBusMessage xdgDesktopPortalSendEmail(const QUrl &url, const QString &parentWindow)
 {
     // DBus signature:
     // ComposeEmail (IN   s      parent_window,
@@ -265,14 +227,14 @@ static inline QDBusMessage xdgDesktopPortalSendEmail(const QUrl &url)
 
     QUrlQuery urlQuery(url);
     QVariantMap options;
-    options.insert(QLatin1String("address"), url.path());
-    options.insert(QLatin1String("subject"), urlQuery.queryItemValue(QLatin1String("subject")));
-    options.insert(QLatin1String("body"), urlQuery.queryItemValue(QLatin1String("body")));
+    options.insert("address"_L1, url.path());
+    options.insert("subject"_L1, urlQuery.queryItemValue("subject"_L1));
+    options.insert("body"_L1, urlQuery.queryItemValue("body"_L1));
 
     // O_PATH seems to be present since Linux 2.6.39, which is not case of RHEL 6
 #ifdef O_PATH
     QList<QDBusUnixFileDescriptor> attachments;
-    const QStringList attachmentUris = urlQuery.allQueryItemValues(QLatin1String("attachment"));
+    const QStringList attachmentUris = urlQuery.allQueryItemValues("attachment"_L1);
 
     for (const QString &attachmentUri : attachmentUris) {
         const int fd = qt_safe_open(QFile::encodeName(attachmentUri), O_PATH);
@@ -283,20 +245,146 @@ static inline QDBusMessage xdgDesktopPortalSendEmail(const QUrl &url)
         }
     }
 
-    options.insert(QLatin1String("attachment_fds"), QVariant::fromValue(attachments));
+    options.insert("attachment_fds"_L1, QVariant::fromValue(attachments));
 #endif
 
-    QDBusMessage message = QDBusMessage::createMethodCall(QLatin1String("org.freedesktop.portal.Desktop"),
-                                                          QLatin1String("/org/freedesktop/portal/desktop"),
-                                                          QLatin1String("org.freedesktop.portal.Email"),
-                                                          QLatin1String("ComposeEmail"));
+    QDBusMessage message = QDBusMessage::createMethodCall("org.freedesktop.portal.Desktop"_L1,
+                                                          "/org/freedesktop/portal/desktop"_L1,
+                                                          "org.freedesktop.portal.Email"_L1,
+                                                          "ComposeEmail"_L1);
 
-    // FIXME parent_window_id
-    message << QString() << options;
+    message << parentWindow << options;
 
     return QDBusConnection::sessionBus().call(message);
 }
+
+namespace {
+struct XDGDesktopColor
+{
+    double r = 0;
+    double g = 0;
+    double b = 0;
+
+    QColor toQColor() const
+    {
+        constexpr auto rgbMax = 255;
+        return { static_cast<int>(r * rgbMax), static_cast<int>(g * rgbMax),
+                 static_cast<int>(b * rgbMax) };
+    }
+};
+
+const QDBusArgument &operator>>(const QDBusArgument &argument, XDGDesktopColor &myStruct)
+{
+    argument.beginStructure();
+    argument >> myStruct.r >> myStruct.g >> myStruct.b;
+    argument.endStructure();
+    return argument;
+}
+
+class XdgDesktopPortalColorPicker : public QPlatformServiceColorPicker
+{
+    Q_OBJECT
+public:
+    XdgDesktopPortalColorPicker(const QString &parentWindowId, QWindow *parent)
+        : QPlatformServiceColorPicker(parent), m_parentWindowId(parentWindowId)
+    {
+    }
+
+    void pickColor() override
+    {
+        // DBus signature:
+        // PickColor (IN   s      parent_window,
+        //            IN   a{sv}  options
+        //            OUT  o      handle)
+        // Options:
+        // handle_token (s) -  A string that will be used as the last element of the @handle.
+
+        QDBusMessage message = QDBusMessage::createMethodCall(
+                "org.freedesktop.portal.Desktop"_L1, "/org/freedesktop/portal/desktop"_L1,
+                "org.freedesktop.portal.Screenshot"_L1, "PickColor"_L1);
+        message << m_parentWindowId << QVariantMap();
+
+        QDBusPendingCall pendingCall = QDBusConnection::sessionBus().asyncCall(message);
+        auto watcher = new QDBusPendingCallWatcher(pendingCall, this);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this,
+                [this](QDBusPendingCallWatcher *watcher) {
+                    watcher->deleteLater();
+                    QDBusPendingReply<QDBusObjectPath> reply = *watcher;
+                    if (reply.isError()) {
+                        qWarning("DBus call to pick color failed: %s",
+                                 qPrintable(reply.error().message()));
+                        Q_EMIT colorPicked({});
+                    } else {
+                        QDBusConnection::sessionBus().connect(
+                                "org.freedesktop.portal.Desktop"_L1, reply.value().path(),
+                                "org.freedesktop.portal.Request"_L1, "Response"_L1, this,
+                                // clang-format off
+                                SLOT(gotColorResponse(uint,QVariantMap))
+                                // clang-format on
+                        );
+                    }
+                });
+    }
+
+private Q_SLOTS:
+    void gotColorResponse(uint result, const QVariantMap &map)
+    {
+        if (result != 0)
+            return;
+        XDGDesktopColor color{};
+        map.value(u"color"_s).value<QDBusArgument>() >> color;
+        Q_EMIT colorPicked(color.toQColor());
+        deleteLater();
+    }
+
+private:
+    const QString m_parentWindowId;
+};
+} // namespace
+
 #endif // QT_CONFIG(dbus)
+
+QGenericUnixServices::QGenericUnixServices()
+{
+#if QT_CONFIG(dbus)
+    if (qEnvironmentVariableIntValue("QT_NO_XDG_DESKTOP_PORTAL") > 0) {
+        return;
+    }
+    QDBusMessage message = QDBusMessage::createMethodCall(
+            "org.freedesktop.portal.Desktop"_L1, "/org/freedesktop/portal/desktop"_L1,
+            "org.freedesktop.DBus.Properties"_L1, "Get"_L1);
+    message << "org.freedesktop.portal.Screenshot"_L1
+            << "version"_L1;
+
+    QDBusPendingCall pendingCall = QDBusConnection::sessionBus().asyncCall(message);
+    auto watcher = new QDBusPendingCallWatcher(pendingCall);
+    QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
+                     [this](QDBusPendingCallWatcher *watcher) {
+                         watcher->deleteLater();
+                         QDBusPendingReply<QVariant> reply = *watcher;
+                         if (!reply.isError() && reply.value().toUInt() >= 2)
+                             m_hasScreenshotPortalWithColorPicking = true;
+                     });
+
+#endif
+}
+
+QPlatformServiceColorPicker *QGenericUnixServices::colorPicker(QWindow *parent)
+{
+#if QT_CONFIG(dbus)
+    // Make double sure that we are in a wayland environment. In particular check
+    // WAYLAND_DISPLAY so also XWayland apps benefit from portal-based color picking.
+    // Outside wayland we'll rather rely on other means than the XDG desktop portal.
+    if (!qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY")
+        || QGuiApplication::platformName().startsWith("wayland"_L1)) {
+        return new XdgDesktopPortalColorPicker(portalWindowIdentifier(parent), parent);
+    }
+    return nullptr;
+#else
+    Q_UNUSED(parent);
+    return nullptr;
+#endif
+}
 
 QByteArray QGenericUnixServices::desktopEnvironment() const
 {
@@ -306,12 +394,15 @@ QByteArray QGenericUnixServices::desktopEnvironment() const
 
 bool QGenericUnixServices::openUrl(const QUrl &url)
 {
-    if (url.scheme() == QLatin1String("mailto")) {
+    if (url.scheme() == "mailto"_L1) {
 #if QT_CONFIG(dbus)
         if (checkNeedPortalSupport()) {
-            QDBusError error = xdgDesktopPortalSendEmail(url);
-            if (isPortalReturnPermanent(error))
-                return !error.isValid();
+            const QString parentWindow = QGuiApplication::focusWindow()
+                    ? portalWindowIdentifier(QGuiApplication::focusWindow())
+                    : QString();
+            QDBusError error = xdgDesktopPortalSendEmail(url, parentWindow);
+            if (!error.isValid())
+                return true;
 
             // service not running, fall back
         }
@@ -321,9 +412,12 @@ bool QGenericUnixServices::openUrl(const QUrl &url)
 
 #if QT_CONFIG(dbus)
     if (checkNeedPortalSupport()) {
-        QDBusError error = xdgDesktopPortalOpenUrl(url);
-        if (isPortalReturnPermanent(error))
-            return !error.isValid();
+        const QString parentWindow = QGuiApplication::focusWindow()
+                ? portalWindowIdentifier(QGuiApplication::focusWindow())
+                : QString();
+        QDBusError error = xdgDesktopPortalOpenUrl(url, parentWindow);
+        if (!error.isValid())
+            return true;
     }
 #endif
 
@@ -338,9 +432,12 @@ bool QGenericUnixServices::openDocument(const QUrl &url)
 {
 #if QT_CONFIG(dbus)
     if (checkNeedPortalSupport()) {
-        QDBusError error = xdgDesktopPortalOpenFile(url);
-        if (isPortalReturnPermanent(error))
-            return !error.isValid();
+        const QString parentWindow = QGuiApplication::focusWindow()
+                ? portalWindowIdentifier(QGuiApplication::focusWindow())
+                : QString();
+        QDBusError error = xdgDesktopPortalOpenFile(url, parentWindow);
+        if (!error.isValid())
+            return true;
     }
 #endif
 
@@ -352,6 +449,8 @@ bool QGenericUnixServices::openDocument(const QUrl &url)
 }
 
 #else
+QGenericUnixServices::QGenericUnixServices() = default;
+
 QByteArray QGenericUnixServices::desktopEnvironment() const
 {
     return QByteArrayLiteral("UNKNOWN");
@@ -371,6 +470,31 @@ bool QGenericUnixServices::openDocument(const QUrl &url)
     return false;
 }
 
+QPlatformServiceColorPicker *QGenericUnixServices::colorPicker(QWindow *parent)
+{
+    Q_UNUSED(parent);
+    return nullptr;
+}
+
 #endif // QT_NO_MULTIPROCESS
 
+QString QGenericUnixServices::portalWindowIdentifier(QWindow *window)
+{
+    if (QGuiApplication::platformName() == QLatin1String("xcb"))
+        return "x11:"_L1 + QString::number(window->winId(), 16);
+
+    return QString();
+}
+
+bool QGenericUnixServices::hasCapability(Capability capability) const
+{
+    switch (capability) {
+    case Capability::ColorPicking:
+        return m_hasScreenshotPortalWithColorPicking;
+    }
+    return false;
+}
+
 QT_END_NAMESPACE
+
+#include "qgenericunixservices.moc"

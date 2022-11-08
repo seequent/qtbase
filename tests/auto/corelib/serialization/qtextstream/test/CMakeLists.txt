@@ -1,4 +1,5 @@
-# Generated from test.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## tst_qtextstream Test:
@@ -8,6 +9,7 @@
 list(APPEND test_data "../rfc3261.txt")
 list(APPEND test_data "../task113817.txt")
 list(APPEND test_data "../qtextstream.qrc")
+list(APPEND test_data "../qtextstream_integrity.qrc")
 list(APPEND test_data "../tst_qtextstream.cpp")
 list(APPEND test_data "../resources")
 list(APPEND test_data "../BLACKLIST")
@@ -15,25 +17,22 @@ list(APPEND test_data "../BLACKLIST")
 qt_internal_add_test(tst_qtextstream
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../"
     SOURCES
-        ../../../../../shared/emulationdetector.h
         ../tst_qtextstream.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../../shared
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Network
+        Qt::TestPrivate
     TESTDATA ${test_data}
+    QT_TEST_SERVER_LIST "cyrus"
 )
 
+if(QT_FEATURE_sanitize_address)
+    set_property(TEST tst_qtextstream APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=900000")
+endif()
+
 # Resources:
-set_source_files_properties("../resources/big_endian/"
-    PROPERTIES QT_RESOURCE_ALIAS "resources/big_endian/"
-)
-set_source_files_properties("../resources/little_endian/"
-    PROPERTIES QT_RESOURCE_ALIAS "resources/little_endian/"
-)
 set(qtextstream_resource_files
-    "resources/big_endian/"
-    "resources/little_endian/"
+    "../resources/big_endian/"
+    "../resources/little_endian/"
 )
 
 qt_internal_add_resource(tst_qtextstream "qtextstream"
@@ -45,11 +44,6 @@ qt_internal_add_resource(tst_qtextstream "qtextstream"
         ${qtextstream_resource_files}
 )
 
-
-## Scopes:
-#####################################################################
-
-qt_internal_extend_target(tst_qtextstream CONDITION builtin_testdata
-    DEFINES
-        BUILTIN_TESTDATA
-)
+if(QT_FEATURE_process)
+    add_dependencies(tst_qtextstream stdinProcess readAllStdinProcess readLineStdinProcess)
+endif()

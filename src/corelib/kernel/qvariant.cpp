@@ -1,43 +1,7 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2018 Intel Corporation.
-** Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2021 Intel Corporation.
+// Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qvariant.h"
 #include "qbitarray.h"
@@ -45,6 +9,7 @@
 #include "qdatastream.h"
 #include "qdebug.h"
 #include "qmap.h"
+#include "qhash.h"
 #include "qdatetime.h"
 #if QT_CONFIG(easingcurve)
 #include "qeasingcurve.h"
@@ -71,7 +36,6 @@
 #include "qjsondocument.h"
 #include "qbytearraylist.h"
 #endif
-#include "private/qvariant_p.h"
 #include "private/qlocale_p.h"
 #include "qmetatype_p.h"
 #include <qmetaobject.h>
@@ -89,14 +53,16 @@
 
 QT_BEGIN_NAMESPACE
 
-namespace { // annonymous used to hide QVariant handlers
+using namespace Qt::StringLiterals;
+
+namespace { // anonymous used to hide QVariant handlers
 
 /*!
   \internal
  */
 static qlonglong qMetaTypeNumber(const QVariant::Private *d)
 {
-    switch (d->typeId()) {
+    switch (d->type().id()) {
     case QMetaType::Int:
         return d->get<int>();
     case QMetaType::LongLong:
@@ -126,7 +92,7 @@ static qlonglong qMetaTypeNumber(const QVariant::Private *d)
 
 static qulonglong qMetaTypeUNumber(const QVariant::Private *d)
 {
-    switch (d->typeId()) {
+    switch (d->type().id()) {
     case QMetaType::UInt:
         return d->get<unsigned int>();
     case QMetaType::ULongLong:
@@ -146,18 +112,18 @@ static qlonglong qConvertToNumber(const QVariant::Private *d, bool *ok, bool all
 {
     *ok = true;
 
-    switch (uint(d->typeId())) {
+    switch (uint(d->type().id())) {
     case QMetaType::QString: {
         const QString &s = d->get<QString>();
         qlonglong l = s.toLongLong(ok);
         if (*ok)
             return l;
         if (allowStringToBool) {
-            if (s == QLatin1String("false") || s == QLatin1String("0")) {
+            if (s == "false"_L1 || s == "0"_L1) {
                 *ok = true;
                 return 0;
             }
-            if (s == QLatin1String("true") || s == QLatin1String("1")) {
+            if (s == "true"_L1 || s == "1"_L1) {
                 *ok = true;
                 return 1;
             }
@@ -200,7 +166,7 @@ static qlonglong qConvertToNumber(const QVariant::Private *d, bool *ok, bool all
 
     QMetaType typeInfo = d->type();
     if (typeInfo.flags() & QMetaType::IsEnumeration
-        || d->typeId() == QMetaType::QCborSimpleType) {
+        || d->type().id() == QMetaType::QCborSimpleType) {
         switch (typeInfo.sizeOf()) {
         case 1:
             return d->get<signed char>();
@@ -220,7 +186,7 @@ static qlonglong qConvertToNumber(const QVariant::Private *d, bool *ok, bool all
 static qreal qConvertToRealNumber(const QVariant::Private *d, bool *ok)
 {
     *ok = true;
-    switch (uint(d->typeId())) {
+    switch (uint(d->type().id())) {
     case QMetaType::QString:
         return d->get<QString>().toDouble(ok);
     case QMetaType::Double:
@@ -245,41 +211,157 @@ static qreal qConvertToRealNumber(const QVariant::Private *d, bool *ok)
     }
 }
 
-// the type of d has already been set, but other field are not set
-static void customConstruct(QVariant::Private *d, const void *copy)
+static bool isValidMetaTypeForVariant(const QtPrivate::QMetaTypeInterface *iface, const void *copy)
 {
-    const QMetaType type = d->type();
-    const uint size = type.sizeOf();
-    if (!size) {
-        *d = QVariant::Private();
-        return;
+    using namespace QtMetaTypePrivate;
+    if (!iface || iface->size == 0)
+        return false;
+
+    Q_ASSERT(!isInterfaceFor<void>(iface));  // only void should have size 0
+    if (!isCopyConstructible(iface) || !isDestructible(iface)) {
+        // all meta types must be copyable (because QVariant is) and
+        // destructible (because QVariant owns it)
+        qWarning("QVariant: Provided metatype for '%s' does not support destruction and "
+                 "copy construction", iface->name);
+        return false;
+    }
+    if (!copy && !isDefaultConstructible(iface)) {
+        // non-default-constructible types are acceptable, but not if you're
+        // asking us to construct from nothing
+        qWarning("QVariant: Cannot create type '%s' without a default constructor", iface->name);
+        return false;
     }
 
-    if (QVariant::Private::canUseInternalSpace(type)) {
-        type.construct(&d->data, copy);
-        d->is_shared = false;
-    } else {
-        d->data.shared = QVariant::PrivateShared::create(type);
-        type.construct(d->data.shared->data(), copy);
-        d->is_shared = true;
-    }
+    return true;
+}
+
+template <typename F> static QVariant::PrivateShared *
+customConstructShared(size_t size, size_t align, F &&construct)
+{
+    struct Deleter {
+        void operator()(QVariant::PrivateShared *p) const
+        { QVariant::PrivateShared::free(p); }
+    };
+
+    // this is exception-safe
+    std::unique_ptr<QVariant::PrivateShared, Deleter> ptr;
+    ptr.reset(QVariant::PrivateShared::create(size, align));
+    construct(ptr->data());
+    return ptr.release();
+}
+
+// the type of d has already been set, but other field are not set
+static void customConstruct(const QtPrivate::QMetaTypeInterface *iface, QVariant::Private *d,
+                            const void *copy)
+{
+    using namespace QtMetaTypePrivate;
+    Q_ASSERT(iface);
+    Q_ASSERT(iface->size);
+    Q_ASSERT(!isInterfaceFor<void>(iface));
+    Q_ASSERT(isCopyConstructible(iface));
+    Q_ASSERT(isDestructible(iface));
+    Q_ASSERT(copy || isDefaultConstructible(iface));
+
     // need to check for nullptr_t here, as this can get called by fromValue(nullptr). fromValue() uses
     // std::addressof(value) which in this case returns the address of the nullptr object.
-    d->is_null = !copy || type == QMetaType::fromType<std::nullptr_t>();
+    // ### Qt 7: remove nullptr_t special casing
+    d->is_null = !copy QT6_ONLY(|| isInterfaceFor<std::nullptr_t>(iface));
+
+    if (QVariant::Private::canUseInternalSpace(iface)) {
+        d->is_shared = false;
+        if (!copy && !iface->defaultCtr)
+            return;     // trivial default constructor, we've already memset
+        construct(iface, d->data.data, copy);
+    } else {
+        d->data.shared = customConstructShared(iface->size, iface->alignment, [=](void *where) {
+            construct(iface, where, copy);
+        });
+        d->is_shared = true;
+    }
 }
 
 static void customClear(QVariant::Private *d)
 {
+    const QtPrivate::QMetaTypeInterface *iface = d->typeInterface();
+    if (!iface)
+        return;
     if (!d->is_shared) {
-        d->type().destruct(&d->data);
+        QtMetaTypePrivate::destruct(iface, d->data.data);
     } else {
-        d->type().destruct(d->data.shared->data());
+        QtMetaTypePrivate::destruct(iface, d->data.shared->data());
         QVariant::PrivateShared::free(d->data.shared);
     }
 }
 
+static QVariant::Private clonePrivate(const QVariant::Private &other)
+{
+    QVariant::Private d = other;
+    if (d.is_shared) {
+        d.data.shared->ref.ref();
+    } else if (const QtPrivate::QMetaTypeInterface *iface = d.typeInterface()) {
+        Q_ASSERT(d.canUseInternalSpace(iface));
 
-} // annonymous used to hide QVariant handlers
+        // if not trivially copyable, ask to copy
+        if (iface->copyCtr)
+            QtMetaTypePrivate::copyConstruct(iface, d.data.data, other.data.data);
+    }
+    return d;
+}
+
+} // anonymous used to hide QVariant handlers
+
+inline QVariant::PrivateShared *QVariant::PrivateShared::create(size_t size, size_t align)
+{
+    size += sizeof(PrivateShared);
+    if (align > sizeof(PrivateShared)) {
+        // The alignment is larger than the alignment we can guarantee for the pointer
+        // directly following PrivateShared, so we need to allocate some additional
+        // memory to be able to fit the object into the available memory with suitable
+        // alignment.
+        size += align - sizeof(PrivateShared);
+    }
+    void *data = operator new(size);
+    auto *ps = new (data) QVariant::PrivateShared();
+    ps->offset = int(((quintptr(ps) + sizeof(PrivateShared) + align - 1) & ~(align - 1)) - quintptr(ps));
+    return ps;
+}
+
+inline void QVariant::PrivateShared::free(PrivateShared *p)
+{
+    p->~PrivateShared();
+    operator delete(p);
+}
+
+inline QVariant::Private::Private(const QtPrivate::QMetaTypeInterface *iface) noexcept
+    : is_shared(false), is_null(false), packedType(quintptr(iface) >> 2)
+{
+    Q_ASSERT((quintptr(iface) & 0x3) == 0);
+}
+
+template <typename T> inline
+QVariant::Private::Private(std::piecewise_construct_t, const T &t)
+    : is_shared(!CanUseInternalSpace<T>), is_null(std::is_same_v<T, std::nullptr_t>)
+{
+    // confirm noexceptness
+    static constexpr bool isNothrowQVariantConstructible = noexcept(QVariant(t));
+    static constexpr bool isNothrowCopyConstructible = std::is_nothrow_copy_constructible_v<T>;
+    static constexpr bool isNothrowCopyAssignable = std::is_nothrow_copy_assignable_v<T>;
+
+    const QtPrivate::QMetaTypeInterface *iface = QtPrivate::qMetaTypeInterfaceForType<T>();
+    Q_ASSERT((quintptr(iface) & 0x3) == 0);
+    packedType = quintptr(iface) >> 2;
+
+    if constexpr (CanUseInternalSpace<T>) {
+        static_assert(isNothrowQVariantConstructible == isNothrowCopyConstructible);
+        static_assert(isNothrowQVariantConstructible == isNothrowCopyAssignable);
+        new (data.data) T(t);
+    } else {
+        static_assert(!isNothrowQVariantConstructible); // we allocate memory, even if T doesn't
+        data.shared = customConstructShared(sizeof(T), alignof(T), [=](void *where) {
+            new (where) T(t);
+        });
+    }
+}
 
 /*!
     \class QVariant
@@ -295,11 +377,11 @@ static void customClear(QVariant::Private *d)
     classes cannot be used in unions. Without QVariant, this would be
     a problem for QObject::property() and for database work, etc.
 
-    A QVariant object holds a single value of a single type() at a
-    time. (Some type()s are multi-valued, for example a string list.)
+    A QVariant object holds a single value of a single typeId() at a
+    time. (Some types are multi-valued, for example a string list.)
     You can find out what type, T, the variant holds, convert it to a
     different type using convert(), get its value using one of the
-    toT() functions (e.g., toSize()) and check whether the type can
+    toT() functions (e.g., toSize()), and check whether the type can
     be converted to a particular type using canConvert().
 
     The methods named toT() (e.g., toInt(), toString()) are const. If
@@ -320,15 +402,14 @@ static void customClear(QVariant::Private *d)
     and versatile, but may prove less memory and speed efficient than
     storing specific types in standard data structures.
 
-    QVariant also supports the notion of null values, where you can
-    have a defined type with no value set. However, note that QVariant
-    types can only be cast when they have had a value set.
+    QVariant also supports the notion of null values. A variant is null
+    if the variant contains no initialized value, or contains a null pointer.
 
     \snippet code/src_corelib_kernel_qvariant.cpp 1
 
     QVariant can be extended to support other types than those
-    mentioned in the \l Type enum. See \l{Creating Custom Qt Types}{Creating Custom Qt Types}
-    for details.
+    mentioned in the \l QMetaType::Type enum.
+    See \l{Creating Custom Qt Types}{Creating Custom Qt Types} for details.
 
     \section1 A Note on GUI Types
 
@@ -354,9 +435,9 @@ static void customClear(QVariant::Private *d)
     QVariant to convert between types given suitable data; it is still
     possible to supply data which cannot actually be converted.
 
-    For example, canConvert(Int) would return true when called on a variant
-    containing a string because, in principle, QVariant is able to convert
-    strings of numbers to integers.
+    For example, \c{canConvert(QMetaType::fromType<int>())} would return true
+    when called on a variant containing a string because, in principle,
+    QVariant is able to convert strings of numbers to integers.
     However, if the string contains non-numeric characters, it cannot be
     converted to an integer, and any attempt to convert it will fail.
     Hence, it is important to have both functions return true for a
@@ -366,7 +447,7 @@ static void customClear(QVariant::Private *d)
 */
 
 /*!
-    \obsolete Use QMetaType::Type instead
+    \deprecated Use \l QMetaType::Type instead.
     \enum QVariant::Type
 
     This enum type defines the types of variable that a QVariant can
@@ -387,7 +468,7 @@ static void customClear(QVariant::Private *d)
     \value EasingCurve a QEasingCurve
     \value Uuid a QUuid
     \value ModelIndex a QModelIndex
-    \value PersistentModelIndex a QPersistentModelIndex (since 5.5)
+    \value [since 5.5] PersistentModelIndex a QPersistentModelIndex
     \value Font  a QFont
     \value Hash a QVariantHash
     \value Icon  a QIcon
@@ -466,12 +547,23 @@ static void customClear(QVariant::Private *d)
 
     Constructs a variant private of type \a type, and initializes with \a copy if
     \a copy is not \nullptr.
-*/
 
+*/
+//### Qt 7: Remove in favor of QMetaType overload
 void QVariant::create(int type, const void *copy)
 {
-    d = Private(QMetaType(type));
-    customConstruct(&d, copy);
+    create(QMetaType(type), copy);
+}
+
+/*!
+    \fn QVariant::create(int type, const void *copy)
+
+    \internal
+    \overload
+*/
+void QVariant::create(QMetaType type, const void *copy)
+{
+    *this = QVariant(type, copy);
 }
 
 /*!
@@ -499,25 +591,18 @@ QVariant::~QVariant()
 */
 
 QVariant::QVariant(const QVariant &p)
-    : d(p.d)
+    : d(clonePrivate(p.d))
 {
-    if (d.is_shared) {
-        d.data.shared->ref.ref();
-        return;
-    }
-    QMetaType t = d.type();
-    if (t.isValid())
-        t.construct(&d, p.constData());
 }
 
 /*!
-  \fn QVariant::QVariant(const QString &val)
+  \fn QVariant::QVariant(const QString &val) noexcept
 
     Constructs a new variant with a string value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(QLatin1String val)
+    \fn QVariant::QVariant(QLatin1StringView val)
 
     Constructs a new variant with a string value, \a val.
 */
@@ -538,37 +623,37 @@ QVariant::QVariant(const QVariant &p)
 */
 
 /*!
-  \fn QVariant::QVariant(const QStringList &val)
+  \fn QVariant::QVariant(const QStringList &val) noexcept
 
     Constructs a new variant with a string list value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(const QMap<QString, QVariant> &val)
+  \fn QVariant::QVariant(const QMap<QString, QVariant> &val) noexcept
 
     Constructs a new variant with a map of \l {QVariant}s, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(const QHash<QString, QVariant> &val)
+  \fn QVariant::QVariant(const QHash<QString, QVariant> &val) noexcept
 
     Constructs a new variant with a hash of \l {QVariant}s, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(QDate val)
+  \fn QVariant::QVariant(QDate val) noexcept
 
     Constructs a new variant with a date value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(QTime val)
+  \fn QVariant::QVariant(QTime val) noexcept
 
     Constructs a new variant with a time value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(const QDateTime &val)
+  \fn QVariant::QVariant(const QDateTime &val) noexcept
 
     Constructs a new variant with a date/time value, \a val.
 */
@@ -582,14 +667,14 @@ QVariant::QVariant(const QVariant &p)
 
 /*!
     \since 5.0
-    \fn QVariant::QVariant(const QUuid &val)
+    \fn QVariant::QVariant(QUuid val) noexcept
 
     Constructs a new variant with an uuid value, \a val.
 */
 
 /*!
     \since 5.0
-    \fn QVariant::QVariant(const QModelIndex &val)
+    \fn QVariant::QVariant(const QModelIndex &val) noexcept
 
     Constructs a new variant with a QModelIndex value, \a val.
 */
@@ -630,135 +715,135 @@ QVariant::QVariant(const QVariant &p)
 */
 
 /*!
-  \fn QVariant::QVariant(const QByteArray &val)
+  \fn QVariant::QVariant(const QByteArray &val) noexcept
 
     Constructs a new variant with a bytearray value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(const QBitArray &val)
+  \fn QVariant::QVariant(const QBitArray &val) noexcept
 
     Constructs a new variant with a bitarray value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(const QPoint &val)
+  \fn QVariant::QVariant(QPoint val) noexcept
 
   Constructs a new variant with a point value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QPointF &val)
+  \fn QVariant::QVariant(QPointF val) noexcept
 
   Constructs a new variant with a point value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QRectF &val)
+  \fn QVariant::QVariant(QRectF val)
 
   Constructs a new variant with a rect value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QLineF &val)
+  \fn QVariant::QVariant(QLineF val) noexcept
 
   Constructs a new variant with a line value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QLine &val)
+  \fn QVariant::QVariant(QLine val) noexcept
 
   Constructs a new variant with a line value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QRect &val)
+  \fn QVariant::QVariant(QRect val) noexcept
 
   Constructs a new variant with a rect value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QSize &val)
+  \fn QVariant::QVariant(QSize val) noexcept
 
   Constructs a new variant with a size value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QSizeF &val)
+  \fn QVariant::QVariant(QSizeF val) noexcept
 
   Constructs a new variant with a size value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(const QUrl &val)
+  \fn QVariant::QVariant(const QUrl &val) noexcept
 
   Constructs a new variant with a url value of \a val.
  */
 
 /*!
-  \fn QVariant::QVariant(int val)
+  \fn QVariant::QVariant(int val) noexcept
 
     Constructs a new variant with an integer value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(uint val)
+  \fn QVariant::QVariant(uint val) noexcept
 
     Constructs a new variant with an unsigned integer value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(qlonglong val)
+  \fn QVariant::QVariant(qlonglong val) noexcept
 
     Constructs a new variant with a long long integer value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(qulonglong val)
+  \fn QVariant::QVariant(qulonglong val) noexcept
 
     Constructs a new variant with an unsigned long long integer value, \a val.
 */
 
 
 /*!
-  \fn QVariant::QVariant(bool val)
+  \fn QVariant::QVariant(bool val) noexcept
 
     Constructs a new variant with a boolean value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(double val)
+  \fn QVariant::QVariant(double val) noexcept
 
     Constructs a new variant with a floating point value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(float val)
+  \fn QVariant::QVariant(float val) noexcept
 
     Constructs a new variant with a floating point value, \a val.
     \since 4.6
 */
 
 /*!
-    \fn QVariant::QVariant(const QList<QVariant> &val)
+    \fn QVariant::QVariant(const QList<QVariant> &val) noexcept
 
     Constructs a new variant with a list value, \a val.
 */
 
 /*!
-  \fn QVariant::QVariant(QChar c)
+  \fn QVariant::QVariant(QChar c) noexcept
 
   Constructs a new variant with a char value, \a c.
 */
 
 /*!
-  \fn QVariant::QVariant(const QLocale &l)
+  \fn QVariant::QVariant(const QLocale &l) noexcept
 
   Constructs a new variant with a locale value, \a l.
 */
 
 /*!
-  \fn QVariant::QVariant(const QRegularExpression &re)
+  \fn QVariant::QVariant(const QRegularExpression &re) noexcept
 
   \since 5.0
 
@@ -766,7 +851,7 @@ QVariant::QVariant(const QVariant &p)
 */
 
 /*! \fn QVariant::QVariant(Type type)
-    \deprecated
+    \deprecated [6.0] Use the constructor taking a QMetaType instead.
 
     Constructs an uninitialized variant of type \a type. This will create a
     variant in a special null state that if accessed will return a default
@@ -785,144 +870,88 @@ QVariant::QVariant(const QVariant &p)
     instead to construct variants from the pointer types represented by
     \c QMetaType::VoidStar, and \c QMetaType::QObjectStar.
 
+    If \a type does not support copy and default construction, the variant will
+    be invalid.
+
     \sa QVariant::fromValue(), QMetaType::Type
 */
-QVariant::QVariant(QMetaType type, const void *copy) : d(type)
+QVariant::QVariant(QMetaType type, const void *copy) : d(type.iface())
 {
-    customConstruct(&d, copy);
+    if (isValidMetaTypeForVariant(type.iface(), copy))
+        customConstruct(type.iface(), &d, copy);
+    else
+        d = {};
 }
 
-QVariant::QVariant(int val)
-    : d(QMetaType::Int)
-{ d.set(val); }
-QVariant::QVariant(uint val)
-    : d(QMetaType::UInt)
-{ d.set(val); }
-QVariant::QVariant(qlonglong val)
-    : d(QMetaType::LongLong)
-{ d.set(val); }
-QVariant::QVariant(qulonglong val)
-    : d(QMetaType::ULongLong)
-{ d.set(val); }
-QVariant::QVariant(bool val)
-    : d(QMetaType::Bool)
-{ d.set(val); }
-QVariant::QVariant(double val)
-    : d(QMetaType::Double)
-{ d.set(val); }
-QVariant::QVariant(float val)
-    : d(QMetaType::Float)
-{ d.set(val); }
+QVariant::QVariant(int val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(uint val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(qlonglong val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(qulonglong val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(bool val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(double val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(float val) noexcept : d(std::piecewise_construct_t{}, val) {}
 
-QVariant::QVariant(const QByteArray &val)
-    : d(QMetaType::QByteArray)
-{ v_construct<QByteArray>(&d, val); }
-QVariant::QVariant(const QBitArray &val)
-    : d(QMetaType::QBitArray)
-{ v_construct<QBitArray>(&d, val);  }
-QVariant::QVariant(const QString &val)
-    : d(QMetaType::QString)
-{ v_construct<QString>(&d, val);  }
-QVariant::QVariant(QChar val)
-    : d(QMetaType::QChar)
-{ v_construct<QChar>(&d, val);  }
-QVariant::QVariant(QLatin1String val)
-    : d(QMetaType::QString)
-{ v_construct<QString>(&d, val); }
-QVariant::QVariant(const QStringList &val)
-    : d(QMetaType::QStringList)
-{ v_construct<QStringList>(&d, val); }
+QVariant::QVariant(const QByteArray &val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(const QBitArray &val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(const QString &val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(QChar val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(const QStringList &val) noexcept : d(std::piecewise_construct_t{}, val) {}
 
-QVariant::QVariant(QDate val)
-    : d(QMetaType::QDate)
-{ v_construct<QDate>(&d, val); }
-QVariant::QVariant(QTime val)
-    : d(QMetaType::QTime)
-{ v_construct<QTime>(&d, val); }
-QVariant::QVariant(const QDateTime &val)
-    : d(QMetaType::QDateTime)
-{ v_construct<QDateTime>(&d, val); }
+QVariant::QVariant(QDate val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(QTime val) noexcept : d(std::piecewise_construct_t{}, val) {}
+QVariant::QVariant(const QDateTime &val) noexcept : d(std::piecewise_construct_t{}, val) {}
+
+QVariant::QVariant(const QList<QVariant> &list) noexcept : d(std::piecewise_construct_t{}, list) {}
+QVariant::QVariant(const QMap<QString, QVariant> &map) noexcept : d(std::piecewise_construct_t{}, map) {}
+QVariant::QVariant(const QHash<QString, QVariant> &hash) noexcept : d(std::piecewise_construct_t{}, hash) {}
+
+QVariant::QVariant(QLatin1StringView val) : QVariant(QString(val)) {}
+
 #if QT_CONFIG(easingcurve)
-QVariant::QVariant(const QEasingCurve &val)
-    : d(QMetaType::QEasingCurve)
-{ v_construct<QEasingCurve>(&d, val); }
+QVariant::QVariant(const QEasingCurve &val) : d(std::piecewise_construct_t{}, val) {}
 #endif
-QVariant::QVariant(const QList<QVariant> &list)
-    : d(QMetaType::QVariantList)
-{ v_construct<QVariantList>(&d, list); }
-QVariant::QVariant(const QMap<QString, QVariant> &map)
-    : d(QMetaType::QVariantMap)
-{ v_construct<QVariantMap>(&d, map); }
-QVariant::QVariant(const QHash<QString, QVariant> &hash)
-    : d(QMetaType::QVariantHash)
-{ v_construct<QVariantHash>(&d, hash); }
 #ifndef QT_NO_GEOM_VARIANT
-QVariant::QVariant(const QPoint &pt)
-    : d(QMetaType::QPoint)
-{ v_construct<QPoint>(&d, pt); }
-QVariant::QVariant(const QPointF &pt)
-    : d(QMetaType::QPointF)
-{ v_construct<QPointF>(&d, pt); }
-QVariant::QVariant(const QRectF &r)
-    : d(QMetaType::QRectF)
-{ v_construct<QRectF>(&d, r); }
-QVariant::QVariant(const QLineF &l)
-    : d(QMetaType::QLineF)
-{ v_construct<QLineF>(&d, l); }
-QVariant::QVariant(const QLine &l)
-    : d(QMetaType::QLine)
-{ v_construct<QLine>(&d, l); }
-QVariant::QVariant(const QRect &r)
-    : d(QMetaType::QRect)
-{ v_construct<QRect>(&d, r); }
-QVariant::QVariant(const QSize &s)
-    : d(QMetaType::QSize)
-{ v_construct<QSize>(&d, s); }
-QVariant::QVariant(const QSizeF &s)
-    : d(QMetaType::QSizeF)
-{ v_construct<QSizeF>(&d, s); }
+QVariant::QVariant(QPoint pt) noexcept
+    : d(std::piecewise_construct_t{}, pt) {}
+QVariant::QVariant(QPointF pt) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 2>)
+    : d(std::piecewise_construct_t{}, pt) {}
+QVariant::QVariant(QRect r) noexcept(Private::FitsInInternalSize<sizeof(int) * 4>)
+    : d(std::piecewise_construct_t{}, r) {}
+QVariant::QVariant(QRectF r) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 4>)
+    : d(std::piecewise_construct_t{}, r) {}
+QVariant::QVariant(QLine l) noexcept(Private::FitsInInternalSize<sizeof(int) * 4>)
+    : d(std::piecewise_construct_t{}, l) {}
+QVariant::QVariant(QLineF l) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 4>)
+    : d(std::piecewise_construct_t{}, l) {}
+QVariant::QVariant(QSize s) noexcept
+    : d(std::piecewise_construct_t{}, s) {}
+QVariant::QVariant(QSizeF s) noexcept(Private::FitsInInternalSize<sizeof(qreal) * 2>)
+    : d(std::piecewise_construct_t{}, s) {}
 #endif
 #ifndef QT_BOOTSTRAPPED
-QVariant::QVariant(const QUrl &u)
-    : d(QMetaType::QUrl)
-{ v_construct<QUrl>(&d, u); }
+QVariant::QVariant(const QUrl &u) noexcept : d(std::piecewise_construct_t{}, u) {}
 #endif
-QVariant::QVariant(const QLocale &l)
-    : d(QMetaType::QLocale)
-{ v_construct<QLocale>(&d, l); }
+QVariant::QVariant(const QLocale &l) noexcept : d(std::piecewise_construct_t{}, l) {}
 #if QT_CONFIG(regularexpression)
-QVariant::QVariant(const QRegularExpression &re)
-    : d(QMetaType::QRegularExpression)
-{ v_construct<QRegularExpression>(&d, re); }
+QVariant::QVariant(const QRegularExpression &re) noexcept : d(std::piecewise_construct_t{}, re) {}
 #endif // QT_CONFIG(regularexpression)
-QVariant::QVariant(const QUuid &uuid)
-    : d(QMetaType::QUuid)
-{ v_construct<QUuid>(&d, uuid); }
+QVariant::QVariant(QUuid uuid) noexcept(Private::FitsInInternalSize<16>) : d(std::piecewise_construct_t{}, uuid) {}
 #ifndef QT_BOOTSTRAPPED
-QVariant::QVariant(const QJsonValue &jsonValue)
-    : d(QMetaType::QJsonValue)
-{ v_construct<QJsonValue>(&d, jsonValue); }
-QVariant::QVariant(const QJsonObject &jsonObject)
-    : d(QMetaType::QJsonObject)
-{ v_construct<QJsonObject>(&d, jsonObject); }
-QVariant::QVariant(const QJsonArray &jsonArray)
-    : d(QMetaType::QJsonArray)
-{ v_construct<QJsonArray>(&d, jsonArray); }
-QVariant::QVariant(const QJsonDocument &jsonDocument)
-    : d(QMetaType::QJsonDocument)
-{ v_construct<QJsonDocument>(&d, jsonDocument); }
+QVariant::QVariant(const QJsonValue &jsonValue) noexcept(Private::FitsInInternalSize<sizeof(CborValueStandIn)>)
+    : d(std::piecewise_construct_t{}, jsonValue)
+{ static_assert(sizeof(CborValueStandIn) == sizeof(QJsonValue)); }
+QVariant::QVariant(const QJsonObject &jsonObject) noexcept : d(std::piecewise_construct_t{}, jsonObject) {}
+QVariant::QVariant(const QJsonArray &jsonArray) noexcept : d(std::piecewise_construct_t{}, jsonArray) {}
+QVariant::QVariant(const QJsonDocument &jsonDocument) : d(std::piecewise_construct_t{}, jsonDocument) {}
 #endif // QT_BOOTSTRAPPED
 #if QT_CONFIG(itemmodel)
-QVariant::QVariant(const QModelIndex &modelIndex)
-    : d(QMetaType::QModelIndex)
-{ v_construct<QModelIndex>(&d, modelIndex); }
-QVariant::QVariant(const QPersistentModelIndex &modelIndex)
-    : d(QMetaType::QPersistentModelIndex)
-{ v_construct<QPersistentModelIndex>(&d, modelIndex); }
+QVariant::QVariant(const QModelIndex &modelIndex) noexcept(Private::FitsInInternalSize<8 + 2 * sizeof(quintptr)>)
+    : d(std::piecewise_construct_t{}, modelIndex) {}
+QVariant::QVariant(const QPersistentModelIndex &modelIndex) : d(std::piecewise_construct_t{}, modelIndex) {}
 #endif
 
 /*! \fn QVariant::Type QVariant::type() const
-    \deprecated
+    \deprecated [6.0] Use typeId() or metaType() instead.
 
     Returns the storage type of the value stored in the variant.
     Although this function is declared as returning QVariant::Type,
@@ -963,7 +992,7 @@ QVariant::QVariant(const QPersistentModelIndex &modelIndex)
     Returns the storage type of the value stored in the variant. This is
     the same as metaType().id().
 
-    \sa type(), metaType()
+    \sa metaType()
 */
 
 /*!
@@ -985,16 +1014,7 @@ QVariant &QVariant::operator=(const QVariant &variant)
         return *this;
 
     clear();
-    if (variant.d.is_shared) {
-        variant.d.data.shared->ref.ref();
-        d = variant.d;
-    } else {
-        d = variant.d;
-        QMetaType t = d.type();
-        if (t.isValid())
-            t.construct(&d, variant.constData());
-    }
-
+    d = clonePrivate(variant.d);
     return *this;
 }
 
@@ -1017,8 +1037,9 @@ void QVariant::detach()
     if (!d.is_shared || d.data.shared->ref.loadRelaxed() == 1)
         return;
 
-    Private dd(d.type());
-    customConstruct(&dd, constData());
+    Q_ASSERT(isValidMetaTypeForVariant(d.typeInterface(), constData()));
+    Private dd(d.typeInterface());
+    customConstruct(d.typeInterface(), &dd, constData());
     if (!d.data.shared->ref.deref())
         customClear(&d);
     d.data.shared = dd.data.shared;
@@ -1054,7 +1075,7 @@ void QVariant::clear()
 
 /*!
     \fn const char *QVariant::typeToName(int typeId)
-    \deprecated Use QMetaType instead
+    \deprecated [6.0] Use \c QMetaType(typeId).name() instead.
 
     Converts the int representation of the storage type, \a typeId, to
     its string representation.
@@ -1064,7 +1085,7 @@ void QVariant::clear()
 
 /*!
     \fn QVariant::Type QVariant::nameToType(const char *name)
-    \deprecated Use QMetaType instead
+    \deprecated [6.0] Use \c QMetaType.fromName(name).id() instead
 
     Converts the string representation of the storage type given in \a
     name, to its enum representation.
@@ -1121,17 +1142,17 @@ static const ushort mapIdFromQt3ToCurrent[MapFromThreeCount] =
 #endif
 };
 
-// enum values needed to map Qt5 based type id's to Qt6 based ones
-enum Qt5Types {
-    Qt5UserType = 1024,
-    Qt5LastCoreType = QMetaType::QCborMap,
-    Qt5FirstGuiType = 64,
-    Qt5LastGuiType = 87,
-    Qt5SizePolicy = 121,
-    Qt5RegExp = 27,
-    Qt5KeySequence = 75,
-    Qt5QQuaternion = 85
-};
+// values needed to map Qt5 based type id's to Qt6 based ones
+constexpr int Qt5UserType = 1024;
+constexpr int Qt5LastCoreType = QMetaType::QCborMap;
+constexpr int Qt5FirstGuiType = 64;
+constexpr int Qt5LastGuiType = 87;
+constexpr int Qt5SizePolicy = 121;
+constexpr int Qt5RegExp = 27;
+constexpr int Qt5KeySequence = 75;
+constexpr int Qt5QQuaternion = 85;
+
+constexpr int Qt6ToQt5GuiTypeDelta = qToUnderlying(QMetaType::FirstGuiType) - Qt5FirstGuiType;
 
 /*!
     Internal function for loading a variant from stream \a s. Use the
@@ -1171,7 +1192,7 @@ void QVariant::load(QDataStream &s)
         if (typeId == Qt5UserType) {
             typeId = QMetaType::User;
         } else if (typeId >= Qt5FirstGuiType && typeId <= Qt5LastGuiType) {
-            typeId += QMetaType::FirstGuiType - Qt5FirstGuiType;
+            typeId += Qt6ToQt5GuiTypeDelta;
         } else if (typeId == Qt5SizePolicy) {
             typeId = QMetaType::QSizePolicy;
         } else if (typeId == Qt5RegExp) {
@@ -1209,7 +1230,7 @@ void QVariant::load(QDataStream &s)
     void *data = const_cast<void *>(constData());
     if (!d.type().load(s, data)) {
         s.setStatus(QDataStream::ReadCorruptData);
-        qWarning("QVariant::load: unable to load type %d.", d.typeId());
+        qWarning("QVariant::load: unable to load type %d.", d.type().id());
     }
 }
 
@@ -1221,7 +1242,7 @@ void QVariant::load(QDataStream &s)
 */
 void QVariant::save(QDataStream &s) const
 {
-    quint32 typeId = d.typeId();
+    quint32 typeId = d.type().id();
     bool saveAsUserType = false;
     if (typeId >= QMetaType::User) {
         typeId = QMetaType::User;
@@ -1239,7 +1260,7 @@ void QVariant::save(QDataStream &s) const
             typeId = Qt5UserType;
             saveAsUserType = true;
         } else if (typeId >= QMetaType::FirstGuiType && typeId <= QMetaType::LastGuiType) {
-            typeId -= QMetaType::FirstGuiType - Qt5FirstGuiType;
+            typeId -= Qt6ToQt5GuiTypeDelta;
             if (typeId > Qt5LastGuiType) {
                 typeId = Qt5UserType;
                 saveAsUserType = true;
@@ -1280,13 +1301,17 @@ void QVariant::save(QDataStream &s) const
         }
     }
     const char *typeName = nullptr;
-    if (saveAsUserType)
-        typeName = d.type().name();
+    if (saveAsUserType) {
+        if (s.version() < QDataStream::Qt_6_0)
+            typeName = QtMetaTypePrivate::typedefNameForType(d.type().d_ptr);
+        if (!typeName)
+            typeName = d.type().name();
+    }
     s << typeId;
     if (s.version() >= QDataStream::Qt_4_2)
         s << qint8(d.is_null);
     if (typeName)
-        s << d.type().name();
+        s << typeName;
 
     if (!isValid()) {
         if (s.version() < QDataStream::Qt_5_0)
@@ -1296,15 +1321,27 @@ void QVariant::save(QDataStream &s) const
 
     if (!d.type().save(s, constData())) {
         qWarning("QVariant::save: unable to save type '%s' (type id: %d).\n",
-                 d.type().name(), d.typeId());
+                 d.type().name(), d.type().id());
         Q_ASSERT_X(false, "QVariant::save", "Invalid type to save");
     }
 }
 
 /*!
     \since 4.4
+    \relates QVariant
 
     Reads a variant \a p from the stream \a s.
+
+    \note If the stream contains types that aren't the built-in ones (see \l
+    QMetaType::Type), those types must be registered using qRegisterMetaType()
+    or QMetaType::registerType() before the variant can be properly loaded. If
+    an unregistered type is found, QVariant will set the corrupt flag in the
+    stream, stop processing and print a warning. For example, for QList<int>
+    it would print the following:
+
+    \quotation
+    QVariant::load: unknown user type with name QList<int>
+    \endquotation
 
     \sa{Serializing Qt Data Types}{Format of the QDataStream operators}
 */
@@ -1316,6 +1353,7 @@ QDataStream &operator>>(QDataStream &s, QVariant &p)
 
 /*!
     Writes a variant \a p to the stream \a s.
+    \relates QVariant
 
     \sa{Serializing Qt Data Types}{Format of the QDataStream operators}
 */
@@ -1326,13 +1364,13 @@ QDataStream &operator<<(QDataStream &s, const QVariant &p)
 }
 
 /*! \fn QDataStream& operator>>(QDataStream &s, QVariant::Type &p)
-    \deprecated
+    \deprecated [6.0] Stream QMetaType::Type instead.
 
     Reads a variant type \a p in enum representation from the stream \a s.
 */
 
 /*! \fn QDataStream& operator<<(QDataStream &s, const QVariant::Type p)
-    \deprecated
+    \deprecated [6.0] Stream QMetaType::Type instead.
 
     Writes a variant type \a p to the stream \a s.
 */
@@ -1353,7 +1391,7 @@ QDataStream &operator<<(QDataStream &s, const QVariant &p)
     \l QMetaType::QVariantList of a type that can be converted to QString;
     otherwise returns an empty list.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QStringList QVariant::toStringList() const
 {
@@ -1373,7 +1411,7 @@ QStringList QVariant::toStringList() const
     Calling QVariant::toString() on an unsupported variant returns an empty
     string.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QString QVariant::toString() const
 {
@@ -1381,10 +1419,15 @@ QString QVariant::toString() const
 }
 
 /*!
-    Returns the variant as a QMap<QString, QVariant> if the variant
-    has type() \l QMetaType::QVariantMap; otherwise returns an empty map.
+    Returns the variant as a QVariantMap if the variant has type() \l
+    QMetaType::QVariantMap. If it doesn't, QVariant will attempt to
+    convert the type to a map and then return it. This will succeed for
+    any type that has registered a converter to QVariantMap or which was
+    declared as a associative container using
+    \l{Q_DECLARE_ASSOCIATIVE_CONTAINER_METATYPE}. If none of those
+    conditions are true, this function will return an empty map.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QVariantMap QVariant::toMap() const
 {
@@ -1395,7 +1438,7 @@ QVariantMap QVariant::toMap() const
     Returns the variant as a QHash<QString, QVariant> if the variant
     has type() \l QMetaType::QVariantHash; otherwise returns an empty map.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QVariantHash QVariant::toHash() const
 {
@@ -1412,7 +1455,7 @@ QVariantHash QVariant::toHash() const
     If the type() is \l QMetaType::QString, an invalid date will be returned if
     the string cannot be parsed as a Qt::ISODate format date.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QDate QVariant::toDate() const
 {
@@ -1429,7 +1472,7 @@ QDate QVariant::toDate() const
     If the type() is \l QMetaType::QString, an invalid time will be returned if
     the string cannot be parsed as a Qt::ISODate format time.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QTime QVariant::toTime() const
 {
@@ -1446,7 +1489,7 @@ QTime QVariant::toTime() const
     If the type() is \l QMetaType::QString, an invalid date/time will be
     returned if the string cannot be parsed as a Qt::ISODate format date/time.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QDateTime QVariant::toDateTime() const
 {
@@ -1460,7 +1503,7 @@ QDateTime QVariant::toDateTime() const
     Returns the variant as a QEasingCurve if the variant has userType()
     \l QMetaType::QEasingCurve; otherwise returns a default easing curve.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 #if QT_CONFIG(easingcurve)
 QEasingCurve QVariant::toEasingCurve() const
@@ -1476,7 +1519,7 @@ QEasingCurve QVariant::toEasingCurve() const
     \l QMetaType::QByteArray or \l QMetaType::QString (converted using
     QString::fromUtf8()); otherwise returns an empty byte array.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QByteArray QVariant::toByteArray() const
 {
@@ -1491,7 +1534,7 @@ QByteArray QVariant::toByteArray() const
     \l QMetaType::QPoint or \l QMetaType::QPointF; otherwise returns a null
     QPoint.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QPoint QVariant::toPoint() const
 {
@@ -1504,7 +1547,7 @@ QPoint QVariant::toPoint() const
     Returns the variant as a QRect if the variant has userType()
     \l QMetaType::QRect; otherwise returns an invalid QRect.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QRect QVariant::toRect() const
 {
@@ -1517,7 +1560,7 @@ QRect QVariant::toRect() const
     Returns the variant as a QSize if the variant has userType()
     \l QMetaType::QSize; otherwise returns an invalid QSize.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QSize QVariant::toSize() const
 {
@@ -1530,7 +1573,7 @@ QSize QVariant::toSize() const
     Returns the variant as a QSizeF if the variant has userType() \l
     QMetaType::QSizeF; otherwise returns an invalid QSizeF.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QSizeF QVariant::toSizeF() const
 {
@@ -1544,7 +1587,7 @@ QSizeF QVariant::toSizeF() const
     \l QMetaType::QRect or \l QMetaType::QRectF; otherwise returns an invalid
     QRectF.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QRectF QVariant::toRectF() const
 {
@@ -1557,7 +1600,7 @@ QRectF QVariant::toRectF() const
     Returns the variant as a QLineF if the variant has userType()
     \l QMetaType::QLineF; otherwise returns an invalid QLineF.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QLineF QVariant::toLineF() const
 {
@@ -1570,7 +1613,7 @@ QLineF QVariant::toLineF() const
     Returns the variant as a QLine if the variant has userType()
     \l QMetaType::QLine; otherwise returns an invalid QLine.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QLine QVariant::toLine() const
 {
@@ -1584,7 +1627,7 @@ QLine QVariant::toLine() const
     QMetaType::QPoint or \l QMetaType::QPointF; otherwise returns a null
     QPointF.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QPointF QVariant::toPointF() const
 {
@@ -1600,7 +1643,7 @@ QPointF QVariant::toPointF() const
     Returns the variant as a QUrl if the variant has userType()
     \l QMetaType::QUrl; otherwise returns an invalid QUrl.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QUrl QVariant::toUrl() const
 {
@@ -1614,7 +1657,7 @@ QUrl QVariant::toUrl() const
     Returns the variant as a QLocale if the variant has userType()
     \l QMetaType::QLocale; otherwise returns an invalid QLocale.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QLocale QVariant::toLocale() const
 {
@@ -1629,7 +1672,7 @@ QLocale QVariant::toLocale() const
     Returns the variant as a QRegularExpression if the variant has userType() \l
     QRegularExpression; otherwise returns an empty QRegularExpression.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QRegularExpression QVariant::toRegularExpression() const
 {
@@ -1644,7 +1687,7 @@ QRegularExpression QVariant::toRegularExpression() const
     Returns the variant as a QModelIndex if the variant has userType() \l
     QModelIndex; otherwise returns a default constructed QModelIndex.
 
-    \sa canConvert(int targetTypeId), convert(), toPersistentModelIndex()
+    \sa canConvert(), convert(), toPersistentModelIndex()
 */
 QModelIndex QVariant::toModelIndex() const
 {
@@ -1657,7 +1700,7 @@ QModelIndex QVariant::toModelIndex() const
     Returns the variant as a QPersistentModelIndex if the variant has userType() \l
     QPersistentModelIndex; otherwise returns a default constructed QPersistentModelIndex.
 
-    \sa canConvert(int targetTypeId), convert(), toModelIndex()
+    \sa canConvert(), convert(), toModelIndex()
 */
 QPersistentModelIndex QVariant::toPersistentModelIndex() const
 {
@@ -1672,7 +1715,7 @@ QPersistentModelIndex QVariant::toPersistentModelIndex() const
     \l QMetaType::QUuid, \l QMetaType::QByteArray or \l QMetaType::QString;
     otherwise returns a default-constructed QUuid.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QUuid QVariant::toUuid() const
 {
@@ -1686,7 +1729,7 @@ QUuid QVariant::toUuid() const
     Returns the variant as a QJsonValue if the variant has userType() \l
     QJsonValue; otherwise returns a default constructed QJsonValue.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QJsonValue QVariant::toJsonValue() const
 {
@@ -1699,7 +1742,7 @@ QJsonValue QVariant::toJsonValue() const
     Returns the variant as a QJsonObject if the variant has userType() \l
     QJsonObject; otherwise returns a default constructed QJsonObject.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QJsonObject QVariant::toJsonObject() const
 {
@@ -1712,7 +1755,7 @@ QJsonObject QVariant::toJsonObject() const
     Returns the variant as a QJsonArray if the variant has userType() \l
     QJsonArray; otherwise returns a default constructed QJsonArray.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QJsonArray QVariant::toJsonArray() const
 {
@@ -1725,7 +1768,7 @@ QJsonArray QVariant::toJsonArray() const
     Returns the variant as a QJsonDocument if the variant has userType() \l
     QJsonDocument; otherwise returns a default constructed QJsonDocument.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QJsonDocument QVariant::toJsonDocument() const
 {
@@ -1740,7 +1783,7 @@ QJsonDocument QVariant::toJsonDocument() const
     \l QMetaType::QChar, \l QMetaType::Int, or \l QMetaType::UInt; otherwise
     returns an invalid QChar.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QChar QVariant::toChar() const
 {
@@ -1751,7 +1794,7 @@ QChar QVariant::toChar() const
     Returns the variant as a QBitArray if the variant has userType()
     \l QMetaType::QBitArray; otherwise returns an empty bit array.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QBitArray QVariant::toBitArray() const
 {
@@ -1759,14 +1802,14 @@ QBitArray QVariant::toBitArray() const
 }
 
 template <typename T>
-inline T qNumVariantToHelper(const QVariant::Private &d, bool *ok, const T& val)
+inline T qNumVariantToHelper(const QVariant::Private &d, bool *ok)
 {
     QMetaType t = QMetaType::fromType<T>();
     if (ok)
         *ok = true;
 
     if (d.type() == t)
-        return val;
+        return d.get<T>();
 
     T ret = 0;
     bool success = QMetaType::convert(d.type(), d.storage(), t, &ret);
@@ -1790,11 +1833,11 @@ inline T qNumVariantToHelper(const QVariant::Private &d, bool *ok, const T& val)
     will not be reflected in \a ok. A simple workaround is to use
     QString::toInt().
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 int QVariant::toInt(bool *ok) const
 {
-    return qNumVariantToHelper<int>(d, ok, d.get<int>());
+    return qNumVariantToHelper<int>(d, ok);
 }
 
 /*!
@@ -1812,11 +1855,11 @@ int QVariant::toInt(bool *ok) const
     overflow will not be reflected in \a ok. A simple workaround is to use
     QString::toUInt().
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 uint QVariant::toUInt(bool *ok) const
 {
-    return qNumVariantToHelper<uint>(d, ok, d.get<unsigned int>());
+    return qNumVariantToHelper<uint>(d, ok);
 }
 
 /*!
@@ -1829,11 +1872,11 @@ uint QVariant::toUInt(bool *ok) const
     If \a ok is non-null: \c{*}\c{ok} is set to true if the value could be
     converted to an int; otherwise \c{*}\c{ok} is set to false.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 qlonglong QVariant::toLongLong(bool *ok) const
 {
-    return qNumVariantToHelper<qlonglong>(d, ok, d.get<qlonglong>());
+    return qNumVariantToHelper<qlonglong>(d, ok);
 }
 
 /*!
@@ -1846,11 +1889,11 @@ qlonglong QVariant::toLongLong(bool *ok) const
     If \a ok is non-null: \c{*}\a{ok} is set to true if the value could be
     converted to an int; otherwise \c{*}\a{ok} is set to false.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 qulonglong QVariant::toULongLong(bool *ok) const
 {
-    return qNumVariantToHelper<qulonglong>(d, ok, d.get<qulonglong>());
+    return qNumVariantToHelper<qulonglong>(d, ok);
 }
 
 /*!
@@ -1863,7 +1906,7 @@ qulonglong QVariant::toULongLong(bool *ok) const
     \l QMetaType::QByteArray and its lower-case content is not one of the
     following: empty, "0" or "false"; otherwise returns \c false.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 bool QVariant::toBool() const
 {
@@ -1886,11 +1929,11 @@ bool QVariant::toBool() const
     If \a ok is non-null: \c{*}\a{ok} is set to true if the value could be
     converted to a double; otherwise \c{*}\a{ok} is set to false.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 double QVariant::toDouble(bool *ok) const
 {
-    return qNumVariantToHelper<double>(d, ok, d.get<double>());
+    return qNumVariantToHelper<double>(d, ok);
 }
 
 /*!
@@ -1905,11 +1948,11 @@ double QVariant::toDouble(bool *ok) const
     If \a ok is non-null: \c{*}\a{ok} is set to true if the value could be
     converted to a double; otherwise \c{*}\a{ok} is set to false.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 float QVariant::toFloat(bool *ok) const
 {
-    return qNumVariantToHelper<float>(d, ok, d.get<float>());
+    return qNumVariantToHelper<float>(d, ok);
 }
 
 /*!
@@ -1924,19 +1967,23 @@ float QVariant::toFloat(bool *ok) const
     If \a ok is non-null: \c{*}\a{ok} is set to true if the value could be
     converted to a double; otherwise \c{*}\a{ok} is set to false.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 qreal QVariant::toReal(bool *ok) const
 {
-    return qNumVariantToHelper<qreal>(d, ok, d.get<qreal>());
+    return qNumVariantToHelper<qreal>(d, ok);
 }
 
 /*!
-    Returns the variant as a QVariantList if the variant has userType()
-    \l QMetaType::QVariantList or \l QMetaType::QStringList; otherwise returns
-    an empty list.
+    Returns the variant as a QVariantList if the variant has userType() \l
+    QMetaType::QVariantList. If it doesn't, QVariant will attempt to convert
+    the type to a list and then return it. This will succeed for any type that
+    has registered a converter to QVariantList or which was declared as a
+    sequential container using \l{Q_DECLARE_SEQUENTIAL_CONTAINER_METATYPE}. If
+    none of those conditions are true, this function will return an empty
+    list.
 
-    \sa canConvert(int targetTypeId), convert()
+    \sa canConvert(), convert()
 */
 QVariantList QVariant::toList() const
 {
@@ -1946,7 +1993,7 @@ QVariantList QVariant::toList() const
 /*!
     \fn bool QVariant::canConvert(int targetTypeId) const
     \overload
-    \obsolete
+    \deprecated [6.0] Use \c canConvert(QMetaType(targetTypeId)) instead.
 
     \sa QMetaType::canConvert()
 */
@@ -1965,7 +2012,7 @@ QVariantList QVariant::toList() const
 
 /*!
     \fn bool QVariant::convert(int targetTypeId)
-    \obsolete
+    \deprecated [6.0] Use \c convert(QMetaType(targetTypeId)) instead.
 
     Casts the variant to the requested type, \a targetTypeId. If the cast cannot be
     done, the variant is still changed to the requested type, but is left in a cleared
@@ -1983,7 +2030,7 @@ QVariantList QVariant::toList() const
     failed a previous conversion will always fail, changing the type, remaining null,
     and returning \c false.
 
-    \sa canConvert(int targetTypeId), clear()
+    \sa canConvert(), clear()
 */
 
 /*!
@@ -2005,7 +2052,7 @@ QVariantList QVariant::toList() const
 
     \since 6.0
 
-    \sa canConvert(int targetTypeId), clear()
+    \sa canConvert(), clear()
 */
 
 bool QVariant::convert(QMetaType targetType)
@@ -2016,12 +2063,12 @@ bool QVariant::convert(QMetaType targetType)
     QVariant oldValue = *this;
 
     clear();
-    create(targetType.id(), nullptr);
+    create(targetType, nullptr);
     if (!oldValue.canConvert(targetType))
         return false;
 
     // Fail if the value is not initialized or was forced null by a previous failed convert.
-    if (oldValue.d.is_null && oldValue.d.typeId() != QMetaType::Nullptr)
+    if (oldValue.d.is_null && oldValue.d.type().id() != QMetaType::Nullptr)
         return false;
 
     bool ok = QMetaType::convert(oldValue.d.type(), oldValue.constData(), targetType, data());
@@ -2214,8 +2261,7 @@ static bool integralEquals(uint promotedType, const QVariant::Private *d1, const
     if (promotedType == QMetaType::ULongLong)
         return qulonglong(l1) == qulonglong(l2);
 
-    Q_UNREACHABLE();
-    return 0;
+    Q_UNREACHABLE_RETURN(0);
 }
 
 namespace {
@@ -2259,13 +2305,12 @@ static std::optional<int> integralCompare(uint promotedType, const QVariant::Pri
     if (promotedType == QMetaType::ULongLong)
         return spaceShip<qulonglong>(l1, l2);
 
-    Q_UNREACHABLE();
-    return 0;
+    Q_UNREACHABLE_RETURN(0);
 }
 
 static std::optional<int> numericCompare(const QVariant::Private *d1, const QVariant::Private *d2)
 {
-    uint promotedType = numericTypePromotion(d1->typeId(), d2->typeId());
+    uint promotedType = numericTypePromotion(d1->type().id(), d2->type().id());
     if (promotedType != QMetaType::QReal)
         return integralCompare(promotedType, d1, d2);
     // qreal comparisons
@@ -2286,7 +2331,7 @@ static std::optional<int> numericCompare(const QVariant::Private *d1, const QVar
 
 static bool numericEquals(const QVariant::Private *d1, const QVariant::Private *d2)
 {
-    uint promotedType = numericTypePromotion(d1->typeId(), d2->typeId());
+    uint promotedType = numericTypePromotion(d1->type().id(), d2->type().id());
     if (promotedType != QMetaType::QReal)
         return integralEquals(promotedType, d1, d2);
 
@@ -2307,9 +2352,11 @@ static bool numericEquals(const QVariant::Private *d1, const QVariant::Private *
 #ifndef QT_BOOTSTRAPPED
 static bool canConvertMetaObject(QMetaType fromType, QMetaType toType)
 {
-    if ((fromType.flags() & QMetaType::PointerToQObject) && (toType.flags() & QMetaType::PointerToQObject)) {
-        return fromType.metaObject()->inherits(toType.metaObject()) ||
-                toType.metaObject()->inherits(fromType.metaObject());
+    if ((fromType.flags() & QMetaType::PointerToQObject)
+            && (toType.flags() & QMetaType::PointerToQObject)) {
+        const QMetaObject *f = fromType.metaObject();
+        const QMetaObject *t = toType.metaObject();
+        return f && t && (f->inherits(t) || t->inherits(f));
     }
     return false;
 }
@@ -2335,7 +2382,7 @@ bool QVariant::equals(const QVariant &v) const
 
     if (metatype != v.metaType()) {
         // try numeric comparisons, with C++ type promotion rules (no conversion)
-        if (qIsNumericType(metatype.id()) && qIsNumericType(v.d.typeId()))
+        if (qIsNumericType(metatype.id()) && qIsNumericType(v.d.type().id()))
             return numericEquals(&d, &v.d);
 #ifndef QT_BOOTSTRAPPED
         // if both types are related pointers to QObjects, check if they point to the same object
@@ -2391,7 +2438,7 @@ QPartialOrdering QVariant::compare(const QVariant &lhs, const QVariant &rhs)
     QMetaType t = lhs.d.type();
     if (t != rhs.d.type()) {
         // try numeric comparisons, with C++ type promotion rules (no conversion)
-        if (qIsNumericType(lhs.d.typeId()) && qIsNumericType(rhs.d.typeId()))
+        if (qIsNumericType(lhs.d.type().id()) && qIsNumericType(rhs.d.type().id()))
             return convertOptionalToPartialOrdering(numericCompare(&lhs.d, &rhs.d));
 #ifndef QT_BOOTSTRAPPED
         if (canConvertMetaObject(lhs.metaType(), rhs.metaType()))
@@ -2438,7 +2485,7 @@ void *QVariant::data()
     return true if the variant contained an object of a builtin type with an isNull()
     method that returned true for that object.
 
-    \sa convert(int)
+    \sa convert()
 */
 bool QVariant::isNull() const
 {
@@ -2453,7 +2500,7 @@ bool QVariant::isNull() const
 QDebug QVariant::qdebugHelper(QDebug dbg) const
 {
     QDebugStateSaver saver(dbg);
-    const uint typeId = d.typeId();
+    const uint typeId = d.type().id();
     dbg.nospace() << "QVariant(";
     if (typeId != QMetaType::UnknownType) {
         dbg << d.type().name() << ", ";
@@ -2584,9 +2631,6 @@ QT_WARNING_POP
 
     \snippet code/src_corelib_kernel_qvariant.cpp 7
 
-    \note If you are working with custom types, you should use
-    the Q_DECLARE_METATYPE() macro to register your custom type.
-
     \sa setValue(), value()
 */
 
@@ -2616,7 +2660,7 @@ QT_WARNING_POP
 
 /*! \fn template<typename T> T qVariantValue(const QVariant &value)
     \relates QVariant
-    \obsolete
+    \deprecated
 
     Returns the given \a value converted to the template type \c{T}.
 
@@ -2632,7 +2676,7 @@ QT_WARNING_POP
 
 /*! \fn bool qVariantCanConvert(const QVariant &value)
     \relates QVariant
-    \obsolete
+    \deprecated
 
     Returns \c true if the given \a value can be converted to the
     template type specified; otherwise returns \c false.

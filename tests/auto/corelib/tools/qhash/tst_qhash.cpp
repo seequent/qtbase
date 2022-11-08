@@ -1,40 +1,20 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 
 #include <qhash.h>
 #include <qmap.h>
+#include <qset.h>
 
 #include <algorithm>
 #include <vector>
 #include <unordered_set>
 #include <string>
+
+#include <qsemaphore.h>
+
+using namespace Qt::StringLiterals;
 
 class tst_QHash : public QObject
 {
@@ -42,7 +22,9 @@ class tst_QHash : public QObject
 private slots:
     void insert1();
     void erase();
+    void erase_edge_case();
     void key();
+    void keys();
 
     void swap();
     void count(); // copied from tst_QMap
@@ -59,12 +41,18 @@ private slots:
     void qmultihash_specific();
     void qmultihash_qhash_rvalue_ref_ctor();
     void qmultihash_qhash_rvalue_ref_unite();
+    void qmultihashUnite();
 
     void compare();
     void compare2();
     void iterators(); // sligthly modified from tst_QMap
+    void multihashIterators();
+    void iteratorsInEmptyHash();
     void keyIterator();
+    void multihashKeyIterator();
     void keyValueIterator();
+    void multihashKeyValueIterator();
+    void keyValueIteratorInEmptyHash();
     void keys_values_uniqueKeys(); // slightly modified from tst_QMap
 
     void const_shared_null();
@@ -80,6 +68,23 @@ private slots:
     void hashOfHash();
 
     void stdHash();
+
+    void countInEmptyHash();
+    void removeInEmptyHash();
+    void valueInEmptyHash();
+    void fineTuningInEmptyHash();
+
+    void reserveShared();
+    void reserveLessThanCurrentAmount();
+
+    void QTBUG98265();
+
+    void detachAndReferences();
+
+    void lookupUsingKeyIterator();
+
+    void squeeze();
+    void squeezeShared();
 };
 
 struct IdentityTracker {
@@ -95,6 +100,8 @@ struct Foo {
     Foo():c(count) { ++count; }
     Foo(const Foo& o):c(o.c) { ++count; }
     ~Foo() { --count; }
+    constexpr Foo &operator=(const Foo &o) noexcept { c = o.c; return *this; }
+
     int c;
     int data[8];
 };
@@ -161,13 +168,13 @@ void tst_QHash::count()
     {
         MyMap map;
         MyMap map2( map );
-        QCOMPARE( map.count(), 0 );
-        QCOMPARE( map2.count(), 0 );
+        QCOMPARE( map.size(), 0 );
+        QCOMPARE( map2.size(), 0 );
         QCOMPARE( MyClass::count, 0 );
         // detach
         map2["Hallo"] = MyClass( "Fritz" );
-        QCOMPARE( map.count(), 0 );
-        QCOMPARE( map2.count(), 1 );
+        QCOMPARE( map.size(), 0 );
+        QCOMPARE( map2.size(), 1 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 1 );
 #endif
@@ -177,11 +184,11 @@ void tst_QHash::count()
     {
         typedef QHash<QString, MyClass> Map;
         Map map;
-        QCOMPARE( map.count(), 0);
+        QCOMPARE( map.size(), 0);
         map.insert( "Torben", MyClass("Weis") );
-        QCOMPARE( map.count(), 1 );
+        QCOMPARE( map.size(), 1 );
         map.insert( "Claudia", MyClass("Sorg") );
-        QCOMPARE( map.count(), 2 );
+        QCOMPARE( map.size(), 2 );
         map.insert( "Lars", MyClass("Linzbach") );
         map.insert( "Matthias", MyClass("Ettrich") );
         map.insert( "Sue", MyClass("Paludo") );
@@ -189,7 +196,7 @@ void tst_QHash::count()
         map.insert( "Haavard", MyClass("Nord") );
         map.insert( "Arnt", MyClass("Gulbrandsen") );
         map.insert( "Paul", MyClass("Tvete") );
-        QCOMPARE( map.count(), 9 );
+        QCOMPARE( map.size(), 9 );
         map.insert( "Paul", MyClass("Tvete 1") );
         map.insert( "Paul", MyClass("Tvete 2") );
         map.insert( "Paul", MyClass("Tvete 3") );
@@ -197,68 +204,68 @@ void tst_QHash::count()
         map.insert( "Paul", MyClass("Tvete 5") );
         map.insert( "Paul", MyClass("Tvete 6") );
 
-        QCOMPARE( map.count(), 9 );
+        QCOMPARE( map.size(), 9 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 9 );
 #endif
 
         Map map2( map );
-        QVERIFY( map2.count() == 9 );
+        QVERIFY( map2.size() == 9 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 9 );
 #endif
 
         map2.insert( "Kay", MyClass("Roemer") );
-        QVERIFY( map2.count() == 10 );
-        QVERIFY( map.count() == 9 );
+        QVERIFY( map2.size() == 10 );
+        QVERIFY( map.size() == 9 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 19 );
 #endif
 
         map2 = map;
-        QVERIFY( map.count() == 9 );
-        QVERIFY( map2.count() == 9 );
+        QVERIFY( map.size() == 9 );
+        QVERIFY( map2.size() == 9 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 9 );
 #endif
 
         map2.insert( "Kay", MyClass("Roemer") );
-        QVERIFY( map2.count() == 10 );
+        QVERIFY( map2.size() == 10 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 19 );
 #endif
 
         map2.clear();
-        QVERIFY( map.count() == 9 );
-        QVERIFY( map2.count() == 0 );
+        QVERIFY( map.size() == 9 );
+        QVERIFY( map2.size() == 0 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 9 );
 #endif
 
         map2 = map;
-        QVERIFY( map.count() == 9 );
-        QVERIFY( map2.count() == 9 );
+        QVERIFY( map.size() == 9 );
+        QVERIFY( map2.size() == 9 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 9 );
 #endif
 
         map2.clear();
-        QVERIFY( map.count() == 9 );
-        QVERIFY( map2.count() == 0 );
+        QVERIFY( map.size() == 9 );
+        QVERIFY( map2.size() == 0 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 9 );
 #endif
 
         map.remove( "Lars" );
-        QVERIFY( map.count() == 8 );
-        QVERIFY( map2.count() == 0 );
+        QVERIFY( map.size() == 8 );
+        QVERIFY( map2.size() == 0 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 8 );
 #endif
 
         map.remove( "Mist" );
-        QVERIFY( map.count() == 8 );
-        QVERIFY( map2.count() == 0 );
+        QVERIFY( map.size() == 8 );
+        QVERIFY( map2.size() == 0 );
 #ifndef Q_CC_SUN
         QCOMPARE( MyClass::count, 8 );
 #endif
@@ -272,22 +279,22 @@ void tst_QHash::count()
 #ifndef Q_CC_SUN
          QVERIFY( MyClass::count == 1 );
 #endif
-         QVERIFY( map.count() == 1 );
+         QVERIFY( map.size() == 1 );
 
          (void)map["Torben"].str;
          (void)map["Lars"].str;
 #ifndef Q_CC_SUN
          QVERIFY( MyClass::count == 2 );
 #endif
-         QVERIFY( map.count() == 2 );
+         QVERIFY( map.size() == 2 );
 
          const Map& cmap = map;
          (void)cmap["Depp"].str;
 #ifndef Q_CC_SUN
          QVERIFY( MyClass::count == 2 );
 #endif
-         QVERIFY( map.count() == 2 );
-         QVERIFY( cmap.count() == 2 );
+         QVERIFY( map.size() == 2 );
+         QVERIFY( cmap.size() == 2 );
     }
     QCOMPARE( MyClass::count, 0 );
     {
@@ -482,6 +489,7 @@ QT_WARNING_POP
     {
         QHash<IdentityTracker, int> hash;
         QCOMPARE(hash.size(), 0);
+        QVERIFY(!hash.isDetached());
         const int dummy = -1;
         IdentityTracker id00 = {0, 0}, id01 = {0, 1}, searchKey = {0, dummy};
         QCOMPARE(hash.insert(id00, id00.id).key().id, id00.id);
@@ -526,6 +534,66 @@ void tst_QHash::erase()
     auto mit = h2.erase(bit);
     mit = h2.erase(h2.begin());
     QVERIFY(mit == h2.end());
+
+    h2 = QMultiHash<int, int>();
+    h2.emplace(1, 1);
+    h2.emplace(1, 2);
+    h2.emplace(3, 1);
+    h2.emplace(3, 4);
+    QMultiHash<int, int> h3 = h2;
+    auto it = h3.constFind(3);
+    ++it;
+    QVERIFY(h3.isSharedWith(h2));
+    it = h3.erase(it);
+    QVERIFY(!h3.isSharedWith(h2));
+    if (it != h3.cend()) {
+        auto it2 = h3.constFind(it.key());
+        QCOMPARE(it, it2);
+    }
+}
+
+/*
+    With a specific seed we could end up in a situation where, upon deleting the
+    last entry in a QHash, the returned iterator would not point to the end()
+    iterator.
+*/
+void tst_QHash::erase_edge_case()
+{
+    QHashSeed::setDeterministicGlobalSeed();
+    auto resetSeed = qScopeGuard([&]() {
+        QHashSeed::resetRandomGlobalSeed();
+    });
+
+    QHash<int, int> h1;
+    h1.reserve(2);
+    qsizetype capacity = h1.capacity();
+    // Beholden to QHash internals:
+    qsizetype numBuckets = capacity << 1;
+
+    // Find some keys which will both be slotted into the last bucket:
+    int keys[2];
+    int index = 0;
+    for (qsizetype i = 0; i < numBuckets * 4 && index < 2; ++i) {
+        const size_t hash = qHash(i, QHashSeed::globalSeed());
+        const size_t bucketForHash = QHashPrivate::GrowthPolicy::bucketForHash(numBuckets, hash);
+        if (qsizetype(bucketForHash) == numBuckets - 1)
+            keys[index++] = i;
+    }
+    QCOMPARE(index, 2); // Sanity check. If this fails then the test needs an update!
+
+    // As mentioned earlier these are both calculated to be in the last bucket:
+    h1.insert(keys[0], 4);
+    h1.insert(keys[1], 6);
+    // As a sanity-check, make sure that the key we inserted last is the first one (because its
+    // allocation to the last bucket would make it wrap around):
+    // NOTE: If this fails this then this test may need an update!!!
+    QCOMPARE(h1.constBegin().key(), keys[1]);
+    // Then we delete the last entry:
+    QHash<int, int>::iterator it1 = h1.begin();
+    ++it1;
+    it1 = h1.erase(it1);
+    // Now, since we deleted the last entry, the iterator should be at the end():
+    QVERIFY(it1 == h1.end());
 }
 
 void tst_QHash::key()
@@ -536,6 +604,7 @@ void tst_QHash::key()
         QHash<QString, int> hash1;
         QCOMPARE(hash1.key(1), QString());
         QCOMPARE(hash1.key(1, def), def);
+        QVERIFY(!hash1.isDetached());
 
         hash1.insert("one", 1);
         QCOMPARE(hash1.key(1), QLatin1String("one"));
@@ -566,6 +635,7 @@ void tst_QHash::key()
         QHash<int, QString> hash2;
         QCOMPARE(hash2.key("one"), 0);
         QCOMPARE(hash2.key("one", def), def);
+        QVERIFY(!hash2.isDetached());
 
         hash2.insert(1, "one");
         QCOMPARE(hash2.key("one"), 1);
@@ -597,6 +667,62 @@ void tst_QHash::key()
         QCOMPARE(hash2.key("zero"), 0);
         QCOMPARE(hash2.key("zero", def), 0);
     }
+
+    {
+        const int def = -1;
+        QMultiHash<int, QString> hash;
+        QCOMPARE(hash.key("val"), 0);
+        QCOMPARE(hash.key("val", def), def);
+        QVERIFY(!hash.isDetached());
+
+        hash.insert(1, "value1");
+        hash.insert(1, "value2");
+        hash.insert(2, "value1");
+
+        QCOMPARE(hash.key("value2"), 1);
+        const auto key = hash.key("value1");
+        QVERIFY(key == 1 || key == 2);
+        QCOMPARE(hash.key("value"), 0);
+        QCOMPARE(hash.key("value", def), def);
+    }
+}
+
+template <typename T>
+QList<T> sorted(const QList<T> &list)
+{
+    QList<T> res = list;
+    std::sort(res.begin(), res.end());
+    return res;
+}
+
+void tst_QHash::keys()
+{
+    {
+        QHash<QString, int> hash;
+        QVERIFY(hash.keys().isEmpty());
+        QVERIFY(hash.keys(1).isEmpty());
+        QVERIFY(!hash.isDetached());
+
+        hash.insert("key1", 1);
+        hash.insert("key2", 2);
+        hash.insert("key3", 1);
+
+        QCOMPARE(sorted(hash.keys()), QStringList({ "key1", "key2", "key3" }));
+        QCOMPARE(sorted(hash.keys(1)), QStringList({ "key1", "key3" }));
+    }
+    {
+        QMultiHash<QString, int> hash;
+        QVERIFY(hash.keys().isEmpty());
+        QVERIFY(hash.keys(1).isEmpty());
+        QVERIFY(!hash.isDetached());
+
+        hash.insert("key1", 1);
+        hash.insert("key2", 1);
+        hash.insert("key1", 2);
+
+        QCOMPARE(sorted(hash.keys()), QStringList({ "key1", "key1", "key2" }));
+        QCOMPARE(sorted(hash.keys(1)), QStringList({ "key1", "key2" }));
+    }
 }
 
 void tst_QHash::swap()
@@ -626,6 +752,25 @@ void tst_QHash::clear()
         QVERIFY( map.isEmpty() );
     }
     QCOMPARE( MyClass::count, int(0) );
+
+    {
+        QMultiHash<QString, MyClass> multiHash;
+        multiHash.clear();
+        QVERIFY(multiHash.isEmpty());
+
+        multiHash.insert("key", MyClass("value0"));
+        QVERIFY(!multiHash.isEmpty());
+        multiHash.clear();
+        QVERIFY(multiHash.isEmpty());
+
+        multiHash.insert("key0", MyClass("value0"));
+        multiHash.insert("key0", MyClass("value1"));
+        multiHash.insert("key1", MyClass("value2"));
+        QVERIFY(!multiHash.isEmpty());
+        multiHash.clear();
+        QVERIFY(multiHash.isEmpty());
+    }
+    QCOMPARE(MyClass::count, int(0));
 }
 //copied from tst_QMap
 void tst_QHash::empty()
@@ -633,24 +778,31 @@ void tst_QHash::empty()
     QHash<int, QString> map1;
 
     QVERIFY(map1.isEmpty());
+    QVERIFY(map1.empty());
 
     map1.insert(1, "one");
     QVERIFY(!map1.isEmpty());
+    QVERIFY(!map1.empty());
 
     map1.clear();
     QVERIFY(map1.isEmpty());
-
+    QVERIFY(map1.empty());
 }
 
 //copied from tst_QMap
 void tst_QHash::find()
 {
+    const QHash<int, QString> constEmptyHash;
+    QVERIFY(constEmptyHash.find(1) == constEmptyHash.end());
+    QVERIFY(!constEmptyHash.isDetached());
+
     QHash<int, QString> map1;
     QString testString="Teststring %0";
     QString compareString;
     int i,count=0;
 
     QVERIFY(map1.find(1) == map1.end());
+    QVERIFY(!map1.isDetached());
 
     map1.insert(1,"Mensch");
     map1.insert(1,"Mayer");
@@ -658,6 +810,16 @@ void tst_QHash::find()
 
     QCOMPARE(map1.find(1).value(), QLatin1String("Mayer"));
     QCOMPARE(map1.find(2).value(), QLatin1String("Hej"));
+
+    const QMultiHash<int, QString> constEmptyMultiHash;
+    QVERIFY(constEmptyMultiHash.find(1) == constEmptyMultiHash.cend());
+    QVERIFY(constEmptyMultiHash.find(1, "value") == constEmptyMultiHash.cend());
+    QVERIFY(!constEmptyMultiHash.isDetached());
+
+    QMultiHash<int, QString> emptyMultiHash;
+    QVERIFY(emptyMultiHash.find(1) == emptyMultiHash.end());
+    QVERIFY(emptyMultiHash.find(1, "value") == emptyMultiHash.end());
+    QVERIFY(!emptyMultiHash.isDetached());
 
     QMultiHash<int, QString> multiMap(map1);
     for (i = 3; i < 10; ++i) {
@@ -685,6 +847,7 @@ void tst_QHash::constFind()
     int i,count=0;
 
     QVERIFY(map1.constFind(1) == map1.constEnd());
+    QVERIFY(!map1.isDetached());
 
     map1.insert(1,"Mensch");
     map1.insert(1,"Mayer");
@@ -692,6 +855,10 @@ void tst_QHash::constFind()
 
     QCOMPARE(map1.constFind(1).value(), QLatin1String("Mayer"));
     QCOMPARE(map1.constFind(2).value(), QLatin1String("Hej"));
+
+    QMultiHash<int, QString> emptyMultiHash;
+    QVERIFY(emptyMultiHash.constFind(1) == emptyMultiHash.constEnd());
+    QVERIFY(!emptyMultiHash.isDetached());
 
     QMultiHash<int, QString> multiMap(map1);
     for (i = 3; i < 10; ++i) {
@@ -716,6 +883,9 @@ void tst_QHash::contains()
     QHash<int, QString> map1;
     int i;
 
+    QVERIFY(!map1.contains(1));
+    QVERIFY(!map1.isDetached());
+
     map1.insert(1, "one");
     QVERIFY(map1.contains(1));
 
@@ -734,16 +904,31 @@ class QGlobalQHashSeedResetter
     int oldSeed;
 public:
     // not entirely correct (may lost changes made by another thread between the query
-    // of the old and the setting of the new seed), but qSetGlobalQHashSeed doesn't
+    // of the old and the setting of the new seed), but setHashSeed() can't
     // return the old value, so this is the best we can do:
     explicit QGlobalQHashSeedResetter(int newSeed)
-        : oldSeed(qGlobalQHashSeed())
+        : oldSeed(getHashSeed())
     {
-        qSetGlobalQHashSeed(newSeed);
+        setHashSeed(newSeed);
     }
     ~QGlobalQHashSeedResetter()
     {
-        qSetGlobalQHashSeed(oldSeed);
+        setHashSeed(oldSeed);
+    }
+
+private:
+    // The functions are implemented to replace the deprecated
+    // qGlobalQHashSeed() and qSetGlobalQHashSeed()
+    static int getHashSeed()
+    {
+        return int(QHashSeed::globalSeed() & INT_MAX);
+    }
+    static void setHashSeed(int seed)
+    {
+        if (seed == 0)
+            QHashSeed::setDeterministicGlobalSeed();
+        else
+            QHashSeed::resetRandomGlobalSeed();
     }
 };
 
@@ -794,13 +979,33 @@ void tst_QHash::qhash()
 //copied from tst_QMap
 void tst_QHash::take()
 {
-    QHash<int, QString> map;
+    {
+        QHash<int, QString> map;
+        QCOMPARE(map.take(1), QString());
+        QVERIFY(!map.isDetached());
 
-    map.insert(2, "zwei");
-    map.insert(3, "drei");
+        map.insert(2, "zwei");
+        map.insert(3, "drei");
 
-    QCOMPARE(map.take(3), QLatin1String("drei"));
-    QVERIFY(!map.contains(3));
+        QCOMPARE(map.take(3), QLatin1String("drei"));
+        QVERIFY(!map.contains(3));
+    }
+    {
+        QMultiHash<int, QString> hash;
+        QCOMPARE(hash.take(1), QString());
+        QVERIFY(!hash.isDetached());
+
+        hash.insert(1, "value1");
+        hash.insert(2, "value2");
+        hash.insert(1, "value3");
+
+        // The docs tell that if there are multiple values for a key, then the
+        // most recent is returned.
+        QCOMPARE(hash.take(1), "value3");
+        QCOMPARE(hash.take(1), "value1");
+        QCOMPARE(hash.take(1), QString());
+        QCOMPARE(hash.take(2), "value2");
+    }
 }
 
 // slightly modified from tst_QMap
@@ -1099,14 +1304,144 @@ void tst_QHash::iterators()
     }
 }
 
+void tst_QHash::multihashIterators()
+{
+    QMultiHash<int, QString> hash;
+    QMap<int, QString> referenceMap;
+    QString testString = "Teststring %1-%2";
+    int i = 0;
+
+    // Add 5 elements for each key
+    for (i = 0; i < 10; ++i) {
+        for (int j = 0; j < 5; ++j)
+            hash.insert(i, testString.arg(i, j));
+    }
+
+    hash.squeeze();
+
+    // Verify that iteration is reproducible.
+
+    // STL iterator
+    QMultiHash<int, QString>::iterator stlIt;
+
+    for (stlIt = hash.begin(), i = 1; stlIt != hash.end(); ++stlIt, ++i)
+        referenceMap.insert(i, *stlIt);
+
+    stlIt = hash.begin();
+    QCOMPARE(*stlIt, referenceMap[1]);
+
+    for (i = 0; i < 5; ++i)
+        stlIt++;
+    QCOMPARE(*stlIt, referenceMap[6]);
+
+    for (i = 0; i < 44; ++i)
+        stlIt++;
+    QCOMPARE(*stlIt, referenceMap[50]);
+
+    // const STL iterator
+    referenceMap.clear();
+    QMultiHash<int, QString>::const_iterator cstlIt;
+
+    for (cstlIt = hash.cbegin(), i = 1; cstlIt != hash.cend(); ++cstlIt, ++i)
+        referenceMap.insert(i, *cstlIt);
+
+    cstlIt = hash.cbegin();
+    QCOMPARE(*cstlIt, referenceMap[1]);
+
+    for (i = 0; i < 5; ++i)
+        cstlIt++;
+    QCOMPARE(*cstlIt, referenceMap[6]);
+
+    for (i = 0; i < 44; ++i)
+        cstlIt++;
+    QCOMPARE(*cstlIt, referenceMap[50]);
+
+    // Java-Style iterator
+    referenceMap.clear();
+    QMultiHashIterator<int, QString> javaIt(hash);
+
+    // walk through
+    i = 0;
+    while (javaIt.hasNext()) {
+        ++i;
+        javaIt.next();
+        referenceMap.insert(i, javaIt.value());
+    }
+    javaIt.toFront();
+    i = 0;
+    while (javaIt.hasNext()) {
+        ++i;
+        javaIt.next();
+        QCOMPARE(javaIt.value(), referenceMap.value(i));
+    }
+
+    // peekNext()
+    javaIt.toFront();
+    javaIt.next();
+    QString nextValue;
+    while (javaIt.hasNext()) {
+        nextValue = javaIt.peekNext().value();
+        javaIt.next();
+        QCOMPARE(javaIt.value(), nextValue);
+    }
+}
+
+template<typename T>
+void iteratorsInEmptyHashTestMethod()
+{
+    T hash;
+    using ConstIter = typename T::const_iterator;
+    ConstIter it1 = hash.cbegin();
+    ConstIter it2 = hash.constBegin();
+    QVERIFY(it1 == it2 && it2 == ConstIter());
+    QVERIFY(!hash.isDetached());
+
+    ConstIter it3 = hash.cend();
+    ConstIter it4 = hash.constEnd();
+    QVERIFY(it3 == it4 && it4 == ConstIter());
+    QVERIFY(!hash.isDetached());
+
+    // to call const overloads of begin() and end()
+    const T hash2;
+    ConstIter it5 = hash2.begin();
+    ConstIter it6 = hash2.end();
+    QVERIFY(it5 == it6 && it6 == ConstIter());
+    QVERIFY(!hash2.isDetached());
+
+    T hash3;
+    using Iter = typename T::iterator;
+    Iter it7 = hash3.end();
+    QVERIFY(it7 == Iter());
+    QVERIFY(!hash3.isDetached());
+
+    Iter it8 = hash3.begin(); // calls detach()
+    QVERIFY(it8 == Iter());
+    QVERIFY(hash3.isDetached());
+}
+
+void tst_QHash::iteratorsInEmptyHash()
+{
+    iteratorsInEmptyHashTestMethod<QHash<int, QString>>();
+    if (QTest::currentTestFailed())
+        return;
+
+    iteratorsInEmptyHashTestMethod<QMultiHash<int, QString>>();
+}
+
 void tst_QHash::keyIterator()
 {
     QHash<int, int> hash;
 
+    using KeyIterator = QHash<int, int>::key_iterator;
+    KeyIterator it1 = hash.keyBegin();
+    KeyIterator it2 = hash.keyEnd();
+    QVERIFY(it1 == it2 && it2 == KeyIterator());
+    QVERIFY(!hash.isDetached());
+
     for (int i = 0; i < 100; ++i)
         hash.insert(i, i*100);
 
-    QHash<int, int>::key_iterator key_it = hash.keyBegin();
+    KeyIterator key_it = hash.keyBegin();
     QHash<int, int>::const_iterator it = hash.cbegin();
     for (int i = 0; i < 100; ++i) {
         QCOMPARE(*key_it, it.key());
@@ -1121,20 +1456,54 @@ void tst_QHash::keyIterator()
     QCOMPARE(*key_it, it.key());
     QCOMPARE(*(key_it++), (it++).key());
     if (key_it != hash.keyEnd()) {
-        QVERIFY(it != hash.end());
+        QVERIFY(it != hash.cend());
         ++key_it;
         ++it;
         if (key_it != hash.keyEnd())
             QCOMPARE(*key_it, it.key());
         else
-            QVERIFY(it == hash.end());
+            QVERIFY(it == hash.cend());
     }
 
     QCOMPARE(std::count(hash.keyBegin(), hash.keyEnd(), 99), 1);
 
     // DefaultConstructible test
-    typedef QHash<int, int>::key_iterator keyIterator;
-    static_assert(std::is_default_constructible<keyIterator>::value);
+    static_assert(std::is_default_constructible<KeyIterator>::value);
+}
+
+void tst_QHash::multihashKeyIterator()
+{
+    QMultiHash<int, int> hash;
+
+    using KeyIterator = QMultiHash<int, int>::key_iterator;
+    KeyIterator it1 = hash.keyBegin();
+    KeyIterator it2 = hash.keyEnd();
+    QVERIFY(it1 == it2 && it2 == KeyIterator());
+    QVERIFY(!hash.isDetached());
+
+    for (int i = 0; i < 10; ++i) {
+        for (int j = 0; j < 5; ++j)
+            hash.insert(i, i * 100 + j);
+    }
+
+    KeyIterator keyIt = hash.keyBegin();
+    QMultiHash<int, int>::const_iterator it = hash.cbegin();
+    while (keyIt != hash.keyEnd() && it != hash.cend()) {
+        QCOMPARE(*keyIt, it.key());
+        keyIt++;
+        it++;
+    }
+
+    keyIt = std::find(hash.keyBegin(), hash.keyEnd(), 5);
+    it = std::find(hash.cbegin(), hash.cend(), 5 * 100 + 2);
+
+    QVERIFY(keyIt != hash.keyEnd());
+    QCOMPARE(*keyIt, it.key());
+
+    QCOMPARE(std::count(hash.keyBegin(), hash.keyEnd(), 9), 5);
+
+    // DefaultConstructible test
+    static_assert(std::is_default_constructible<KeyIterator>::value);
 }
 
 void tst_QHash::keyValueIterator()
@@ -1179,7 +1548,7 @@ void tst_QHash::keyValueIterator()
 
     ++it;
     ++key_value_it;
-    if (it != hash.end())
+    if (it != hash.cend())
         QCOMPARE(*key_value_it, entry_type(it.key(), it.value()));
     else
         QVERIFY(key_value_it == hash.constKeyValueEnd());
@@ -1189,13 +1558,95 @@ void tst_QHash::keyValueIterator()
     QCOMPARE(std::count(hash.constKeyValueBegin(), hash.constKeyValueEnd(), entry_type(key, value)), 1);
 }
 
+void tst_QHash::multihashKeyValueIterator()
+{
+    QMultiHash<int, int> hash;
+    using EntryType = QHash<int, int>::const_key_value_iterator::value_type;
+
+    for (int i = 0; i < 10; ++i) {
+        for (int j = 0; j < 5; j++)
+            hash.insert(i, i * 100 + j);
+    }
+
+    auto keyValueIt = hash.constKeyValueBegin();
+    auto it = hash.cbegin();
+
+    for (int i = 0; i < hash.size(); ++i) {
+        QVERIFY(keyValueIt != hash.constKeyValueEnd());
+        QVERIFY(it != hash.cend());
+
+        EntryType pair(it.key(), it.value());
+        QCOMPARE(*keyValueIt, pair);
+        QCOMPARE(keyValueIt->first, pair.first);
+        QCOMPARE(keyValueIt->second, pair.second);
+        ++keyValueIt;
+        ++it;
+    }
+
+    QVERIFY(keyValueIt == hash.constKeyValueEnd());
+    QVERIFY(it == hash.cend());
+
+    int key = 5;
+    int value = key * 100 + 3;
+    EntryType pair(key, value);
+    keyValueIt = std::find(hash.constKeyValueBegin(), hash.constKeyValueEnd(), pair);
+    it = std::find(hash.cbegin(), hash.cend(), value);
+
+    QVERIFY(keyValueIt != hash.constKeyValueEnd());
+    QCOMPARE(*keyValueIt, EntryType(it.key(), it.value()));
+
+    key = 9;
+    value = key * 100 + 4;
+    const auto numItems =
+            std::count(hash.constKeyValueBegin(), hash.constKeyValueEnd(), EntryType(key, value));
+    QCOMPARE(numItems, 1);
+}
+
+template<typename T>
+void keyValueIteratorInEmptyHashTestMethod()
+{
+    T hash;
+    using ConstKeyValueIter = typename T::const_key_value_iterator;
+
+    ConstKeyValueIter it1 = hash.constKeyValueBegin();
+    ConstKeyValueIter it2 = hash.constKeyValueEnd();
+    QVERIFY(it1 == it2 && it2 == ConstKeyValueIter());
+    QVERIFY(!hash.isDetached());
+
+    const T hash2;
+    ConstKeyValueIter it3 = hash2.keyValueBegin();
+    ConstKeyValueIter it4 = hash2.keyValueEnd();
+    QVERIFY(it3 == it4 && it4 == ConstKeyValueIter());
+    QVERIFY(!hash.isDetached());
+
+    T hash3;
+    using KeyValueIter = typename T::key_value_iterator;
+
+    KeyValueIter it5 = hash3.keyValueEnd();
+    QVERIFY(it5 == KeyValueIter());
+    QVERIFY(!hash3.isDetached());
+
+    KeyValueIter it6 = hash3.keyValueBegin(); // calls detach()
+    QVERIFY(it6 == KeyValueIter());
+    QVERIFY(hash3.isDetached());
+}
+
+void tst_QHash::keyValueIteratorInEmptyHash()
+{
+    keyValueIteratorInEmptyHashTestMethod<QHash<int, int>>();
+    if (QTest::currentTestFailed())
+        return;
+
+    keyValueIteratorInEmptyHashTestMethod<QMultiHash<int, int>>();
+}
+
 void tst_QHash::rehash_isnt_quadratic()
 {
     // this test should be incredibly slow if rehash() is quadratic
     for (int j = 0; j < 5; ++j) {
-        QMultiHash<int, int> testHash;
+        QHash<int, int> testHash;
         for (int i = 0; i < 500000; ++i)
-            testHash.insert(1, 1);
+            testHash.insert(i, 1);
     }
 }
 
@@ -1227,16 +1678,24 @@ void tst_QHash::dont_need_default_constructor()
 void tst_QHash::qmultihash_specific()
 {
     QMultiHash<int, int> hash1;
+
+    QVERIFY(!hash1.contains(1));
+    QVERIFY(!hash1.contains(1, 2));
+    QVERIFY(!hash1.isDetached());
+
     for (int i = 1; i <= 9; ++i) {
+        QVERIFY(!hash1.contains(i));
         for (int j = 1; j <= i; ++j) {
             int k = i * 10 + j;
             QVERIFY(!hash1.contains(i, k));
             hash1.insert(i, k);
             QVERIFY(hash1.contains(i, k));
         }
+        QVERIFY(hash1.contains(i));
     }
 
     for (int i = 1; i <= 9; ++i) {
+        QVERIFY(hash1.contains(i));
         for (int j = 1; j <= i; ++j) {
             int k = i * 10 + j;
             QVERIFY(hash1.contains(i, k));
@@ -1244,26 +1703,26 @@ void tst_QHash::qmultihash_specific()
     }
 
     QVERIFY(hash1.contains(9, 99));
-    QCOMPARE(hash1.count(), 45);
+    QCOMPARE(hash1.size(), 45);
     hash1.remove(9, 99);
     QVERIFY(!hash1.contains(9, 99));
-    QCOMPARE(hash1.count(), 44);
+    QCOMPARE(hash1.size(), 44);
 
     hash1.remove(9, 99);
     QVERIFY(!hash1.contains(9, 99));
-    QCOMPARE(hash1.count(), 44);
+    QCOMPARE(hash1.size(), 44);
 
     hash1.remove(1, 99);
-    QCOMPARE(hash1.count(), 44);
+    QCOMPARE(hash1.size(), 44);
 
     hash1.insert(1, 99);
     hash1.insert(1, 99);
 
-    QCOMPARE(hash1.count(), 46);
+    QCOMPARE(hash1.size(), 46);
     hash1.remove(1, 99);
-    QCOMPARE(hash1.count(), 44);
+    QCOMPARE(hash1.size(), 44);
     hash1.remove(1, 99);
-    QCOMPARE(hash1.count(), 44);
+    QCOMPARE(hash1.size(), 44);
 
     {
     QMultiHash<int, int>::const_iterator i = hash1.constFind(1, 11);
@@ -1308,6 +1767,12 @@ void tst_QHash::qmultihash_specific()
     QVERIFY(i.value() == 98);
     }
 
+    QCOMPARE(hash1.count(9), 8);
+    QCOMPARE(hash1.size(), 44);
+    hash1.remove(9);
+    QCOMPARE(hash1.count(9), 0);
+    QCOMPARE(hash1.size(), 36);
+
     {
     QMultiHash<int, int> map1;
     map1.insert(42, 1);
@@ -1322,15 +1787,16 @@ void tst_QHash::qmultihash_specific()
     map2.insert(42, 1);
     map2.insert(10, 2);
     map2.insert(48, 3);
-    QCOMPARE(map1.count(), map2.count());
+    QCOMPARE(map1.size(), map2.size());
     QVERIFY(map1.remove(42,5));
+    QVERIFY(map1 != map2);
     QVERIFY(map2.remove(42,5));
     QVERIFY(map1 == map2);
 
     QHash<int, int> hash;
     hash.insert(-1, -1);
     map2.unite(hash);
-    QCOMPARE(map2.count(), 6);
+    QCOMPARE(map2.size(), 6);
     QCOMPARE(map2[-1], -1);
     }
 }
@@ -1446,12 +1912,141 @@ void tst_QHash::qmultihash_qhash_rvalue_ref_unite()
     }
 }
 
-template <typename T>
-QList<T> sorted(const QList<T> &list)
+void tst_QHash::qmultihashUnite()
 {
-    QList<T> res = list;
-    std::sort(res.begin(), res.end());
-    return res;
+    // Joining two multi hashes, first is empty
+    {
+        MyClass::copies = 0;
+        MyClass::moves = 0;
+        QMultiHash<int, MyClass> hash1;
+        QMultiHash<int, MyClass> hash2;
+        hash2.emplace(0, "a");
+        hash2.emplace(1, "b");
+
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+
+        hash1.unite(hash2);
+        // hash1 is empty, so we just share the data between hash1 and hash2
+        QCOMPARE(hash1.size(), 2);
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+    }
+    // Joining two multi hashes, second is empty
+    {
+        MyClass::copies = 0;
+        MyClass::moves = 0;
+        QMultiHash<int, MyClass> hash1;
+        QMultiHash<int, MyClass> hash2;
+        hash1.emplace(0, "a");
+        hash1.emplace(1, "b");
+
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+
+        hash1.unite(hash2);
+        // hash2 is empty, so nothing happens
+        QVERIFY(hash2.isEmpty());
+        QVERIFY(!hash2.isDetached());
+        QCOMPARE(hash1.size(), 2);
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+    }
+    // Joining two multi hashes
+    {
+        MyClass::copies = 0;
+        MyClass::moves = 0;
+        QMultiHash<int, MyClass> hash1;
+        QMultiHash<int, MyClass> hash2;
+        hash1.emplace(0, "a");
+        hash1.emplace(1, "b");
+        hash2.emplace(0, "c");
+        hash2.emplace(1, "d");
+
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 4);
+
+        hash1.unite(hash2);
+        QCOMPARE(hash1.size(), 4);
+        QCOMPARE(MyClass::copies, 2);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 6);
+    }
+
+    // operator+() uses unite() internally.
+
+    // using operator+(), hash1 is empty
+    {
+        MyClass::copies = 0;
+        MyClass::moves = 0;
+        QMultiHash<int, MyClass> hash1;
+        QMultiHash<int, MyClass> hash2;
+        hash2.emplace(0, "a");
+        hash2.emplace(1, "b");
+
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+
+        auto hash3 = hash1 + hash2;
+        // hash1 is empty, so we just share the data between hash3 and hash2
+        QCOMPARE(hash1.size(), 0);
+        QCOMPARE(hash2.size(), 2);
+        QCOMPARE(hash3.size(), 2);
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+    }
+    // using operator+(), hash2 is empty
+    {
+        MyClass::copies = 0;
+        MyClass::moves = 0;
+        QMultiHash<int, MyClass> hash1;
+        QMultiHash<int, MyClass> hash2;
+        hash1.emplace(0, "a");
+        hash1.emplace(1, "b");
+
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+
+        auto hash3 = hash1 + hash2;
+        // hash2 is empty, so we just share the data between hash3 and hash1
+        QCOMPARE(hash1.size(), 2);
+        QCOMPARE(hash2.size(), 0);
+        QCOMPARE(hash3.size(), 2);
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 2);
+    }
+    // using operator+()
+    {
+        MyClass::copies = 0;
+        MyClass::moves = 0;
+        QMultiHash<int, MyClass> hash1;
+        QMultiHash<int, MyClass> hash2;
+        hash1.emplace(0, "a");
+        hash1.emplace(1, "b");
+        hash2.emplace(0, "c");
+        hash2.emplace(1, "d");
+
+        QCOMPARE(MyClass::copies, 0);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 4);
+
+        auto hash3 = hash1 + hash2;
+        QCOMPARE(hash1.size(), 2);
+        QCOMPARE(hash2.size(), 2);
+        QCOMPARE(hash3.size(), 4);
+        QCOMPARE(MyClass::copies, 4);
+        QCOMPARE(MyClass::moves, 0);
+        QCOMPARE(MyClass::count, 8);
+    }
 }
 
 void tst_QHash::keys_values_uniqueKeys()
@@ -1460,6 +2055,7 @@ void tst_QHash::keys_values_uniqueKeys()
     QVERIFY(hash.uniqueKeys().isEmpty());
     QVERIFY(hash.keys().isEmpty());
     QVERIFY(hash.values().isEmpty());
+    QVERIFY(!hash.isDetached());
 
     hash.insert("alpha", 1);
     QVERIFY(sorted(hash.keys()) == (QList<QString>() << "alpha"));
@@ -1587,7 +2183,7 @@ void tst_QHash::twoArguments_qHash()
 void tst_QHash::initializerList()
 {
     QHash<int, QString> hash = {{1, "bar"}, {1, "hello"}, {2, "initializer_list"}};
-    QCOMPARE(hash.count(), 2);
+    QCOMPARE(hash.size(), 2);
     QCOMPARE(hash[1], QString("hello"));
     QCOMPARE(hash[2], QString("initializer_list"));
 
@@ -1597,9 +2193,9 @@ void tst_QHash::initializerList()
     // QCOMPARE(stdh[1], QString("bar"));
 
     QMultiHash<QString, int> multiHash{{"il", 1}, {"il", 2}, {"il", 3}};
-    QCOMPARE(multiHash.count(), 3);
+    QCOMPARE(multiHash.size(), 3);
     QList<int> values = multiHash.values("il");
-    QCOMPARE(values.count(), 3);
+    QCOMPARE(values.size(), 3);
 
     QHash<int, int> emptyHash{};
     QVERIFY(emptyHash.isEmpty());
@@ -1771,7 +2367,7 @@ void tst_QHash::insert_hash()
 
         hash.insert(hash2);
 
-        QCOMPARE(hash.count(), 5);
+        QCOMPARE(hash.size(), 5);
         for (int i = 0; i < 5; ++i)
             QCOMPARE(hash[i], i);
     }
@@ -1783,7 +2379,7 @@ void tst_QHash::insert_hash()
 
         hash.insert(hash2);
 
-        QCOMPARE(hash.count(), 1);
+        QCOMPARE(hash.size(), 1);
         QCOMPARE(hash[0], 5);
     }
     {
@@ -1793,7 +2389,7 @@ void tst_QHash::insert_hash()
 
         hash.insert(hash2);
 
-        QCOMPARE(hash.count(), 1);
+        QCOMPARE(hash.size(), 1);
         QCOMPARE(hash[0], 5);
         QCOMPARE(hash, hash2);
     }
@@ -1806,7 +2402,7 @@ void tst_QHash::insert_hash()
         // insert into ourself, nothing should happen
         hash.insert(hash);
 
-        QCOMPARE(hash.count(), 3);
+        QCOMPARE(hash.size(), 3);
         QCOMPARE(hash[0], 7);
         QCOMPARE(hash[2], 5);
         QCOMPARE(hash[7], 55);
@@ -1974,6 +2570,293 @@ void tst_QHash::stdHash()
     QSet<std::string> strings{ "a", "b", "c" };
     QVERIFY(strings.contains("a"));
     QVERIFY(!strings.contains("z"));
+}
+
+void tst_QHash::countInEmptyHash()
+{
+    {
+        QHash<int, int> hash;
+        QCOMPARE(hash.size(), 0);
+        QCOMPARE(hash.count(42), 0);
+    }
+
+    {
+        QMultiHash<int, int> hash;
+        QCOMPARE(hash.size(), 0);
+        QCOMPARE(hash.count(42), 0);
+        QCOMPARE(hash.count(42, 1), 0);
+    }
+}
+
+void tst_QHash::removeInEmptyHash()
+{
+    {
+        QHash<QString, int> hash;
+        QCOMPARE(hash.remove("test"), false);
+        QVERIFY(!hash.isDetached());
+
+        using Iter = QHash<QString, int>::iterator;
+        const auto removed = hash.removeIf([](Iter) { return true; });
+        QCOMPARE(removed, 0);
+    }
+    {
+        QMultiHash<QString, int> hash;
+        QCOMPARE(hash.remove("key"), 0);
+        QCOMPARE(hash.remove("key", 1), 0);
+        QVERIFY(!hash.isDetached());
+
+        using Iter = QMultiHash<QString, int>::iterator;
+        const auto removed = hash.removeIf([](Iter) { return true; });
+        QCOMPARE(removed, 0);
+    }
+}
+
+template<typename T>
+void valueInEmptyHashTestFunction()
+{
+    T hash;
+    QCOMPARE(hash.value("key"), 0);
+    QCOMPARE(hash.value("key", -1), -1);
+    QVERIFY(hash.values().isEmpty());
+    QVERIFY(!hash.isDetached());
+
+    const T constHash;
+    QCOMPARE(constHash["key"], 0);
+}
+
+void tst_QHash::valueInEmptyHash()
+{
+    valueInEmptyHashTestFunction<QHash<QString, int>>();
+    if (QTest::currentTestFailed())
+        return;
+
+    valueInEmptyHashTestFunction<QMultiHash<QString, int>>();
+}
+
+void tst_QHash::fineTuningInEmptyHash()
+{
+    QHash<QString, int> hash;
+    QCOMPARE(hash.capacity(), 0);
+    hash.squeeze();
+    QCOMPARE(hash.capacity(), 0);
+    QVERIFY(qFuzzyIsNull(hash.load_factor()));
+    QVERIFY(!hash.isDetached());
+
+    hash.reserve(10);
+    QVERIFY(hash.capacity() >= 10);
+    hash.squeeze();
+    QVERIFY(hash.capacity() > 0);
+}
+
+void tst_QHash::reserveShared()
+{
+    QHash<char, char> hash;
+    hash.insert('c', 'c');
+    auto hash2 = hash;
+
+    QCOMPARE(hash2.capacity(), hash.capacity());
+    auto oldCap = hash.capacity();
+
+    hash2.reserve(100); // This shouldn't crash
+
+    QVERIFY(hash2.capacity() >= 100);
+    QCOMPARE(hash.capacity(), oldCap);
+}
+
+void tst_QHash::reserveLessThanCurrentAmount()
+{
+    {
+        QHash<int, int> hash;
+        for (int i = 0; i < 1000; ++i)
+            hash.insert(i, i * 10);
+
+        // This used to hang in an infinite loop: QTBUG-102067
+        hash.reserve(1);
+
+        // Make sure that hash still has all elements
+        for (int i = 0; i < 1000; ++i)
+            QCOMPARE(hash.value(i), i * 10);
+    }
+    {
+        QMultiHash<int, int> hash;
+        for (int i = 0; i < 1000; ++i) {
+            hash.insert(i, i * 10);
+            hash.insert(i, i * 10 + 1);
+        }
+
+        // This used to hang in infinite loop: QTBUG-102067
+        hash.reserve(1);
+
+        // Make sure that hash still has all elements
+        for (int i = 0; i < 1000; ++i)
+            QCOMPARE(hash.values(i), QList<int>({ i * 10 + 1, i * 10 }));
+    }
+}
+
+void tst_QHash::QTBUG98265()
+{
+    QMultiHash<QUuid, QByteArray> a;
+    QMultiHash<QUuid, QByteArray> b;
+    a.insert(QUuid("3e0dfb4d-90eb-43a4-bd54-88f5b69832c1"), QByteArray());
+    b.insert(QUuid("1b710ada-3dd7-432e-b7c8-e852e59f46a0"), QByteArray());
+
+    QVERIFY(a != b);
+}
+
+/*
+    Calling functions which take a const-ref argument for a key with a reference
+    to a key inside the hash itself should keep the key valid as long as it is
+    needed. If not users may get hard-to-debug races where CoW should've
+    shielded them.
+*/
+void tst_QHash::detachAndReferences()
+{
+#if !QT_CONFIG(cxx11_future)
+    QSKIP("This test requires cxx11_future")
+#else
+    // Repeat a few times because it's not a guarantee
+    for (int i = 0; i < 50; ++i) {
+        QHash<char, char> hash;
+        hash.insert('a', 'a');
+        hash.insert('b', 'a');
+        hash.insert('c', 'a');
+        hash.insert('d', 'a');
+        hash.insert('e', 'a');
+        hash.insert('f', 'a');
+        hash.insert('g', 'a');
+
+        QSemaphore sem;
+        QSemaphore sem2;
+        std::thread th([&sem, &sem2, hash]() mutable {
+            sem.release();
+            sem2.acquire();
+            hash.reserve(100); // [2]: ...then this rehashes directly, without detaching
+        });
+
+        // The key is a reference to an entry in the hash. If we were already
+        // detached then no problem occurs! The problem happens because _after_
+        // we detach but before using the key the other thread resizes and
+        // rehashes, leaving our const-ref dangling.
+        auto it = hash.constBegin();
+        const auto &key = it.key(); // [3]: leaving our const-refs dangling
+        auto kCopy = key;
+        const auto &value = it.value();
+        auto vCopy = value;
+        sem2.release();
+        sem.acquire();
+        hash.insert(key, value); // [1]: this detaches first...
+
+        th.join();
+        QCOMPARE(hash.size(), 7);
+        QVERIFY(hash.contains(kCopy));
+        QCOMPARE(hash.value(kCopy), vCopy);
+    }
+#endif
+}
+
+void tst_QHash::lookupUsingKeyIterator()
+{
+    QHash<QString, QString> hash;
+    hash.reserve(1);
+    qsizetype minCapacity = hash.capacity();
+    // Beholden to internal implementation details:
+    qsizetype rehashLimit = minCapacity == 64 ? 63 : 8;
+
+    for (char16_t c = u'a'; c <= u'a' + rehashLimit; ++c)
+        hash.insert(QString(QChar(c)), u"h"_s);
+
+    for (auto it = hash.keyBegin(), end = hash.keyEnd(); it != end; ++it)
+        QVERIFY(!hash[*it].isEmpty());
+}
+
+void tst_QHash::squeeze()
+{
+    {
+        QHash<int, int> hash;
+        hash.reserve(1000);
+        for (int i = 0; i < 10; ++i)
+            hash.insert(i, i * 10);
+        QVERIFY(hash.isDetached());
+        const size_t buckets = hash.bucket_count();
+        const qsizetype size = hash.size();
+
+        hash.squeeze();
+
+        QVERIFY(hash.bucket_count() < buckets);
+        QCOMPARE(hash.size(), size);
+        for (int i = 0; i < size; ++i)
+            QCOMPARE(hash.value(i), i * 10);
+    }
+    {
+        QMultiHash<int, int> hash;
+        hash.reserve(1000);
+        for (int i = 0; i < 10; ++i) {
+            hash.insert(i, i * 10);
+            hash.insert(i, i * 10 + 1);
+        }
+        QVERIFY(hash.isDetached());
+        const size_t buckets = hash.bucket_count();
+        const qsizetype size = hash.size();
+
+        hash.squeeze();
+
+        QVERIFY(hash.bucket_count() < buckets);
+        QCOMPARE(hash.size(), size);
+        for (int i = 0; i < (size / 2); ++i)
+            QCOMPARE(hash.values(i), QList<int>({ i * 10 + 1, i * 10 }));
+    }
+}
+
+void tst_QHash::squeezeShared()
+{
+    {
+        QHash<int, int> hash;
+        hash.reserve(1000);
+        for (int i = 0; i < 10; ++i)
+            hash.insert(i, i * 10);
+
+        QHash<int, int> other = hash;
+
+        // Check that when squeezing a hash with shared d_ptr, the number of
+        // buckets actually decreases.
+        QVERIFY(!other.isDetached());
+        const size_t buckets = other.bucket_count();
+        const qsizetype size = other.size();
+
+        other.squeeze();
+
+        QCOMPARE(hash.bucket_count(), buckets);
+        QVERIFY(other.bucket_count() < buckets);
+
+        QCOMPARE(other.size(), size);
+        for (int i = 0; i < size; ++i)
+            QCOMPARE(other.value(i), i * 10);
+    }
+    {
+        QMultiHash<int, int> hash;
+        hash.reserve(1000);
+        for (int i = 0; i < 10; ++i) {
+            hash.insert(i, i * 10);
+            hash.insert(i, i * 10 + 1);
+        }
+
+        QMultiHash<int, int> other = hash;
+
+        // Check that when squeezing a hash with shared d_ptr, the number of
+        // buckets actually decreases.
+        QVERIFY(!other.isDetached());
+        const size_t buckets = other.bucket_count();
+        const qsizetype size = other.size();
+
+        other.squeeze();
+
+        QCOMPARE(hash.bucket_count(), buckets);
+        QVERIFY(other.bucket_count() < buckets);
+
+        QCOMPARE(other.size(), size);
+        for (int i = 0; i < (size / 2); ++i)
+            QCOMPARE(other.values(i), QList<int>({ i * 10 + 1, i * 10 }));
+    }
 }
 
 QTEST_APPLESS_MAIN(tst_QHash)

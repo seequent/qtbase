@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QPOINTINGDEVICE_P_H
 #define QPOINTINGDEVICE_P_H
@@ -79,6 +43,7 @@ public:
         pointingDeviceType = true;
         activePoints.reserve(maxPoints);
     }
+    ~QPointingDevicePrivate() override;
 
     void sendTouchCancelEvent(QTouchEvent *cancelEvent);
 
@@ -88,7 +53,9 @@ public:
     struct EventPointData {
         QEventPoint eventPoint;
         QPointer<QObject> exclusiveGrabber;
+        QPointer<QObject> exclusiveGrabberContext;          // extra info about where the grab happened
         QList<QPointer <QObject> > passiveGrabbers;
+        QList<QPointer <QObject> > passiveGrabbersContext;  // parallel list: extra info about where the grabs happened
     };
     EventPointData *queryPointById(int id) const;
     EventPointData *pointById(int id) const;
@@ -100,11 +67,12 @@ public:
     void setExclusiveGrabber(const QPointerEvent *event, const QEventPoint &point, QObject *exclusiveGrabber);
     bool removeExclusiveGrabber(const QPointerEvent *event, const QObject *grabber);
     bool addPassiveGrabber(const QPointerEvent *event, const QEventPoint &point, QObject *grabber);
+    static bool setPassiveGrabberContext(EventPointData *epd, QObject *grabber, QObject *context);
     bool removePassiveGrabber(const QPointerEvent *event, const QEventPoint &point, QObject *grabber);
     void clearPassiveGrabbers(const QPointerEvent *event, const QEventPoint &point);
     void removeGrabber(QObject *grabber, bool cancel = false);
 
-    using EventPointMap = QFlatMap<int, EventPointData>;
+    using EventPointMap = QVarLengthFlatMap<int, EventPointData, 20>;
     mutable EventPointMap activePoints;
 
     QPointingDeviceUniqueId uniqueId;
@@ -131,6 +99,7 @@ public:
     static const QPointingDevice *queryTabletDevice(QInputDevice::DeviceType deviceType,
                                                     QPointingDevice::PointerType pointerType,
                                                     QPointingDeviceUniqueId uniqueId,
+                                                    QInputDevice::Capabilities capabilities = QInputDevice::Capability::None,
                                                     qint64 systemId = 0);
 
     static const QPointingDevice *pointingDeviceById(qint64 systemId);

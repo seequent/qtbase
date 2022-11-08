@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QMATH_H
 #define QMATH_H
@@ -134,6 +98,72 @@ template <typename T> auto qSqrt(T v)
     using std::sqrt;
     return sqrt(v);
 }
+
+namespace QtPrivate {
+template <typename R, typename F> // For qfloat16 to specialize
+struct QHypotType { using type = decltype(std::hypot(R(1), F(1))); };
+
+// Implements hypot() without limiting number of arguments:
+template <typename T>
+class QHypotHelper
+{
+    T scale, total;
+    template <typename F> friend class QHypotHelper;
+    QHypotHelper(T first, T prior) : scale(first), total(prior) {}
+public:
+    QHypotHelper(T first) : scale(qAbs(first)), total(1) {}
+    T result() const
+    { return qIsFinite(scale) ? scale > 0 ? scale * T(std::sqrt(total)) : T(0) : scale; }
+
+    template<typename F, typename ...Fs>
+    auto add(F first, Fs... rest) const
+    { return add(first).add(rest...); }
+
+    template<typename F, typename R = typename QHypotType<T, F>::type>
+    QHypotHelper<R> add(F next) const
+    {
+        if (qIsInf(scale) || (qIsNaN(scale) && !qIsInf(next)))
+            return QHypotHelper<R>(scale, R(1));
+        if (qIsNaN(next))
+            return QHypotHelper<R>(next, R(1));
+        const R val = qAbs(next);
+        if (!(scale > 0) || qIsInf(next))
+            return QHypotHelper<R>(val, R(1));
+        if (!(val > 0))
+            return QHypotHelper<R>(scale, total);
+        if (val > scale) {
+            const R ratio = scale / next;
+            return QHypotHelper<R>(val, total * ratio * ratio + 1);
+        }
+        const R ratio = next / scale;
+        return QHypotHelper<R>(scale, total + ratio * ratio);
+    }
+};
+} // QtPrivate
+
+template<typename F, typename ...Fs>
+auto qHypot(F first, Fs... rest)
+{
+    return QtPrivate::QHypotHelper<F>(first).add(rest...).result();
+}
+
+// However, where possible, use the standard library implementations:
+template <typename Tx, typename Ty>
+auto qHypot(Tx x, Ty y)
+{
+    // C99 has hypot(), hence C++11 has std::hypot()
+    using std::hypot;
+    return hypot(x, y);
+}
+
+#if defined(__cpp_lib_hypot) && __cpp_lib_hypot >= 201603L // Expected to be true
+template <typename Tx, typename Ty, typename Tz>
+auto qHypot(Tx x, Ty y, Tz z)
+{
+    using std::hypot;
+    return hypot(x, y, z);
+}
+#endif // else: no need to over-ride the arbitrarily-many-arg form
 
 template <typename T> auto qLn(T v)
 {
@@ -304,6 +334,7 @@ constexpr inline quint64 qConstexprNextPowerOfTwo(qint64 v)
 
 constexpr inline quint32 qNextPowerOfTwo(quint32 v)
 {
+    Q_ASSERT(static_cast<qint32>(v) >= 0); // There is a next power of two
 #if defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L
     return std::bit_ceil(v + 1);
 #elif defined(QT_HAS_BUILTIN_CLZ)
@@ -317,6 +348,7 @@ constexpr inline quint32 qNextPowerOfTwo(quint32 v)
 
 constexpr inline quint64 qNextPowerOfTwo(quint64 v)
 {
+    Q_ASSERT(static_cast<qint64>(v) >= 0); // There is a next power of two
 #if defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L
     return std::bit_ceil(v + 1);
 #elif defined(QT_HAS_BUILTIN_CLZLL)

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qauthenticator.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -11,9 +14,7 @@ endif()
 qt_internal_add_test(tst_qauthenticator
     SOURCES
         tst_qauthenticator.cpp
-    DEFINES
-        SRCDIR=\\\"${CMAKE_CURRENT_SOURCE_DIR}/\\\"
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::NetworkPrivate
 )
 

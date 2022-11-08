@@ -1,35 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QBuffer>
 #include <QtEndian>
+#if QT_CONFIG(process)
 #include <QProcess>
+#endif
 
 #include <qfont.h>
 #include <private/qfont_p.h>
@@ -41,6 +18,7 @@
 #include <qwidget.h>
 #endif
 #include <qlist.h>
+#include <QtTest/private/qemulationdetector_p.h>
 
 class tst_QFont : public QObject
 {
@@ -59,6 +37,7 @@ private slots:
     void insertAndRemoveSubstitutions();
     void serialize_data();
     void serialize();
+    void deserializeQt515();
 
     void styleName();
     void defaultFamily_data();
@@ -346,9 +325,6 @@ void tst_QFont::resetFont()
 
     QCOMPARE(firstChild.font().resolveMask(), QFont::SizeResolved);
     QCOMPARE(secondChild.font().resolveMask(), QFont::SizeResolved);
-#ifdef Q_OS_ANDROID
-    QEXPECT_FAIL("", "QTBUG-69214", Continue);
-#endif
     QCOMPARE(firstChild.font().pointSize(), parent.font().pointSize());
     QCOMPARE(secondChild.font().pointSize(), parent.font().pointSize());
     QVERIFY(parent.font().resolveMask() != 0);
@@ -381,15 +357,15 @@ void tst_QFont::insertAndRemoveSubstitutions()
 
     // inserting Foo
     QFont::insertSubstitution("BogusFontFamily", "Foo");
-    QCOMPARE(QFont::substitutes("BogusFontFamily").count(), 1);
-    QCOMPARE(QFont::substitutes("bogusfontfamily").count(), 1);
+    QCOMPARE(QFont::substitutes("BogusFontFamily").size(), 1);
+    QCOMPARE(QFont::substitutes("bogusfontfamily").size(), 1);
 
     // inserting Bar and Baz
     QStringList moreFonts;
     moreFonts << "Bar" << "Baz";
     QFont::insertSubstitutions("BogusFontFamily", moreFonts);
-    QCOMPARE(QFont::substitutes("BogusFontFamily").count(), 3);
-    QCOMPARE(QFont::substitutes("bogusfontfamily").count(), 3);
+    QCOMPARE(QFont::substitutes("BogusFontFamily").size(), 3);
+    QCOMPARE(QFont::substitutes("bogusfontfamily").size(), 3);
 
     QFont::removeSubstitutions("BogusFontFamily");
     // make sure it is empty again
@@ -416,7 +392,7 @@ void tst_QFont::serialize_data()
     QTest::newRow("defaultConstructed") << font << QDataStream::Qt_1_0;
 
     font.setLetterSpacing(QFont::AbsoluteSpacing, 105);
-    QTest::newRow("letterSpacing") << font << QDataStream::Qt_4_5;
+    QTest::newRow("letterSpacing=105") << font << QDataStream::Qt_4_5;
 
     font = basicFont;
     font.setWordSpacing(50.0);
@@ -460,7 +436,7 @@ void tst_QFont::serialize_data()
     font = basicFont;
     font.setLetterSpacing(QFont::AbsoluteSpacing, 10);
     // Fails for 4.4 because letterSpacing wasn't read until 4.5.
-    QTest::newRow("letterSpacing") << font << QDataStream::Qt_4_5;
+    QTest::newRow("letterSpacing=10") << font << QDataStream::Qt_4_5;
 
     font = basicFont;
     font.setKerning(false);
@@ -509,6 +485,43 @@ void tst_QFont::serialize()
         QVERIFY2(readFont == font, qPrintable(QString::fromLatin1("Fonts do not compare equal for QDataStream version ") +
             QString::fromLatin1("%1:\nactual: %2\nexpected: %3").arg(version).arg(readFont.toString()).arg(font.toString())));
     }
+}
+
+void tst_QFont::deserializeQt515()
+{
+    QFile file;
+    file.setFileName(QFINDTESTDATA("datastream.515"));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+
+    QFont font;
+    {
+        QDataStream stream(&file);
+        stream.setVersion(QDataStream::Qt_5_15);
+        stream >> font;
+    }
+
+    QCOMPARE(font.family(), QStringLiteral("FirstFamily"));
+    QCOMPARE(font.families().size(), 3);
+    QCOMPARE(font.families().at(0), QStringLiteral("FirstFamily"));
+    QCOMPARE(font.families().at(1), QStringLiteral("OtherFamily1"));
+    QCOMPARE(font.families().at(2), QStringLiteral("OtherFamily2"));
+    QCOMPARE(font.pointSize(), 12);
+
+    QVERIFY(file.reset());
+    QByteArray fileContent = file.readAll();
+    QByteArray serializedContent;
+    {
+        QBuffer buffer(&serializedContent);
+        QVERIFY(buffer.open(QIODevice::WriteOnly));
+
+        QDataStream stream(&buffer);
+        stream.setVersion(QDataStream::Qt_5_15);
+        stream << font;
+    }
+
+    QCOMPARE(serializedContent, fileContent);
+
+    file.close();
 }
 
 void tst_QFont::styleName()
@@ -576,6 +589,15 @@ void tst_QFont::defaultFamily()
             break;
         }
     }
+
+#if defined(Q_OS_UNIX) && defined(QT_NO_FONTCONFIG)
+    QSKIP("This platform does not support checking for default font acceptability");
+#endif
+
+#ifdef Q_PROCESSOR_ARM_32
+    if (QTestPrivate::isRunningArmOnX86())
+        QEXPECT_FAIL("", "Fails on ARMv7 QEMU (QTQAINFRA-4127)", Continue);
+#endif
 
 #ifdef Q_OS_ANDROID
     QEXPECT_FAIL("serif", "QTBUG-69215", Continue);

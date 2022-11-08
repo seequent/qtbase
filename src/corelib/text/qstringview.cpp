@@ -1,45 +1,7 @@
-/****************************************************************************
-**
-** Copyright (C) 2017 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
-** Contact: http://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2017 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qstringview.h"
-#include "qstring.h"
-#include "qlocale_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -70,7 +32,7 @@ QT_BEGIN_NAMESPACE
     When used as an interface type, QStringView allows a single function to accept
     a wide variety of UTF-16 string data sources. One function accepting QStringView
     thus replaces three function overloads (taking QString and
-    \c{(const QChar*, int)}), while at the same time enabling even more string data
+    \c{(const QChar*, qsizetype)}), while at the same time enabling even more string data
     sources to be passed to the function, such as \c{u"Hello World"}, a \c char16_t
     string literal.
 
@@ -87,11 +49,11 @@ QT_BEGIN_NAMESPACE
             QChar constructor by itself.
         \li \e QString: if you store an unmodified copy of the string and thus would
             like to take advantage of QString's implicit sharing.
-        \li QLatin1String: if you can implement the function without converting the
-            QLatin1String to UTF-16 first; users expect a function overloaded on
-            QLatin1String to perform strictly less memory allocations than the
+        \li QLatin1StringView: if you can implement the function without converting the
+            QLatin1StringView to UTF-16 first; users expect a function overloaded on
+            QLatin1StringView to perform strictly less memory allocations than the
             semantically equivalent call of the QStringView version, involving
-            construction of a QString from the QLatin1String.
+            construction of a QString from the QLatin1StringView.
     \endlist
 
     QStringView can also be used as the return value of a function. If you call a
@@ -130,11 +92,6 @@ QT_BEGIN_NAMESPACE
     \typedef QStringView::size_type
 
     Alias for qsizetype. Provided for compatibility with the STL.
-
-    Unlike other Qt classes, QStringView uses qsizetype as its \c size_type, to allow
-    accepting data from \c{std::basic_string} without truncation. The Qt API functions,
-    for example length(), return \c int, while the STL-compatible functions, for example
-    size(), return \c size_type.
 */
 
 /*!
@@ -348,16 +305,12 @@ QT_BEGIN_NAMESPACE
     Returns a deep copy of this string view's data as a QString.
 
     The return value will be the null QString if and only if this string view is null.
-
-    \warning QStringView can store strings with more than 2\sup{30} characters
-    while QString cannot. Calling this function on a string view for which size()
-    returns a value greater than \c{INT_MAX / 2} constitutes undefined behavior.
 */
 
 /*!
     \fn const QChar *QStringView::data() const
 
-    Returns a const pointer to the first character in the string.
+    Returns a const pointer to the first character in the string view.
 
     \note The character array represented by the return value is \e not null-terminated.
 
@@ -368,7 +321,7 @@ QT_BEGIN_NAMESPACE
     \fn const QChar *QStringView::constData() const
     \since 6.0
 
-    Returns a const pointer to the first character in the string.
+    Returns a const pointer to the first character in the string view.
 
     \note The character array represented by the return value is \e not null-terminated.
 
@@ -378,7 +331,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn const storage_type *QStringView::utf16() const
 
-    Returns a const pointer to the first character in the string.
+    Returns a const pointer to the first character in the string view.
 
     \c{storage_type} is \c{char16_t}.
 
@@ -391,7 +344,7 @@ QT_BEGIN_NAMESPACE
     \fn QStringView::const_iterator QStringView::begin() const
 
     Returns a const \l{STL-style iterators}{STL-style iterator} pointing to the first character in
-    the string.
+    the string view.
 
     This function is provided for STL compatibility.
 
@@ -449,7 +402,7 @@ QT_BEGIN_NAMESPACE
     \fn QStringView::const_reverse_iterator QStringView::rbegin() const
 
     Returns a const \l{STL-style iterators}{STL-style} reverse iterator pointing to the first
-    character in the string, in reverse order.
+    character in the string view, in reverse order.
 
     This function is provided for STL compatibility.
 
@@ -470,7 +423,7 @@ QT_BEGIN_NAMESPACE
     \fn QStringView::const_reverse_iterator QStringView::rend() const
 
     Returns a \l{STL-style iterators}{STL-style} reverse iterator pointing to one past
-    the last character in the string, in reverse order.
+    the last character in the string view, in reverse order.
 
     This function is provided for STL compatibility.
 
@@ -528,15 +481,11 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn int QStringView::length() const
+    \fn QStringView::length() const
 
-    Same as size(), except returns the result as an \c int.
+    Same as size().
 
     This function is provided for compatibility with other Qt containers.
-
-    \warning QStringView can represent strings with more than 2\sup{31} characters.
-    Calling this function on a string view for which size() returns a value greater
-    than \c{INT_MAX} constitutes undefined behavior.
 
     \sa empty(), isEmpty(), isNull(), size()
 */
@@ -563,7 +512,7 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \fn template <typename...Args> QString QStringView::arg(Args &&...args) const
-    \fn template <typename...Args> QString QLatin1String::arg(Args &&...args) const
+    \fn template <typename...Args> QString QLatin1StringView::arg(Args &&...args) const
     \fn template <typename...Args> QString QString::arg(Args &&...args) const
     \since 5.14
 
@@ -573,7 +522,7 @@ QT_BEGIN_NAMESPACE
     second of the \a args the \c{%N} with the next-lowest \c{N} etc.
 
     \c Args can consist of anything that implicitly converts to QString,
-    QStringView or QLatin1String.
+    QStringView or QLatin1StringView.
 
     In addition, the following types are also supported: QChar, QLatin1Char.
 
@@ -583,7 +532,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QChar QStringView::front() const
 
-    Returns the first character in the string. Same as first().
+    Returns the first character in the string view. Same as first().
 
     This function is provided for STL compatibility.
 
@@ -596,7 +545,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QChar QStringView::back() const
 
-    Returns the last character in the string. Same as last().
+    Returns the last character in the string view. Same as last().
 
     This function is provided for STL compatibility.
 
@@ -609,7 +558,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QChar QStringView::first() const
 
-    Returns the first character in the string. Same as front().
+    Returns the first character in the string view. Same as front().
 
     This function is provided for compatibility with other Qt containers.
 
@@ -622,7 +571,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QChar QStringView::last() const
 
-    Returns the last character in the string. Same as back().
+    Returns the last character in the string view. Same as back().
 
     This function is provided for compatibility with other Qt containers.
 
@@ -638,11 +587,11 @@ QT_BEGIN_NAMESPACE
     Returns the substring of length \a length starting at position
     \a start in this object.
 
-    \obsolete Use sliced() instead in new code.
+    \deprecated Use sliced() instead in new code.
 
     Returns an empty string view if \a start exceeds the
-    length of the string. If there are less than \a length characters
-    available in the string starting at \a start, or if
+    length of the string view. If there are less than \a length characters
+    available in the string view starting at \a start, or if
     \a length is negative (default), the function returns all characters that
     are available from \a start.
 
@@ -652,12 +601,12 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QStringView QStringView::left(qsizetype length) const
 
-    \obsolete Use first() instead in new code.
+    \deprecated Use first() instead in new code.
 
     Returns the substring of length \a length starting at position
     0 in this object.
 
-    The entire string is returned if \a length is greater than or equal
+    The entire string view is returned if \a length is greater than or equal
     to size(), or less than zero.
 
     \sa first(), last(), sliced(), startsWith(), chopped(), chop(), truncate()
@@ -666,12 +615,12 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QStringView QStringView::right(qsizetype length) const
 
-    \obsolete Use last() instead in new code.
+    \deprecated Use last() instead in new code.
 
     Returns the substring of length \a length starting at position
     size() - \a length in this object.
 
-    The entire string is returned if \a length is greater than or equal
+    The entire string view is returned if \a length is greater than or equal
     to size(), or less than zero.
 
     \sa first(), last(), sliced(), endsWith(), chopped(), chop(), truncate()
@@ -682,7 +631,7 @@ QT_BEGIN_NAMESPACE
     \since 6.0
 
     Returns a string view that points to the first \a n characters
-    of this string.
+    of this string view.
 
     \note The behavior is undefined when \a n < 0 or \a n > size().
 
@@ -693,7 +642,8 @@ QT_BEGIN_NAMESPACE
     \fn QStringView QStringView::last(qsizetype n) const
     \since 6.0
 
-    Returns a string view that points to the last \a n characters of this string.
+    Returns a string view that points to the last \a n characters of this string
+    view.
 
     \note The behavior is undefined when \a n < 0 or \a n > size().
 
@@ -704,7 +654,7 @@ QT_BEGIN_NAMESPACE
     \fn QStringView QStringView::sliced(qsizetype pos, qsizetype n) const
     \since 6.0
 
-    Returns a string view that points to \a n characters of this string,
+    Returns a string view that points to \a n characters of this string view,
     starting at position \a pos.
 
     \note The behavior is undefined when \a pos < 0, \a n < 0,
@@ -777,8 +727,8 @@ QT_BEGIN_NAMESPACE
     \fn int QStringView::compare(QStringView str, Qt::CaseSensitivity cs) const
     \since 5.12
 
-    Returns an integer that compares to zero as this string-view compares to the
-    string-view \a str.
+    Returns an integer that compares to zero as this string view compares to the
+    string view \a str.
 
     If \a cs is Qt::CaseSensitive (the default), the comparison is case sensitive;
     otherwise the comparison is case-insensitive.
@@ -787,12 +737,12 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn int QStringView::compare(QLatin1String l1, Qt::CaseSensitivity cs) const
+    \fn int QStringView::compare(QLatin1StringView l1, Qt::CaseSensitivity cs) const
     \fn int QStringView::compare(QChar ch) const
     \fn int QStringView::compare(QChar ch, Qt::CaseSensitivity cs) const
     \since 5.15
 
-    Returns an integer that compares to zero as this string-view compares to the
+    Returns an integer that compares to zero as this string view compares to the
     Latin-1 string \a l1, or character \a ch, respectively.
 
     If \a cs is Qt::CaseSensitive (the default), the comparison is case sensitive;
@@ -815,12 +765,27 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+    \fn int QStringView::localeAwareCompare(QStringView other) const
+    \since 6.4
+
+    Compares this string view with the \a other string view and returns
+    an integer less than, equal to, or greater than zero if this string
+    view is less than, equal to, or greater than the \a other string view.
+
+    The comparison is performed in a locale- and also platform-dependent
+    manner. Use this function to present sorted lists of strings to the
+    user.
+
+    \sa {Comparing Strings}
+*/
+
+/*!
     \fn bool QStringView::startsWith(QStringView str, Qt::CaseSensitivity cs) const
-    \fn bool QStringView::startsWith(QLatin1String l1, Qt::CaseSensitivity cs) const
+    \fn bool QStringView::startsWith(QLatin1StringView l1, Qt::CaseSensitivity cs) const
     \fn bool QStringView::startsWith(QChar ch) const
     \fn bool QStringView::startsWith(QChar ch, Qt::CaseSensitivity cs) const
 
-    Returns \c true if this string-view starts with string-view \a str,
+    Returns \c true if this string view starts with string view \a str,
     Latin-1 string \a l1, or character \a ch, respectively;
     otherwise returns \c false.
 
@@ -832,11 +797,11 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \fn bool QStringView::endsWith(QStringView str, Qt::CaseSensitivity cs) const
-    \fn bool QStringView::endsWith(QLatin1String l1, Qt::CaseSensitivity cs) const
+    \fn bool QStringView::endsWith(QLatin1StringView l1, Qt::CaseSensitivity cs) const
     \fn bool QStringView::endsWith(QChar ch) const
     \fn bool QStringView::endsWith(QChar ch, Qt::CaseSensitivity cs) const
 
-    Returns \c true if this string-view ends with string-view \a str,
+    Returns \c true if this string view ends with string view \a str,
     Latin-1 string \a l1, or character \a ch, respectively;
     otherwise returns \c false.
 
@@ -848,12 +813,12 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \fn qsizetype QStringView::indexOf(QStringView str, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
-    \fn qsizetype QStringView::indexOf(QLatin1String l1, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
+    \fn qsizetype QStringView::indexOf(QLatin1StringView l1, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
     \fn qsizetype QStringView::indexOf(QChar c, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
     \since 5.14
 
-    Returns the index position of the first occurrence of the string-view \a str,
-    Latin-1 string \a l1, or character \a ch, respectively, in this string-view,
+    Returns the index position of the first occurrence of the string view \a str,
+    Latin-1 string \a l1, or character \a ch, respectively, in this string view,
     searching forward from index position \a from. Returns -1 if \a str is not found.
 
     If \a cs is Qt::CaseSensitive (default), the search is case
@@ -867,11 +832,11 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \fn bool QStringView::contains(QStringView str, Qt::CaseSensitivity cs) const
-    \fn bool QStringView::contains(QLatin1String l1, Qt::CaseSensitivity cs) const
+    \fn bool QStringView::contains(QLatin1StringView l1, Qt::CaseSensitivity cs) const
     \fn bool QStringView::contains(QChar c, Qt::CaseSensitivity cs) const
     \since 5.14
 
-    Returns \c true if this string-view contains an occurrence of the string-view
+    Returns \c true if this string view contains an occurrence of the string view
     \a str, Latin-1 string \a l1, or character \a ch; otherwise returns \c false.
 
     If \a cs is Qt::CaseSensitive (the default), the search is
@@ -882,20 +847,51 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \fn qsizetype QStringView::lastIndexOf(QStringView str, qsizetype from, Qt::CaseSensitivity cs) const
-    \fn qsizetype QStringView::lastIndexOf(QLatin1String l1, qsizetype from, Qt::CaseSensitivity cs) const
+    \fn qsizetype QStringView::lastIndexOf(QLatin1StringView l1, qsizetype from, Qt::CaseSensitivity cs) const
     \fn qsizetype QStringView::lastIndexOf(QChar c, qsizetype from, Qt::CaseSensitivity cs) const
     \since 5.14
 
-    Returns the index position of the last occurrence of the string-view \a str,
-    Latin-1 string \a l1, or character \a ch, respectively, in this string-view,
-    searching backward from index position \a from. If \a from is -1 (default),
+    Returns the index position of the last occurrence of the string view \a str,
+    Latin-1 string \a l1, or character \a ch, respectively, in this string view,
+    searching backward from index position \a from. If \a from is -1,
     the search starts at the last character; if \a from is -2, at the next to last
     character and so on. Returns -1 if \a str is not found.
 
     If \a cs is Qt::CaseSensitive (default), the search is case
     sensitive; otherwise the search is case insensitive.
 
+    \note When searching for a 0-length \a str or \a l1, the match at
+    the end of the data is excluded from the search by a negative \a
+    from, even though \c{-1} is normally thought of as searching from
+    the end of the string view: the match at the end is \e after the
+    last character, so it is excluded. To include such a final empty
+    match, either give a positive value for \a from or omit the \a from
+    parameter entirely.
+
     \sa QString::lastIndexOf()
+*/
+
+/*!
+    \fn qsizetype QStringView::lastIndexOf(QStringView str, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
+    \fn qsizetype QStringView::lastIndexOf(QLatin1StringView l1, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
+    \since 6.2
+    \overload lastIndexOf()
+
+    Returns the index position of the last occurrence of the string view \a str
+    or Latin-1 string \a l1, respectively, in this string view,
+    searching backward from the last character of this string view.
+    Returns -1 if \a str is not found.
+
+    If \a cs is Qt::CaseSensitive (default), the search is case
+    sensitive; otherwise the search is case insensitive.
+
+    \sa QString::lastIndexOf()
+*/
+
+/*!
+    \fn QStringView::lastIndexOf(QChar c, Qt::CaseSensitivity cs) const
+    \since 6.3
+    \overload lastIndexOf()
 */
 
 #if QT_CONFIG(regularexpression)
@@ -922,11 +918,42 @@ QT_BEGIN_NAMESPACE
 
     Returns the index position of the last match of the regular
     expression \a re in the string view, which starts before the index
-    position \a from. Returns -1 if \a re didn't match anywhere.
+    position \a from. If \a from is -1, the search starts at the last
+    character; if \a from is -2, at the next to last character and so
+    on. Returns -1 if \a re didn't match anywhere.
 
     If the match is successful and \a rmatch is not \nullptr, it also
     writes the results of the match into the QRegularExpressionMatch object
     pointed to by \a rmatch.
+
+    \note Due to how the regular expression matching algorithm works,
+    this function will actually match repeatedly from the beginning of
+    the string view until the position \a from is reached.
+
+    \note When searching for a regular expression \a re that may match
+    0 characters, the match at the end of the data is excluded from the
+    search by a negative \a from, even though \c{-1} is normally
+    thought of as searching from the end of the string view: the match
+    at the end is \e after the last character, so it is excluded. To
+    include such a final empty match, either give a positive value for
+    \a from or omit the \a from parameter entirely.
+*/
+
+/*!
+    \fn qsizetype QStringView::lastIndexOf(const QRegularExpression &re, QRegularExpressionMatch *rmatch = nullptr) const
+    \since 6.2
+
+    Returns the index position of the last match of the regular
+    expression \a re in the string view. Returns -1 if \a re didn't match
+    anywhere.
+
+    If the match is successful and \a rmatch is not \nullptr, it also
+    writes the results of the match into the QRegularExpressionMatch object
+    pointed to by \a rmatch.
+
+    \note Due to how the regular expression matching algorithm works,
+    this function will actually match repeatedly from the beginning of
+    the string view until the end of the string view is reached.
 */
 
 /*!
@@ -952,7 +979,7 @@ QT_BEGIN_NAMESPACE
 
     For historical reasons, this function counts overlapping matches.
     This behavior is different from simply iterating over the matches
-    in the string using QRegularExpressionMatchIterator.
+    in the string view using QRegularExpressionMatchIterator.
 
     \sa QRegularExpression::globalMatch()
 
@@ -986,7 +1013,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QByteArray QStringView::toUtf8() const
 
-    Returns a UTF-8 representation of the string as a QByteArray.
+    Returns a UTF-8 representation of the string view as a QByteArray.
 
     UTF-8 is a Unicode codec and can represent all characters in a Unicode
     string like QString.
@@ -997,11 +1024,11 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QList<uint> QStringView::toUcs4() const
 
-    Returns a UCS-4/UTF-32 representation of the string as a QList<uint>.
+    Returns a UCS-4/UTF-32 representation of the string view as a QList<uint>.
 
     UCS-4 is a Unicode codec and therefore it is lossless. All characters from
-    this string will be encoded in UCS-4. Any invalid sequence of code units in
-    this string is replaced by the Unicode replacement character
+    this string view will be encoded in UCS-4. Any invalid sequence of code units in
+    this string view is replaced by the Unicode replacement character
     (QChar::ReplacementCharacter, which corresponds to \c{U+FFFD}).
 
     The returned list is not 0-terminated.
@@ -1016,7 +1043,7 @@ QT_BEGIN_NAMESPACE
 
     Convert \a s to a QStringView ignoring \c{s.isNull()}.
 
-    Returns a string-view that references \a{s}' data, but is never null.
+    Returns a string view that references \a{s}' data, but is never null.
 
     This is a faster way to convert a QString to a QStringView,
     if null QStrings can legitimately be treated as empty ones.
@@ -1028,7 +1055,7 @@ QT_BEGIN_NAMESPACE
     \fn bool QStringView::isRightToLeft() const
     \since 5.11
 
-    Returns \c true if the string is read right to left.
+    Returns \c true if the string view is read right to left.
 
     \sa QString::isRightToLeft()
 */
@@ -1037,7 +1064,7 @@ QT_BEGIN_NAMESPACE
     \fn bool QStringView::isValidUtf16() const
     \since 5.15
 
-    Returns \c true if the string contains valid UTF-16 encoded data,
+    Returns \c true if the string view contains valid UTF-16 encoded data,
     or \c false otherwise.
 
     Note that this function does not perform any special validation of the
@@ -1052,11 +1079,11 @@ QT_BEGIN_NAMESPACE
     \fn QStringView::toWCharArray(wchar_t *array) const
     \since 5.14
 
-    Transcribes this string into the given \a array.
+    Transcribes this string view into the given \a array.
 
     The caller is responsible for ensuring \a array is large enough to hold the
-    \c wchar_t encoding of this string (allocating the array with the same length
-    as the string is always sufficient). The array is encoded in UTF-16 on
+    \c wchar_t encoding of this string view (allocating the array with the same length
+    as the string view is always sufficient). The array is encoded in UTF-16 on
     platforms where \c wchar_t is 2 bytes wide (e.g. Windows); otherwise (Unix
     systems), \c wchar_t is assumed to be 4 bytes wide and the data is written
     in UCS-4.
@@ -1075,7 +1102,7 @@ QT_BEGIN_NAMESPACE
     \overload count()
 
     Returns the number of occurrences of the character \a ch in the
-    string reference.
+    string view.
 
     If \a cs is Qt::CaseSensitive (default), the search is
     case sensitive; otherwise the search is case insensitive.
@@ -1090,7 +1117,22 @@ QT_BEGIN_NAMESPACE
     \overload count()
 
     Returns the number of (potentially overlapping) occurrences of the
-    string reference \a str in this string reference.
+    string view \a str in this string view.
+
+    If \a cs is Qt::CaseSensitive (default), the search is
+    case sensitive; otherwise the search is case insensitive.
+
+    \sa QString::count(), contains(), indexOf()
+*/
+
+/*!
+    \fn qsizetype QStringView::count(QLatin1StringView l1, Qt::CaseSensitivity cs) const noexcept
+
+    \since 6.4
+    \overload count()
+
+    Returns the number of (potentially overlapping) occurrences of the
+    Latin-1 string \a l1 in this string view.
 
     If \a cs is Qt::CaseSensitive (default), the search is
     case sensitive; otherwise the search is case insensitive.
@@ -1101,15 +1143,15 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn qint64 QStringView::toLongLong(bool *ok, int base) const
 
-    Returns the string converted to a \c{long long} using base \a
+    Returns the string view converted to a \c{long long} using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1123,15 +1165,15 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn quint64 QStringView::toULongLong(bool *ok, int base) const
 
-    Returns the string converted to an \c{unsigned long long} using base \a
+    Returns the string view converted to an \c{unsigned long long} using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1145,15 +1187,15 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn long QStringView::toLong(bool *ok, int base) const
 
-    Returns the string converted to a \c long using base \a
+    Returns the string view converted to a \c long using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1167,15 +1209,15 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn ulong QStringView::toULong(bool *ok, int base) const
 
-    Returns the string converted to an \c{unsigned long} using base \a
+    Returns the string view converted to an \c{unsigned long} using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1189,15 +1231,15 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn int QStringView::toInt(bool *ok, int base) const
 
-    Returns the string converted to an \c int using base \a
+    Returns the string view converted to an \c int using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1211,15 +1253,15 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn uint QStringView::toUInt(bool *ok, int base) const
 
-    Returns the string converted to an \c{unsigned int} using base \a
+    Returns the string view converted to an \c{unsigned int} using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1233,15 +1275,15 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn short QStringView::toShort(bool *ok, int base) const
 
-    Returns the string converted to a \c short using base \a
+    Returns the string view converted to a \c short using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1255,15 +1297,15 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn ushort QStringView::toUShort(bool *ok, int base) const
 
-    Returns the string converted to an \c{unsigned short} using base \a
+    Returns the string view converted to an \c{unsigned short} using base \a
     base, which is 10 by default and must be between 2 and 36, or 0.
     Returns 0 if the conversion fails.
 
     If \a ok is not \nullptr, failure is reported by setting *\a{ok}
     to \c false, and success by setting *\a{ok} to \c true.
 
-    If \a base is 0, the C language convention is used: If the string
-    begins with "0x", base 16 is used; if the string begins with "0",
+    If \a base is 0, the C language convention is used: if the string view
+    begins with "0x", base 16 is used; otherwise, if the string view begins with "0",
     base 8 is used; otherwise, base 10 is used.
 
     The string conversion will always happen in the 'C' locale. For locale
@@ -1277,7 +1319,7 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn double QStringView::toDouble(bool *ok) const
 
-    Returns the string converted to a \c double value.
+    Returns the string view converted to a \c double value.
 
     Returns an infinity if the conversion overflows or 0.0 if the
     conversion fails for other reasons (e.g. underflow).
@@ -1300,7 +1342,7 @@ QT_BEGIN_NAMESPACE
 /*!
   \fn float QStringView::toFloat(bool *ok) const
 
-    Returns the string converted to a \c float value.
+    Returns the string view converted to a \c float value.
 
     Returns an infinity if the conversion overflows or 0.0 if the
     conversion fails for other reasons (e.g. underflow).
@@ -1319,7 +1361,7 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \fn template <typename Needle, typename...Flags> auto QStringView::tokenize(Needle &&sep, Flags...flags) const
-    \fn template <typename Needle, typename...Flags> auto QLatin1String::tokenize(Needle &&sep, Flags...flags) const
+    \fn template <typename Needle, typename...Flags> auto QLatin1StringView::tokenize(Needle &&sep, Flags...flags) const
     \fn template <typename Needle, typename...Flags> auto QString::tokenize(Needle &&sep, Flags...flags) const &
     \fn template <typename Needle, typename...Flags> auto QString::tokenize(Needle &&sep, Flags...flags) const &&
     \fn template <typename Needle, typename...Flags> auto QString::tokenize(Needle &&sep, Flags...flags) &&

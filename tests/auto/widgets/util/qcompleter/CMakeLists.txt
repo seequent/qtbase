@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qcompleter.pro.
 
 #####################################################################
@@ -7,10 +10,11 @@
 qt_internal_add_test(tst_qcompleter
     SOURCES
         tst_qcompleter.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::TestPrivate
         Qt::Widgets
+        Qt::WidgetsPrivate
 )
 
 #### Keys ignored in scope 1:.:.:qcompleter.pro:<TRUE>:

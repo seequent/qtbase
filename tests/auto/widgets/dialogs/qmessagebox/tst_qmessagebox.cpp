@@ -1,36 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
 #include <QMessageBox>
 #include <QDebug>
 #include <QPair>
+#include <QSet>
 #include <QList>
 #include <QPointer>
 #include <QTimer>
@@ -50,6 +26,7 @@ private slots:
     void sanityTest();
     void defaultButton();
     void escapeButton();
+    void clickedButton();
     void button();
     void statics();
     void about();
@@ -126,11 +103,20 @@ void ExecCloseHelper::timerEvent(QTimerEvent *te)
         return;
 
     QWidget *modalWidget = QApplication::activeModalWidget();
-
     if (!m_testCandidate && modalWidget)
         m_testCandidate = modalWidget;
 
-    if (m_testCandidate && m_testCandidate == modalWidget) {
+    QWidget *activeWindow = QApplication::activeWindow();
+    if (!m_testCandidate && activeWindow)
+        m_testCandidate = activeWindow;
+
+    if (!m_testCandidate)
+        return;
+
+    bool shouldHelp = (m_testCandidate->isModal() && m_testCandidate == modalWidget)
+        || (!m_testCandidate->isModal() && m_testCandidate == activeWindow);
+
+    if (shouldHelp) {
         if (m_key == CloseWindow) {
             m_testCandidate->close();
         } else {
@@ -302,6 +288,28 @@ void tst_QMessageBox::escapeButton()
     QVERIFY(msgBox3.clickedButton() == msgBox3.button(QMessageBox::Ok)); // auto detected
 }
 
+void tst_QMessageBox::clickedButton()
+{
+    QMessageBox msgBox;
+    msgBox.addButton(QMessageBox::Yes);
+    msgBox.addButton(QMessageBox::No);
+    msgBox.addButton(QMessageBox::Retry);
+
+    QVERIFY(!msgBox.clickedButton());
+
+    for (int i = 0; i < 2; ++i) {
+        QAbstractButton *clickedButtonAfterExex = nullptr;
+        QTimer::singleShot(100, [&] {
+            clickedButtonAfterExex = msgBox.clickedButton();
+            msgBox.close();
+        });
+        msgBox.exec();
+
+        QVERIFY(!clickedButtonAfterExex);
+        QVERIFY(msgBox.clickedButton());
+    }
+}
+
 void tst_QMessageBox::statics()
 {
     QMessageBox::StandardButton (*statics[4])(QWidget *, const QString &,
@@ -388,6 +396,8 @@ void tst_QMessageBox::staticSourceCompat()
     int ret;
 
     // source compat tests for < 4.2
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     ExecCloseHelper closeHelper;
     closeHelper.start(Qt::Key_Enter);
     ret = QMessageBox::information(nullptr, "title", "text", QMessageBox::Yes, QMessageBox::No);
@@ -406,6 +416,8 @@ void tst_QMessageBox::staticSourceCompat()
     QCOMPARE(ret, int(QMessageBox::Yes));
     QVERIFY(closeHelper.done());
 
+#if QT_DEPRECATED_SINCE(6, 2)
+    // The overloads below are valid only before 6.2
     closeHelper.start(Qt::Key_Enter);
     ret = QMessageBox::information(nullptr, "title", "text", QMessageBox::Yes, QMessageBox::No | QMessageBox::Default);
     QCOMPARE(ret, int(QMessageBox::No));
@@ -438,19 +450,21 @@ void tst_QMessageBox::staticSourceCompat()
         QCOMPARE(ret, 1);
         QVERIFY(closeHelper.done());
     }
+#endif // QT_DEPRECATED_SINCE(6, 2)
+QT_WARNING_POP
 }
 
 void tst_QMessageBox::instanceSourceCompat()
 {
-     QMessageBox mb("Application name here",
-                    "Saving the file will overwrite the original file on the disk.\n"
-                    "Do you really want to save?",
-                    QMessageBox::Information,
-                    QMessageBox::Yes | QMessageBox::Default,
-                    QMessageBox::No,
-                    QMessageBox::Cancel | QMessageBox::Escape);
-    mb.setButtonText(QMessageBox::Yes, "Save");
-    mb.setButtonText(QMessageBox::No, "Discard");
+    QMessageBox mb(QMessageBox::Information,
+                   "Application name here",
+                   "Saving the file will overwrite the original file on the disk.\n"
+                   "Do you really want to save?",
+                   QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    mb.setDefaultButton(QMessageBox::Yes);
+    mb.setEscapeButton(QMessageBox::Cancel);
+    mb.button(QMessageBox::Yes)->setText("Save");
+    mb.button(QMessageBox::No)->setText("Discard");
     mb.addButton("&Revert", QMessageBox::RejectRole);
     mb.addButton("&Zoo", QMessageBox::ActionRole);
 
@@ -543,12 +557,17 @@ void tst_QMessageBox::incorrectDefaultButton()
     QMessageBox::question(nullptr, "", "I've been hit!",QFlag(QMessageBox::Ok | QMessageBox::Cancel),QMessageBox::Save);
     QVERIFY(closeHelper.done());
 
+#if QT_DEPRECATED_SINCE(6, 2)
     closeHelper.start(Qt::Key_Escape);
     QTest::ignoreMessage(QtWarningMsg, "QDialogButtonBox::createButton: Invalid ButtonRole, button not added");
     QTest::ignoreMessage(QtWarningMsg, "QDialogButtonBox::createButton: Invalid ButtonRole, button not added");
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
     //do not crash here -> call old function of QMessageBox in this case
     QMessageBox::question(nullptr, "", "I've been hit!",QMessageBox::Ok | QMessageBox::Cancel,QMessageBox::Save | QMessageBox::Cancel,QMessageBox::Ok);
+QT_WARNING_POP
     QVERIFY(closeHelper.done());
+#endif
 }
 
 void tst_QMessageBox::updateSize()
@@ -619,7 +638,7 @@ void tst_QMessageBox::acceptedRejectedSignals()
         button->click();
 
         if (roles.contains(messageBox.buttonRole(button)))
-            QCOMPARE(spy.count(), 1);
+            QCOMPARE(spy.size(), 1);
         else
             QVERIFY(spy.isEmpty());
     }

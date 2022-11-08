@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 include(CheckCXXSourceCompiles)
 
 function(qt_run_config_test_architecture)
@@ -9,23 +12,34 @@ function(qt_run_config_test_architecture)
     qt_get_platform_try_compile_vars(platform_try_compile_vars)
     list(APPEND flags ${platform_try_compile_vars})
 
+    list(TRANSFORM flags PREPEND "            " OUTPUT_VARIABLE flags_indented)
+    list(JOIN flags_indented "\n" flags_indented)
+
+    message(STATUS
+            "Building architecture extraction project with the following CMake arguments:")
+    list(POP_BACK CMAKE_MESSAGE_CONTEXT _context)
+    message(NOTICE ${flags_indented})
+    list(APPEND CMAKE_MESSAGE_CONTEXT ${_context})
+
     try_compile(
         _arch_result
         "${CMAKE_CURRENT_BINARY_DIR}/config.tests/arch"
         "${CMAKE_CURRENT_SOURCE_DIR}/config.tests/arch"
         arch
         CMAKE_FLAGS ${flags}
+        OUTPUT_VARIABLE arch_test_output
         )
 
     if (NOT _arch_result)
-        message(FATAL_ERROR "Failed to compile architecture detection file.")
+        message(FATAL_ERROR
+                "Failed to build architecture extraction project. Build output:\n ${arch_test_output}")
     endif()
 
     set(_arch_file_suffix "${CMAKE_EXECUTABLE_SUFFIX}")
     # With emscripten the application entry point is a .js file (to be run with node for example),
     # but the real "data" is in the .wasm file, so that's where we need to look for the ABI, etc.
     # information.
-    if (EMSCRIPTEN)
+    if (WASM)
         set(_arch_file_suffix ".wasm")
     endif()
 
@@ -34,11 +48,17 @@ function(qt_run_config_test_architecture)
         string(APPEND arch_test_location "/${QT_MULTI_CONFIG_FIRST_CONFIG}")
     endif()
 
+    set(arch_dir "${CMAKE_CURRENT_BINARY_DIR}/${arch_test_location}")
+    file(GLOB arch_dir_globbed_files RELATIVE "${arch_dir}" "${arch_dir}/*")
+    list(JOIN arch_dir_globbed_files "\n" arch_dir_globbed_files)
+
     set(_arch_file
         "${CMAKE_CURRENT_BINARY_DIR}/${arch_test_location}/architecture_test${_arch_file_suffix}")
     if (NOT EXISTS "${_arch_file}")
         message(FATAL_ERROR
-                "Failed to find compiled architecture detection executable at ${_arch_file}.")
+                "Failed to find compiled architecture detection executable at ${_arch_file}. \
+                The following files were found at: ${arch_dir} \
+                ${arch_dir_globbed_files}")
     endif()
     message(STATUS "Extracting architecture info from ${_arch_file}.")
 
@@ -66,7 +86,12 @@ function(qt_run_config_test_architecture)
     endforeach()
 
     if (NOT _architecture OR NOT _build_abi)
-        message(FATAL_ERROR "Failed to extract architecture data from file.")
+        list(SUBLIST _arch_lines 0 5 arch_lines_fewer)
+        list(JOIN arch_lines_fewer "\n" arch_lines_output)
+
+        message(FATAL_ERROR
+                "Failed to extract architecture data from file. \
+                Here are the first few lines extracted:\n${arch_lines_output}")
     endif()
 
     set(TEST_architecture 1 CACHE INTERNAL "Ran the architecture test")
@@ -100,6 +125,13 @@ VERS_1;
         set(CMAKE_REQUIRED_FLAGS "")
     endif()
     set(CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS} "-Wl,--version-script=\"${CMAKE_CURRENT_BINARY_DIR}/version_flag.map\"")
+
+    # Pass the linker that the main project uses to the version script compile test.
+    qt_internal_get_active_linker_flags(linker_flags)
+    if(linker_flags)
+        set(CMAKE_REQUIRED_LINK_OPTIONS ${linker_flags})
+    endif()
+
     check_cxx_source_compiles("int main(void){return 0;}" HAVE_LD_VERSION_SCRIPT)
     if(DEFINED CMAKE_REQUIRED_FLAGS_SAVE)
         set(CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS_SAVE})
@@ -112,13 +144,41 @@ VERS_1;
     if(APPLE)
         set(HAVE_LD_VERSION_SCRIPT OFF)
     endif()
+    # Also makes no sense with MSVC-style command-line
+    if(MSVC)
+        set(HAVE_LD_VERSION_SCRIPT OFF)
+    endif()
 
     set(TEST_ld_version_script "${HAVE_LD_VERSION_SCRIPT}" CACHE INTERNAL "linker version script support")
 endfunction()
 
+function(qt_internal_ensure_latest_win_nt_api)
+    if(NOT WIN32)
+        return()
+    endif()
+    check_cxx_source_compiles([=[
+        #include <windows.h>
+        #if !defined(_WIN32_WINNT) && !defined(WINVER)
+        #error "_WIN32_WINNT and WINVER are not defined"
+        #endif
+        #if defined(_WIN32_WINNT) && (_WIN32_WINNT < 0x0A00)
+        #error "_WIN32_WINNT version too low"
+        #endif
+        #if defined(WINVER) && (WINVER < 0x0A00)
+        #error "WINVER version too low"
+        #endif
+        int main() { return 0; }
+    ]=] HAVE_WIN10_WIN32_WINNT)
+    if(NOT HAVE_WIN10_WIN32_WINNT)
+        list(APPEND QT_PLATFORM_DEFINITIONS _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+        set(QT_PLATFORM_DEFINITIONS ${QT_PLATFORM_DEFINITIONS}
+            CACHE STRING "Qt platform specific pre-processor defines" FORCE)
+    endif()
+endfunction()
+
 function(qt_run_qtbase_config_tests)
     qt_run_config_test_architecture()
-    qt_run_linker_version_script_support()
+    qt_internal_ensure_latest_win_nt_api()
 endfunction()
 
 # The qmake build of android does not perform the right architecture tests and
@@ -142,8 +202,16 @@ function(qt_internal_print_cmake_darwin_info)
         message(STATUS "CMAKE_OSX_DEPLOYMENT_TARGET: \"${CMAKE_OSX_DEPLOYMENT_TARGET}\"")
         message(STATUS "QT_MAC_SDK_VERSION: \"${QT_MAC_SDK_VERSION}\"")
         message(STATUS "QT_MAC_XCODE_VERSION: \"${QT_MAC_XCODE_VERSION}\"")
+
+        if(DEFINED CACHE{QT_IS_MACOS_UNIVERSAL})
+            message(STATUS "QT_IS_MACOS_UNIVERSAL: \"${QT_IS_MACOS_UNIVERSAL}\"")
+        endif()
         if(QT_UIKIT_SDK)
             message(STATUS "QT_UIKIT_SDK: \"${QT_UIKIT_SDK}\"")
+        endif()
+        qt_internal_get_first_osx_arch(osx_first_arch)
+        if(osx_first_arch)
+            message(STATUS "Configure tests main architecture (in multi-arch build): \"${osx_first_arch}\"")
         endif()
     endif()
 endfunction()
@@ -164,6 +232,15 @@ function(qt_internal_print_cmake_host_and_target_info)
     message(STATUS "CMAKE_CROSSCOMPILING: \"${CMAKE_CROSSCOMPILING}\"")
 endfunction()
 qt_internal_print_cmake_host_and_target_info()
+
+function(qt_internal_print_prefix_info)
+    message(STATUS "CMAKE_INSTALL_PREFIX: \"${CMAKE_INSTALL_PREFIX}\"")
+    message(STATUS "CMAKE_STAGING_PREFIX: \"${CMAKE_STAGING_PREFIX}\"")
+    message(STATUS "QT_BUILD_DIR: \"${QT_BUILD_DIR}\"")
+    message(STATUS "QT_INSTALL_DIR: \"${QT_INSTALL_DIR}\"")
+    message(STATUS "QT_WILL_INSTALL: \"${QT_WILL_INSTALL}\"")
+endfunction()
+qt_internal_print_prefix_info()
 
 function(qt_internal_print_cmake_compiler_info)
     message(STATUS "CMAKE_C_COMPILER: \"${CMAKE_C_COMPILER}\" (${CMAKE_C_COMPILER_VERSION})")
@@ -193,6 +270,7 @@ function(qt_internal_print_cmake_android_info)
         message(STATUS "ANDROID_NDK: \"${ANDROID_NDK}\"")
         message(STATUS "ANDROID_ABI: \"${ANDROID_ABI}\"")
         message(STATUS "ANDROID_PLATFORM: \"${ANDROID_PLATFORM}\"")
+        message(STATUS "ANDROID_NATIVE_API_LEVEL: \"${ANDROID_NATIVE_API_LEVEL}\"")
         message(STATUS "ANDROID_STL: \"${ANDROID_STL}\"")
         message(STATUS "ANDROID_PIE: \"${ANDROID_PIE}\"")
         message(STATUS "ANDROID_CPP_FEATURES: \"${ANDROID_CPP_FEATURES}\"")
@@ -200,7 +278,6 @@ function(qt_internal_print_cmake_android_info)
         message(STATUS "ANDROID_ARM_MODE: \"${ANDROID_ARM_MODE}\"")
         message(STATUS "ANDROID_ARM_NEON: \"${ANDROID_ARM_NEON}\"")
         message(STATUS "ANDROID_DISABLE_FORMAT_STRING_CHECKS: \"${ANDROID_DISABLE_FORMAT_STRING_CHECKS}\"")
-        message(STATUS "ANDROID_NATIVE_API_LEVEL: \"${ANDROID_NATIVE_API_LEVEL}\"")
         message(STATUS "ANDROID_LLVM_TRIPLE: \"${ANDROID_LLVM_TRIPLE}\"")
     endif()
 endfunction()

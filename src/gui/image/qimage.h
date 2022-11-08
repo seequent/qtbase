@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QIMAGE_H
 #define QIMAGE_H
@@ -47,6 +11,7 @@
 #include <QtGui/qpixelformat.h>
 #include <QtGui/qtransform.h>
 #include <QtCore/qbytearray.h>
+#include <QtCore/qbytearrayview.h>
 #include <QtCore/qrect.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qcontainerfwd.h>
@@ -104,6 +69,12 @@ public:
         Format_RGBA64_Premultiplied,
         Format_Grayscale16,
         Format_BGR888,
+        Format_RGBX16FPx4,
+        Format_RGBA16FPx4,
+        Format_RGBA16FPx4_Premultiplied,
+        Format_RGBX32FPx4,
+        Format_RGBA32FPx4,
+        Format_RGBA32FPx4_Premultiplied,
 #ifndef Q_QDOC
         NImageFormats
 #endif
@@ -125,14 +96,14 @@ public:
 
     QImage(const QImage &);
     QImage(QImage &&other) noexcept
-        : QPaintDevice(), d(qExchange(other.d, nullptr))
+        : QPaintDevice(), d(std::exchange(other.d, nullptr))
     {}
     ~QImage();
 
     QImage &operator=(const QImage &);
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QImage)
     void swap(QImage &other) noexcept
-    { qSwap(d, other.d); }
+    { qt_ptr_swap(d, other.d); }
 
     bool isNull() const;
 
@@ -219,6 +190,7 @@ public:
 
     qreal devicePixelRatio() const;
     void setDevicePixelRatio(qreal scaleFactor);
+    QSizeF deviceIndependentSize() const;
 
     void fill(uint pixel);
     void fill(const QColor &color);
@@ -262,20 +234,24 @@ public:
     void convertToColorSpace(const QColorSpace &);
     void setColorSpace(const QColorSpace &);
 
+    QImage colorTransformed(const QColorTransform &transform) const &;
+    QImage colorTransformed(const QColorTransform &transform) &&;
     void applyColorTransform(const QColorTransform &transform);
 
     bool load(QIODevice *device, const char *format);
     bool load(const QString &fileName, const char *format = nullptr);
-    bool loadFromData(const uchar *buf, int len, const char *format = nullptr);
-    bool loadFromData(const QByteArray &data, const char *aformat = nullptr)
-    { return loadFromData(reinterpret_cast<const uchar *>(data.constData()), data.size(), aformat); }
+    bool loadFromData(QByteArrayView data, const char *format = nullptr);
+    bool loadFromData(const uchar *buf, int len, const char *format = nullptr); // ### Qt 7: qsizetype
+    bool loadFromData(const QByteArray &data, const char *format = nullptr) // ### Qt 7: drop
+    { return loadFromData(QByteArrayView(data), format); }
 
     bool save(const QString &fileName, const char *format = nullptr, int quality = -1) const;
     bool save(QIODevice *device, const char *format = nullptr, int quality = -1) const;
 
-    static QImage fromData(const uchar *data, int size, const char *format = nullptr);
-    static QImage fromData(const QByteArray &data, const char *format = nullptr)
-    { return fromData(reinterpret_cast<const uchar *>(data.constData()), data.size(), format); }
+    static QImage fromData(QByteArrayView data, const char *format = nullptr);
+    static QImage fromData(const uchar *data, int size, const char *format = nullptr); // ### Qt 7: qsizetype
+    static QImage fromData(const QByteArray &data, const char *format = nullptr)  // ### Qt 7: drop
+    { return fromData(QByteArrayView(data), format); }
 
     qint64 cacheKey() const;
 
@@ -318,8 +294,9 @@ protected:
     bool convertToFormat_inplace(Format format, Qt::ImageConversionFlags flags);
     QImage smoothScaled(int w, int h) const;
 
+    void detachMetadata(bool invalidateCache = false);
+
 private:
-    friend class QWSOnScreenSurface;
     QImageData *d;
 
     friend class QRasterPlatformPixmap;

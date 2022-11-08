@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtNetwork module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QNETWORKREQUEST_H
 #define QNETWORKREQUEST_H
@@ -97,6 +61,9 @@ public:
         Http2DirectAttribute,
         ResourceTypeAttribute, // internal
         AutoDeleteReplyOnFinishAttribute,
+        ConnectionCacheExpiryTimeoutSecondsAttribute,
+        Http2CleartextAllowedAttribute,
+        UseCredentialsAttribute,
 
         User = 1000,
         UserMax = 32767
@@ -136,7 +103,7 @@ public:
     QNetworkRequest &operator=(QNetworkRequest &&other) noexcept { swap(other); return *this; }
     QNetworkRequest &operator=(const QNetworkRequest &other);
 
-    void swap(QNetworkRequest &other) noexcept { qSwap(d, other.d); }
+    void swap(QNetworkRequest &other) noexcept { d.swap(other.d); }
 
     bool operator==(const QNetworkRequest &other) const;
     inline bool operator!=(const QNetworkRequest &other) const
@@ -176,14 +143,18 @@ public:
 
     QString peerVerifyName() const;
     void setPeerVerifyName(const QString &peerName);
-#if QT_CONFIG(http) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(http) || defined(Q_QDOC)
     QHttp2Configuration http2Configuration() const;
     void setHttp2Configuration(const QHttp2Configuration &configuration);
-#endif // QT_CONFIG(http) || defined(Q_CLANG_QDOC)
-#if QT_CONFIG(http) || defined(Q_CLANG_QDOC) || defined (Q_OS_WASM)
+
+    qint64 decompressedSafetyCheckThreshold() const;
+    void setDecompressedSafetyCheckThreshold(qint64 threshold);
+#endif // QT_CONFIG(http) || defined(Q_QDOC)
+
+#if QT_CONFIG(http) || defined(Q_QDOC) || defined (Q_OS_WASM)
     int transferTimeout() const;
     void setTransferTimeout(int timeout = DefaultTransferTimeoutConstant);
-#endif // QT_CONFIG(http) || defined(Q_CLANG_QDOC) || defined (Q_OS_WASM)
+#endif // QT_CONFIG(http) || defined(Q_QDOC) || defined (Q_OS_WASM)
 private:
     QSharedDataPointer<QNetworkRequestPrivate> d;
     friend class QNetworkRequestPrivate;
@@ -193,7 +164,8 @@ Q_DECLARE_SHARED(QNetworkRequest)
 
 QT_END_NAMESPACE
 
-Q_DECLARE_METATYPE(QNetworkRequest)
-Q_DECLARE_METATYPE(QNetworkRequest::RedirectPolicy)
+QT_DECL_METATYPE_EXTERN(QNetworkRequest, Q_NETWORK_EXPORT)
+QT_DECL_METATYPE_EXTERN_TAGGED(QNetworkRequest::RedirectPolicy,
+                               QNetworkRequest__RedirectPolicy, Q_NETWORK_EXPORT)
 
 #endif

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdbustype.pro.
 
 #####################################################################
@@ -7,7 +10,7 @@
 qt_internal_add_benchmark(tst_bench_qdbustype
     SOURCES
         main.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::DBusPrivate
         Qt::Test
@@ -19,7 +22,7 @@ qt_internal_add_benchmark(tst_bench_qdbustype
 qt_internal_extend_target(tst_bench_qdbustype CONDITION QT_FEATURE_dbus_linked
     DEFINES
         QT_LINKED_LIBDBUS
-    PUBLIC_LIBRARIES
+    LIBRARIES
         dbus-1
 )
 

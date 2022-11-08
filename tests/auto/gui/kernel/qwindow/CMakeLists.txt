@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qwindow.pro.
 
 #####################################################################
@@ -7,7 +10,7 @@
 qt_internal_add_test(tst_qwindow
     SOURCES
         tst_qwindow.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -17,6 +20,6 @@ qt_internal_add_test(tst_qwindow
 #####################################################################
 
 qt_internal_extend_target(tst_qwindow CONDITION QT_FEATURE_dynamicgl AND WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         user32
 )

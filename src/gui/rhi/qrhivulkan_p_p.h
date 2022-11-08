@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Qt Gui module
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QRHIVULKAN_P_H
 #define QRHIVULKAN_P_H
@@ -75,7 +39,7 @@ typedef void * QVkAllocator;
 
 struct QVkBuffer : public QRhiBuffer
 {
-    QVkBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, int size);
+    QVkBuffer(QRhiImplementation *rhi, Type type, UsageFlags usage, quint32 size);
     ~QVkBuffer();
     void destroy() override;
     bool create() override;
@@ -86,7 +50,7 @@ struct QVkBuffer : public QRhiBuffer
     VkBuffer buffers[QVK_FRAMES_IN_FLIGHT];
     QVkAlloc allocations[QVK_FRAMES_IN_FLIGHT];
     struct DynamicUpdate {
-        int offset;
+        quint32 offset;
         QRhiBufferData data;
     };
     QVarLengthArray<DynamicUpdate, 16> pendingDynamicUpdates[QVK_FRAMES_IN_FLIGHT];
@@ -123,13 +87,14 @@ struct QVkRenderBuffer : public QRhiRenderBuffer
     QVkTexture *backingTexture = nullptr;
     VkFormat vkformat;
     int lastActiveFrameSlot = -1;
+    uint generation = 0;
     friend class QRhiVulkan;
 };
 
 struct QVkTexture : public QRhiTexture
 {
-    QVkTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize,
-               int sampleCount, Flags flags);
+    QVkTexture(QRhiImplementation *rhi, Format format, const QSize &pixelSize, int depth,
+               int arraySize, int sampleCount, Flags flags);
     ~QVkTexture();
     void destroy() override;
     bool create() override;
@@ -146,7 +111,7 @@ struct QVkTexture : public QRhiTexture
     QVkAlloc imageAlloc = nullptr;
     VkBuffer stagingBuffers[QVK_FRAMES_IN_FLIGHT];
     QVkAlloc stagingAllocations[QVK_FRAMES_IN_FLIGHT];
-    VkImageView perLevelImageViews[QRhi::MAX_LEVELS];
+    VkImageView perLevelImageViews[QRhi::MAX_MIP_LEVELS];
     bool owns = true;
     struct UsageState {
         // no tracking of subresource layouts (some operations can keep
@@ -185,15 +150,21 @@ struct QVkRenderPassDescriptor : public QRhiRenderPassDescriptor
     ~QVkRenderPassDescriptor();
     void destroy() override;
     bool isCompatible(const QRhiRenderPassDescriptor *other) const override;
+    QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() const override;
+    QVector<quint32> serializedFormat() const override;
     const QRhiNativeHandles *nativeHandles() override;
+
+    void updateSerializedFormat();
 
     VkRenderPass rp = VK_NULL_HANDLE;
     bool ownsRp = false;
     QVarLengthArray<VkAttachmentDescription, 8> attDescs;
     QVarLengthArray<VkAttachmentReference, 8> colorRefs;
     QVarLengthArray<VkAttachmentReference, 8> resolveRefs;
+    QVarLengthArray<VkSubpassDependency, 2> subpassDeps;
     bool hasDepthStencil = false;
     VkAttachmentReference dsRef;
+    QVector<quint32> serializedFormatData;
     QRhiVulkanRenderPassNativeHandles nativeHandlesStruct;
     int lastActiveFrameSlot = -1;
 };
@@ -208,13 +179,14 @@ struct QVkRenderTargetData
     int colorAttCount = 0;
     int dsAttCount = 0;
     int resolveAttCount = 0;
+    QRhiRenderTargetAttachmentTracker::ResIdList currentResIdList;
     static const int MAX_COLOR_ATTACHMENTS = 8;
 };
 
-struct QVkReferenceRenderTarget : public QRhiRenderTarget
+struct QVkSwapChainRenderTarget : public QRhiSwapChainRenderTarget
 {
-    QVkReferenceRenderTarget(QRhiImplementation *rhi);
-    ~QVkReferenceRenderTarget();
+    QVkSwapChainRenderTarget(QRhiImplementation *rhi, QRhiSwapChain *swapchain);
+    ~QVkSwapChainRenderTarget();
     void destroy() override;
 
     QSize pixelSize() const override;
@@ -250,6 +222,7 @@ struct QVkShaderResourceBindings : public QRhiShaderResourceBindings
     ~QVkShaderResourceBindings();
     void destroy() override;
     bool create() override;
+    void updateResources(UpdateFlags flags) override;
 
     QVarLengthArray<QRhiShaderResourceBinding, 8> sortedBindings;
     bool hasSlottedResource = false;
@@ -526,14 +499,18 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
                 uint32_t firstInstance;
             } drawIndexed;
             struct {
-                VkDebugMarkerMarkerInfoEXT marker;
-                int markerNameIndex;
+#ifdef VK_EXT_debug_utils
+                VkDebugUtilsLabelEXT label;
+                int labelNameIndex;
+#endif
             } debugMarkerBegin;
             struct {
             } debugMarkerEnd;
             struct {
-                VkDebugMarkerMarkerInfoEXT marker;
-                int markerNameIndex;
+#ifdef VK_EXT_debug_utils
+                VkDebugUtilsLabelEXT label;
+                int labelNameIndex;
+#endif
             } debugMarkerInsert;
             struct {
                 int trackerIndex;
@@ -594,6 +571,7 @@ struct QVkSwapChain : public QRhiSwapChain
     QRhiRenderTarget *currentFrameRenderTarget() override;
 
     QSize surfacePixelSize() override;
+    bool isFormatSupported(Format f) override;
 
     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
     bool createOrResize() override;
@@ -615,7 +593,7 @@ struct QVkSwapChain : public QRhiSwapChain
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     QVarLengthArray<VkPresentModeKHR, 8> supportedPresentationModes;
     VkDeviceMemory msaaImageMem = VK_NULL_HANDLE;
-    QVkReferenceRenderTarget rtWrapper;
+    QVkSwapChainRenderTarget rtWrapper;
     QVkCommandBuffer cbWrapper;
 
     struct ImageResources {
@@ -666,7 +644,7 @@ public:
     QRhiShaderResourceBindings *createShaderResourceBindings() override;
     QRhiBuffer *createBuffer(QRhiBuffer::Type type,
                              QRhiBuffer::UsageFlags usage,
-                             int size) override;
+                             quint32 size) override;
     QRhiRenderBuffer *createRenderBuffer(QRhiRenderBuffer::Type type,
                                          const QSize &pixelSize,
                                          int sampleCount,
@@ -674,6 +652,8 @@ public:
                                          QRhiTexture::Format backingFormatHint) override;
     QRhiTexture *createTexture(QRhiTexture::Format format,
                                const QSize &pixelSize,
+                               int depth,
+                               int arraySize,
                                int sampleCount,
                                QRhiTexture::Flags flags) override;
     QRhiSampler *createSampler(QRhiSampler::Filter magFilter,
@@ -754,10 +734,13 @@ public:
     int resourceLimit(QRhi::ResourceLimit limit) const override;
     const QRhiNativeHandles *nativeHandles() override;
     QRhiDriverInfo driverInfo() const override;
-    void sendVMemStatsToProfiler() override;
+    QRhiStats statistics() override;
     bool makeThreadLocalNativeContextCurrent() override;
     void releaseCachedResources() override;
     bool isDeviceLost() const override;
+
+    QByteArray pipelineCacheData() override;
+    void setPipelineCacheData(const QByteArray &data) override;
 
     VkResult createDescriptorPool(VkDescriptorPool *pool);
     bool allocateDescriptorSet(VkDescriptorSetAllocateInfo *allocInfo, VkDescriptorSet *result, int *resultPoolIndex);
@@ -782,7 +765,7 @@ public:
                                    bool preserveDs,
                                    QRhiRenderBuffer *depthStencilBuffer,
                                    QRhiTexture *depthTexture);
-    bool ensurePipelineCache();
+    bool ensurePipelineCache(const void *initialData = nullptr, size_t initialDataSize = 0);
     VkShaderModule createShader(const QByteArray &spirv);
 
     void prepareNewFrame(QRhiCommandBuffer *cb);
@@ -816,7 +799,7 @@ public:
     void executeDeferredReleases(bool forced = false);
     void finishActiveReadbacks(bool forced = false);
 
-    void setObjectName(uint64_t object, VkDebugReportObjectTypeEXT type, const QByteArray &name, int slot = -1);
+    void setObjectName(uint64_t object, VkObjectType type, const QByteArray &name, int slot = -1);
     void trackedBufferBarrier(QVkCommandBuffer *cbD, QVkBuffer *bufD, int slot,
                               VkAccessFlags access, VkPipelineStageFlags stage);
     void trackedImageBarrier(QVkCommandBuffer *cbD, QVkTexture *texD,
@@ -841,35 +824,46 @@ public:
     int gfxQueueFamilyIdx = -1;
     int gfxQueueIdx = 0;
     VkQueue gfxQueue = VK_NULL_HANDLE;
-    bool hasCompute = false;
     quint32 timestampValidBits = 0;
     bool importedAllocator = false;
     QVkAllocator allocator = nullptr;
     QVulkanFunctions *f = nullptr;
     QVulkanDeviceFunctions *df = nullptr;
+    QRhi::Flags rhiFlags;
     VkPhysicalDeviceFeatures physDevFeatures;
     VkPhysicalDeviceProperties physDevProperties;
     VkDeviceSize ubufAlign;
     VkDeviceSize texbufAlign;
-    bool hasWideLines = false;
     bool deviceLost = false;
     bool releaseCachedResourcesCalledBeforeFrameStart = false;
 
-    bool debugMarkersAvailable = false;
-    bool vertexAttribDivisorAvailable = false;
-    PFN_vkCmdDebugMarkerBeginEXT vkCmdDebugMarkerBegin = nullptr;
-    PFN_vkCmdDebugMarkerEndEXT vkCmdDebugMarkerEnd = nullptr;
-    PFN_vkCmdDebugMarkerInsertEXT vkCmdDebugMarkerInsert = nullptr;
-    PFN_vkDebugMarkerSetObjectNameEXT vkDebugMarkerSetObjectName = nullptr;
+#ifdef VK_EXT_debug_utils
+    PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT = nullptr;
+    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT = nullptr;
+    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT = nullptr;
+    PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT = nullptr;
+#endif
 
     PFN_vkCreateSwapchainKHR vkCreateSwapchainKHR = nullptr;
     PFN_vkDestroySwapchainKHR vkDestroySwapchainKHR;
     PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR;
     PFN_vkAcquireNextImageKHR vkAcquireNextImageKHR;
     PFN_vkQueuePresentKHR vkQueuePresentKHR;
-    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR = nullptr;
+    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR vkGetPhysicalDeviceSurfaceCapabilitiesKHR;
     PFN_vkGetPhysicalDeviceSurfaceFormatsKHR vkGetPhysicalDeviceSurfaceFormatsKHR;
     PFN_vkGetPhysicalDeviceSurfacePresentModesKHR vkGetPhysicalDeviceSurfacePresentModesKHR;
+
+    struct {
+        bool compute = false;
+        bool wideLines = false;
+        bool debugUtils = false;
+        bool vertexAttribDivisor = false;
+        bool texture3DSliceAs2D = false;
+        bool tessellation = false;
+        bool geometryShader = false;
+        bool nonFillPolygonMode = false;
+        QVersionNumber apiVersion;
+    } caps;
 
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
     struct DescriptorPoolData {
@@ -925,7 +919,7 @@ public:
     struct BufferReadback {
         int activeFrameSlot = -1;
         QRhiBufferReadbackResult *result;
-        int byteSize;
+        quint32 byteSize;
         VkBuffer stagingBuf;
         QVkAlloc stagingAlloc;
     };
@@ -972,7 +966,7 @@ public:
                 QVkAlloc allocation;
                 VkBuffer stagingBuffers[QVK_FRAMES_IN_FLIGHT];
                 QVkAlloc stagingAllocations[QVK_FRAMES_IN_FLIGHT];
-                VkImageView extraImageViews[QRhi::MAX_LEVELS];
+                VkImageView extraImageViews[QRhi::MAX_MIP_LEVELS];
             } texture;
             struct {
                 VkSampler sampler;

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QFONTENGINE_CORETEXT_P_H
 #define QFONTENGINE_CORETEXT_P_H
@@ -77,7 +41,6 @@ public:
     bool stringToCMap(const QChar *str, int len, QGlyphLayout *glyphs, int *nglyphs, ShaperFlags flags) const override;
     void recalcAdvances(QGlyphLayout *, ShaperFlags) const override;
 
-    glyph_metrics_t boundingBox(const QGlyphLayout &glyphs) override;
     glyph_metrics_t boundingBox(glyph_t glyph) override;
 
     QFixed capHeight() const override;
@@ -91,7 +54,8 @@ public:
     bool canRender(const QChar *string, int len) const override;
 
     int synthesized() const override { return synthesisFlags; }
-    bool supportsSubPixelPositions() const override { return true; }
+    bool supportsHorizontalSubPixelPositions() const override { return true; }
+    bool supportsVerticalSubPixelPositions() const override { return false; }
 
     QFixed lineThickness() const override;
     QFixed underlinePosition() const override;
@@ -101,11 +65,11 @@ public:
     FaceId faceId() const override;
     bool getSfntTableData(uint /*tag*/, uchar * /*buffer*/, uint * /*length*/) const override;
     void getUnscaledGlyph(glyph_t glyph, QPainterPath *path, glyph_metrics_t *metrics) override;
-    QImage alphaMapForGlyph(glyph_t, QFixed subPixelPosition) override;
-    QImage alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t) override;
-    QImage alphaRGBMapForGlyph(glyph_t, QFixed subPixelPosition, const QTransform &t) override;
-    glyph_metrics_t alphaMapBoundingBox(glyph_t glyph, QFixed, const QTransform &matrix, GlyphFormat) override;
-    QImage bitmapForGlyph(glyph_t, QFixed subPixelPosition, const QTransform &t, const QColor &color) override;
+    QImage alphaMapForGlyph(glyph_t, const QFixedPoint &subPixelPosition) override;
+    QImage alphaMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &t) override;
+    QImage alphaRGBMapForGlyph(glyph_t, const QFixedPoint &subPixelPosition, const QTransform &t) override;
+    glyph_metrics_t alphaMapBoundingBox(glyph_t glyph, const QFixedPoint &, const QTransform &matrix, GlyphFormat) override;
+    QImage bitmapForGlyph(glyph_t, const QFixedPoint &subPixelPosition, const QTransform &t, const QColor &color) override;
     QFixed emSquareSize() const override;
     void doKerning(QGlyphLayout *g, ShaperFlags flags) const override;
 
@@ -132,7 +96,7 @@ public:
 protected:
     QCoreTextFontEngine(const QFontDef &def);
     void init();
-    QImage imageForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &m, const QColor &color = QColor());
+    QImage imageForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &m, const QColor &color = QColor());
     void loadAdvancesForGlyphs(QVarLengthArray<CGGlyph> &cgGlyphs, QGlyphLayout *glyphs) const;
     bool hasColorGlyphs() const;
     bool shouldAntialias() const;

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qpixmap.pro.
 
 #####################################################################
@@ -25,7 +28,7 @@ list(APPEND test_data ${test_data_glob})
 qt_internal_add_test(tst_qpixmap
     SOURCES
         tst_qpixmap.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -95,13 +98,13 @@ qt_internal_add_resource(tst_qpixmap "qpixmap"
 #####################################################################
 
 qt_internal_extend_target(tst_qpixmap CONDITION TARGET Qt::Widgets
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Widgets
         Qt::WidgetsPrivate
 )
 
 qt_internal_extend_target(tst_qpixmap CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         gdi32
         user32
 )

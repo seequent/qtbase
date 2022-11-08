@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qmatrix4x4.h"
 #include <QtCore/qmath.h>
@@ -627,21 +591,30 @@ QMatrix4x4& QMatrix4x4::operator/=(float divisor)
 
 #ifndef QT_NO_VECTOR3D
 
+#if QT_DEPRECATED_SINCE(6, 1)
+
 /*!
     \fn QVector3D operator*(const QVector3D& vector, const QMatrix4x4& matrix)
     \relates QMatrix4x4
 
+    \deprecated [6.1] Convert the QVector3D to a QVector4D with 1.0 as the w coordinate, then multiply.
+
     Returns the result of transforming \a vector according to \a matrix,
-    with the matrix applied post-vector.
+    with the matrix applied post-vector. The vector is transformed as a point.
 */
 
 /*!
     \fn QVector3D operator*(const QMatrix4x4& matrix, const QVector3D& vector)
     \relates QMatrix4x4
 
+    \deprecated [6.1] Use QMatrix4x4::map() instead.
+
     Returns the result of transforming \a vector according to \a matrix,
-    with the matrix applied pre-vector.
+    with the matrix applied pre-vector. The vector is transformed as a
+    projective point.
 */
+
+#endif
 
 #endif
 
@@ -681,9 +654,13 @@ QMatrix4x4& QMatrix4x4::operator/=(float divisor)
     with the matrix applied post-point.
 */
 
+#if QT_DEPRECATED_SINCE(6, 1)
+
 /*!
     \fn QPoint operator*(const QMatrix4x4& matrix, const QPoint& point)
     \relates QMatrix4x4
+
+    \deprecated [6.1] Use QMatrix4x4::map() instead.
 
     Returns the result of transforming \a point according to \a matrix,
     with the matrix applied pre-point.
@@ -693,9 +670,13 @@ QMatrix4x4& QMatrix4x4::operator/=(float divisor)
     \fn QPointF operator*(const QMatrix4x4& matrix, const QPointF& point)
     \relates QMatrix4x4
 
+    \deprecated [6.1] Use QMatrix4x4::map() instead.
+
     Returns the result of transforming \a point according to \a matrix,
     with the matrix applied pre-point.
 */
+
+#endif
 
 /*!
     \fn QMatrix4x4 operator-(const QMatrix4x4& matrix)
@@ -1183,12 +1164,15 @@ void QMatrix4x4::rotate(float angle, float x, float y, float z)
 /*!
     \internal
 */
-void QMatrix4x4::projectedRotate(float angle, float x, float y, float z)
+void QMatrix4x4::projectedRotate(float angle, float x, float y, float z, float distanceToPlane)
 {
     // Used by QGraphicsRotation::applyTo() to perform a rotation
     // and projection back to 2D in a single step.
+    if (qIsNull(distanceToPlane))
+        return rotate(angle, x, y, z);
     if (angle == 0.0f)
         return;
+
     float c, s;
     if (angle == 90.0f || angle == -270.0f) {
         s = 1.0f;
@@ -1204,6 +1188,8 @@ void QMatrix4x4::projectedRotate(float angle, float x, float y, float z)
         c = std::cos(a);
         s = std::sin(a);
     }
+
+    const qreal d = 1.0 / distanceToPlane;
     if (x == 0.0f) {
         if (y == 0.0f) {
             if (z != 0.0f) {
@@ -1227,10 +1213,11 @@ void QMatrix4x4::projectedRotate(float angle, float x, float y, float z)
             // Rotate around the Y axis.
             if (y < 0)
                 s = -s;
-            m[0][0] = m[0][0] * c + m[3][0] * s * inv_dist_to_plane;
-            m[0][1] = m[0][1] * c + m[3][1] * s * inv_dist_to_plane;
-            m[0][2] = m[0][2] * c + m[3][2] * s * inv_dist_to_plane;
-            m[0][3] = m[0][3] * c + m[3][3] * s * inv_dist_to_plane;
+            s *= d;
+            m[0][0] = m[0][0] * c + m[3][0] * s;
+            m[0][1] = m[0][1] * c + m[3][1] * s;
+            m[0][2] = m[0][2] * c + m[3][2] * s;
+            m[0][3] = m[0][3] * c + m[3][3] * s;
             flagBits = General;
             return;
         }
@@ -1238,10 +1225,11 @@ void QMatrix4x4::projectedRotate(float angle, float x, float y, float z)
         // Rotate around the X axis.
         if (x < 0)
             s = -s;
-        m[1][0] = m[1][0] * c - m[3][0] * s * inv_dist_to_plane;
-        m[1][1] = m[1][1] * c - m[3][1] * s * inv_dist_to_plane;
-        m[1][2] = m[1][2] * c - m[3][2] * s * inv_dist_to_plane;
-        m[1][3] = m[1][3] * c - m[3][3] * s * inv_dist_to_plane;
+        s *= d;
+        m[1][0] = m[1][0] * c - m[3][0] * s;
+        m[1][1] = m[1][1] * c - m[3][1] * s;
+        m[1][2] = m[1][2] * c - m[3][2] * s;
+        m[1][3] = m[1][3] * c - m[3][3] * s;
         flagBits = General;
         return;
     }
@@ -1268,13 +1256,23 @@ void QMatrix4x4::projectedRotate(float angle, float x, float y, float z)
     rot.m[1][2] = 0.0f;
     rot.m[2][2] = 1.0f;
     rot.m[3][2] = 0.0f;
-    rot.m[0][3] = (x * z * ic - y * s) * -inv_dist_to_plane;
-    rot.m[1][3] = (y * z * ic + x * s) * -inv_dist_to_plane;
+    rot.m[0][3] = (x * z * ic - y * s) * -d;
+    rot.m[1][3] = (y * z * ic + x * s) * -d;
     rot.m[2][3] = 0.0f;
     rot.m[3][3] = 1.0f;
     rot.flagBits = General;
     *this *= rot;
 }
+
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+/*!
+    \internal
+*/
+void QMatrix4x4::projectedRotate(float angle, float x, float y, float z)
+{
+    projectedRotate(angle, x, y, z, 1024.0);
+}
+#endif
 
 /*!
     \fn int QMatrix4x4::flags() const
@@ -1600,7 +1598,7 @@ void QMatrix4x4::viewport(float left, float bottom, float width, float height, f
     \deprecated
 
     Flips between right-handed and left-handed coordinate systems
-    by multiplying the y and z co-ordinates by -1.  This is normally
+    by multiplying the y and z coordinates by -1.  This is normally
     used to create a left-handed orthographic view without scaling
     the viewport as ortho() does.
 
@@ -1645,7 +1643,7 @@ void QMatrix4x4::copyDataTo(float *values) const
 
     The returned QTransform is formed by simply dropping the
     third row and third column of the QMatrix4x4.  This is suitable
-    for implementing orthographic projections where the z co-ordinate
+    for implementing orthographic projections where the z coordinate
     should be dropped rather than projected.
 */
 QTransform QMatrix4x4::toTransform() const
@@ -1660,14 +1658,14 @@ QTransform QMatrix4x4::toTransform() const
     corresponds to this matrix.
 
     If \a distanceToPlane is non-zero, it indicates a projection
-    factor to use to adjust for the z co-ordinate.  The value of
+    factor to use to adjust for the z coordinate.  The value of
     1024 corresponds to the projection factor used
     by QTransform::rotate() for the x and y axes.
 
     If \a distanceToPlane is zero, then the returned QTransform
     is formed by simply dropping the third row and third column
     of the QMatrix4x4.  This is suitable for implementing
-    orthographic projections where the z co-ordinate should
+    orthographic projections where the z coordinate should
     be dropped rather than projected.
 */
 QTransform QMatrix4x4::toTransform(float distanceToPlane) const
@@ -1701,6 +1699,7 @@ QTransform QMatrix4x4::toTransform(float distanceToPlane) const
     \fn QPoint QMatrix4x4::map(const QPoint& point) const
 
     Maps \a point by multiplying this matrix by \a point.
+    The matrix is applied pre-point.
 
     \sa mapRect()
 */
@@ -1708,7 +1707,8 @@ QTransform QMatrix4x4::toTransform(float distanceToPlane) const
 /*!
     \fn QPointF QMatrix4x4::map(const QPointF& point) const
 
-    Maps \a point by multiplying this matrix by \a point.
+    Maps \a point by post-multiplying this matrix by \a point.
+    The matrix is applied pre-point.
 
     \sa mapRect()
 */
@@ -1718,7 +1718,12 @@ QTransform QMatrix4x4::toTransform(float distanceToPlane) const
 /*!
     \fn QVector3D QMatrix4x4::map(const QVector3D& point) const
 
-    Maps \a point by multiplying this matrix by \a point.
+    Maps \a point by multiplying this matrix by \a point extended to a 4D
+    vector by assuming 1.0 for the w coordinate. The matrix is applied
+    pre-point.
+
+    \note This function is not the same as mapVector(). For points, always use
+    map(). mapVector() is suitable for vectors (directions) only.
 
     \sa mapRect(), mapVector()
 */
@@ -1728,7 +1733,7 @@ QTransform QMatrix4x4::toTransform(float distanceToPlane) const
 
     Maps \a vector by multiplying the top 3x3 portion of this matrix
     by \a vector.  The translation and projection components of
-    this matrix are ignored.
+    this matrix are ignored. The matrix is applied pre-vector.
 
     \sa map()
 */
@@ -1741,6 +1746,7 @@ QTransform QMatrix4x4::toTransform(float distanceToPlane) const
     \fn QVector4D QMatrix4x4::map(const QVector4D& point) const;
 
     Maps \a point by multiplying this matrix by \a point.
+    The matrix is applied pre-point.
 
     \sa mapRect()
 */
@@ -1902,15 +1908,15 @@ QMatrix4x4 QMatrix4x4::orthonormalInverse() const
 
     Normally the QMatrix4x4 class keeps track of this special type internally
     as operations are performed.  However, if the matrix is modified
-    directly with \l {QMatrix4x4::}{operator()()} or data(), then
-    QMatrix4x4 will lose track of the special type and will revert to the
-    safest but least efficient operations thereafter.
+    directly with operator()(int, int) or data(), then QMatrix4x4 will
+    lose track of the special type and will revert to the safest but least
+    efficient operations thereafter.
 
     By calling optimize() after directly modifying the matrix,
     the programmer can force QMatrix4x4 to recover the special type if
     the elements appear to conform to one of the known optimized types.
 
-    \sa {QMatrix4x4::}{operator()()}, data(), translate()
+    \sa operator()(int, int), data(), translate()
 */
 void QMatrix4x4::optimize()
 {

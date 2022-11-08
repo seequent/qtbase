@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qitemdelegate.pro.
 
 #####################################################################
@@ -7,7 +10,7 @@
 qt_internal_add_test(tst_qitemdelegate
     SOURCES
         tst_qitemdelegate.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
         Qt::WidgetsPrivate
@@ -17,6 +20,6 @@ qt_internal_add_test(tst_qitemdelegate
 #####################################################################
 
 qt_internal_extend_target(tst_qitemdelegate CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         user32
 )

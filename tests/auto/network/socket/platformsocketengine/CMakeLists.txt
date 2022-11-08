@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from platformsocketengine.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -11,11 +14,10 @@ endif()
 qt_internal_add_test(tst_platformsocketengine
     SOURCES
         tst_platformsocketengine.cpp
-    INCLUDE_DIRECTORIES
-        ${QT_SOURCE_TREE}/src/network
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
+    QT_TEST_SERVER_LIST "cyrus" # special case
 )
 
 #### Keys ignored in scope 1:.:.:platformsocketengine.pro:<TRUE>:
@@ -26,6 +28,6 @@ qt_internal_add_test(tst_platformsocketengine
 #####################################################################
 
 qt_internal_extend_target(tst_platformsocketengine CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ws2_32
 )

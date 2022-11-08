@@ -1,4 +1,5 @@
-# Generated from qmutex.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## tst_bench_qmutex Binary:
@@ -6,10 +7,8 @@
 
 qt_internal_add_benchmark(tst_bench_qmutex
     SOURCES
-        tst_qmutex.cpp
-    PUBLIC_LIBRARIES
+        tst_bench_qmutex.cpp
+    LIBRARIES
+        Qt::CorePrivate
         Qt::Test
 )
-
-#### Keys ignored in scope 1:.:.:qmutex.pro:<TRUE>:
-# TEMPLATE = "app"

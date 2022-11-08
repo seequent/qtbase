@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -104,24 +79,27 @@ enum QLibraryOperation {
     QString sys_qualifiedLibraryName(const QString &fileName);
 
     QString directory;
-#ifdef Q_OS_ANDROID
-    QSharedPointer<QTemporaryDir> temporaryDir;
-#endif
 private slots:
     void initTestCase();
+    void cleanup();
 
-    void load();
     void load_data();
-    void library_data();
+    void load();
     void resolve_data();
     void resolve();
     void unload_data();
     void unload();
     void unload_after_implicit_load();
+    void setFilenameAfterFailedLoad();
+    void loadAfterFailedLoad();
     void isLibrary_data();
     void isLibrary();
     void version_data();
     void version();
+    void loadTwoVersions();
+    void setFileNameAndVersionTwice();
+    void setFileNameAndVersionAfterFailedLoad_data() { version_data(); }
+    void setFileNameAndVersionAfterFailedLoad();
     void errorString_data();
     void errorString();
     void loadHints();
@@ -141,30 +119,47 @@ typedef int (*VersionFunction)(void);
 void tst_QLibrary::initTestCase()
 {
 #ifdef Q_OS_ANDROID
-    auto tempDir = QEXTRACTTESTDATA("android_test_data");
-
-    QVERIFY2(QDir::setCurrent(tempDir->path()), qPrintable("Could not chdir to " + tempDir->path()));
-
-    // copy :/library_path into ./library_path
-    QVERIFY(QDir().mkdir("library_path"));
-    QDirIterator iterator(":/library_path", QDirIterator::Subdirectories);
-    while (iterator.hasNext()) {
-        iterator.next();
-        QFileInfo sourceFileInfo(iterator.path());
-        QFileInfo targetFileInfo("./library_path/" + sourceFileInfo.fileName());
-        if (!targetFileInfo.exists()) {
-            QDir().mkpath(targetFileInfo.path());
-            QVERIFY(QFile::copy(sourceFileInfo.filePath(), targetFileInfo.filePath()));
-        }
-    }
-    directory = tempDir->path();
-    temporaryDir = std::move(tempDir);
+    const QStringList paths = QCoreApplication::libraryPaths();
+    QVERIFY(!paths.isEmpty());
+    directory = paths.first();
 #else
     // chdir to our testdata directory, and use relative paths in some tests.
     QString testdatadir = QFileInfo(QFINDTESTDATA("library_path")).absolutePath();
     QVERIFY2(QDir::setCurrent(testdatadir), qPrintable("Could not chdir to " + testdatadir));
     directory = QCoreApplication::applicationDirPath();
 #endif
+}
+
+void tst_QLibrary::cleanup()
+{
+    // unload the libraries, if they are still loaded after the test ended
+    // (probably in a failure)
+
+    static struct {
+        QString name;
+        int version = -1;
+    } libs[] = {
+        { directory + "/mylib" },
+        { directory + "/mylib", 1 },
+        { directory + "/mylib", 2 },
+        { sys_qualifiedLibraryName("mylib") },
+
+        // stuff that load_data() succeeds with
+        { directory + "/" PREFIX "mylib" },
+        { directory + "/" PREFIX "mylib" SUFFIX },
+#if defined(Q_OS_WIN32)
+        { directory + "/mylib.dl2" },
+        { directory + "/system.qt.test.mylib.dll" },
+#elif !defined(Q_OS_ANDROID)
+        // .so even on macOS
+        { directory + "/libmylib.so2" },
+        { directory + "/system.qt.test.mylib.so" },
+#endif
+
+    };
+    for (const auto &entry : libs) {
+        do {} while (QLibrary(entry.name, entry.version).unload());
+    }
 }
 
 void tst_QLibrary::version_data()
@@ -203,6 +198,70 @@ void tst_QLibrary::version()
 #endif
 }
 
+void tst_QLibrary::loadTwoVersions()
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+    QSKIP("Versioned files are not generated for this OS, so this test is not applicable.");
+#endif
+
+    QLibrary lib1(directory + "/mylib", 1);
+    QLibrary lib2(directory + "/mylib", 2);
+    QVERIFY(!lib1.isLoaded());
+    QVERIFY(!lib2.isLoaded());
+
+    // load the first one
+    QVERIFY(lib1.load());
+    QVERIFY(lib1.isLoaded());
+
+    // let's see if we can load the second one too
+    QVERIFY(lib2.load());
+    QVERIFY(lib2.isLoaded());
+
+    auto p1 = (VersionFunction)lib1.resolve("mylibversion");
+    QVERIFY(p1);
+
+    auto p2 = (VersionFunction)lib2.resolve("mylibversion");
+    QVERIFY(p2);
+
+    QCOMPARE_NE(p1(), p2());
+
+    lib2.unload();
+    lib1.unload();
+}
+
+void tst_QLibrary::setFileNameAndVersionTwice()
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+    QSKIP("Versioned files are not generated for this OS, so this test is not applicable.");
+#endif
+
+    QLibrary library(directory + "/mylib", 1);
+    QVERIFY(library.load());
+    QVERIFY(library.isLoaded());
+
+    auto p1 = (VersionFunction)library.resolve("mylibversion");
+    QVERIFY(p1);
+    // don't .unload()
+
+    library.setFileNameAndVersion(directory + "/mylib", 2);
+    QVERIFY(!library.isLoaded());
+    QVERIFY(library.load());
+    QVERIFY(library.isLoaded());
+
+    auto p2 = (VersionFunction)library.resolve("mylibversion");
+    QVERIFY(p2);
+    QCOMPARE_NE(p1(), p2());
+
+    QVERIFY(library.unload());
+    QVERIFY(!library.isLoaded());
+
+    // set back
+    library.setFileNameAndVersion(directory + "/mylib", 1);
+    QVERIFY(library.isLoaded());
+    QVERIFY(library.unload());
+    QVERIFY(!library.isLoaded());
+}
+
 void tst_QLibrary::load_data()
 {
     QTest::addColumn<QString>("lib");
@@ -224,7 +283,10 @@ void tst_QLibrary::load_data()
     QTest::newRow( "ok03 (with many dots)" ) << appDir + "/system.qt.test.mylib.dll" << true;
 # elif defined Q_OS_UNIX
     QTest::newRow( "ok01 (with suffix)" ) << appDir + "/libmylib" SUFFIX << true;
+#ifndef Q_OS_ANDROID
+    // We do not support non-standard suffixes on Android
     QTest::newRow( "ok02 (with non-standard suffix)" ) << appDir + "/libmylib.so2" << true;
+#endif
     QTest::newRow( "ok03 (with many dots)" ) << appDir + "/system.qt.test.mylib.so" << true;
 # endif  // Q_OS_UNIX
 }
@@ -280,6 +342,76 @@ void tst_QLibrary::unload_after_implicit_load()
     QCOMPARE(library.isLoaded(), false);
 }
 
+void tst_QLibrary::setFilenameAfterFailedLoad()
+{
+#if defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
+    QSKIP("### FIXME: The helper libraries are currently messed up in the CMakeLists.txt");
+#endif
+
+    QLibrary library(directory + "/nolib");
+    QVERIFY(!library.load());
+    QVERIFY(!library.isLoaded());
+    QVERIFY(!library.load());
+    QVERIFY(!library.isLoaded());
+
+    library.setFileName(directory + "/mylib");
+    QVERIFY(library.load());
+    QVERIFY(library.isLoaded());
+    auto p = (VersionFunction)library.resolve("mylibversion");
+    QVERIFY(p);
+    QCOMPARE(p(), 2);
+    library.unload();
+}
+
+void tst_QLibrary::setFileNameAndVersionAfterFailedLoad()
+{
+    QLibrary library(directory + "/nolib");
+    QVERIFY(!library.load());
+    QVERIFY(!library.isLoaded());
+    QVERIFY(!library.load());
+    QVERIFY(!library.isLoaded());
+
+#if !defined(Q_OS_AIX) && !defined(Q_OS_WIN)
+    QFETCH(QString, lib);
+    QFETCH(int, loadversion);
+    QFETCH(int, resultversion);
+
+    library.setFileNameAndVersion(directory + '/' + lib, loadversion);
+    QVERIFY(library.load());
+    QVERIFY(library.isLoaded());
+    auto p = (VersionFunction)library.resolve("mylibversion");
+    QVERIFY(p);
+    QCOMPARE(p(), resultversion);
+    library.unload();
+#endif
+}
+
+void tst_QLibrary::loadAfterFailedLoad()
+{
+#if defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
+    QSKIP("### FIXME: The helper libraries are currently messed up in the CMakeLists.txt");
+#endif
+
+    QTemporaryDir dir;
+    QLibrary library(dir.path() + "/mylib");
+    QVERIFY(!library.load());
+    QVERIFY(!library.isLoaded());
+    QVERIFY(!library.load());
+    QVERIFY(!library.isLoaded());
+
+    // now copy the actual lib file into our dir
+    QString actualLib = PREFIX "mylib" SUFFIX;
+    QVERIFY(QFile::copy(directory + '/' + actualLib, dir.filePath(actualLib)));
+
+    // try again, must succeed now
+    QVERIFY(library.load());
+    QVERIFY(library.isLoaded());
+    auto p = (VersionFunction)library.resolve("mylibversion");
+    QVERIFY(p);
+    QCOMPARE(p(), 2);
+    library.unload();
+}
+
 void tst_QLibrary::resolve_data()
 {
     QTest::addColumn<QString>("lib");
@@ -308,11 +440,6 @@ void tst_QLibrary::resolve()
         QVERIFY( func == 0 );
     }
     library.unload();
-}
-
-void tst_QLibrary::library_data()
-{
-    QTest::addColumn<QString>("lib");
 }
 
 void tst_QLibrary::isLibrary_data()
@@ -438,7 +565,10 @@ void tst_QLibrary::loadHints_data()
     QTest::newRow( "ok03 (with many dots)" ) << appDir + "/system.qt.test.mylib.dll" << int(lh) << true;
 # elif defined Q_OS_UNIX
     QTest::newRow( "ok01 (with suffix)" ) << appDir + "/libmylib" SUFFIX << int(lh) << true;
+#ifndef Q_OS_ANDROID
+    // We do not support non-standard suffixes on Android
     QTest::newRow( "ok02 (with non-standard suffix)" ) << appDir + "/libmylib.so2" << int(lh) << true;
+#endif
     QTest::newRow( "ok03 (with many dots)" ) << appDir + "/system.qt.test.mylib.so" << int(lh) << true;
 # endif  // Q_OS_UNIX
 }

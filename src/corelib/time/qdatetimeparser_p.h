@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QDATETIMEPARSER_P_H
 #define QDATETIMEPARSER_P_H
@@ -83,8 +47,7 @@ public:
         DateTimeEdit
     };
     QDateTimeParser(QMetaType::Type t, Context ctx, const QCalendar &cal = QCalendar())
-        : currentSectionIndex(-1), cachedDay(-1), parserType(t),
-        fixday(false), context(ctx), calendar(cal)
+        : parserType(t), context(ctx), calendar(cal)
     {
         defaultLocale = QLocale::system();
         first.type = FirstSection;
@@ -141,7 +104,7 @@ public:
     struct Q_CORE_EXPORT SectionNode {
         Section type;
         mutable int pos;
-        int count;
+        int count; // (used as Case(count) indicator for AmPmSection)
         int zeroesAdded;
 
         static QString name(Section s);
@@ -169,11 +132,6 @@ public:
     enum AmPm {
         AmText,
         PmText
-    };
-
-    enum Case {
-        UpperCase,
-        LowerCase
     };
 
     StateNode parse(const QString &input, int position,
@@ -215,11 +173,11 @@ private:
                   int year, QString *monthName = nullptr, int *used = nullptr) const;
     int findDay(const QString &str1, int intDaystart, int sectionIndex,
                 QString *dayName = nullptr, int *used = nullptr) const;
-    ParsedSection findUtcOffset(QStringView str) const;
+    ParsedSection findUtcOffset(QStringView str, int mode) const;
     ParsedSection findTimeZoneName(QStringView str, const QDateTime &when) const;
     ParsedSection findTimeZone(QStringView str, const QDateTime &when,
-                               int maxVal, int minVal) const;
-    // Implemented in qdatetime.cpp:
+                               int maxVal, int minVal, int mode) const;
+    // Implemented in qlocaltime.cpp:
     static int startsWithLocalTimeZone(const QStringView name);
 
     enum AmPmFinder {
@@ -239,6 +197,14 @@ private:
     {
         return potentialValue(QStringView(str), min, max, index, currentValue, insert);
     }
+
+    enum Case {
+        NativeCase,
+        LowerCase,
+        UpperCase
+    };
+
+    QString getAmPmText(AmPm ap, Case cs) const;
 
     friend class QDTPUnitTestParser;
 
@@ -263,14 +229,13 @@ protected: // for the benefit of QDateTimeEditPrivate
         return skipToNextSection(section, current, QStringView(sectionText));
     }
     QString stateName(State s) const;
-    QString getAmPmText(AmPm ap, Case cs) const;
 
     virtual QDateTime getMinimum() const;
     virtual QDateTime getMaximum() const;
     virtual int cursorPosition() const { return -1; }
     virtual QLocale locale() const { return defaultLocale; }
 
-    mutable int currentSectionIndex;
+    mutable int currentSectionIndex = int(NoSectionIndex);
     Sections display;
     /*
         This stores the most recently selected day.
@@ -285,7 +250,7 @@ protected: // for the benefit of QDateTimeEditPrivate
         This is good for when users have selected their desired day and are scrolling up or down in the month or year section
         and do not want smaller months (or non-leap years) to alter the day that they chose.
     */
-    mutable int cachedDay;
+    mutable int cachedDay = -1;
     mutable QString m_text;
     QList<SectionNode> sectionNodes;
     SectionNode first, last, none, popup;
@@ -293,7 +258,7 @@ protected: // for the benefit of QDateTimeEditPrivate
     QString displayFormat;
     QLocale defaultLocale;
     QMetaType::Type parserType;
-    bool fixday;
+    bool fixday = false;
     Context context;
     QCalendar calendar;
 };

@@ -1,36 +1,20 @@
-/****************************************************************************
-**
-** Copyright (C) 2018 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 or (at your option) any later version
-** approved by the KDE Free Qt Foundation. The licenses are as published by
-** the Free Software Foundation and appearing in the file LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2018 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include "qwasmopenglcontext.h"
 #include "qwasmintegration.h"
 #include <EGL/egl.h>
+#include <emscripten/bind.h>
 #include <emscripten/val.h>
+
+namespace {
+void qtDoNothing(emscripten::val) { }
+} // namespace
+
+EMSCRIPTEN_BINDINGS(qwasmopenglcontext)
+{
+    function("qtDoNothing", &qtDoNothing);
+}
 
 QT_BEGIN_NAMESPACE
 
@@ -52,12 +36,14 @@ QWasmOpenGLContext::~QWasmOpenGLContext()
 {
     if (m_context) {
         // Destroy GL context. Work around bug in emscripten_webgl_destroy_context
-        // which removes all event handlers on the canvas by temporarily removing
-        // emscripten's JSEvents global object.
-        emscripten::val jsEvents = emscripten::val::global("window")["JSEvents"];
-        emscripten::val::global("window").set("JSEvents", emscripten::val::undefined());
+        // which removes all event handlers on the canvas by temporarily replacing the function
+        // that does the removal with a function that does nothing.
+        emscripten::val jsEvents = emscripten::val::module_property("JSEvents");
+        emscripten::val savedRemoveAllHandlersOnTargetFunction =
+                jsEvents["removeAllHandlersOnTarget"];
+        jsEvents.set("removeAllHandlersOnTarget", emscripten::val::module_property("qtDoNothing"));
         emscripten_webgl_destroy_context(m_context);
-        emscripten::val::global("window").set("JSEvents", jsEvents);
+        jsEvents.set("removeAllHandlersOnTarget", savedRemoveAllHandlersOnTargetFunction);
         m_context = 0;
     }
 }
@@ -87,13 +73,12 @@ bool QWasmOpenGLContext::maybeCreateEmscriptenContext(QPlatformSurface *surface)
     if (m_context)
         return m_screen == screen;
 
-    QString canvasId = QWasmScreen::get(screen)->canvasId();
-    m_context = createEmscriptenContext(canvasId, m_requestedFormat);
+    m_context = createEmscriptenContext(QWasmScreen::get(screen)->canvasTargetId(), m_requestedFormat);
     m_screen = screen;
     return true;
 }
 
-EMSCRIPTEN_WEBGL_CONTEXT_HANDLE QWasmOpenGLContext::createEmscriptenContext(const QString &canvasId, QSurfaceFormat format)
+EMSCRIPTEN_WEBGL_CONTEXT_HANDLE QWasmOpenGLContext::createEmscriptenContext(const QString &canvasTargetId, QSurfaceFormat format)
 {
     EmscriptenWebGLContextAttributes attributes;
     emscripten_webgl_init_context_attributes(&attributes); // Populate with default attributes
@@ -114,7 +99,7 @@ EMSCRIPTEN_WEBGL_CONTEXT_HANDLE QWasmOpenGLContext::createEmscriptenContext(cons
     attributes.depth = useDepthStencil;
     attributes.stencil = useDepthStencil;
 
-    QByteArray convasSelector = "#" + canvasId.toUtf8();
+    QByteArray convasSelector = canvasTargetId.toUtf8();
     EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = emscripten_webgl_create_context(convasSelector.constData(), &attributes);
 
     return context;

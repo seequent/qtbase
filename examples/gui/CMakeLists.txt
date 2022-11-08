@@ -1,7 +1,8 @@
-# Generated from gui.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 if(NOT TARGET Qt::Gui)
     return()
 endif()
-add_subdirectory(analogclock)
-add_subdirectory(rasterwindow)
+qt_internal_add_example(analogclock)
+qt_internal_add_example(rasterwindow)

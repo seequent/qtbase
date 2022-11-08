@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 include(CheckCXXSourceCompiles)
 
 # No library linkage is necessary to use GLESv2 with Emscripten. The headers are also
@@ -15,6 +18,9 @@ else()
     if(EGL_LIBRARY)
         list(APPEND CMAKE_REQUIRED_LIBRARIES "${EGL_LIBRARY}")
     endif()
+    if(_qt_igy_gui_libs)
+        list(APPEND CMAKE_REQUIRED_LIBRARIES "${_qt_igy_gui_libs}")
+    endif()
     set(_includes "${CMAKE_REQUIRED_INCLUDES}")
     list(APPEND CMAKE_REQUIRED_INCLUDES "${GLESv2_INCLUDE_DIR}")
 
@@ -26,7 +32,7 @@ else()
 #  include <GLES2/gl2.h>
 #endif
 
-int main(int argc, char *argv[]) {
+int main(int, char **) {
     glUniform1f(1, GLfloat(1.0));
     glClear(GL_COLOR_BUFFER_BIT);
 }" HAVE_GLESv2)
@@ -60,9 +66,9 @@ find_package_handle_standard_args(GLESv2 DEFAULT_MSG ${package_args})
 mark_as_advanced(${package_args})
 
 if(GLESv2_FOUND AND NOT TARGET GLESv2::GLESv2)
-    if(EMSCRIPTEN OR UIKIT)
+    if(EMSCRIPTEN OR IOS)
         add_library(GLESv2::GLESv2 INTERFACE IMPORTED)
-        if(UIKIT)
+        if(IOS)
             # For simulator_and_device builds we can't specify the full library path, because
             # it's specific to either the device or the simulator. Resort to passing a link
             # flag instead.

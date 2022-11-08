@@ -1,26 +1,27 @@
-# qt_configure_file(OUTPUT output-file <INPUT input-file | CONTENT content>)
-# input-file is relative to ${CMAKE_CURRENT_SOURCE_DIR}
-# output-file is relative to ${CMAKE_CURRENT_BINARY_DIR}
-#
-# This function is similar to file(GENERATE OUTPUT) except it writes the content
-# to the file at configure time, rather than at generate time. Once CMake 3.18 is released, it can use file(CONFIGURE) in its implmenetation. Until then, it
-# uses configure_file() with a generic input file as source, when used with the CONTENT signature.
-function(qt_configure_file)
-    qt_parse_all_arguments(arg "qt_configure_file" "" "OUTPUT;INPUT;CONTENT" "" ${ARGN})
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
+# The common implementation of qt_configure_file functionality.
+macro(qt_configure_file_impl)
     if(NOT arg_OUTPUT)
         message(FATAL_ERROR "No output file provided to qt_configure_file.")
     endif()
 
-    if(arg_CONTENT)
+    # We use this check for the cases when the specified CONTENT is empty. The value of arg_CONTENT
+    # is undefined, but we still want to create a file with empty content.
+    if(NOT "CONTENT" IN_LIST arg_KEYWORDS_MISSING_VALUES)
+        if(arg_INPUT)
+            message(WARNING "Both CONTENT and INPUT are specified. CONTENT will be used to generate"
+                " output")
+        endif()
         set(template_name "QtFileConfigure.txt.in")
         # When building qtbase, use the source template file.
-        # Otherwise use the installed file.
+        # Otherwise use the installed file (basically wherever Qt6 package is found).
         # This should work for non-prefix and superbuilds as well.
         if(QtBase_SOURCE_DIR)
             set(input_file "${QtBase_SOURCE_DIR}/cmake/${template_name}")
         else()
-            set(input_file "${Qt6_DIR}/${template_name}")
+            set(input_file "${_qt_6_config_cmake_dir}/${template_name}")
         endif()
         set(__qt_file_configure_content "${arg_CONTENT}")
     elseif(arg_INPUT)
@@ -30,6 +31,28 @@ function(qt_configure_file)
     endif()
 
     configure_file("${input_file}" "${arg_OUTPUT}" @ONLY)
+endmacro()
+
+# qt_configure_file(OUTPUT output-file <INPUT input-file | CONTENT content>)
+# input-file is relative to ${CMAKE_CURRENT_SOURCE_DIR}
+# output-file is relative to ${CMAKE_CURRENT_BINARY_DIR}
+#
+# This function is similar to file(GENERATE OUTPUT) except it writes the content
+# to the file at configure time, rather than at generate time. Once CMake 3.18 is released, it can
+# use file(CONFIGURE) in its implementation. Until then, it  uses configure_file() with a generic
+# input file as source, when used with the CONTENT signature.
+function(qt_configure_file)
+    qt_parse_all_arguments(arg "qt_configure_file" "" "OUTPUT;INPUT;CONTENT" "" ${ARGN})
+    qt_configure_file_impl()
+endfunction()
+
+# The fixed version of qt_configure_file that uses the cmake_parse_arguments variant with PARSE_ARGV
+# to handle arguments with semicolons correctly.
+# TODO: This implementation should replace the previous one, but first need to fix all places where
+# the previous imlementation is used.
+function(qt_configure_file_v2)
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "OUTPUT;INPUT;CONTENT" "")
+    qt_configure_file_impl()
 endfunction()
 
 # A version of cmake_parse_arguments that makes sure all arguments are processed and errors out
@@ -131,9 +154,13 @@ function(qt_remove_args out_var)
             # remove arg
             list(REMOVE_AT result ${find_result})
             list(LENGTH result result_len)
+            if(find_result EQUAL result_len)
+                # We removed the last argument, could have been an option keyword
+                continue()
+            endif()
             list(GET result ${find_result} arg_current)
             # remove values until we hit another arg or the end of the list
-            while(NOT ${arg_current} IN_LIST arg_ALL_ARGS AND find_result LESS result_len)
+            while(NOT "${arg_current}" IN_LIST arg_ALL_ARGS AND find_result LESS result_len)
                 list(REMOVE_AT result ${find_result})
                 list(LENGTH result result_len)
                 if (NOT find_result EQUAL result_len)
@@ -152,6 +179,26 @@ function(qt_re_escape out_var str)
     set(${out_var} ${regex} PARENT_SCOPE)
 endfunction()
 
+# Input: string
+# Output: regex string to match the string case insensitively
+# Example: "Release" -> "^([Rr][Ee][Ll][Ee][Aa][Ss][Ee])$"
+#
+# Regular expressions like this are used in cmake_install.cmake files for case-insensitive string
+# comparison.
+function(qt_create_case_insensitive_regex out_var input)
+    set(result "^(")
+    string(LENGTH "${input}" n)
+    math(EXPR n "${n} - 1")
+    foreach(i RANGE 0 ${n})
+        string(SUBSTRING "${input}" ${i} 1 c)
+        string(TOUPPER "${c}" uc)
+        string(TOLOWER "${c}" lc)
+        string(APPEND result "[${uc}${lc}]")
+    endforeach()
+    string(APPEND result ")$")
+    set(${out_var} "${result}" PARENT_SCOPE)
+endfunction()
+
 # Gets a target property, and returns "" if the property was not found
 function(qt_internal_get_target_property out_var target property)
     get_target_property(result "${target}" "${property}")
@@ -159,4 +206,26 @@ function(qt_internal_get_target_property out_var target property)
         set(result "")
     endif()
     set(${out_var} "${result}" PARENT_SCOPE)
+endfunction()
+
+# Creates a wrapper ConfigVersion.cmake file to be loaded by find_package when checking for
+# compatible versions. It expects a ConfigVersionImpl.cmake file in the same directory which will
+# be included to do the regular version checks.
+# The version check result might be overridden by the wrapper.
+# package_name is used by the content of the wrapper file to include the basic package version file.
+#   example: Qt6Gui
+# out_path should be the build path where the write the file.
+function(qt_internal_write_qt_package_version_file package_name out_path)
+    set(extra_code "")
+
+    # Need to check for FEATURE_developer_build as well, because QT_FEATURE_developer_build is not
+    # yet available when configuring the file for the BuildInternals package.
+    if(FEATURE_developer_build OR QT_FEATURE_developer_build)
+        string(APPEND extra_code "
+# Disabling version check because Qt was configured with -developer-build.
+set(__qt_disable_package_version_check TRUE)
+set(__qt_disable_package_version_check_due_to_developer_build TRUE)")
+    endif()
+
+    configure_file("${QT_CMAKE_DIR}/QtCMakePackageVersionFile.cmake.in" "${out_path}" @ONLY)
 endfunction()

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <AppKit/AppKit.h>
 
@@ -58,8 +22,12 @@ QT_BEGIN_NAMESPACE
 Q_LOGGING_CATEGORY(lcQpaWindow, "qt.qpa.window");
 Q_LOGGING_CATEGORY(lcQpaDrawing, "qt.qpa.drawing");
 Q_LOGGING_CATEGORY(lcQpaMouse, "qt.qpa.input.mouse", QtCriticalMsg);
+Q_LOGGING_CATEGORY(lcQpaKeys, "qt.qpa.input.keys", QtCriticalMsg);
+Q_LOGGING_CATEGORY(lcQpaInputMethods, "qt.qpa.input.methods")
 Q_LOGGING_CATEGORY(lcQpaScreen, "qt.qpa.screen", QtCriticalMsg);
 Q_LOGGING_CATEGORY(lcQpaApplication, "qt.qpa.application");
+Q_LOGGING_CATEGORY(lcQpaClipboard, "qt.qpa.clipboard")
+Q_LOGGING_CATEGORY(lcInputDevices, "qt.qpa.input.devices")
 
 //
 // Conversion Functions
@@ -153,7 +121,7 @@ Qt::DropActions qt_mac_mapNSDragOperations(NSDragOperation nsActions)
     that the platform window is not a foreign window before using
     this cast, via QPlatformWindow::isForeignWindow().
 
-    Do not use this method soley to check for foreign windows, as
+    Do not use this method solely to check for foreign windows, as
     that will make the code harder to read for people not working
     primarily on macOS, who do not know the difference between the
     NSView and QNSView cases.
@@ -221,7 +189,7 @@ QString qt_mac_applicationName()
     if (appName.isEmpty()) {
         QString arg0 = QGuiApplicationPrivate::instance()->appName();
         if (arg0.contains("/")) {
-            QStringList parts = arg0.split(QLatin1Char('/'));
+            QStringList parts = arg0.split(u'/');
             appName = parts.at(parts.count() - 1);
         } else {
             appName = arg0;
@@ -491,19 +459,45 @@ QT_END_NAMESPACE
     [super layout];
 }
 
+@end // QNSPanelContentsWrapper
+
 // -------------------------------------------------------------------------
 
-io_object_t q_IOObjectRetain(io_object_t obj)
+InputMethodQueryResult queryInputMethod(QObject *object, Qt::InputMethodQueries queries)
 {
-    kern_return_t ret = IOObjectRetain(obj);
-    Q_ASSERT(!ret);
-    return obj;
+    if (object) {
+        QInputMethodQueryEvent queryEvent(queries | Qt::ImEnabled);
+        if (QCoreApplication::sendEvent(object, &queryEvent)) {
+            if (queryEvent.value(Qt::ImEnabled).toBool()) {
+                InputMethodQueryResult result;
+                static QMetaEnum queryEnum = QMetaEnum::fromType<Qt::InputMethodQuery>();
+                for (int i = 0; i < queryEnum.keyCount(); ++i) {
+                    auto query = Qt::InputMethodQuery(queryEnum.value(i));
+                    if (queries & query)
+                        result.insert(query, queryEvent.value(query));
+                }
+                return result;
+            }
+        }
+    }
+    return {};
 }
 
-void q_IOObjectRelease(io_object_t obj)
+// -------------------------------------------------------------------------
+
+QDebug operator<<(QDebug debug, const NSRange &range)
 {
-    kern_return_t ret = IOObjectRelease(obj);
-    Q_ASSERT(!ret);
+    if (range.location == NSNotFound) {
+        QDebugStateSaver saver(debug);
+        debug.nospace() << "{NSNotFound, " << range.length << "}";
+    } else {
+        debug << NSStringFromRange(range);
+    }
+    return debug;
 }
 
-@end
+QDebug operator<<(QDebug debug, SEL selector)
+{
+    debug << NSStringFromSelector(selector);
+    return debug;
+}

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qwindowsglcontext.h"
 #include "qwindowscontext.h"
@@ -47,7 +11,7 @@
 #include <QtGui/qcolorspace.h>
 #include <QtGui/qguiapplication.h>
 #include <qpa/qplatformnativeinterface.h>
-
+#include <private/qsystemlibrary_p.h>
 #include <algorithm>
 
 #include <wingdi.h>
@@ -162,19 +126,25 @@ QFunctionPointer QWindowsOpengl32DLL::resolve(const char *name)
 
 bool QWindowsOpengl32DLL::init(bool softwareRendering)
 {
-    const QByteArray opengl32 = QByteArrayLiteral("opengl32.dll");
-    const QByteArray swopengl = QByteArrayLiteral("opengl32sw.dll");
+    const QByteArray opengl32 = QByteArrayLiteral("opengl32");
+    const QByteArray swopengl = QByteArrayLiteral("opengl32sw");
+    bool useSystemLib = false;
 
     QByteArray openglDll = qgetenv("QT_OPENGL_DLL");
-    if (openglDll.isEmpty())
+    if (openglDll.isEmpty()) {
         openglDll = softwareRendering ? swopengl : opengl32;
+        useSystemLib = !softwareRendering;
+    }
 
     openglDll = openglDll.toLower();
     m_nonOpengl32 = openglDll != opengl32;
 
     qCDebug(lcQpaGl) << "Qt: Using WGL and OpenGL from" << openglDll;
 
-    m_lib = ::LoadLibraryA(openglDll.constData());
+    if (useSystemLib)
+        m_lib = QSystemLibrary::load((wchar_t*)(QString::fromLatin1(openglDll).utf16()));
+    else
+        m_lib = LoadLibraryA(openglDll.constData());
     if (!m_lib) {
         qErrnoWarning(::GetLastError(), "Failed to load %s", openglDll.constData());
         return false;
@@ -184,7 +154,7 @@ bool QWindowsOpengl32DLL::init(bool softwareRendering)
         // Load opengl32.dll always. GDI functions like ChoosePixelFormat do
         // GetModuleHandle for opengl32.dll and behave differently (and call back into
         // opengl32) when the module is present. This is fine for dummy contexts and windows.
-        ::LoadLibraryA("opengl32.dll");
+        QSystemLibrary::load(L"opengl32");
     }
 
     wglCreateContext = reinterpret_cast<HGLRC (WINAPI *)(HDC)>(resolve("wglCreateContext"));
@@ -1296,12 +1266,15 @@ bool QWindowsGLContext::makeCurrent(QPlatformSurface *surface)
     if (const QOpenGLContextData *contextData = findByHWND(m_windowContexts, hwnd)) {
         // Repeated calls to wglMakeCurrent when vsync is enabled in the driver will
         // often result in 100% cpuload. This check is cheap and avoids the problem.
-        // This is reproducable on NVidia cards and Intel onboard chips.
+        // This is reproducible on NVidia cards and Intel onboard chips.
         if (QOpenGLStaticContext::opengl32.wglGetCurrentContext() == contextData->renderingContext
                 && QOpenGLStaticContext::opengl32.wglGetCurrentDC() == contextData->hdc) {
             return true;
         }
-        return QOpenGLStaticContext::opengl32.wglMakeCurrent(contextData->hdc, contextData->renderingContext);
+        const bool success = QOpenGLStaticContext::opengl32.wglMakeCurrent(contextData->hdc, contextData->renderingContext);
+        if (!success)
+            qErrnoWarning("%s: wglMakeCurrent() failed for existing context data", __FUNCTION__);
+        return success;
     }
     // Create a new entry.
     const QOpenGLContextData newContext(m_renderingContext, hwnd, GetDC(hwnd));
@@ -1329,6 +1302,8 @@ bool QWindowsGLContext::makeCurrent(QPlatformSurface *surface)
             qCDebug(lcQpaGl) << "makeCurrent(): context loss detected" << this;
             // Drop the surface. Will recreate on the next makeCurrent.
             window->invalidateSurface();
+        } else {
+            qErrnoWarning("%s: wglMakeCurrent() failed", __FUNCTION__);
         }
     }
 

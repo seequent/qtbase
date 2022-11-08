@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from concurrent.pro.
 
 #####################################################################
@@ -34,6 +37,7 @@ qt_internal_add_module(Concurrent
         Qt::CorePrivate
     PRECOMPILED_HEADER
         "../corelib/global/qt_pch.h"
+    GENERATE_CPP_EXPORTS
 )
 
 ## Scopes:

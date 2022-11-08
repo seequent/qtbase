@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 //#define QT_EXPERIMENTAL_CLIENT_DECORATIONS
 
@@ -212,9 +176,6 @@ void QMainWindowPrivate::init()
     layout below.
 
     \image mainwindowlayout.png
-
-    \note Creating a main window without a central widget is not supported.
-    You must have a central widget even if it is just a placeholder.
 
     \section1 Creating Main Window Components
 
@@ -522,10 +483,10 @@ void QMainWindow::setMenuBar(QMenuBar *menuBar)
 {
     QLayout *topLayout = layout();
 
-    if (topLayout->menuBar() && topLayout->menuBar() != menuBar) {
+    if (QWidget *existingMenuBar = topLayout->menuBar(); existingMenuBar && existingMenuBar != menuBar) {
         // Reparent corner widgets before we delete the old menu bar.
-        QMenuBar *oldMenuBar = qobject_cast<QMenuBar *>(topLayout->menuBar());
-        if (menuBar) {
+        QMenuBar *oldMenuBar = qobject_cast<QMenuBar *>(existingMenuBar);
+        if (oldMenuBar && menuBar) {
             // TopLeftCorner widget.
             QWidget *cornerWidget = oldMenuBar->cornerWidget(Qt::TopLeftCorner);
             if (cornerWidget)
@@ -535,9 +496,10 @@ void QMainWindow::setMenuBar(QMenuBar *menuBar)
             if (cornerWidget)
                 menuBar->setCornerWidget(cornerWidget, Qt::TopRightCorner);
         }
-        oldMenuBar->hide();
-        oldMenuBar->setParent(nullptr);
-        oldMenuBar->deleteLater();
+
+        existingMenuBar->hide();
+        existingMenuBar->setParent(nullptr);
+        existingMenuBar->deleteLater();
     }
     topLayout->setMenuBar(menuBar);
 }
@@ -614,7 +576,7 @@ void QMainWindow::setStatusBar(QStatusBar *statusbar)
 
 /*!
     Returns the central widget for the main window. This function
-    returns zero if the central widget has not been set.
+    returns \nullptr if the central widget has not been set.
 
     \sa setCentralWidget()
 */
@@ -949,10 +911,10 @@ void QMainWindow::setDockNestingEnabled(bool enabled)
     \since 4.2
 
     If this property is set to false, dock areas containing tabbed dock widgets
-    display horizontal tabs, simmilar to Visual Studio.
+    display horizontal tabs, similar to Visual Studio.
 
     If this property is set to true, then the right and left dock areas display vertical
-    tabs, simmilar to KDevelop.
+    tabs, similar to KDevelop.
 
     This property should be set before any dock widgets are added to the main window.
 */
@@ -1162,7 +1124,7 @@ QList<QDockWidget*> QMainWindow::tabifiedDockWidgets(QDockWidget *dockwidget) co
     QList<QDockWidget*> ret;
     const QDockAreaLayoutInfo *info = d_func()->layout->layoutState.dockAreaLayout.info(dockwidget);
     if (info && info->tabbed && info->tabBar) {
-        for(int i = 0; i < info->item_list.count(); ++i) {
+        for(int i = 0; i < info->item_list.size(); ++i) {
             const QDockAreaLayoutItem &item = info->item_list.at(i);
             if (item.widgetItem) {
                 if (QDockWidget *dock = qobject_cast<QDockWidget*>(item.widgetItem->widget())) {
@@ -1218,7 +1180,7 @@ Qt::DockWidgetArea QMainWindow::dockWidgetArea(QDockWidget *dockwidget) const
     resized such that the yellowWidget is twice as big as the blueWidget
 
     If some widgets are grouped in tabs, only one widget per group should be
-    specified. Widgets not in the list might be changed to repect the constraints.
+    specified. Widgets not in the list might be changed to respect the constraints.
 */
 void QMainWindow::resizeDocks(const QList<QDockWidget *> &docks,
                               const QList<int> &sizes, Qt::Orientation orientation)
@@ -1255,6 +1217,7 @@ QByteArray QMainWindow::saveState(int version) const
 {
     QByteArray data;
     QDataStream stream(&data, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_5_0);
     stream << QMainWindowLayout::VersionMarker;
     stream << version;
     d_func()->layout->saveState(stream);
@@ -1283,6 +1246,7 @@ bool QMainWindow::restoreState(const QByteArray &state, int version)
         return false;
     QByteArray sd = state;
     QDataStream stream(&sd, QIODevice::ReadOnly);
+    stream.setVersion(QDataStream::Qt_5_0);
     int marker, v;
     stream >> marker;
     stream >> v;
@@ -1306,6 +1270,7 @@ bool QMainWindow::event(QEvent *event)
 
 #if QT_CONFIG(toolbar)
         case QEvent::ToolBarChange: {
+            Q_ASSERT(d->layout);
             d->layout->toggleToolBarsVisible();
             return true;
         }
@@ -1314,6 +1279,7 @@ bool QMainWindow::event(QEvent *event)
 #if QT_CONFIG(statustip)
         case QEvent::StatusTip:
 #if QT_CONFIG(statusbar)
+            Q_ASSERT(d->layout);
             if (QStatusBar *sb = d->layout->statusBar())
                 sb->showMessage(static_cast<QStatusTipEvent*>(event)->tip());
             else
@@ -1324,6 +1290,7 @@ bool QMainWindow::event(QEvent *event)
 
         case QEvent::StyleChange:
 #if QT_CONFIG(dockwidget)
+            Q_ASSERT(d->layout);
             d->layout->layoutState.dockAreaLayout.styleChangedEvent();
 #endif
             if (!d->explicitIconSize)
@@ -1358,8 +1325,15 @@ void QMainWindow::setUnifiedTitleAndToolBarOnMac(bool enabled)
 
     Q_D(QMainWindow);
     d->useUnifiedToolBar = enabled;
-    createWinId();
 
+    // The unified toolbar is drawn by the macOS style with a transparent background.
+    // To ensure a suitable surface format is used we need to first create backing
+    // QWindow so we have something to update the surface format on, and then let
+    // QWidget know about the translucency, which it will propagate to the surface.
+    setAttribute(Qt::WA_NativeWindow);
+    setAttribute(Qt::WA_TranslucentBackground, enabled);
+
+    d->create(); // Create first, before querying the platform window
     using namespace QNativeInterface::Private;
     if (auto *platformWindow = dynamic_cast<QCocoaWindow*>(window()->windowHandle()->handle()))
         platformWindow->setContentBorderEnabled(enabled);

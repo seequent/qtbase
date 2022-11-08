@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qabstractproxymodel.pro.
 
 #####################################################################
@@ -7,8 +10,7 @@
 qt_internal_add_test(tst_qabstractproxymodel
     SOURCES
         tst_qabstractproxymodel.cpp
-    DEFINES
-        QT_DISABLE_DEPRECATED_BEFORE=0
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
+        Qt::TestPrivate
 )

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qmutex.pro.
 
 #####################################################################
@@ -7,12 +10,6 @@
 qt_internal_add_test(tst_qmutex
     SOURCES
         tst_qmutex.cpp
-)
-
-## Scopes:
-#####################################################################
-
-qt_internal_extend_target(tst_qmutex CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
 )

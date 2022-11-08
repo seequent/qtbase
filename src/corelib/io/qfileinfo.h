@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QFILEINFO_H
 #define QFILEINFO_H
@@ -70,7 +34,7 @@ public:
     QFILEINFO_MAYBE_EXPLICIT QFileInfo(const QFileDevice &file);
     QFILEINFO_MAYBE_EXPLICIT QFileInfo(const QDir &dir, const QString &file);
     QFileInfo(const QFileInfo &fileinfo);
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     QFileInfo(const std::filesystem::path &file);
     QFileInfo(const QDir &dir, const std::filesystem::path &file);
 #elif QT_CONFIG(cxx17_filesystem)
@@ -91,7 +55,7 @@ public:
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(QFileInfo)
 
     void swap(QFileInfo &other) noexcept
-    { qSwap(d_ptr, other.d_ptr); }
+    { d_ptr.swap(other.d_ptr); }
 
     bool operator==(const QFileInfo &fileinfo) const;
     inline bool operator!=(const QFileInfo &fileinfo) const { return !(operator==(fileinfo)); }
@@ -99,7 +63,7 @@ public:
     void setFile(const QString &file);
     void setFile(const QFileDevice &file);
     void setFile(const QDir &dir, const QString &file);
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
     void setFile(const std::filesystem::path &file);
 #elif QT_CONFIG(cxx17_filesystem)
     template<typename T, QtPrivate::ForceFilesystemPath<T> = 0>
@@ -113,7 +77,7 @@ public:
     QString filePath() const;
     QString absoluteFilePath() const;
     QString canonicalFilePath() const;
-#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_QDOC)
     std::filesystem::path filesystemFilePath() const
     { return QtPrivate::toFilesystemPath(filePath()); }
     std::filesystem::path filesystemAbsoluteFilePath() const
@@ -131,7 +95,7 @@ public:
     QString path() const;
     QString absolutePath() const;
     QString canonicalPath() const;
-#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_QDOC)
     std::filesystem::path filesystemPath() const { return QtPrivate::toFilesystemPath(path()); }
     std::filesystem::path filesystemAbsolutePath() const
     { return QtPrivate::toFilesystemPath(absolutePath()); }
@@ -156,14 +120,20 @@ public:
     bool isSymLink() const;
     bool isSymbolicLink() const;
     bool isShortcut() const;
+    bool isAlias() const;
     bool isJunction() const;
     bool isRoot() const;
     bool isBundle() const;
 
     QString symLinkTarget() const;
-#if QT_CONFIG(cxx17_filesystem) || defined(Q_CLANG_QDOC)
+    QString junctionTarget() const;
+
+#if QT_CONFIG(cxx17_filesystem) || defined(Q_QDOC)
     std::filesystem::path filesystemSymLinkTarget() const
     { return QtPrivate::toFilesystemPath(symLinkTarget()); }
+
+    std::filesystem::path filesystemJunctionTarget() const
+    { return QtPrivate::toFilesystemPath(junctionTarget()); }
 #endif // QT_CONFIG(cxx17_filesystem)
 
     QString owner() const;
@@ -207,6 +177,6 @@ Q_CORE_EXPORT QDebug operator<<(QDebug, const QFileInfo &);
 
 QT_END_NAMESPACE
 
-Q_DECLARE_METATYPE(QFileInfo)
+QT_DECL_METATYPE_EXTERN(QFileInfo, Q_CORE_EXPORT)
 
 #endif // QFILEINFO_H

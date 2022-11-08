@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qgraphicsitem.pro.
 
 #####################################################################
@@ -9,7 +12,7 @@ qt_internal_add_test(tst_qgraphicsitem
         tst_qgraphicsitem.cpp
     DEFINES
         QT_NO_CAST_TO_ASCII
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -22,6 +25,6 @@ qt_internal_add_test(tst_qgraphicsitem
 #####################################################################
 
 qt_internal_extend_target(tst_qgraphicsitem CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         user32
 )

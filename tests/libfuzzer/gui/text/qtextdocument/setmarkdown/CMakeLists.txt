@@ -1,30 +1,35 @@
-# Generated from setmarkdown.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-#####################################################################
-## setmarkdown Binary:
-#####################################################################
+cmake_minimum_required(VERSION 3.16)
+project(setmarkdown LANGUAGES CXX)
 
-qt_internal_add_executable(setmarkdown
-    GUI
-    SOURCES
-        main.cpp
-    PUBLIC_LIBRARIES
-        Qt::Gui
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
+find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+
+qt_add_executable(setmarkdown
+    main.cpp
 )
 
-#### Keys ignored in scope 1:.:.:setmarkdown.pro:<TRUE>:
-# FUZZ_ENGINE = "$$(LIB_FUZZING_ENGINE)"
-# QTPLUGIN = "qminimal"
-
-## Scopes:
-#####################################################################
-
-qt_internal_extend_target(setmarkdown CONDITION FUZZ_ENGINE_ISEMPTY
-    LINK_OPTIONS
-        "-fsanitize=fuzzer"
+target_link_libraries(setmarkdown PUBLIC
+    Qt::Core
+    Qt::Gui
 )
-
-qt_internal_extend_target(setmarkdown CONDITION NOT FUZZ_ENGINE_ISEMPTY
-    PUBLIC_LIBRARIES
+if(DEFINED ENV{LIB_FUZZING_ENGINE})
+    target_link_libraries(setmarkdown PRIVATE
         $ENV{LIB_FUZZING_ENGINE}
+    )
+else()
+    target_link_libraries(setmarkdown PRIVATE
+        -fsanitize=fuzzer
+    )
+endif()
+
+qt_import_plugins(setmarkdown
+    INCLUDE Qt::QMinimalIntegrationPlugin
 )

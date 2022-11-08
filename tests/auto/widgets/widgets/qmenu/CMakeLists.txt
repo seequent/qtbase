@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qmenu.pro.
 
 #####################################################################
@@ -7,11 +10,12 @@
 qt_internal_add_test(tst_qmenu
     SOURCES
         tst_qmenu.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::GuiPrivate
         Qt::TestPrivate
         Qt::Widgets
+        Qt::WidgetsPrivate
 )
 
 ## Scopes:
@@ -20,7 +24,7 @@ qt_internal_add_test(tst_qmenu
 qt_internal_extend_target(tst_qmenu CONDITION MACOS
     SOURCES
         tst_qmenu_mac.mm
-    PUBLIC_LIBRARIES
+    LIBRARIES
         objc
 )
 

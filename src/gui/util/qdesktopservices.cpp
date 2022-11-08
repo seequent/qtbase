@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qdesktopservices.h"
 
@@ -54,11 +18,12 @@
 #include <qpa/qplatformintegration.h>
 #include <qdir.h>
 
+#include <QtCore/private/qlocking_p.h>
+
 QT_BEGIN_NAMESPACE
 
-class QOpenUrlHandlerRegistry : public QObject
+class QOpenUrlHandlerRegistry
 {
-    Q_OBJECT
 public:
     QOpenUrlHandlerRegistry() = default;
 
@@ -72,24 +37,34 @@ public:
     typedef QHash<QString, Handler> HandlerHash;
     HandlerHash handlers;
 
-public Q_SLOTS:
+#if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)
+    QObject context;
+
     void handlerDestroyed(QObject *handler);
+#endif
 
 };
 
 Q_GLOBAL_STATIC(QOpenUrlHandlerRegistry, handlerRegistry)
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)
 void QOpenUrlHandlerRegistry::handlerDestroyed(QObject *handler)
 {
+    const auto lock = qt_scoped_lock(mutex);
     HandlerHash::Iterator it = handlers.begin();
     while (it != handlers.end()) {
         if (it->receiver == handler) {
             it = handlers.erase(it);
+            qWarning("Please call QDesktopServices::unsetUrlHandler() before destroying a "
+                     "registered URL handler object.\n"
+                     "Support for destroying a registered URL handler object is deprecated, "
+                     "and will be removed in Qt 6.6.");
         } else {
             ++it;
         }
     }
 }
+#endif
 
 /*!
     \class QDesktopServices
@@ -182,7 +157,7 @@ void QOpenUrlHandlerRegistry::handlerDestroyed(QObject *handler)
     \warning URLs passed to this function on iOS will not load unless their schemes are
     listed in the \c LSApplicationQueriesSchemes key of the application's Info.plist file.
     For more information, see the Apple Developer Documentation for
-    \l{https://developer.apple.com/documentation/uikit/uiapplication/1622952-canopenurl}{canOpenURL(_:)}.
+    \l {iOS: canOpenURL:}{canOpenURL:}.
     For example, the following lines enable URLs with the HTTPS scheme:
 
     \snippet code/src_gui_util_qdesktopservices.cpp 3
@@ -244,14 +219,29 @@ bool QDesktopServices::openUrl(const QUrl &url)
 
     \snippet code/src_gui_util_qdesktopservices.cpp 0
 
+    If setUrlHandler() is used to set a new handler for a scheme which already
+    has a handler, the existing handler is simply replaced with the new one.
+    Since QDesktopServices does not take ownership of handlers, no objects are
+    deleted when a handler is replaced.
+
+    Note that the handler will always be called from within the same thread that
+    calls QDesktopServices::openUrl().
+
+    You must call unsetUrlHandler() before destroying the handler object, so
+    the destruction of the handler object does not overlap with concurrent
+    invocations of openUrl() using it.
+
+    \section1 iOS
+
     To use this function for receiving data from other apps on iOS you also need to
     add the custom scheme to the \c CFBundleURLSchemes list in your Info.plist file:
 
     \snippet code/src_gui_util_qdesktopservices.cpp 4
 
     For more information, see the Apple Developer Documentation for
-    \l{https://developer.apple.com/documentation/uikit/core_app/allowing_apps_and_websites_to_link_to_your_content/communicating_with_other_apps_using_custom_urls?language=objc}{Communicating with Other Apps Using Custom URLs}.
-    \warning It is not possible to claim support for some well known URL schemes, including http and https. This is only allowed for Universal Links.
+    \l {iOS: Defining a Custom URL Scheme for Your App}{Defining a Custom URL Scheme for Your App}.
+    \warning It is not possible to claim support for some well known URL schemes, including http and
+    https. This is only allowed for Universal Links.
 
     To claim support for http and https the above entry in the Info.plist file
     is not allowed. This is only possible when you add your domain to the
@@ -261,21 +251,39 @@ bool QDesktopServices::openUrl(const QUrl &url)
 
     iOS will search for /.well-known/apple-app-site-association on your domain,
     when the application is installed. If you want to listen to
-    https://your.domain.com/help?topic=ABCDEF you need to provide the following
+    \c{https://your.domain.com/help?topic=ABCDEF} you need to provide the following
     content there:
 
     \snippet code/src_gui_util_qdesktopservices.cpp 8
 
     For more information, see the Apple Developer Documentation for
-    \l{https://developer.apple.com/documentation/safariservices/supporting_associated_domains_in_your_app}[Supporting Associated Domains}.
+    \l {iOS: Supporting Associated Domains}{Supporting Associated Domains}.
 
-    If setUrlHandler() is used to set a new handler for a scheme which already
-    has a handler, the existing handler is simply replaced with the new one.
-    Since QDesktopServices does not take ownership of handlers, no objects are
-    deleted when a handler is replaced.
+    \section1 Android
 
-    Note that the handler will always be called from within the same thread that
-    calls QDesktopServices::openUrl().
+    To use this function for receiving data from other apps on Android, you
+    need to add one or more intent filter to the \c activity in your app manifest:
+
+    \snippet code/src_gui_util_qdesktopservices.cpp 9
+
+    For more information, see the Android Developer Documentation for
+    \l {Android: Create Deep Links to App Content}{Create Deep Links to App Content}.
+
+    To immediately open the corresponding content in your Android app, without
+    requiring the user to select the app, you need to verify your link. To
+    enable the verification, add an additional parameter to your intent filter:
+
+    \snippet code/src_gui_util_qdesktopservices.cpp 10
+
+    Android will look for \c{https://your.domain.com/.well-known/assetlinks.json},
+    when the application is installed. If you want to listen to
+    \c{https://your.domain.com:1337/help}, you need to provide the following
+    content there:
+
+    \snippet code/src_gui_util_qdesktopservices.cpp 11
+
+    For more information, see the Android Developer Documentation for
+    \l {Android: Verify Android App Links}{Verify Android App Links}.
 
     \sa openUrl(), unsetUrlHandler()
 */
@@ -291,12 +299,19 @@ void QDesktopServices::setUrlHandler(const QString &scheme, QObject *receiver, c
     h.receiver = receiver;
     h.name = method;
     registry->handlers.insert(scheme.toLower(), h);
-    QObject::connect(receiver, SIGNAL(destroyed(QObject*)),
-                     registry, SLOT(handlerDestroyed(QObject*)));
+#if QT_VERSION < QT_VERSION_CHECK(6, 6, 0)
+    QObject::connect(receiver, &QObject::destroyed, &registry->context,
+                     [registry](QObject *obj) { registry->handlerDestroyed(obj); },
+                     Qt::DirectConnection);
+#endif
 }
 
 /*!
     Removes a previously set URL handler for the specified \a scheme.
+
+    Call this function before the handler object that was registered for \a scheme
+    is destroyed, to prevent concurrent openUrl() calls from continuing to call
+    the destroyed handler object.
 
     \sa setUrlHandler()
 */
@@ -306,7 +321,5 @@ void QDesktopServices::unsetUrlHandler(const QString &scheme)
 }
 
 QT_END_NAMESPACE
-
-#include "qdesktopservices.moc"
 
 #endif // QT_NO_DESKTOPSERVICES

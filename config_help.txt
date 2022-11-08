@@ -7,10 +7,12 @@ Top-level installation directories:
   -prefix <dir> ...... The deployment directory, as seen on the target device.
                        [/usr/local/Qt-$QT_VERSION; qtbase build directory if
                        -developer-build]
+  -no-prefix ......... The deployment directory is set to the qtbase build
+                       directory. Can be used instead of -developer-build
+                       to not have to install, as well as avoid
+                       -developer-build's default of -warnings-are-errors.
   -extprefix <dir> ... The installation directory, as seen on the host machine.
                        [SYSROOT/PREFIX]
-  -external-hostbindir <path> ... Path to Qt tools built for this machine.
-                       This option is required when cross-compiling Qt.
 
 Fine tuning of installation directory layout. Note that all directories
 except -sysconfdir should be located under -prefix:
@@ -57,6 +59,8 @@ Build options:
                          CMake instead of auto-detecting one.
   -cmake-use-default-generator ... Turn off auto-detection of the CMake build
                          system generator.
+  -cmake-file-api ...... Let CMake store build metadata for loading the build
+                         into an IDE. [no; yes if -developer-build]
   -no-guess-compiler ... Do not guess the compiler from the target mkspec.
   -release ............. Build Qt with debugging turned off [yes]
   -debug ............... Build Qt with debugging turned on [no]
@@ -106,17 +110,8 @@ Build options:
                          for example, -sanitize address cannot be combined with
                          -sanitize thread.
 
-  -coverage {trace-pc-guard|source-based}
-                         Specify the 'trace-pc-guard' coverage instrumentation for
-                         sanitizers or generate instrumented code to collect execution
-                         counts and enable code coverage analysis, respectively. (Clang only)
+  -c++std <edition> .... Select C++ standard <edition> [c++2b/c++20/c++17/c++14/c++11]
 
-  -c++std <edition> .... Select C++ standard <edition> [c++2a/c++17/c++14/c++11]
-
-  -sse2 ................ Use SSE2 instructions [auto]
-  -sse3/-ssse3/-sse4.1/-sse4.2/-avx/-avx2/-avx512
-                         Enable use of particular x86 instructions [auto]
-                         Enabled ones are still subject to runtime detection.
   -mips_dsp/-mips_dspr2  Use MIPS DSP/rev2 instructions [auto]
 
   -qreal <type> ........ typedef qreal to the specified type. [double]
@@ -138,11 +133,23 @@ Build options:
 
   -pch ................. Use precompiled headers [auto]
   -ltcg ................ Use Link Time Code Generation [no]
-  -linker [bfd,gold,lld] Force use of the GNU ld, GNU gold or LLVM/LLD linker
-                         instead of default one (GCC only)
+  -intelcet ............ Use Intel Control-flow Enforcement Technology [no]
+  -linker [bfd,gold,lld,mold]
+                         Force use of the GNU ld, GNU gold, LLVM/LLD or mold
+                         linker instead of default one (GCC and clang only)
   -ccache .............. Use the ccache compiler cache [no] (Unix only)
 
   -warnings-are-errors . Treat warnings as errors [no; yes if -developer-build]
+
+  -disable-deprecated-up-to <version>
+                         Set the QT_DISABLE_DEPRECATED_UP_TO value to <version>.
+                         QT_DISABLE_DEPRECATED_UP_TO is used to remove
+                         deprecated methods from both API and ABI.
+                         <version> is a hex value, for example 0x060500 can be
+                         used to remove all code deprecated in Qt 6.5.0 or
+                         earlier releases.
+                         By default <version> is set to 0x040000 and 0x050000 on
+                         Windows, and non-Windows respectively.
 
 Build environment:
 
@@ -172,11 +179,20 @@ Build environment:
 
 Component selection:
 
-  -skip <repo> ......... Exclude an entire repository from the build.
+  -submodules <repo>[,<repo>] ... Build the listed repositories and those they
+                         depend on rather than all checked-out repositories.
+                         The list should be separated with commas, e.g.
+                         -submodules qtsvg,qtnetworkauth
+                         [default is to build all checked out repositories]
+  -skip <repo>[,<repo>]  Exclude one or more entire repositories from the
+                         build. The list should be separated with commas.
+                         e.g. -skip qtimageformats,qtsvg
   -make <part> ......... Add <part> to the list of parts to be built.
                          Specifying this option clears the default list first.
-                         [libs and examples, also tools if not cross-building,
-                         also tests if -developer-build]
+                         (allowed values: libs, tools, examples, tests,
+                         benchmarks, manual-tests, minimal-static-tests)
+                         [default: libs and examples, also tools if not
+                         cross-building, also tests if -developer-build]
   -nomake <part> ....... Exclude <part> from the list of parts to be built.
   -gui ................. Build the Qt GUI module and dependencies [yes]
   -widgets ............. Build the Qt Widgets module and dependencies [yes]
@@ -212,7 +228,7 @@ Network options:
   -no-openssl .......... Do not use OpenSSL [default on Apple]
   -openssl-linked ...... Use OpenSSL and link to libssl [no]
   -openssl-runtime ..... Use OpenSSL and dynamically load libssl [auto]
-  -schannel ............ Use Secure Channel [no] (Windows only)
+  -schannel ............ Use Secure Channel [auto] (Windows only)
   -securetransport ..... Use SecureTransport [auto] (Apple only)
 
   -sctp ................ Enable SCTP support [no]

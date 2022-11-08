@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from kernel.pro.
 
 add_subdirectory(qapplication)
@@ -9,16 +12,14 @@ add_subdirectory(qstackedlayout)
 add_subdirectory(qtooltip)
 add_subdirectory(qwidget_window)
 add_subdirectory(qwidgetmetatype)
+add_subdirectory(qwidgetrepaintmanager)
 add_subdirectory(qwidgetsvariant)
 add_subdirectory(qwindowcontainer)
 add_subdirectory(qsizepolicy)
 if(NOT APPLE)
     add_subdirectory(qgesturerecognizer)
 endif()
-# QTBUG-87668 # special case
-if(NOT ANDROID)
-    add_subdirectory(qwidget)
-endif()
+add_subdirectory(qwidget)
 if(QT_FEATURE_shortcut)
     add_subdirectory(qshortcut)
 endif()

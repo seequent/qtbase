@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QFUNCTIONS_WINRT_P_H
 #define QFUNCTIONS_WINRT_P_H
@@ -51,7 +15,7 @@
 // We mean it.
 //
 
-#include <QtCore/qglobal.h>
+#include <QtCore/private/qglobal_p.h>
 
 #if defined(Q_OS_WIN) && defined(Q_CC_MSVC)
 
@@ -101,8 +65,11 @@ enum AwaitStyle
     ProcessMainThreadEvents = 2
 };
 
-template <typename T>
-static inline HRESULT _await_impl(const Microsoft::WRL::ComPtr<T> &asyncOp, AwaitStyle awaitStyle, uint timeout)
+using EarlyExitConditionFunction = std::function<bool(void)>;
+
+template<typename T>
+static inline HRESULT _await_impl(const Microsoft::WRL::ComPtr<T> &asyncOp, AwaitStyle awaitStyle,
+                                  uint timeout, EarlyExitConditionFunction func)
 {
     Microsoft::WRL::ComPtr<ABI::Windows::Foundation::IAsyncInfo> asyncInfo;
     HRESULT hr = asyncOp.As(&asyncInfo);
@@ -117,16 +84,20 @@ static inline HRESULT _await_impl(const Microsoft::WRL::ComPtr<T> &asyncOp, Awai
     case ProcessMainThreadEvents:
         while (SUCCEEDED(hr = asyncInfo->get_Status(&status)) && status == AsyncStatus::Started) {
             QCoreApplication::processEvents();
+            if (func && func())
+                return E_ABORT;
             if (timeout && t.hasExpired(timeout))
-                return ERROR_TIMEOUT;
+                return HRESULT_FROM_WIN32(ERROR_TIMEOUT);
         }
         break;
     case ProcessThreadEvents:
         if (QAbstractEventDispatcher *dispatcher = QThread::currentThread()->eventDispatcher()) {
             while (SUCCEEDED(hr = asyncInfo->get_Status(&status)) && status == AsyncStatus::Started) {
                 dispatcher->processEvents(QEventLoop::AllEvents);
+                if (func && func())
+                    return E_ABORT;
                 if (timeout && t.hasExpired(timeout))
-                    return ERROR_TIMEOUT;
+                    return HRESULT_FROM_WIN32(ERROR_TIMEOUT);
             }
             break;
         }
@@ -136,7 +107,7 @@ static inline HRESULT _await_impl(const Microsoft::WRL::ComPtr<T> &asyncOp, Awai
         while (SUCCEEDED(hr = asyncInfo->get_Status(&status)) && status == AsyncStatus::Started) {
             QThread::yieldCurrentThread();
             if (timeout && t.hasExpired(timeout))
-                return ERROR_TIMEOUT;
+                return HRESULT_FROM_WIN32(ERROR_TIMEOUT);
         }
         break;
     }
@@ -155,20 +126,24 @@ static inline HRESULT _await_impl(const Microsoft::WRL::ComPtr<T> &asyncOp, Awai
     return hr;
 }
 
-template <typename T>
-static inline HRESULT await(const Microsoft::WRL::ComPtr<T> &asyncOp, AwaitStyle awaitStyle = YieldThread, uint timeout = 0)
+template<typename T>
+static inline HRESULT await(const Microsoft::WRL::ComPtr<T> &asyncOp,
+                            AwaitStyle awaitStyle = YieldThread, uint timeout = 0,
+                            EarlyExitConditionFunction func = nullptr)
 {
-    HRESULT hr = _await_impl(asyncOp, awaitStyle, timeout);
+    HRESULT hr = _await_impl(asyncOp, awaitStyle, timeout, func);
     if (FAILED(hr))
         return hr;
 
     return asyncOp->GetResults();
 }
 
-template <typename T, typename U>
-static inline HRESULT await(const Microsoft::WRL::ComPtr<T> &asyncOp, U *results, AwaitStyle awaitStyle = YieldThread, uint timeout = 0)
+template<typename T, typename U>
+static inline HRESULT await(const Microsoft::WRL::ComPtr<T> &asyncOp, U *results,
+                            AwaitStyle awaitStyle = YieldThread, uint timeout = 0,
+                            EarlyExitConditionFunction func = nullptr)
 {
-    HRESULT hr = _await_impl(asyncOp, awaitStyle, timeout);
+    HRESULT hr = _await_impl(asyncOp, awaitStyle, timeout, func);
     if (FAILED(hr))
         return hr;
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from lib2.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ qt_internal_add_cmake_library(mylib2 # special case
     #OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../" # special case
     SOURCES
         mylib.c
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
 )
 
@@ -39,26 +42,57 @@ if(WIN32)
     set_property(TARGET mylib2 PROPERTY PREFIX "")
 endif()
 
-if (UNIX)
-    add_custom_command(TARGET mylib2 POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+if(UNIX)
+    if(APPLE)
+        add_custom_command(TARGET mylib2 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:mylib2>
+                "${CMAKE_CURRENT_BINARY_DIR}/../system.qt.test.mylib.so.dylib"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:mylib2>
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.2.0.0.dylib"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "libmylib.2.0.0.dylib"
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.2.dylib"
+            COMMAND ${CMAKE_COMMAND} -E remove
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.dylib"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "libmylib.2.0.0.dylib"
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.dylib"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "libmylib.2.0.0.dylib"
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so2.dylib"
+            VERBATIM)
+    elseif(NOT ANDROID)
+        add_custom_command(TARGET mylib2 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:mylib2>
+                "${CMAKE_CURRENT_BINARY_DIR}/../system.qt.test.mylib.so"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:mylib2>
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so.2.0.0"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "libmylib.so.2.0.0"
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so.2"
+            COMMAND ${CMAKE_COMMAND} -E remove
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "libmylib.so.2.0.0"
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so"
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "libmylib.so.2.0.0"
+                "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so2"
+            VERBATIM)
+    else()
+        # Android does not use symlinks. Also, according to our conventions,
+        # libraries on Android MUST be named in the following pattern:
+        # lib*.so
+        add_custom_command(TARGET mylib2 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:mylib2>
-            "${CMAKE_CURRENT_BINARY_DIR}/../system.qt.test.mylib.so"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:mylib2>
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so.2.0.0"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so.2.0.0"
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so.2"
-        COMMAND ${CMAKE_COMMAND} -E remove
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so.2.0.0"
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so.2.0.0"
-            "${CMAKE_CURRENT_BINARY_DIR}/../libmylib.so2"
-    )
+            "${CMAKE_CURRENT_BINARY_DIR}/../libsystem.qt.test.mylib.so"
+            VERBATIM)
+    endif()
 else() #Win32
     add_custom_command(TARGET mylib2 POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -67,7 +101,7 @@ else() #Win32
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:mylib2>
             "${CMAKE_CURRENT_BINARY_DIR}/../mylib.dl2"
-    )
+        VERBATIM)
 endif()
 # special case end
 

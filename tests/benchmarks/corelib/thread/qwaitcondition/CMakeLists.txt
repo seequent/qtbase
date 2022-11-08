@@ -1,4 +1,5 @@
-# Generated from qwaitcondition.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## tst_bench_qwaitcondition Binary:
@@ -6,10 +7,7 @@
 
 qt_internal_add_benchmark(tst_bench_qwaitcondition
     SOURCES
-        tst_qwaitcondition.cpp
-    PUBLIC_LIBRARIES
+        tst_bench_qwaitcondition.cpp
+    LIBRARIES
         Qt::Test
 )
-
-#### Keys ignored in scope 1:.:.:qwaitcondition.pro:<TRUE>:
-# TEMPLATE = "app"

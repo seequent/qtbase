@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QXMLSTREAM_H
 #define QXMLSTREAM_H
@@ -58,12 +22,12 @@ public:
     QXmlString(QStringPrivate &&d) : m_string(std::move(d)) {}
     QXmlString(const QString &s) : m_string(s.data_ptr()) {}
     QXmlString & operator=(const QString &s) { m_string = s.data_ptr(); return *this; }
-    QXmlString & operator=(QString &&s) { qSwap(m_string, s.data_ptr()); return *this; }
+    QXmlString & operator=(QString &&s) { m_string.swap(s.data_ptr()); return *this; }
     inline constexpr QXmlString() {}
 
     void swap(QXmlString &other) noexcept
     {
-        qSwap(m_string, other.m_string);
+        m_string.swap(other.m_string);
     }
 
     inline operator QStringView() const { return QStringView(m_string.data(), m_string.size); }
@@ -105,17 +69,17 @@ public:
 
 Q_DECLARE_TYPEINFO(QXmlStreamAttribute, Q_RELOCATABLE_TYPE);
 
-// We export each out-of-line method invidually to prevent MSVC from
+// We export each out-of-line method individually to prevent MSVC from
 // exporting the whole QList class.
 class QXmlStreamAttributes : public QList<QXmlStreamAttribute>
 {
 public:
     inline QXmlStreamAttributes() {}
     Q_CORE_EXPORT QStringView value(const QString &namespaceUri, const QString &name) const;
-    Q_CORE_EXPORT QStringView value(const QString &namespaceUri, QLatin1String name) const;
-    Q_CORE_EXPORT QStringView value(QLatin1String namespaceUri, QLatin1String name) const;
+    Q_CORE_EXPORT QStringView value(const QString &namespaceUri, QLatin1StringView name) const;
+    Q_CORE_EXPORT QStringView value(QLatin1StringView namespaceUri, QLatin1StringView name) const;
     Q_CORE_EXPORT QStringView value(const QString &qualifiedName) const;
-    Q_CORE_EXPORT QStringView value(QLatin1String qualifiedName) const;
+    Q_CORE_EXPORT QStringView value(QLatin1StringView qualifiedName) const;
     Q_CORE_EXPORT void append(const QString &namespaceUri, const QString &name, const QString &value);
     Q_CORE_EXPORT void append(const QString &qualifiedName, const QString &value);
 
@@ -124,7 +88,7 @@ public:
         return !value(qualifiedName).isNull();
     }
 
-    inline bool hasAttribute(QLatin1String qualifiedName) const
+    inline bool hasAttribute(QLatin1StringView qualifiedName) const
     {
         return !value(qualifiedName).isNull();
     }
@@ -233,16 +197,27 @@ public:
 
     QXmlStreamReader();
     explicit QXmlStreamReader(QIODevice *device);
+#if QT_CORE_REMOVED_SINCE(6, 5)
     explicit QXmlStreamReader(const QByteArray &data);
     explicit QXmlStreamReader(const QString &data);
     explicit QXmlStreamReader(const char * data);
+#endif // QT_CORE_REMOVED_SINCE(6, 5)
+    Q_WEAK_OVERLOAD
+    explicit QXmlStreamReader(const QByteArray &data)
+        : QXmlStreamReader(data, PrivateConsructorTag{}) { }
+    explicit QXmlStreamReader(QAnyStringView data);
     ~QXmlStreamReader();
 
     void setDevice(QIODevice *device);
     QIODevice *device() const;
+#if QT_CORE_REMOVED_SINCE(6, 5)
     void addData(const QByteArray &data);
     void addData(const QString &data);
     void addData(const char *data);
+#endif // QT_CORE_REMOVED_SINCE(6, 5)
+    Q_WEAK_OVERLOAD
+    void addData(const QByteArray &data) { addDataImpl(data); }
+    void addData(QAnyStringView data);
     void clear();
 
 
@@ -329,6 +304,10 @@ public:
     QXmlStreamEntityResolver *entityResolver() const;
 
 private:
+    struct PrivateConsructorTag { };
+    QXmlStreamReader(const QByteArray &data, PrivateConsructorTag);
+    void addDataImpl(const QByteArray &data);
+
     Q_DISABLE_COPY(QXmlStreamReader)
     Q_DECLARE_PRIVATE(QXmlStreamReader)
     QScopedPointer<QXmlStreamReaderPrivate> d_ptr;

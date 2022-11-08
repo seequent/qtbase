@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from lance.pro.
 
 #####################################################################
@@ -6,14 +9,14 @@
 
 qt_internal_add_manual_test(lance
     SOURCES
-        ../../auto/other/lancelot/paintcommands.cpp ../../auto/other/lancelot/paintcommands.h
+        ../../baseline/shared/paintcommands.cpp ../../baseline/shared/paintcommands.h
         interactivewidget.cpp interactivewidget.h
         main.cpp
         widgets.h
     INCLUDE_DIRECTORIES
         .
-        ../../auto/other/lancelot
-    PUBLIC_LIBRARIES
+        ../../baseline/shared
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -34,130 +37,42 @@ qt_internal_add_resource(lance "icons"
     FILES
         ${icons_resource_files}
 )
-set_source_files_properties("../../auto/other/lancelot/images/alpha.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/alpha.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/alpha2x2.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/alpha2x2.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/bitmap.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/bitmap.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/border.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/border.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/borderimage.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/borderimage.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dome_argb32.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dome_argb32.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dome_indexed.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dome_indexed.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dome_indexed_mask.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dome_indexed_mask.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dome_mono.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dome_mono.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dome_mono_128.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dome_mono_128.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dome_mono_palette.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dome_mono_palette.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dome_rgb32.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dome_rgb32.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/dot.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/dot.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/face.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/face.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/gam030.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/gam030.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/gam045.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/gam045.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/gam056.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/gam056.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/gam100.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/gam100.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/gam200.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/gam200.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/image.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/image.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/mask.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/mask.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/mask_100.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/mask_100.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/masked.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/masked.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/sign.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/sign.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/solid.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/solid.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/solid2x2.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/solid2x2.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/struct-image-01.jpg"
-    PROPERTIES QT_RESOURCE_ALIAS "images/struct-image-01.jpg"
-)
-set_source_files_properties("../../auto/other/lancelot/images/struct-image-01.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/struct-image-01.png"
-)
-set_source_files_properties("../../auto/other/lancelot/images/zebra.png"
-    PROPERTIES QT_RESOURCE_ALIAS "images/zebra.png"
-)
 set(images_resource_files
-    "images/alpha.png"
-    "images/alpha2x2.png"
-    "images/bitmap.png"
-    "images/border.png"
-    "images/borderimage.png"
-    "images/dome_argb32.png"
-    "images/dome_indexed.png"
-    "images/dome_indexed_mask.png"
-    "images/dome_mono.png"
-    "images/dome_mono_128.png"
-    "images/dome_mono_palette.png"
-    "images/dome_rgb32.png"
-    "images/dot.png"
-    "images/face.png"
-    "images/gam030.png"
-    "images/gam045.png"
-    "images/gam056.png"
-    "images/gam100.png"
-    "images/gam200.png"
-    "images/image.png"
-    "images/mask.png"
-    "images/mask_100.png"
-    "images/masked.png"
-    "images/sign.png"
-    "images/solid.png"
-    "images/solid2x2.png"
-    "images/struct-image-01.jpg"
-    "images/struct-image-01.png"
-    "images/zebra.png"
+    "../../baseline/painting/images/alpha.png"
+    "../../baseline/painting/images/alpha2x2.png"
+    "../../baseline/painting/images/bitmap.png"
+    "../../baseline/painting/images/border.png"
+    "../../baseline/painting/images/borderimage.png"
+    "../../baseline/painting/images/dome_argb32.png"
+    "../../baseline/painting/images/dome_indexed.png"
+    "../../baseline/painting/images/dome_indexed_mask.png"
+    "../../baseline/painting/images/dome_mono.png"
+    "../../baseline/painting/images/dome_mono_128.png"
+    "../../baseline/painting/images/dome_mono_palette.png"
+    "../../baseline/painting/images/dome_rgb32.png"
+    "../../baseline/painting/images/dot.png"
+    "../../baseline/painting/images/face.png"
+    "../../baseline/painting/images/gam030.png"
+    "../../baseline/painting/images/gam045.png"
+    "../../baseline/painting/images/gam056.png"
+    "../../baseline/painting/images/gam100.png"
+    "../../baseline/painting/images/gam200.png"
+    "../../baseline/painting/images/image.png"
+    "../../baseline/painting/images/mask.png"
+    "../../baseline/painting/images/mask_100.png"
+    "../../baseline/painting/images/masked.png"
+    "../../baseline/painting/images/sign.png"
+    "../../baseline/painting/images/solid.png"
+    "../../baseline/painting/images/solid2x2.png"
+    "../../baseline/painting/images/struct-image-01.jpg"
+    "../../baseline/painting/images/struct-image-01.png"
+    "../../baseline/painting/images/zebra.png"
 )
-
 qt_internal_add_resource(lance "images"
     PREFIX
         "/"
     BASE
-        "../../auto/other/lancelot"
+        "../../baseline/painting"
     FILES
         ${images_resource_files}
 )
@@ -170,6 +85,6 @@ qt_internal_add_resource(lance "images"
 #####################################################################
 
 qt_internal_extend_target(lance CONDITION TARGET Qt::OpenGL
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::OpenGL
 )

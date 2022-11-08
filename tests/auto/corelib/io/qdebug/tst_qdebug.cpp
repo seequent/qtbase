@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QtCore/QCoreApplication>
@@ -39,8 +14,12 @@
 #include <QLine>
 #include <QMimeType>
 #include <QMimeDatabase>
+#include <QMetaType>
+
+using namespace Qt::StringLiterals;
 
 static_assert(QTypeTraits::has_ostream_operator_v<QDebug, int>);
+static_assert(QTypeTraits::has_ostream_operator_v<QDebug, QMetaType>);
 static_assert(QTypeTraits::has_ostream_operator_v<QDebug, QList<int>>);
 static_assert(QTypeTraits::has_ostream_operator_v<QDebug, QMap<int, QString>>);
 struct NonStreamable {};
@@ -52,6 +31,10 @@ struct ConvertsToQVariant {
 };
 static_assert(!QTypeTraits::has_ostream_operator_v<QDebug, ConvertsToQVariant>);
 
+#if defined(Q_OS_DARWIN)
+#include <objc/runtime.h>
+#include <Foundation/Foundation.h>
+#endif
 
 class tst_QDebug: public QObject
 {
@@ -75,10 +58,19 @@ private slots:
     void stateSaver() const;
     void veryLongWarningMessage() const;
     void qDebugQChar() const;
+    void qDebugQMetaType() const;
     void qDebugQString() const;
     void qDebugQStringView() const;
     void qDebugQUtf8StringView() const;
     void qDebugQLatin1String() const;
+    void qDebugStdString() const;
+    void qDebugStdStringView() const;
+    void qDebugStdWString() const;
+    void qDebugStdWStringView() const;
+    void qDebugStdU16String() const;
+    void qDebugStdU16StringView() const;
+    void qDebugStdU32String() const;
+    void qDebugStdU32StringView() const;
     void qDebugQByteArray() const;
     void qDebugQByteArrayView() const;
     void qDebugQFlags() const;
@@ -88,6 +80,12 @@ private slots:
     void threadSafety() const;
     void toString() const;
     void noQVariantEndlessRecursion() const;
+#if defined(Q_OS_DARWIN)
+    void objcInCppMode_data() const;
+    void objcInCppMode() const;
+    void objcInObjcMode_data() const;
+    void objcInObjcMode() const;
+#endif
 };
 
 void tst_QDebug::assignment() const
@@ -443,6 +441,25 @@ void tst_QDebug::qDebugQChar() const
 
 }
 
+void tst_QDebug::qDebugQMetaType() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << QMetaType::fromType<int>() << QMetaType::fromType<QString>();
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 4; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, R"(QMetaType(int) QMetaType(QString))"_L1);
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+}
+
 void tst_QDebug::qDebugQString() const
 {
     /* Use a basic string. */
@@ -637,6 +654,254 @@ void tst_QDebug::qDebugQLatin1String() const
 
     qDebug() << string;
     QCOMPARE(s_msg, QString("\"\\nSm\\u00F8rg\\u00E5sbord\\\\\""));
+}
+
+void tst_QDebug::qDebugStdString() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::string("foo") << std::string("") << std::string("barbaz", 3);
+        d.nospace().noquote() << std::string("baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::string string("\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdString(string));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdString(string));
+}
+
+void tst_QDebug::qDebugStdStringView() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::string_view("foo") << std::string_view("") << std::string_view("barbaz", 3);
+        d.nospace().noquote() << std::string_view("baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::string_view string("\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdString(std::string(string)));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdString(std::string(string)));
+}
+
+void tst_QDebug::qDebugStdWString() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::wstring(L"foo") << std::wstring(L"") << std::wstring(L"barbaz", 3);
+        d.nospace().noquote() << std::wstring(L"baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::wstring string(L"\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdWString(string));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdWString(string));
+}
+
+void tst_QDebug::qDebugStdWStringView() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::wstring_view(L"foo") << std::wstring_view(L"") << std::wstring_view(L"barbaz", 3);
+        d.nospace().noquote() << std::wstring_view(L"baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::wstring_view string(L"\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdWString(std::wstring(string)));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdWString(std::wstring(string)));
+}
+
+void tst_QDebug::qDebugStdU16String() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::u16string(u"foo") << std::u16string(u"") << std::u16string(u"barbaz", 3);
+        d.nospace().noquote() << std::u16string(u"baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::u16string string(u"\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdU16String(string));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdU16String(string));
+}
+
+void tst_QDebug::qDebugStdU16StringView() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::u16string_view(u"foo") << std::u16string_view(u"") << std::u16string_view(u"barbaz", 3);
+        d.nospace().noquote() << std::u16string_view(u"baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::u16string_view string(u"\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdU16String(std::u16string(string)));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdU16String(std::u16string(string)));
+}
+
+void tst_QDebug::qDebugStdU32String() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::u32string(U"foo") << std::u32string(U"") << std::u32string(U"barbaz", 3);
+        d.nospace().noquote() << std::u32string(U"baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::u32string string(U"\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdU32String(string));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdU32String(string));
+}
+
+void tst_QDebug::qDebugStdU32StringView() const
+{
+    QString file, function;
+    int line = 0;
+    MessageHandlerSetter mhs(myMessageHandler);
+    {
+        QDebug d = qDebug();
+        d << std::u32string_view(U"foo") << std::u32string_view(U"") << std::u32string_view(U"barbaz", 3);
+        d.nospace().noquote() << std::u32string_view(U"baz");
+    }
+#ifndef QT_NO_MESSAGELOGCONTEXT
+    file = __FILE__; line = __LINE__ - 5; function = Q_FUNC_INFO;
+#endif
+    QCOMPARE(s_msgType, QtDebugMsg);
+    QCOMPARE(s_msg, QString::fromLatin1("\"foo\" \"\" \"bar\" baz"));
+    QCOMPARE(QString::fromLatin1(s_file), file);
+    QCOMPARE(s_line, line);
+    QCOMPARE(QString::fromLatin1(s_function), function);
+
+    /* simpler tests from now on */
+    std::u32string_view string(U"\"Hello\"");
+    qDebug() << string;
+    QCOMPARE(s_msg, QString("\"\\\"Hello\\\"\""));
+
+    qDebug().noquote().nospace() << string;
+    QCOMPARE(s_msg, QString::fromStdU32String(std::u32string(string)));
+
+    qDebug().noquote().nospace() << qSetFieldWidth(8) << string;
+    QCOMPARE(s_msg, " " + QString::fromStdU32String(std::u32string(string)));
 }
 
 void tst_QDebug::qDebugQByteArray() const
@@ -837,7 +1102,7 @@ void tst_QDebug::threadSafety() const
     s_sema.release(numThreads);
     sync.waitForFinished();
     QMutexLocker lock(&s_mutex);
-    QCOMPARE(s_messages.count(), numThreads);
+    QCOMPARE(s_messages.size(), numThreads);
     for (int i = 0; i < numThreads; ++i) {
         QCOMPARE(s_messages.at(i), QStringLiteral("doDebug"));
     }
@@ -872,6 +1137,69 @@ void tst_QDebug::noQVariantEndlessRecursion() const
     QTest::ignoreMessage(QtDebugMsg, "QVariant(ConvertsToQVariant, )");
     qDebug() << var;
 }
+
+#if defined(Q_OS_DARWIN)
+
+@interface MyObjcClass : NSObject
+@end
+
+@implementation MyObjcClass : NSObject
+- (NSString *)description
+{
+    return @"MyObjcClass is the best";
+}
+@end
+
+void tst_QDebug::objcInCppMode_data() const
+{
+    QTest::addColumn<objc_object *>("object");
+    QTest::addColumn<QString>("message");
+
+    QTest::newRow("nil") << static_cast<objc_object*>(nullptr) << QString::fromLatin1("(null)");
+
+    // Not an NSObject subclass
+    auto *nsproxy = reinterpret_cast<objc_object *>(class_createInstance(objc_getClass("NSProxy"), 0));
+    QTest::newRow("NSProxy") << nsproxy << QString::fromLatin1("<NSProxy: 0x%1>").arg(uintptr_t(nsproxy), 1, 16);
+
+    // Plain NSObject
+    auto *nsobject = reinterpret_cast<objc_object *>(class_createInstance(objc_getClass("NSObject"), 0));
+    QTest::newRow("NSObject") << nsobject << QString::fromLatin1("<NSObject: 0x%1>").arg(uintptr_t(nsobject), 1, 16);
+
+    auto str = QString::fromLatin1("foo");
+    QTest::newRow("NSString") << reinterpret_cast<objc_object*>(str.toNSString()) << str;
+
+    // Custom debug description
+    QTest::newRow("MyObjcClass") << reinterpret_cast<objc_object*>([[MyObjcClass alloc] init])
+                                 << QString::fromLatin1("MyObjcClass is the best");
+}
+
+void tst_QDebug::objcInCppMode() const
+{
+    QFETCH(objc_object *, object);
+    QFETCH(QString, message);
+
+    MessageHandlerSetter mhs(myMessageHandler);
+    { qDebug() << object; }
+
+    QCOMPARE(s_msg, message);
+}
+
+void tst_QDebug::objcInObjcMode_data() const
+{
+    objcInCppMode_data();
+}
+
+void tst_QDebug::objcInObjcMode() const
+{
+    QFETCH(objc_object *, object);
+    QFETCH(QString, message);
+
+    MessageHandlerSetter mhs(myMessageHandler);
+    { qDebug() << static_cast<id>(object); }
+
+    QCOMPARE(s_msg, message);
+}
+#endif
 
 // Should compile: instentiation of unrelated operator<< should not cause cause compilation
 // error in QDebug operators (QTBUG-47375)

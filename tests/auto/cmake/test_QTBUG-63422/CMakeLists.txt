@@ -1,4 +1,11 @@
-cmake_minimum_required(VERSION 3.14)
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
+cmake_minimum_required(VERSION 3.16)
+if(POLICY CMP0099)
+    cmake_policy(SET CMP0099 NEW) # Avoid CMP0099 related warnings.
+endif()
+
 project(test_dependent_modules)
 
 find_package(Qt6Widgets REQUIRED)

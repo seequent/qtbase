@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from float.pro.
 
 #####################################################################
@@ -8,12 +11,10 @@ qt_internal_add_executable(float
     NO_INSTALL # special case
     OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} # special case
     SOURCES
-        ../../../../shared/emulationdetector.h
         tst_float.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../shared
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Test
+        Qt::TestPrivate
 )
 
 ## Scopes:

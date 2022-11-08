@@ -1,20 +1,32 @@
-# Status
+# Overview
 
-Port is still on-going.
+This document gives an overview of the Qt 6 build system. For a hands-on guide on how
+to build Qt 6, see https://doc.qt.io/qt-6/build-sources.html and
+https://wiki.qt.io/Building_Qt_6_from_Git
 
-Note:
-You need CMake 3.16.0 or later for most platforms (due to new AUTOMOC json feature).
-You need CMake 3.17.0 to build Qt for iOS with the simulator_and_device feature.
-You need CMake 3.17.0 + Ninja to build Qt in debug_and_release mode on Windows / Linux.
-You need CMake 3.18.0 + Ninja to build Qt on macOS in debug_and_release mode when using frameworks.
+# CMake Versions
 
-# Intro
+* You need CMake 3.16.0 or later for most platforms (due to new AUTOMOC json feature).
+* You need CMake 3.17.0 to build Qt for iOS with the simulator_and_device feature.
+* You need CMake 3.17.0 + Ninja to build Qt in debug_and_release mode on Windows / Linux.
+* You need CMake 3.18.0 + Ninja to build Qt on macOS in debug_and_release mode when using
+    frameworks.
+* You need CMake 3.18.0 in user projects that use a static Qt together with QML
+    (cmake_language EVAL is required for running the qmlimportscanner deferred finalizer)
+* You need CMake 3.19.0 in user projects to use automatic deferred finalizers
+    (automatic calling of qt_finalize_target)
+* You need CMake 3.21.0 in user projects that create user libraries that link against a static Qt
+    with a linker that is not capable to resolve circular dependencies between libraries
+    (GNU ld, MinGW ld)
 
-The CMake update offers an opportunity to revisit some topics that came up during the last few
-years.
+# Changes to Qt 5
 
-* The Qt build system does not support building host tools during a cross-compilation run. You need
-  to build a Qt for your host machine first and then use the platform tools from that version. The
+The build system of Qt 5 was done on top of qmake. Qt 6 is built with CMake.
+
+This offered an opportunity to revisit other areas of the build system, too:
+
+* The Qt 5 build system allowed to build host tools during a cross-compilation run. Qt 6 requires
+  you to build a Qt for your host machine first and then use the platform tools from that version. The
   decision to do this was reached independent of cmake: This does save resources on build machines
   as the host tools will only get built once.
 
@@ -24,13 +36,9 @@ years.
 
 * There is less need for bootstrapping. Only moc and rcc (plus the lesser known tracegen and
   qfloat16-tables) are linking against the bootstrap Qt library. Everything else can link against
-  the full QtCore. This will include qmake.
-  Qmake is supported as a build system for applications *using* Qt going forward and will
+  the full QtCore. This does include qmake.
+  qmake is supported as a build system for applications *using* Qt going forward and will
   not go away anytime soon.
-
-* We keep the qmake-based Qt build system working so that we do not interfere too much with ongoing
-  development.
-
 
 # Building against homebrew on macOS
 
@@ -40,7 +48,9 @@ You may use brew to install dependencies needed to build QtBase.
     `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`
   * Build Qt dependencies:  ``brew install pcre2 harfbuzz freetype``
   * Install cmake:  ``brew install cmake``
-  * When running cmake in qtbase, pass ``-DCMAKE_PREFIX_PATH=/usr/local``
+  * When running cmake in qtbase, pass ``-DFEATURE_pkg_config=ON`` together with
+    ``-DCMAKE_PREFIX_PATH=/usr/local``, or ``-DCMAKE_PREFIX_PATH=/opt/homebrew`` if you have a Mac
+    with Apple Silicon.
 
 # Building
 
@@ -124,7 +134,7 @@ Compiling for a target architecture that's different than the host requires one 
 host. This "host build" is needed because the process of building Qt involves the compilation of
 intermediate code generator tools, that in turn are called to produce source code that needs to be
 compiled into the final libraries. These tools are built using Qt itself and they need to run on the
-machine you're building on, regardless of the architecure you are targeting.
+machine you're building on, regardless of the architecture you are targeting.
 
 Build Qt regularly for your host system and install it into a directory of your choice using the
 ``CMAKE_INSTALL_PREFIX`` variable. You are free to disable the build of tests and examples by
@@ -176,7 +186,7 @@ If you don't supply the configuration argument ``-DANDROID_ABI=...``, it will de
   * x86_64: ``-DANDROID_ABI=x86_64``
 
 By default we set the android API level to 23. Should you need to change this supply the following
-configuration argument to the above CMake call: ``-DANDROID_NATIVE_API_LEVEL=${API_LEVEL}``
+configuration argument to the above CMake call: ``-DANDROID_PLATFORM=android-${API_LEVEL}``.
 
 ### Cross compiling for iOS
 

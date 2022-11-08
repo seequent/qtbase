@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QSCOPEDPOINTER_H
 #define QSCOPEDPOINTER_H
@@ -103,7 +67,7 @@ typedef QScopedPointerObjectDeleteLater<QObject> QScopedPointerDeleteLater;
 #endif
 
 template <typename T, typename Cleanup = QScopedPointerDeleter<T> >
-class QScopedPointer
+class [[nodiscard]] QScopedPointer
 {
 public:
     explicit QScopedPointer(T *p = nullptr) noexcept : d(p)
@@ -156,7 +120,7 @@ public:
     {
         if (d == other)
             return;
-        T *oldD = qExchange(d, other);
+        T *oldD = std::exchange(d, other);
         Cleanup::cleanup(oldD);
     }
 
@@ -164,15 +128,18 @@ public:
     QT_DEPRECATED_VERSION_X_6_1("Use std::unique_ptr instead, and call release().")
     T *take() noexcept
     {
-        T *oldD = qExchange(d, nullptr);
+        T *oldD = std::exchange(d, nullptr);
         return oldD;
     }
 #endif
 
+#if QT_DEPRECATED_SINCE(6, 2)
+    QT_DEPRECATED_VERSION_X_6_2("Use std::unique_ptr instead of QScopedPointer.")
     void swap(QScopedPointer<T, Cleanup> &other) noexcept
     {
-        qSwap(d, other.d);
+        qt_ptr_swap(d, other.d);
     }
+#endif
 
     typedef T *pointer;
 
@@ -206,23 +173,27 @@ public:
         return !rhs.isNull();
     }
 
+#if QT_DEPRECATED_SINCE(6, 2)
+    QT_DEPRECATED_VERSION_X_6_2("Use std::unique_ptr instead of QScopedPointer.")
     friend void swap(QScopedPointer<T, Cleanup> &p1, QScopedPointer<T, Cleanup> &p2) noexcept
     { p1.swap(p2); }
+#endif
 
 protected:
     T *d;
 
 private:
-    Q_DISABLE_COPY(QScopedPointer)
+    Q_DISABLE_COPY_MOVE(QScopedPointer)
 };
 
 template <typename T, typename Cleanup = QScopedPointerArrayDeleter<T> >
-class QScopedArrayPointer : public QScopedPointer<T, Cleanup>
+class [[nodiscard]] QScopedArrayPointer : public QScopedPointer<T, Cleanup>
 {
     template <typename Ptr>
     using if_same_type = typename std::enable_if<std::is_same<typename std::remove_cv<T>::type, Ptr>::value, bool>::type;
 public:
     inline QScopedArrayPointer() : QScopedPointer<T, Cleanup>(nullptr) {}
+    inline ~QScopedArrayPointer() = default;
 
     template <typename D, if_same_type<D> = true>
     explicit QScopedArrayPointer(D *p)
@@ -230,18 +201,21 @@ public:
     {
     }
 
-    inline T &operator[](int i)
+    T &operator[](qsizetype i)
     {
         return this->d[i];
     }
 
-    inline const T &operator[](int i) const
+    const T &operator[](qsizetype i) const
     {
         return this->d[i];
     }
 
+#if QT_DEPRECATED_SINCE(6, 2)
+    QT_DEPRECATED_VERSION_X_6_2("Use std::unique_ptr instead of QScopedArrayPointer.")
     void swap(QScopedArrayPointer &other) noexcept // prevent QScopedPointer <->QScopedArrayPointer swaps
     { QScopedPointer<T, Cleanup>::swap(other); }
+#endif
 
 private:
     explicit inline QScopedArrayPointer(void *)
@@ -256,12 +230,15 @@ private:
         // allowed and results in undefined behavior.
     }
 
-    Q_DISABLE_COPY(QScopedArrayPointer)
+    Q_DISABLE_COPY_MOVE(QScopedArrayPointer)
 };
 
+#if QT_DEPRECATED_SINCE(6, 2)
 template <typename T, typename Cleanup>
+QT_DEPRECATED_VERSION_X_6_2("Use std::unique_ptr instead of QScopedArrayPointer.")
 inline void swap(QScopedArrayPointer<T, Cleanup> &lhs, QScopedArrayPointer<T, Cleanup> &rhs) noexcept
 { lhs.swap(rhs); }
+#endif
 
 QT_END_NAMESPACE
 

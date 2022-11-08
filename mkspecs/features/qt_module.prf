@@ -343,6 +343,13 @@ msvc {
     QMAKE_CXXFLAGS_RELEASE_WITH_DEBUGINFO += -guard:cf
     QMAKE_LFLAGS_RELEASE                  += /GUARD:CF
     QMAKE_LFLAGS_RELEASE_WITH_DEBUGINFO   += /GUARD:CF
+
+    QMAKE_LFLAGS += /LARGEADDRESSAWARE
+}
+
+win32 {
+    DEFINES *= _WIN32_WINNT=0x0A00
+    DEFINES *= WINVER=0x0A00
 }
 
 TARGET = $$qt5LibraryTarget($$TARGET$$QT_LIBINFIX)  # Do this towards the end

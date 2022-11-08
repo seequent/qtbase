@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qreadwritelock.pro.
 
 #####################################################################
@@ -7,4 +10,7 @@
 qt_internal_add_test(tst_qreadwritelock
     SOURCES
         tst_qreadwritelock.cpp
+    LIBRARIES
+        Qt::CorePrivate
+        Qt::TestPrivate
 )

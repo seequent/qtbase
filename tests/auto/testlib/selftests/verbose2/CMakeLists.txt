@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from verbose2.pro.
 
 #####################################################################
@@ -11,7 +14,7 @@ qt_internal_add_executable(verbose2
         ../counting/tst_counting.cpp
     DEFINES
         TESTLIB_VERBOSITY_ARG=-v2 # special case remove quotes
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Test
 )
 

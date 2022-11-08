@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QBYTEARRAY_H
 #define QBYTEARRAY_H
@@ -71,63 +35,6 @@ Q_FORWARD_DECLARE_OBJC_CLASS(NSData);
 #endif
 
 QT_BEGIN_NAMESPACE
-
-
-/*****************************************************************************
-  Safe and portable C string functions; extensions to standard string.h
- *****************************************************************************/
-
-Q_CORE_EXPORT char *qstrdup(const char *);
-
-inline size_t qstrlen(const char *str)
-{
-    QT_WARNING_PUSH
-#if defined(Q_CC_GNU) && Q_CC_GNU >= 900 && Q_CC_GNU < 1000
-    // spurious compiler warning (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91490#c6)
-    // when Q_DECLARE_METATYPE_TEMPLATE_1ARG is used
-    QT_WARNING_DISABLE_GCC("-Wstringop-overflow")
-#endif
-    return str ? strlen(str) : 0;
-    QT_WARNING_POP
-}
-
-inline size_t qstrnlen(const char *str, size_t maxlen)
-{
-    size_t length = 0;
-    if (str) {
-        while (length < maxlen && *str++)
-            length++;
-    }
-    return length;
-}
-
-Q_CORE_EXPORT char *qstrcpy(char *dst, const char *src);
-Q_CORE_EXPORT char *qstrncpy(char *dst, const char *src, size_t len);
-
-Q_CORE_EXPORT int qstrcmp(const char *str1, const char *str2);
-
-inline int qstrncmp(const char *str1, const char *str2, size_t len)
-{
-    return (str1 && str2) ? strncmp(str1, str2, len)
-        : (str1 ? 1 : (str2 ? -1 : 0));
-}
-Q_CORE_EXPORT int qstricmp(const char *, const char *);
-Q_CORE_EXPORT int qstrnicmp(const char *, const char *, size_t len);
-Q_CORE_EXPORT int qstrnicmp(const char *, qsizetype, const char *, qsizetype = -1);
-
-// implemented in qvsnprintf.cpp
-Q_CORE_EXPORT int qvsnprintf(char *str, size_t n, const char *fmt, va_list ap);
-Q_CORE_EXPORT int qsnprintf(char *str, size_t n, const char *fmt, ...);
-
-// qChecksum: Internet checksum
-Q_CORE_EXPORT quint16 qChecksum(QByteArrayView data, Qt::ChecksumType standard = Qt::ChecksumIso3309);
-
-#if QT_DEPRECATED_SINCE(6, 0)
-QT_DEPRECATED_VERSION_X_6_0("Use the QByteArrayView overload.")
-inline quint16 qChecksum(const char *s, qsizetype len,
-                         Qt::ChecksumType standard = Qt::ChecksumIso3309)
-{ return qChecksum(QByteArrayView(s, len), standard); }
-#endif
 
 class QString;
 class QDataStream;
@@ -178,13 +85,14 @@ public:
     QByteArray &operator=(const QByteArray &) noexcept;
     QByteArray &operator=(const char *str);
     inline QByteArray(QByteArray && other) noexcept
-    { qSwap(d, other.d); }
+        = default;
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_PURE_SWAP(QByteArray)
     inline void swap(QByteArray &other) noexcept
-    { qSwap(d, other.d); }
+    { d.swap(other.d); }
 
-    inline bool isEmpty() const;
+    bool isEmpty() const noexcept { return size() == 0; }
     void resize(qsizetype size);
+    void resize(qsizetype size, char c);
 
     QByteArray &fill(char c, qsizetype size = -1);
 
@@ -197,11 +105,11 @@ public:
     inline operator const void *() const;
 #endif
     inline char *data();
-    inline const char *data() const;
-    inline const char *constData() const;
+    inline const char *data() const noexcept;
+    const char *constData() const noexcept { return data(); }
     inline void detach();
     inline bool isDetached() const;
-    inline bool isSharedWith(const QByteArray &other) const
+    inline bool isSharedWith(const QByteArray &other) const noexcept
     { return data() == other.data() && size() == other.size(); }
     void clear();
 
@@ -218,7 +126,9 @@ public:
     { return QtPrivate::findByteArray(qToByteArrayViewIgnoringNull(*this), from, bv); }
 
     qsizetype lastIndexOf(char c, qsizetype from = -1) const;
-    qsizetype lastIndexOf(QByteArrayView bv, qsizetype from = -1) const
+    qsizetype lastIndexOf(QByteArrayView bv) const
+    { return lastIndexOf(bv, size()); }
+    qsizetype lastIndexOf(QByteArrayView bv, qsizetype from) const
     { return QtPrivate::lastIndexOf(qToByteArrayViewIgnoringNull(*this), from, bv); }
 
     inline bool contains(char c) const;
@@ -255,10 +165,15 @@ public:
     bool isUpper() const;
     bool isLower() const;
 
+    [[nodiscard]] bool isValidUtf8() const noexcept
+    {
+        return QtPrivate::isValidUtf8(qToByteArrayViewIgnoringNull(*this));
+    }
+
     void truncate(qsizetype pos);
     void chop(qsizetype n);
 
-#if !defined(Q_CLANG_QDOC)
+#if !defined(Q_QDOC)
     [[nodiscard]] QByteArray toLower() const &
     { return toLower_helper(*this); }
     [[nodiscard]] QByteArray toLower() &&
@@ -299,9 +214,9 @@ public:
     QByteArray &append(char c);
     inline QByteArray &append(qsizetype count, char c);
     QByteArray &append(const char *s)
-    { return append(QByteArrayView(s, qsizetype(qstrlen(s)))); }
+    { return append(s, -1); }
     QByteArray &append(const char *s, qsizetype len)
-    { return append(QByteArrayView(s, len)); }
+    { return append(QByteArrayView(s, len < 0 ? qsizetype(qstrlen(s)) : len)); }
     QByteArray &append(const QByteArray &a);
     QByteArray &append(QByteArrayView a)
     { return insert(size(), a); }
@@ -359,15 +274,15 @@ public:
     friend inline bool operator==(const QByteArray &a1, const QByteArray &a2) noexcept
     { return QByteArrayView(a1) == QByteArrayView(a2); }
     friend inline bool operator==(const QByteArray &a1, const char *a2) noexcept
-    { return a2 ? QtPrivate::compareMemory(a1, a2) == 0 : a1.isEmpty(); }
+    { return QByteArrayView(a1) == QByteArrayView(a2); }
     friend inline bool operator==(const char *a1, const QByteArray &a2) noexcept
-    { return a1 ? QtPrivate::compareMemory(a1, a2) == 0 : a2.isEmpty(); }
+    { return QByteArrayView(a1) == QByteArrayView(a2); }
     friend inline bool operator!=(const QByteArray &a1, const QByteArray &a2) noexcept
     { return !(a1==a2); }
     friend inline bool operator!=(const QByteArray &a1, const char *a2) noexcept
-    { return a2 ? QtPrivate::compareMemory(a1, a2) != 0 : !a1.isEmpty(); }
+    { return QByteArrayView(a1) != QByteArrayView(a2); }
     friend inline bool operator!=(const char *a1, const QByteArray &a2) noexcept
-    { return a1 ? QtPrivate::compareMemory(a1, a2) != 0 : !a2.isEmpty(); }
+    { return QByteArrayView(a1) != QByteArrayView(a2); }
     friend inline bool operator<(const QByteArray &a1, const QByteArray &a2) noexcept
     { return QtPrivate::compareMemory(QByteArrayView(a1), QByteArrayView(a2)) < 0; }
     friend inline bool operator<(const QByteArray &a1, const char *a2) noexcept
@@ -423,6 +338,7 @@ public:
     QByteArray toPercentEncoding(const QByteArray &exclude = QByteArray(),
                                  const QByteArray &include = QByteArray(),
                                  char percent = '%') const;
+    [[nodiscard]] QByteArray percentDecoded(char percent = '%') const;
 
     inline QByteArray &setNum(short, int base = 10);
     inline QByteArray &setNum(ushort, int base = 10);
@@ -432,8 +348,8 @@ public:
     inline QByteArray &setNum(ulong, int base = 10);
     QByteArray &setNum(qlonglong, int base = 10);
     QByteArray &setNum(qulonglong, int base = 10);
-    inline QByteArray &setNum(float, char f = 'g', int prec = 6);
-    QByteArray &setNum(double, char f = 'g', int prec = 6);
+    inline QByteArray &setNum(float, char format = 'g', int precision = 6);
+    QByteArray &setNum(double, char format = 'g', int precision = 6);
     QByteArray &setRawData(const char *a, qsizetype n);
 
     [[nodiscard]] static QByteArray number(int, int base = 10);
@@ -442,7 +358,7 @@ public:
     [[nodiscard]] static QByteArray number(ulong, int base = 10);
     [[nodiscard]] static QByteArray number(qlonglong, int base = 10);
     [[nodiscard]] static QByteArray number(qulonglong, int base = 10);
-    [[nodiscard]] static QByteArray number(double, char f = 'g', int prec = 6);
+    [[nodiscard]] static QByteArray number(double, char format = 'g', int precision = 6);
     [[nodiscard]] static QByteArray fromRawData(const char *data, qsizetype size)
     {
         return QByteArray(DataPointer(nullptr, const_cast<char *>(data), size));
@@ -472,20 +388,20 @@ public:
     typedef const_iterator ConstIterator;
     typedef std::reverse_iterator<iterator> reverse_iterator;
     typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
-    inline iterator begin();
-    inline const_iterator begin() const;
-    inline const_iterator cbegin() const;
-    inline const_iterator constBegin() const;
-    inline iterator end();
-    inline const_iterator end() const;
-    inline const_iterator cend() const;
-    inline const_iterator constEnd() const;
+    iterator begin() { return data(); }
+    const_iterator begin() const noexcept { return data(); }
+    const_iterator cbegin() const noexcept { return begin(); }
+    const_iterator constBegin() const noexcept { return begin(); }
+    iterator end() { return data() + size(); }
+    const_iterator end() const noexcept { return data() + size(); }
+    const_iterator cend() const noexcept { return end(); }
+    const_iterator constEnd() const noexcept { return end(); }
     reverse_iterator rbegin() { return reverse_iterator(end()); }
     reverse_iterator rend() { return reverse_iterator(begin()); }
-    const_reverse_iterator rbegin() const { return const_reverse_iterator(end()); }
-    const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
-    const_reverse_iterator crbegin() const { return const_reverse_iterator(end()); }
-    const_reverse_iterator crend() const { return const_reverse_iterator(begin()); }
+    const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+    const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+    const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+    const_reverse_iterator crend() const noexcept { return rend(); }
 
     // stl compatibility
     typedef qsizetype size_type;
@@ -513,26 +429,30 @@ public:
     { prepend(a); }
     void shrink_to_fit() { squeeze(); }
     iterator erase(const_iterator first, const_iterator last);
+    inline iterator erase(const_iterator it) { return erase(it, it + 1); }
 
-    static inline QByteArray fromStdString(const std::string &s);
-    inline std::string toStdString() const;
+    static QByteArray fromStdString(const std::string &s);
+    std::string toStdString() const;
 
-    inline qsizetype size() const { return d->size; }
-    inline qsizetype count() const { return size(); }
-    inline qsizetype length() const { return size(); }
-    bool isNull() const;
+    inline qsizetype size() const noexcept { return d->size; }
+#if QT_DEPRECATED_SINCE(6, 4)
+    QT_DEPRECATED_VERSION_X_6_4("Use size() or length() instead.")
+    inline qsizetype count() const noexcept { return size(); }
+#endif
+    inline qsizetype length() const noexcept { return size(); }
+    QT_CORE_INLINE_SINCE(6, 4)
+    bool isNull() const noexcept;
 
     inline DataPointer &data_ptr() { return d; }
-    explicit inline QByteArray(const DataPointer &dd)
-        : d(dd)
-    {
-    }
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    explicit inline QByteArray(const DataPointer &dd) : d(dd) {}
+#endif
+    explicit inline QByteArray(DataPointer &&dd) : d(std::move(dd)) {}
 
 private:
     void reallocData(qsizetype alloc, QArrayData::AllocationOption option);
     void reallocGrowData(qsizetype n);
     void expand(qsizetype i);
-    QByteArray nulTerminated() const;
 
     static QByteArray toLower_helper(const QByteArray &a);
     static QByteArray toLower_helper(QByteArray &a);
@@ -557,8 +477,6 @@ inline char QByteArray::at(qsizetype i) const
 inline char QByteArray::operator[](qsizetype i) const
 { Q_ASSERT(size_t(i) < size_t(size())); return d.data()[i]; }
 
-inline bool QByteArray::isEmpty() const
-{ return size() == 0; }
 #ifndef QT_NO_CAST_FROM_BYTEARRAY
 inline QByteArray::operator const char *() const
 { return data(); }
@@ -571,7 +489,7 @@ inline char *QByteArray::data()
     Q_ASSERT(d.data());
     return d.data();
 }
-inline const char *QByteArray::data() const
+inline const char *QByteArray::data() const noexcept
 {
 #if QT5_NULL_STRINGS == 1
     return d.data() ? d.data() : &_empty;
@@ -579,8 +497,6 @@ inline const char *QByteArray::data() const
     return d.data();
 #endif
 }
-inline const char *QByteArray::constData() const
-{ return data(); }
 inline void QByteArray::detach()
 { if (d->needsDetach()) reallocData(size(), QArrayData::KeepSize); }
 inline bool QByteArray::isDetached() const
@@ -612,22 +528,6 @@ inline char &QByteArray::operator[](qsizetype i)
 { Q_ASSERT(i >= 0 && i < size()); return data()[i]; }
 inline char &QByteArray::front() { return operator[](0); }
 inline char &QByteArray::back() { return operator[](size() - 1); }
-inline QByteArray::iterator QByteArray::begin()
-{ return data(); }
-inline QByteArray::const_iterator QByteArray::begin() const
-{ return data(); }
-inline QByteArray::const_iterator QByteArray::cbegin() const
-{ return data(); }
-inline QByteArray::const_iterator QByteArray::constBegin() const
-{ return data(); }
-inline QByteArray::iterator QByteArray::end()
-{ return data() + size(); }
-inline QByteArray::const_iterator QByteArray::end() const
-{ return data() + size(); }
-inline QByteArray::const_iterator QByteArray::cend() const
-{ return data() + size(); }
-inline QByteArray::const_iterator QByteArray::constEnd() const
-{ return data() + size(); }
 inline QByteArray &QByteArray::append(qsizetype n, char ch)
 { return insert(size(), n, ch); }
 inline QByteArray &QByteArray::prepend(qsizetype n, char ch)
@@ -655,27 +555,28 @@ inline const QByteArray operator+(char a1, const QByteArray &a2)
 #endif // QT_USE_QSTRINGBUILDER
 
 inline QByteArray &QByteArray::setNum(short n, int base)
-{ return base == 10 ? setNum(qlonglong(n), base) : setNum(qulonglong(ushort(n)), base); }
+{ return setNum(qlonglong(n), base); }
 inline QByteArray &QByteArray::setNum(ushort n, int base)
 { return setNum(qulonglong(n), base); }
 inline QByteArray &QByteArray::setNum(int n, int base)
-{ return base == 10 ? setNum(qlonglong(n), base) : setNum(qulonglong(uint(n)), base); }
+{ return setNum(qlonglong(n), base); }
 inline QByteArray &QByteArray::setNum(uint n, int base)
 { return setNum(qulonglong(n), base); }
 inline QByteArray &QByteArray::setNum(long n, int base)
-{ return base == 10 ? setNum(qlonglong(n), base) : setNum(qulonglong(ulong(n)), base); }
+{ return setNum(qlonglong(n), base); }
 inline QByteArray &QByteArray::setNum(ulong n, int base)
 { return setNum(qulonglong(n), base); }
-inline QByteArray &QByteArray::setNum(float n, char f, int prec)
-{ return setNum(double(n),f,prec); }
+inline QByteArray &QByteArray::setNum(float n, char format, int precision)
+{ return setNum(double(n), format, precision); }
 
-inline std::string QByteArray::toStdString() const
-{ return std::string(constData(), length()); }
+#if QT_CORE_INLINE_IMPL_SINCE(6, 4)
+bool QByteArray::isNull() const noexcept
+{
+    return d->isNull();
+}
+#endif
 
-inline QByteArray QByteArray::fromStdString(const std::string &s)
-{ return QByteArray(s.data(), qsizetype(s.size())); }
-
-#if !defined(QT_NO_DATASTREAM) || (defined(QT_BOOTSTRAPPED) && !defined(QT_BUILD_QMAKE))
+#if !defined(QT_NO_DATASTREAM) || defined(QT_BOOTSTRAPPED)
 Q_CORE_EXPORT QDataStream &operator<<(QDataStream &, const QByteArray &);
 Q_CORE_EXPORT QDataStream &operator>>(QDataStream &, QByteArray &);
 #endif
@@ -699,8 +600,8 @@ public:
 
     void swap(QByteArray::FromBase64Result &other) noexcept
     {
-        qSwap(decoded, other.decoded);
-        qSwap(decodingStatus, other.decodingStatus);
+        decoded.swap(other.decoded);
+        std::swap(decodingStatus, other.decodingStatus);
     }
 
     explicit operator bool() const noexcept { return decodingStatus == QByteArray::Base64DecodingStatus::Ok; }
@@ -755,6 +656,31 @@ QByteArray QByteArrayView::toByteArray() const
 {
     return QByteArray(data(), size());
 }
+
+namespace Qt {
+inline namespace Literals {
+inline namespace StringLiterals {
+
+inline QByteArray operator"" _ba(const char *str, size_t size) noexcept
+{
+    return QByteArray(QByteArrayData(nullptr, const_cast<char *>(str), qsizetype(size)));
+}
+
+} // StringLiterals
+} // Literals
+} // Qt
+
+inline namespace QtLiterals {
+#if QT_DEPRECATED_SINCE(6, 8)
+
+QT_DEPRECATED_VERSION_X_6_8("Use _ba from Qt::StringLiterals namespace instead.")
+inline QByteArray operator"" _qba(const char *str, size_t size) noexcept
+{
+    return Qt::StringLiterals::operator""_ba(str, size);
+}
+
+#endif // QT_DEPRECATED_SINCE(6, 8)
+} // QtLiterals
 
 QT_END_NAMESPACE
 

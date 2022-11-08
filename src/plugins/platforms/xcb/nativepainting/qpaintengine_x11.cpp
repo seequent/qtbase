@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2018 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2018 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QtCore/qrandom.h>
 
@@ -60,6 +24,8 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 #if QT_CONFIG(xrender)
 
 class QXRenderTessellator : public QTessellator
@@ -70,7 +36,7 @@ public:
     XTrapezoid *traps;
     int allocated;
     int size;
-    void addTrap(const Trapezoid &trap);
+    void addTrap(const Trapezoid &trap) override;
     QRect tessellate(const QPointF *points, int nPoints, bool winding) {
         size = 0;
         setWinding(winding);
@@ -451,7 +417,7 @@ static const uchar base_dither_matrix[DITHER_SIZE][DITHER_SIZE] = {
 static QPixmap qt_patternForAlpha(uchar alpha, int screen)
 {
     QPixmap pm;
-    QString key = QLatin1String("$qt-alpha-brush$")
+    QString key = "$qt-alpha-brush$"_L1
                   % HexString<uchar>(alpha)
                   % HexString<int>(screen);
 
@@ -2454,7 +2420,7 @@ static bool path_for_glyphs(QPainterPath *path,
     ft->lockFace();
     int i = 0;
     while (i < glyphs.size()) {
-        QFontEngineFT::Glyph *glyph = ft->loadGlyph(glyphs[i], 0, QFontEngineFT::Format_Mono);
+        QFontEngineFT::Glyph *glyph = ft->loadGlyph(glyphs[i], QFixedPoint(), QFontEngineFT::Format_Mono);
         // #### fix case where we don't get a glyph
         if (!glyph || glyph->format != QFontEngineFT::Format_Mono) {
             result = false;
@@ -2606,7 +2572,8 @@ bool QXRenderGlyphCache::addGlyphs(const QTextItemInt &ti,
     XGlyphInfo xglyphinfo;
 
     for (int i = 0; i < glyphs.size(); ++i) {
-        const QFixed spp = ft->subPixelPositionForX(positions[i].x);
+        const QFixed sppx = ft->subPixelPositionForX(positions[i].x);
+        const QFixedPoint spp(sppx, 0);
         QFontEngineFT::Glyph *glyph = set->getGlyph(glyphs[i], spp);
         Glyph xglyphid = qHash(QFontEngineFT::GlyphAndSubPixelPosition(glyphs[i], spp));
 
@@ -2698,7 +2665,8 @@ bool QXRenderGlyphCache::draw(Drawable src, Drawable dst, const QTransform &matr
         if (!isValidCoordinate(positions[i]))
             break;
 
-        const QFixed spp = ft->subPixelPositionForX(positions[i].x);
+        const QFixed sppx = ft->subPixelPositionForX(positions[i].x);
+        const QFixedPoint spp(sppx, 0);
         QFontEngineFT::Glyph *g = set->getGlyph(glyphs[i], spp);
 
         if (g
@@ -2825,7 +2793,7 @@ QFontEngine::GlyphFormat QXRenderGlyphCache::glyphFormatForDepth(QFontEngine *fo
 
 Glyph QXRenderGlyphCache::glyphId(glyph_t glyph, QFixed subPixelPosition)
 {
-    return qHash(QFontEngineFT::GlyphAndSubPixelPosition(glyph, subPixelPosition));
+    return qHash(QFontEngineFT::GlyphAndSubPixelPosition(glyph, QFixedPoint(subPixelPosition, 0)));
 }
 
 bool QXRenderGlyphCache::isValidCoordinate(const QFixedPoint &fp)

@@ -1,8 +1,5 @@
-# Generated from theplugin.pro.
-
-#####################################################################
-## theplugin Generic Library:
-#####################################################################
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 qt_internal_add_cmake_library(theplugin
     MODULE
@@ -10,13 +7,26 @@ qt_internal_add_cmake_library(theplugin
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../bin"
     SOURCES
         theplugin.cpp theplugin.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
 )
-
-#### Keys ignored in scope 1:.:.:theplugin.pro:<TRUE>:
-# INSTALLS = "target"
-# TEMPLATE = "lib"
-# target.path = "$$[QT_INSTALL_TESTS]/tst_qpluginloader/bin"
-
 qt_autogen_tools_initial_setup(theplugin)
+
+if (UNIX AND NOT APPLE)
+    qt_internal_add_cmake_library(theoldplugin
+        MODULE
+        INSTALL_DIRECTORY "${INSTALL_TESTSDIR}/tst_qpluginloader/bin"
+        OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../bin"
+        SOURCES
+            theoldplugin.cpp theoldplugin.h
+        LIBRARIES
+            Qt::Core
+    )
+    qt_autogen_tools_initial_setup(theoldplugin)
+
+    # Force unoptimized builds with debugging information so some "QTMETADATA !"
+    # strings appear elsewhere in the binary.
+    target_compile_options(theplugin PRIVATE -O0 -g3)
+    target_compile_options(theoldplugin PRIVATE -O0 -g3)
+endif()
+

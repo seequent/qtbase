@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qbenchmarkperfevents_p.h"
 #include "qbenchmarkmetric.h"
@@ -164,8 +128,8 @@ bool QBenchmarkPerfEventsMeasurer::isAvailable()
    HARDWARE     BUS_CYCLES              BusCycles       bus-cycles
    HARDWARE     STALLED_CYCLES_FRONTEND StalledCycles   stalled-cycles-frontend idle-cycles-frontend
    HARDWARE     STALLED_CYCLES_BACKEND  StalledCycles   stalled-cycles-backend idle-cycles-backend
-   SOFTWARE     CPU_CLOCK               WalltimeMilliseconds cpu-clock
-   SOFTWARE     TASK_CLOCK              WalltimeMilliseconds task-clock
+   SOFTWARE     CPU_CLOCK               WalltimeNanoseconds cpu-clock
+   SOFTWARE     TASK_CLOCK              WalltimeNanoseconds task-clock
    SOFTWARE     PAGE_FAULTS             PageFaults      page-faults faults
    SOFTWARE     PAGE_FAULTS_MAJ         MajorPageFaults major-faults
    SOFTWARE     PAGE_FAULTS_MIN         MinorPageFaults minor-faults
@@ -345,7 +309,7 @@ static const Events eventlist[] = {
     { 170, PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_MISSES, QTest::CacheMisses },
     { 183, PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_REFERENCES, QTest::CacheReferences },
     { 200, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CONTEXT_SWITCHES, QTest::ContextSwitches },
-    { 217, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, QTest::WalltimeMilliseconds },
+    { 217, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, QTest::WalltimeNanoseconds },
     { 227, PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES, QTest::CPUCycles },
     { 238, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_MIGRATIONS, QTest::CPUMigrations },
     { 253, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CONTEXT_SWITCHES, QTest::ContextSwitches },
@@ -414,7 +378,7 @@ static const Events eventlist[] = {
     { 1292, PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES, QTest::RefCPUCycles },
     { 1303, PERF_TYPE_HARDWARE, PERF_COUNT_HW_STALLED_CYCLES_BACKEND, QTest::StalledCycles },
     { 1326, PERF_TYPE_HARDWARE, PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, QTest::StalledCycles },
-    { 1350, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK, QTest::WalltimeMilliseconds },
+    { 1350, PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK, QTest::WalltimeNanoseconds },
     {   0, PERF_TYPE_MAX, 0, QTest::Events }
 };
 /* -- END GENERATED CODE -- */
@@ -448,31 +412,12 @@ void QBenchmarkPerfEventsMeasurer::setCounter(const char *name)
     attr.type = ptr->type;
     attr.config = ptr->event_id;
 
-    // now parse the attributes
+    // We used to support attributes, but our code was the opposite of what
+    // perf(1) does, plus QBenchlib isn't exactly expected to be used to
+    // profile Linux kernel code or launch guest VMs as part of the workload.
+    // So we keep accepting the colon as a delimiter but ignore it.
     if (!colon)
         return;
-    while (*++colon) {
-        switch (*colon) {
-        case 'u':
-            attr.exclude_user = true;
-            break;
-        case 'k':
-            attr.exclude_kernel = true;
-            break;
-        case 'h':
-            attr.exclude_hv = true;
-            break;
-        case 'G':
-            attr.exclude_guest = true;
-            break;
-        case 'H':
-            attr.exclude_host = true;
-            break;
-        default:
-            fprintf(stderr, "ERROR: Unknown attribute '%c'\n", *colon);
-            exit(1);
-        }
-    }
 }
 
 void QBenchmarkPerfEventsMeasurer::listCounters()
@@ -490,14 +435,6 @@ void QBenchmarkPerfEventsMeasurer::listCounters()
                ptr->type == PERF_TYPE_SOFTWARE ? "software" :
                ptr->type == PERF_TYPE_HW_CACHE ? "cache" : "other");
     }
-
-    printf("\nAttributes can be specified by adding a colon and the following:\n"
-           "  u - exclude measuring in the userspace\n"
-           "  k - exclude measuring in kernel mode\n"
-           "  h - exclude measuring in the hypervisor\n"
-           "  G - exclude measuring when running virtualized (guest VM)\n"
-           "  H - exclude measuring when running non-virtualized (host system)\n"
-           "Attributes can be combined, for example: -perfcounter branch-mispredicts:kh\n");
 }
 
 QBenchmarkPerfEventsMeasurer::QBenchmarkPerfEventsMeasurer() = default;
@@ -513,33 +450,28 @@ void QBenchmarkPerfEventsMeasurer::init()
 
 void QBenchmarkPerfEventsMeasurer::start()
 {
-
     initPerf();
     if (fd == -1) {
-        // pid == 0 -> attach to the current process
-        // cpu == -1 -> monitor on all CPUs
-        // group_fd == -1 -> this is the group leader
-        // flags == 0 -> reserved, must be zero
-        fd = perf_event_open(&attr, 0, -1, -1, 0);
+        pid_t pid = 0;      // attach to the current process only
+        int cpu = -1;       // on any CPU
+        int group_fd = -1;
+        int flags = PERF_FLAG_FD_CLOEXEC;
+        fd = perf_event_open(&attr, pid, cpu, group_fd, flags);
+        if (fd == -1) {
+            // probably a paranoid kernel (/proc/sys/kernel/perf_event_paranoid)
+            attr.exclude_kernel = true;
+            attr.exclude_hv = true;
+            fd = perf_event_open(&attr, pid, cpu, group_fd, flags);
+        }
         if (fd == -1) {
             perror("QBenchmarkPerfEventsMeasurer::start: perf_event_open");
             exit(1);
-        } else {
-            ::fcntl(fd, F_SETFD, FD_CLOEXEC);
         }
     }
 
     // enable the counter
     ::ioctl(fd, PERF_EVENT_IOC_RESET);
     ::ioctl(fd, PERF_EVENT_IOC_ENABLE);
-}
-
-qint64 QBenchmarkPerfEventsMeasurer::checkpoint()
-{
-    ::ioctl(fd, PERF_EVENT_IOC_DISABLE);
-    qint64 value = readValue();
-    ::ioctl(fd, PERF_EVENT_IOC_ENABLE);
-    return value;
 }
 
 qint64 QBenchmarkPerfEventsMeasurer::stop()
@@ -607,10 +539,6 @@ static quint64 rawReadValue(int fd)
 qint64 QBenchmarkPerfEventsMeasurer::readValue()
 {
     quint64 raw = rawReadValue(fd);
-    if (metricType() == QTest::WalltimeMilliseconds) {
-        // perf returns nanoseconds
-        return raw / 1000000;
-    }
     return raw;
 }
 

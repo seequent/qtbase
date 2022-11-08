@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from text.pro.
 
 add_subdirectory(qabstracttextdocumentlayout)
@@ -27,8 +30,7 @@ if(QT_FEATURE_private_tests)
     add_subdirectory(qzip)
     add_subdirectory(qtextodfwriter)
 endif()
-# QTBUG-87671 # special case
-if(TARGET Qt::Xml AND NOT ANDROID)
+if(TARGET Qt::Xml)
     add_subdirectory(qtextdocument)
 endif()
 if(QT_FEATURE_private_tests AND UNIX)

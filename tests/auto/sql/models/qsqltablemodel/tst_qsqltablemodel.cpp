@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -154,6 +129,9 @@ private slots:
 
     void invalidFilterAndHeaderData_data() { generic_data(); }
     void invalidFilterAndHeaderData(); //QTBUG-23879
+
+    void sqlite_selectFromIdentifierWithDot_data() { generic_data("QSQLITE"); }
+    void sqlite_selectFromIdentifierWithDot();
 private:
     void generic_data(const QString& engine=QString());
     void generic_data_with_strategies(const QString& engine=QString());
@@ -161,6 +139,7 @@ private:
 
 tst_QSqlTableModel::tst_QSqlTableModel()
 {
+    QVERIFY(dbs.open());
 }
 
 tst_QSqlTableModel::~tst_QSqlTableModel()
@@ -169,7 +148,7 @@ tst_QSqlTableModel::~tst_QSqlTableModel()
 
 void tst_QSqlTableModel::dropTestTables()
 {
-    for (int i = 0; i < dbs.dbNames.count(); ++i) {
+    for (int i = 0; i < dbs.dbNames.size(); ++i) {
         QSqlDatabase db = QSqlDatabase::database(dbs.dbNames.at(i));
         QSqlDriver::DbmsType dbType = tst_Databases::getDatabaseType(db);
         QSqlQuery q(db);
@@ -198,7 +177,7 @@ void tst_QSqlTableModel::dropTestTables()
 
 void tst_QSqlTableModel::createTestTables()
 {
-    for (int i = 0; i < dbs.dbNames.count(); ++i) {
+    for (int i = 0; i < dbs.dbNames.size(); ++i) {
         QSqlDatabase db = QSqlDatabase::database(dbs.dbNames.at(i));
         QSqlDriver::DbmsType dbType = tst_Databases::getDatabaseType(db);
         QSqlQuery q(db);
@@ -228,7 +207,7 @@ void tst_QSqlTableModel::createTestTables()
 
 void tst_QSqlTableModel::repopulateTestTables()
 {
-    for (int i = 0; i < dbs.dbNames.count(); ++i) {
+    for (int i = 0; i < dbs.dbNames.size(); ++i) {
         QSqlDatabase db = QSqlDatabase::database(dbs.dbNames.at(i));
         QSqlQuery q(db);
         const auto test = qTableName("test1", __FILE__, db);
@@ -306,35 +285,37 @@ void tst_QSqlTableModel::select()
     QFETCH(QString, dbName);
     QSqlDatabase db = QSqlDatabase::database(dbName);
     CHECK_DATABASE(db);
-    const auto test = qTableName("test1", __FILE__, db);
+    const QStringList tables = {qTableName("test1", __FILE__, db),
+                                qTableName("test1", __FILE__, db).remove(QLatin1Char('"'))};
+    for (const QString &tbl : tables) {
+        QSqlTableModel model(0, db);
+        model.setTable(tbl);
+        model.setSort(0, Qt::AscendingOrder);
+        QVERIFY_SQL(model, select());
 
-    QSqlTableModel model(0, db);
-    model.setTable(test);
-    model.setSort(0, Qt::AscendingOrder);
-    QVERIFY_SQL(model, select());
+        QCOMPARE(model.rowCount(), 3);
+        QCOMPARE(model.columnCount(), 3);
 
-    QCOMPARE(model.rowCount(), 3);
-    QCOMPARE(model.columnCount(), 3);
+        QCOMPARE(model.data(model.index(0, 0)).toInt(), 1);
+        QCOMPARE(model.data(model.index(0, 1)).toString(), QString("harry"));
+        QCOMPARE(model.data(model.index(0, 2)).toInt(), 1);
+        QCOMPARE(model.data(model.index(0, 3)), QVariant());
 
-    QCOMPARE(model.data(model.index(0, 0)).toInt(), 1);
-    QCOMPARE(model.data(model.index(0, 1)).toString(), QString("harry"));
-    QCOMPARE(model.data(model.index(0, 2)).toInt(), 1);
-    QCOMPARE(model.data(model.index(0, 3)), QVariant());
+        QCOMPARE(model.data(model.index(1, 0)).toInt(), 2);
+        QCOMPARE(model.data(model.index(1, 1)).toString(), QString("trond"));
+        QCOMPARE(model.data(model.index(1, 2)).toInt(), 2);
+        QCOMPARE(model.data(model.index(1, 3)), QVariant());
 
-    QCOMPARE(model.data(model.index(1, 0)).toInt(), 2);
-    QCOMPARE(model.data(model.index(1, 1)).toString(), QString("trond"));
-    QCOMPARE(model.data(model.index(1, 2)).toInt(), 2);
-    QCOMPARE(model.data(model.index(1, 3)), QVariant());
+        QCOMPARE(model.data(model.index(2, 0)).toInt(), 3);
+        QCOMPARE(model.data(model.index(2, 1)).toString(), QString("vohi"));
+        QCOMPARE(model.data(model.index(2, 2)).toInt(), 3);
+        QCOMPARE(model.data(model.index(2, 3)), QVariant());
 
-    QCOMPARE(model.data(model.index(2, 0)).toInt(), 3);
-    QCOMPARE(model.data(model.index(2, 1)).toString(), QString("vohi"));
-    QCOMPARE(model.data(model.index(2, 2)).toInt(), 3);
-    QCOMPARE(model.data(model.index(2, 3)), QVariant());
-
-    QCOMPARE(model.data(model.index(3, 0)), QVariant());
-    QCOMPARE(model.data(model.index(3, 1)), QVariant());
-    QCOMPARE(model.data(model.index(3, 2)), QVariant());
-    QCOMPARE(model.data(model.index(3, 3)), QVariant());
+        QCOMPARE(model.data(model.index(3, 0)), QVariant());
+        QCOMPARE(model.data(model.index(3, 1)), QVariant());
+        QCOMPARE(model.data(model.index(3, 2)), QVariant());
+        QCOMPARE(model.data(model.index(3, 3)), QVariant());
+    }
 }
 
 class SelectRowModel: public QSqlTableModel
@@ -621,8 +602,8 @@ void tst_QSqlTableModel::setRecord()
 
             // dataChanged() emitted by setData() for each *changed* column
             if ((QSqlTableModel::EditStrategy)submitpolicy == QSqlTableModel::OnManualSubmit) {
-                QCOMPARE(spy.count(), 2);
-                QCOMPARE(spy.at(0).count(), 2);
+                QCOMPARE(spy.size(), 2);
+                QCOMPARE(spy.at(0).size(), 2);
                 QCOMPARE(qvariant_cast<QModelIndex>(spy.at(0).at(0)), model.index(i, 1));
                 QCOMPARE(qvariant_cast<QModelIndex>(spy.at(0).at(1)), model.index(i, 1));
                 QCOMPARE(qvariant_cast<QModelIndex>(spy.at(1).at(0)), model.index(i, 2));
@@ -633,10 +614,10 @@ void tst_QSqlTableModel::setRecord()
             else {
                 if ((QSqlTableModel::EditStrategy)submitpolicy != QSqlTableModel::OnManualSubmit)
                     // dataChanged() also emitted by selectRow()
-                    QCOMPARE(spy.count(), 3);
+                    QCOMPARE(spy.size(), 3);
                 else
-                    QCOMPARE(spy.count(), 2);
-                QCOMPARE(spy.at(0).count(), 2);
+                    QCOMPARE(spy.size(), 2);
+                QCOMPARE(spy.at(0).size(), 2);
                 QCOMPARE(qvariant_cast<QModelIndex>(spy.at(0).at(0)), model.index(i, 1));
                 QCOMPARE(qvariant_cast<QModelIndex>(spy.at(0).at(1)), model.index(i, 1));
                 QCOMPARE(qvariant_cast<QModelIndex>(spy.at(1).at(0)), model.index(i, 2));
@@ -1111,7 +1092,7 @@ void tst_QSqlTableModel::removeRow()
     QSignalSpy headerDataChangedSpy(&model, SIGNAL(headerDataChanged(Qt::Orientation,int,int)));
 
     QVERIFY(model.removeRow(1));
-    QCOMPARE(headerDataChangedSpy.count(), 1);
+    QCOMPARE(headerDataChangedSpy.size(), 1);
     QCOMPARE(*static_cast<const Qt::Orientation *>(headerDataChangedSpy.at(0).value(0).constData()), Qt::Vertical);
     QCOMPARE(headerDataChangedSpy.at(0).at(1).toInt(), 1);
     QCOMPARE(headerDataChangedSpy.at(0).at(2).toInt(), 1);
@@ -1131,7 +1112,7 @@ void tst_QSqlTableModel::removeRow()
 
     headerDataChangedSpy.clear();
     QVERIFY(model.removeRow(1));
-    QCOMPARE(headerDataChangedSpy.count(), 1);
+    QCOMPARE(headerDataChangedSpy.size(), 1);
     QCOMPARE(model.rowCount(), 3);
 
     QVERIFY_SQL(model, select());
@@ -1167,7 +1148,7 @@ void tst_QSqlTableModel::removeRows()
 
     QVERIFY_SQL(model, removeRows(0, 1));
     QVERIFY_SQL(model, removeRows(1, 1));
-    QCOMPARE(beforeDeleteSpy.count(), 2);
+    QCOMPARE(beforeDeleteSpy.size(), 2);
     QCOMPARE(beforeDeleteSpy.at(0).at(0).toInt(), 0);
     QCOMPARE(beforeDeleteSpy.at(1).at(0).toInt(), 1);
     // deleted rows shown as empty until select
@@ -1198,15 +1179,15 @@ void tst_QSqlTableModel::removeRows()
     qRegisterMetaType<Qt::Orientation>("Qt::Orientation");
     QSignalSpy headerDataChangedSpy(&model, SIGNAL(headerDataChanged(Qt::Orientation,int,int)));
     QVERIFY(model.removeRows(0, 2, QModelIndex()));
-    QCOMPARE(headerDataChangedSpy.count(), 2);
+    QCOMPARE(headerDataChangedSpy.size(), 2);
     QCOMPARE(headerDataChangedSpy.at(0).at(1).toInt(), 1);
     QCOMPARE(headerDataChangedSpy.at(0).at(2).toInt(), 1);
     QCOMPARE(headerDataChangedSpy.at(1).at(1).toInt(), 0);
     QCOMPARE(headerDataChangedSpy.at(1).at(2).toInt(), 0);
     QCOMPARE(model.rowCount(), 3);
-    QCOMPARE(beforeDeleteSpy.count(), 0);
+    QCOMPARE(beforeDeleteSpy.size(), 0);
     QVERIFY(model.submitAll());
-    QCOMPARE(beforeDeleteSpy.count(), 2);
+    QCOMPARE(beforeDeleteSpy.size(), 2);
     QCOMPARE(beforeDeleteSpy.at(0).at(0).toInt(), 0);
     QCOMPARE(beforeDeleteSpy.at(1).at(0).toInt(), 1);
     QCOMPARE(model.rowCount(), 1);
@@ -1803,8 +1784,8 @@ void tst_QSqlTableModel::setFilter()
     model.setFilter("id = 2");
 
     // check the signals
-    QCOMPARE(modelAboutToBeResetSpy.count(), 1);
-    QCOMPARE(modelResetSpy.count(), 1);
+    QCOMPARE(modelAboutToBeResetSpy.size(), 1);
+    QCOMPARE(modelResetSpy.size(), 1);
 
     QCOMPARE(model.rowCount(), 1);
     QCOMPARE(model.data(model.index(0, 0)).toInt(), 2);
@@ -1947,8 +1928,8 @@ void tst_QSqlTableModel::insertRecordsInLoop()
     model.submitAll(); // submitAll() calls select() which clears and repopulates the table
 
     // model emits reset signals
-    QCOMPARE(modelAboutToBeResetSpy.count(), 1);
-    QCOMPARE(modelResetSpy.count(), 1);
+    QCOMPARE(modelAboutToBeResetSpy.size(), 1);
+    QCOMPARE(modelResetSpy.size(), 1);
 
     QCOMPARE(model.rowCount(), 13);
     QCOMPARE(model.columnCount(), 3);
@@ -2158,6 +2139,51 @@ void tst_QSqlTableModel::modelInAnotherThread()
     t.start();
     QTRY_VERIFY(t.isDone);
     QVERIFY(t.isFinished());
+}
+
+void tst_QSqlTableModel::sqlite_selectFromIdentifierWithDot()
+{
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+    {
+        const auto fieldDot = qTableName("fieldDot", __FILE__, db);
+        tst_Databases::safeDropTable(db, fieldDot);
+        QSqlQuery qry(db);
+        QVERIFY_SQL(qry, exec("create table " + fieldDot + " (id int primary key, "
+                              "\"person.firstname\" varchar(20))"));
+        QVERIFY_SQL(qry, exec("insert into " + fieldDot + " values(1, 'Andy')"));
+        QSqlTableModel model(0, db);
+        model.setTable(fieldDot);
+        QVERIFY_SQL(model, select());
+        QCOMPARE(model.data(model.index(0, 0)).toInt(), 1);
+        QCOMPARE(model.data(model.index(0, 1)).toString(), QString("Andy"));
+    }
+    const auto tableDot = QLatin1Char('[') + qTableName("table.dot", __FILE__, db) + QLatin1Char(']');
+    {
+        tst_Databases::safeDropTable(db, tableDot);
+        QSqlQuery qry(db);
+        QVERIFY_SQL(qry, exec("create table " + tableDot + " (id int primary key, "
+                              "\"person.firstname\" varchar(20))"));
+        QVERIFY_SQL(qry, exec("insert into " + tableDot + " values(1, 'Andy')"));
+        QSqlTableModel model(0, db);
+        model.setTable(tableDot);
+        QVERIFY_SQL(model, select());
+        QCOMPARE(model.data(model.index(0, 0)).toInt(), 1);
+        QCOMPARE(model.data(model.index(0, 1)).toString(), QString("Andy"));
+    }
+    {
+        QSqlDatabase attachedDb = QSqlDatabase::addDatabase("QSQLITE", "attachedDb");
+        attachedDb.setDatabaseName(db.databaseName().replace("foo.db", "attached.db"));
+        QVERIFY(attachedDb.open());
+        QSqlQuery qry(attachedDb);
+        QVERIFY_SQL(qry, exec(QString("attach '%1' AS 'attached'").arg(db.databaseName())));
+        QSqlTableModel model(0, attachedDb);
+        model.setTable(QString("attached.%1").arg(tableDot));
+        QVERIFY_SQL(model, select());
+        QCOMPARE(model.data(model.index(0, 0)).toInt(), 1);
+        QCOMPARE(model.data(model.index(0, 1)).toString(), QString("Andy"));
+    }
 }
 
 QTEST_MAIN(tst_QSqlTableModel)

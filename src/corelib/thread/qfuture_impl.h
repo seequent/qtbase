@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QFUTURE_H
 #error Do not include qfuture_impl.h directly
@@ -51,6 +15,7 @@
 #include <QtCore/qthreadpool.h>
 #include <QtCore/qexception.h>
 #include <QtCore/qpointer.h>
+#include <QtCore/qpromise.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -65,14 +30,22 @@ template<class T>
 class QPromise;
 
 namespace QtFuture {
+
 enum class Launch { Sync, Async, Inherit };
+
+template<class T>
+struct WhenAnyResult
+{
+    qsizetype index = -1;
+    QFuture<T> future;
+};
+
+// Deduction guide
+template<class T>
+WhenAnyResult(qsizetype, const QFuture<T> &) -> WhenAnyResult<T>;
 }
 
 namespace QtPrivate {
-
-template<class T, class U>
-using EnableIfSameOrConvertible = std::enable_if_t<std::is_same_v<T, U>
-                                                   || std::is_convertible_v<T, U>>;
 
 template<class T>
 using EnableForVoid = std::enable_if_t<std::is_same_v<T, void>>;
@@ -117,7 +90,48 @@ struct ResultTypeHelper<
     using ResultType = std::invoke_result_t<std::decay_t<F>>;
 };
 
+// Helpers to remove QPrivateSignal argument from the list of arguments
+
+template<class T, class Enable = void>
+inline constexpr bool IsPrivateSignalArg = false;
+
+template<class T>
+inline constexpr bool IsPrivateSignalArg<T, typename std::enable_if_t<
+        // finds injected-class-name, the 'class' avoids falling into the rules of [class.qual]/2:
+        std::is_class_v<class T::QPrivateSignal>
+    >> = true;
+
+template<class Tuple, std::size_t... I>
+auto cutTuple(Tuple &&t, std::index_sequence<I...>)
+{
+    return std::make_tuple(std::get<I>(t)...);
+}
+
+template<class Arg, class... Args>
+auto createTuple(Arg &&arg, Args &&... args)
+{
+    using TupleType = std::tuple<std::decay_t<Arg>, std::decay_t<Args>...>;
+    constexpr auto Size = sizeof...(Args); // One less than the size of all arguments
+    if constexpr (QtPrivate::IsPrivateSignalArg<std::tuple_element_t<Size, TupleType>>) {
+        if constexpr (Size == 1) {
+            return std::forward<Arg>(arg);
+        } else {
+            return cutTuple(std::make_tuple(std::forward<Arg>(arg), std::forward<Args>(args)...),
+                            std::make_index_sequence<Size>());
+        }
+    } else {
+        return std::make_tuple(std::forward<Arg>(arg), std::forward<Args>(args)...);
+    }
+}
+
 // Helpers to resolve argument types of callables.
+
+template<class Arg, class... Args>
+using FilterLastPrivateSignalArg =
+        std::conditional_t<(sizeof...(Args) > 0),
+                           std::invoke_result_t<decltype(createTuple<Arg, Args...>), Arg, Args...>,
+                           std::conditional_t<IsPrivateSignalArg<Arg>, void, Arg>>;
+
 template<typename...>
 struct ArgsType;
 
@@ -128,9 +142,7 @@ struct ArgsType<Arg, Args...>
     using PromiseType = void;
     using IsPromise = std::false_type;
     static const bool HasExtraArgs = (sizeof...(Args) > 0);
-    using AllArgs =
-            std::conditional_t<HasExtraArgs, std::tuple<std::decay_t<Arg>, std::decay_t<Args>...>,
-                               std::decay_t<Arg>>;
+    using AllArgs = FilterLastPrivateSignalArg<std::decay_t<Arg>, std::decay_t<Args>...>;
 
     template<class Class, class Callable>
     static const bool CanInvokeWithArgs = std::is_invocable_v<Callable, Class, Arg, Args...>;
@@ -143,9 +155,7 @@ struct ArgsType<QPromise<Arg> &, Args...>
     using PromiseType = Arg;
     using IsPromise = std::true_type;
     static const bool HasExtraArgs = (sizeof...(Args) > 0);
-    using AllArgs =
-            std::conditional_t<HasExtraArgs, std::tuple<std::decay_t<QPromise<Arg> &>, std::decay_t<Args>...>,
-                               std::decay_t<QPromise<Arg> &>>;
+    using AllArgs = FilterLastPrivateSignalArg<QPromise<Arg>, std::decay_t<Args>...>;
 
     template<class Class, class Callable>
     static const bool CanInvokeWithArgs = std::is_invocable_v<Callable, Class, QPromise<Arg> &, Args...>;
@@ -233,25 +243,47 @@ template<class Class, class Callable>
 using EnableIfInvocable = std::enable_if_t<
         QtPrivate::ArgResolver<Callable>::template CanInvokeWithArgs<Class, Callable>>;
 
-template<class>
-struct isTuple : std::false_type
-{
-};
-template<class... T>
-struct isTuple<std::tuple<T...>> : std::true_type
-{
-};
 template<class T>
-inline constexpr bool isTupleV = isTuple<T>::value;
+inline constexpr bool isQFutureV = false;
+
+template<class T>
+inline constexpr bool isQFutureV<QFuture<T>> = true;
+
+template<class T>
+using isQFuture = std::bool_constant<isQFutureV<T>>;
+
+template<class T>
+struct Future
+{
+};
+
+template<class T>
+struct Future<QFuture<T>>
+{
+    using type = T;
+};
+
+template<class... Args>
+using NotEmpty = std::bool_constant<(sizeof...(Args) > 0)>;
+
+template<class Sequence>
+using IsRandomAccessible =
+        std::is_convertible<typename std::iterator_traits<std::decay_t<decltype(
+                                    std::begin(std::declval<Sequence>()))>>::iterator_category,
+                            std::random_access_iterator_tag>;
+
+template<class Iterator>
+using IsForwardIterable =
+        std::is_convertible<typename std::iterator_traits<Iterator>::iterator_category,
+                            std::forward_iterator_tag>;
 
 template<typename Function, typename ResultType, typename ParentResultType>
 class Continuation
 {
 public:
     template<typename F = Function>
-    Continuation(F &&func, const QFuture<ParentResultType> &f,
-                 const QFutureInterface<ResultType> &p)
-        : promise(p), parentFuture(f), function(std::forward<F>(func))
+    Continuation(F &&func, const QFuture<ParentResultType> &f, QPromise<ResultType> &&p)
+        : promise(std::move(p)), parentFuture(f), function(std::forward<F>(func))
     {
     }
     virtual ~Continuation() = default;
@@ -259,15 +291,15 @@ public:
     bool execute();
 
     template<typename F = Function>
-    static void create(F &&func, QFuture<ParentResultType> *f, QFutureInterface<ResultType> &p,
+    static void create(F &&func, QFuture<ParentResultType> *f, QFutureInterface<ResultType> &fi,
                        QtFuture::Launch policy);
 
     template<typename F = Function>
-    static void create(F &&func, QFuture<ParentResultType> *f, QFutureInterface<ResultType> &p,
+    static void create(F &&func, QFuture<ParentResultType> *f, QFutureInterface<ResultType> &fi,
                        QThreadPool *pool);
 
     template<typename F = Function>
-    static void create(F &&func, QFuture<ParentResultType> *f, QFutureInterface<ResultType> &p,
+    static void create(F &&func, QFuture<ParentResultType> *f, QFutureInterface<ResultType> &fi,
                        QObject *context);
 
 private:
@@ -284,7 +316,7 @@ protected:
     void runFunction();
 
 protected:
-    QFutureInterface<ResultType> promise;
+    QPromise<ResultType> promise;
     QFuture<ParentResultType> parentFuture;
     Function function;
 };
@@ -294,9 +326,9 @@ class SyncContinuation final : public Continuation<Function, ResultType, ParentR
 {
 public:
     template<typename F = Function>
-    SyncContinuation(F &&func, const QFuture<ParentResultType> &f,
-                     const QFutureInterface<ResultType> &p)
-        : Continuation<Function, ResultType, ParentResultType>(std::forward<F>(func), f, p)
+    SyncContinuation(F &&func, const QFuture<ParentResultType> &f, QPromise<ResultType> &&p)
+        : Continuation<Function, ResultType, ParentResultType>(std::forward<F>(func), f,
+                                                               std::move(p))
     {
     }
 
@@ -312,12 +344,12 @@ class AsyncContinuation final : public QRunnable,
 {
 public:
     template<typename F = Function>
-    AsyncContinuation(F &&func, const QFuture<ParentResultType> &f,
-                      const QFutureInterface<ResultType> &p, QThreadPool *pool = nullptr)
-        : Continuation<Function, ResultType, ParentResultType>(std::forward<F>(func), f, p),
+    AsyncContinuation(F &&func, const QFuture<ParentResultType> &f, QPromise<ResultType> &&p,
+                      QThreadPool *pool = nullptr)
+        : Continuation<Function, ResultType, ParentResultType>(std::forward<F>(func), f,
+                                                               std::move(p)),
           threadPool(pool)
     {
-        this->promise.setRunnable(this);
     }
 
     ~AsyncContinuation() override = default;
@@ -346,15 +378,15 @@ class FailureHandler
 public:
     template<typename F = Function>
     static void create(F &&function, QFuture<ResultType> *future,
-                       const QFutureInterface<ResultType> &promise);
+                       const QFutureInterface<ResultType> &fi);
 
     template<typename F = Function>
-    static void create(F &&function, QFuture<ResultType> *future,
-                       QFutureInterface<ResultType> &promise, QObject *context);
+    static void create(F &&function, QFuture<ResultType> *future, QFutureInterface<ResultType> &fi,
+                       QObject *context);
 
     template<typename F = Function>
-    FailureHandler(F &&func, const QFuture<ResultType> &f, const QFutureInterface<ResultType> &p)
-        : promise(p), parentFuture(f), handler(std::forward<F>(func))
+    FailureHandler(F &&func, const QFuture<ResultType> &f, QPromise<ResultType> &&p)
+        : promise(std::move(p)), parentFuture(f), handler(std::forward<F>(func))
     {
     }
 
@@ -367,7 +399,7 @@ private:
     void handleAllExceptions();
 
 private:
-    QFutureInterface<ResultType> promise;
+    QPromise<ResultType> promise;
     QFuture<ResultType> parentFuture;
     Function handler;
 };
@@ -377,7 +409,7 @@ private:
 template<typename Function, typename ResultType, typename ParentResultType>
 void Continuation<Function, ResultType, ParentResultType>::runFunction()
 {
-    promise.reportStarted();
+    promise.start();
 
     Q_ASSERT(parentFuture.isFinished());
 
@@ -391,7 +423,7 @@ void Continuation<Function, ResultType, ParentResultType>::runFunction()
                 fulfillPromiseWithResult();
             } else {
                 // This assert normally should never fail, this is to make sure
-                // that nothing unexpected happend.
+                // that nothing unexpected happened.
                 static_assert(std::is_invocable_v<Function, QFuture<ParentResultType>>,
                               "The continuation is not invocable with the provided arguments");
                 fulfillPromise(parentFuture);
@@ -406,7 +438,7 @@ void Continuation<Function, ResultType, ParentResultType>::runFunction()
                 fulfillVoidPromise();
             } else {
                 // This assert normally should never fail, this is to make sure
-                // that nothing unexpected happend.
+                // that nothing unexpected happened.
                 static_assert(std::is_invocable_v<Function, QFuture<ParentResultType>>,
                               "The continuation is not invocable with the provided arguments");
                 function(parentFuture);
@@ -414,10 +446,10 @@ void Continuation<Function, ResultType, ParentResultType>::runFunction()
         }
 #ifndef QT_NO_EXCEPTIONS
     } catch (...) {
-        promise.reportException(std::current_exception());
+        promise.setException(std::current_exception());
     }
 #endif
-    promise.reportFinished();
+    promise.finish();
 }
 
 template<typename Function, typename ResultType, typename ParentResultType>
@@ -425,25 +457,25 @@ bool Continuation<Function, ResultType, ParentResultType>::execute()
 {
     Q_ASSERT(parentFuture.isFinished());
 
-    if (parentFuture.isCanceled()) {
+    if (parentFuture.d.isChainCanceled()) {
 #ifndef QT_NO_EXCEPTIONS
-        if (parentFuture.d.exceptionStore().hasException()) {
+        if (parentFuture.d.hasException()) {
             // If the continuation doesn't take a QFuture argument, propagate the exception
             // to the caller, by reporting it. If the continuation takes a QFuture argument,
             // the user may want to catch the exception inside the continuation, to not
             // interrupt the continuation chain, so don't report anything yet.
             if constexpr (!std::is_invocable_v<std::decay_t<Function>, QFuture<ParentResultType>>) {
-                promise.reportStarted();
-                promise.reportException(parentFuture.d.exceptionStore().exception());
-                promise.reportFinished();
+                promise.start();
+                promise.setException(parentFuture.d.exceptionStore().exception());
+                promise.finish();
                 return false;
             }
         } else
 #endif
         {
-            promise.reportStarted();
-            promise.reportCanceled();
-            promise.reportFinished();
+            promise.start();
+            promise.future().cancel();
+            promise.finish();
             return false;
         }
     }
@@ -452,11 +484,30 @@ bool Continuation<Function, ResultType, ParentResultType>::execute()
     return true;
 }
 
+// Workaround for keeping move-only lambdas inside std::function
+template<class Function>
+struct ContinuationWrapper
+{
+    ContinuationWrapper(Function &&f) : function(std::move(f)) { }
+    ContinuationWrapper(const ContinuationWrapper &other)
+        : function(std::move(const_cast<ContinuationWrapper &>(other).function))
+    {
+        Q_ASSERT_X(false, "QFuture", "Continuation shouldn't be copied");
+    }
+    ContinuationWrapper(ContinuationWrapper &&other) = default;
+    ContinuationWrapper &operator=(ContinuationWrapper &&) = default;
+
+    void operator()(const QFutureInterfaceBase &parentData) { function(parentData); }
+
+private:
+    Function function;
+};
+
 template<typename Function, typename ResultType, typename ParentResultType>
 template<typename F>
 void Continuation<Function, ResultType, ParentResultType>::create(F &&func,
                                                                   QFuture<ParentResultType> *f,
-                                                                  QFutureInterface<ResultType> &p,
+                                                                  QFutureInterface<ResultType> &fi,
                                                                   QtFuture::Launch policy)
 {
     Q_ASSERT(f);
@@ -470,22 +521,24 @@ void Continuation<Function, ResultType, ParentResultType>::create(F &&func,
         // If the parent future was using a custom thread pool, inherit it as well.
         if (launchAsync && f->d.threadPool()) {
             pool = f->d.threadPool();
-            p.setThreadPool(pool);
+            fi.setThreadPool(pool);
         }
     }
 
-    p.setLaunchAsync(launchAsync);
+    fi.setLaunchAsync(launchAsync);
 
-    auto continuation = [func = std::forward<F>(func), p, pool,
+    auto continuation = [func = std::forward<F>(func), fi, promise = QPromise(fi), pool,
                          launchAsync](const QFutureInterfaceBase &parentData) mutable {
         const auto parent = QFutureInterface<ParentResultType>(parentData).future();
         Continuation<Function, ResultType, ParentResultType> *continuationJob = nullptr;
         if (launchAsync) {
-            continuationJob = new AsyncContinuation<Function, ResultType, ParentResultType>(
-                    std::forward<Function>(func), parent, p, pool);
+            auto asyncJob = new AsyncContinuation<Function, ResultType, ParentResultType>(
+                    std::forward<Function>(func), parent, std::move(promise), pool);
+            fi.setRunnable(asyncJob);
+            continuationJob = asyncJob;
         } else {
             continuationJob = new SyncContinuation<Function, ResultType, ParentResultType>(
-                    std::forward<Function>(func), parent, p);
+                    std::forward<Function>(func), parent, std::move(promise));
         }
 
         bool isLaunched = continuationJob->execute();
@@ -497,27 +550,26 @@ void Continuation<Function, ResultType, ParentResultType>::create(F &&func,
             continuationJob = nullptr;
         }
     };
-
-    f->d.setContinuation(std::move(continuation));
+    f->d.setContinuation(ContinuationWrapper(std::move(continuation)), fi.d);
 }
 
 template<typename Function, typename ResultType, typename ParentResultType>
 template<typename F>
 void Continuation<Function, ResultType, ParentResultType>::create(F &&func,
                                                                   QFuture<ParentResultType> *f,
-                                                                  QFutureInterface<ResultType> &p,
+                                                                  QFutureInterface<ResultType> &fi,
                                                                   QThreadPool *pool)
 {
     Q_ASSERT(f);
 
-    p.setLaunchAsync(true);
-    p.setThreadPool(pool);
+    fi.setLaunchAsync(true);
+    fi.setThreadPool(pool);
 
-    auto continuation = [func = std::forward<F>(func), p,
+    auto continuation = [func = std::forward<F>(func), promise = QPromise(fi),
                          pool](const QFutureInterfaceBase &parentData) mutable {
         const auto parent = QFutureInterface<ParentResultType>(parentData).future();
         auto continuationJob = new AsyncContinuation<Function, ResultType, ParentResultType>(
-                std::forward<Function>(func), parent, p, pool);
+                std::forward<Function>(func), parent, std::move(promise), pool);
         bool isLaunched = continuationJob->execute();
         // If continuation is successfully launched, AsyncContinuation will be deleted
         // by the QThreadPool which has started it.
@@ -526,31 +578,32 @@ void Continuation<Function, ResultType, ParentResultType>::create(F &&func,
             continuationJob = nullptr;
         }
     };
-
-    f->d.setContinuation(std::move(continuation));
+    f->d.setContinuation(ContinuationWrapper(std::move(continuation)), fi.d);
 }
 
 template<typename Function, typename ResultType, typename ParentResultType>
 template<typename F>
 void Continuation<Function, ResultType, ParentResultType>::create(F &&func,
                                                                   QFuture<ParentResultType> *f,
-                                                                  QFutureInterface<ResultType> &p,
+                                                                  QFutureInterface<ResultType> &fi,
                                                                   QObject *context)
 {
     Q_ASSERT(f);
 
-    auto continuation = [func = std::forward<F>(func), p, context = QPointer<QObject>(context)](
+    auto continuation = [func = std::forward<F>(func), promise = QPromise(fi),
+                         context = QPointer<QObject>(context)](
                                 const QFutureInterfaceBase &parentData) mutable {
         Q_ASSERT(context);
         const auto parent = QFutureInterface<ParentResultType>(parentData).future();
-        QMetaObject::invokeMethod(context, [func = std::forward<F>(func), p, parent]() mutable {
-            SyncContinuation<Function, ResultType, ParentResultType> continuationJob(
-                    std::forward<Function>(func), parent, p);
-            continuationJob.execute();
-        });
+        QMetaObject::invokeMethod(
+                context,
+                [func = std::forward<F>(func), promise = std::move(promise), parent]() mutable {
+                    SyncContinuation<Function, ResultType, ParentResultType> continuationJob(
+                            std::forward<Function>(func), parent, std::move(promise));
+                    continuationJob.execute();
+                });
     };
-
-    f->d.setContinuation(std::move(continuation));
+    f->d.setContinuation(ContinuationWrapper(std::move(continuation)), fi.d);
 }
 
 template<typename Function, typename ResultType, typename ParentResultType>
@@ -584,32 +637,27 @@ template<typename Function, typename ResultType, typename ParentResultType>
 template<class... Args>
 void Continuation<Function, ResultType, ParentResultType>::fulfillPromise(Args &&... args)
 {
-    if constexpr (std::is_copy_constructible_v<ResultType>)
-        promise.reportResult(std::invoke(function, std::forward<Args>(args)...));
-    else
-        promise.reportAndMoveResult(std::invoke(function, std::forward<Args>(args)...));
+    promise.addResult(std::invoke(function, std::forward<Args>(args)...));
 }
 
 template<class T>
-void fulfillPromise(QFutureInterface<T> &promise, QFuture<T> &future)
+void fulfillPromise(QPromise<T> &promise, QFuture<T> &future)
 {
     if constexpr (!std::is_void_v<T>) {
         if constexpr (std::is_copy_constructible_v<T>)
-            promise.reportResult(future.result());
+            promise.addResult(future.result());
         else
-            promise.reportAndMoveResult(future.takeResult());
+            promise.addResult(future.takeResult());
     }
 }
 
 template<class T, class Function>
-void fulfillPromise(QFutureInterface<T> &promise, Function &&handler)
+void fulfillPromise(QPromise<T> &promise, Function &&handler)
 {
     if constexpr (std::is_void_v<T>)
         handler();
-    else if constexpr (std::is_copy_constructible_v<T>)
-        promise.reportResult(handler());
     else
-        promise.reportAndMoveResult(handler());
+        promise.addResult(handler());
 }
 
 #ifndef QT_NO_EXCEPTIONS
@@ -617,43 +665,44 @@ void fulfillPromise(QFutureInterface<T> &promise, Function &&handler)
 template<class Function, class ResultType>
 template<class F>
 void FailureHandler<Function, ResultType>::create(F &&function, QFuture<ResultType> *future,
-                                                  const QFutureInterface<ResultType> &promise)
+                                                  const QFutureInterface<ResultType> &fi)
 {
     Q_ASSERT(future);
 
-    auto failureContinuation = [function = std::forward<F>(function),
-                                promise](const QFutureInterfaceBase &parentData) mutable {
+    auto failureContinuation = [function = std::forward<F>(function), promise = QPromise(fi)](
+                                       const QFutureInterfaceBase &parentData) mutable {
         const auto parent = QFutureInterface<ResultType>(parentData).future();
         FailureHandler<Function, ResultType> failureHandler(std::forward<Function>(function),
-                                                            parent, promise);
+                                                            parent, std::move(promise));
         failureHandler.run();
     };
 
-    future->d.setContinuation(std::move(failureContinuation));
+    future->d.setContinuation(ContinuationWrapper(std::move(failureContinuation)));
 }
 
 template<class Function, class ResultType>
 template<class F>
 void FailureHandler<Function, ResultType>::create(F &&function, QFuture<ResultType> *future,
-                                                  QFutureInterface<ResultType> &promise,
+                                                  QFutureInterface<ResultType> &fi,
                                                   QObject *context)
 {
     Q_ASSERT(future);
 
     auto failureContinuation =
-            [function = std::forward<F>(function), promise,
+            [function = std::forward<F>(function), promise = QPromise(fi),
              context = QPointer<QObject>(context)](const QFutureInterfaceBase &parentData) mutable {
                 Q_ASSERT(context);
                 const auto parent = QFutureInterface<ResultType>(parentData).future();
-                QMetaObject::invokeMethod(
-                        context, [function = std::forward<F>(function), promise, parent]() mutable {
-                            FailureHandler<Function, ResultType> failureHandler(
-                                    std::forward<Function>(function), parent, promise);
-                            failureHandler.run();
-                        });
+                QMetaObject::invokeMethod(context,
+                                          [function = std::forward<F>(function),
+                                          promise = std::move(promise), parent]() mutable {
+                    FailureHandler<Function, ResultType> failureHandler(
+                                std::forward<Function>(function), parent, std::move(promise));
+                    failureHandler.run();
+                });
             };
 
-    future->d.setContinuation(std::move(failureContinuation));
+    future->d.setContinuation(ContinuationWrapper(std::move(failureContinuation)));
 }
 
 template<class Function, class ResultType>
@@ -661,9 +710,9 @@ void FailureHandler<Function, ResultType>::run()
 {
     Q_ASSERT(parentFuture.isFinished());
 
-    promise.reportStarted();
+    promise.start();
 
-    if (parentFuture.d.exceptionStore().hasException()) {
+    if (parentFuture.d.hasException()) {
         using ArgType = typename QtPrivate::ArgResolver<Function>::First;
         if constexpr (std::is_void_v<ArgType>) {
             handleAllExceptions();
@@ -673,7 +722,7 @@ void FailureHandler<Function, ResultType>::run()
     } else {
         QtPrivate::fulfillPromise(promise, parentFuture);
     }
-    promise.reportFinished();
+    promise.finish();
 }
 
 template<class Function, class ResultType>
@@ -681,25 +730,22 @@ template<class ArgType>
 void FailureHandler<Function, ResultType>::handleException()
 {
     try {
-        parentFuture.d.exceptionStore().throwPossibleException();
+        Q_ASSERT(parentFuture.d.hasException());
+        parentFuture.d.exceptionStore().rethrowException();
     } catch (const ArgType &e) {
         try {
             // Handle exceptions matching with the handler's argument type
-            if constexpr (std::is_void_v<ResultType>) {
+            if constexpr (std::is_void_v<ResultType>)
                 handler(e);
-            } else {
-                if constexpr (std::is_copy_constructible_v<ResultType>)
-                    promise.reportResult(handler(e));
-                else
-                    promise.reportAndMoveResult(handler(e));
-            }
+            else
+                promise.addResult(handler(e));
         } catch (...) {
-            promise.reportException(std::current_exception());
+            promise.setException(std::current_exception());
         }
     } catch (...) {
         // Exception doesn't match with handler's argument type, propagate
         // the exception to be handled later.
-        promise.reportException(std::current_exception());
+        promise.setException(std::current_exception());
     }
 }
 
@@ -707,12 +753,13 @@ template<class Function, class ResultType>
 void FailureHandler<Function, ResultType>::handleAllExceptions()
 {
     try {
-        parentFuture.d.exceptionStore().throwPossibleException();
+        Q_ASSERT(parentFuture.d.hasException());
+        parentFuture.d.exceptionStore().rethrowException();
     } catch (...) {
         try {
             QtPrivate::fulfillPromise(promise, std::forward<Function>(handler));
         } catch (...) {
-            promise.reportException(std::current_exception());
+            promise.setException(std::current_exception());
         }
     }
 }
@@ -724,58 +771,55 @@ class CanceledHandler
 {
 public:
     template<class F = Function>
-    static QFuture<ResultType> create(F &&handler, QFuture<ResultType> *future,
-                                      QFutureInterface<ResultType> &promise)
+    static void create(F &&handler, QFuture<ResultType> *future, QFutureInterface<ResultType> &fi)
     {
         Q_ASSERT(future);
 
-        auto canceledContinuation = [promise, handler = std::forward<F>(handler)](
+        auto canceledContinuation = [promise = QPromise(fi), handler = std::forward<F>(handler)](
                                             const QFutureInterfaceBase &parentData) mutable {
             auto parentFuture = QFutureInterface<ResultType>(parentData).future();
-            run(std::forward<F>(handler), parentFuture, promise);
+            run(std::forward<F>(handler), parentFuture, std::move(promise));
         };
-        future->d.setContinuation(std::move(canceledContinuation));
-        return promise.future();
+        future->d.setContinuation(ContinuationWrapper(std::move(canceledContinuation)));
     }
 
     template<class F = Function>
-    static QFuture<ResultType> create(F &&handler, QFuture<ResultType> *future,
-                                      QFutureInterface<ResultType> &promise, QObject *context)
+    static void create(F &&handler, QFuture<ResultType> *future, QFutureInterface<ResultType> &fi,
+                       QObject *context)
     {
         Q_ASSERT(future);
-
-        auto canceledContinuation = [promise, handler = std::forward<F>(handler),
+        auto canceledContinuation = [promise = QPromise(fi), handler = std::forward<F>(handler),
                                      context = QPointer<QObject>(context)](
                                             const QFutureInterfaceBase &parentData) mutable {
             Q_ASSERT(context);
             auto parentFuture = QFutureInterface<ResultType>(parentData).future();
-            QMetaObject::invokeMethod(
-                    context, [promise, parentFuture, handler = std::forward<F>(handler)]() mutable {
-                        run(std::forward<F>(handler), parentFuture, promise);
-                    });
+            QMetaObject::invokeMethod(context,
+                                      [promise = std::move(promise), parentFuture,
+                                      handler = std::forward<F>(handler)]() mutable {
+                run(std::forward<F>(handler), parentFuture, std::move(promise));
+            });
         };
-        future->d.setContinuation(std::move(canceledContinuation));
-        return promise.future();
+
+        future->d.setContinuation(ContinuationWrapper(std::move(canceledContinuation)));
     }
 
     template<class F = Function>
-    static void run(F &&handler, QFuture<ResultType> &parentFuture,
-                    QFutureInterface<ResultType> &promise)
+    static void run(F &&handler, QFuture<ResultType> &parentFuture, QPromise<ResultType> &&promise)
     {
-        promise.reportStarted();
+        promise.start();
 
         if (parentFuture.isCanceled()) {
 #ifndef QT_NO_EXCEPTIONS
-            if (parentFuture.d.exceptionStore().hasException()) {
+            if (parentFuture.d.hasException()) {
                 // Propagate the exception to the result future
-                promise.reportException(parentFuture.d.exceptionStore().exception());
+                promise.setException(parentFuture.d.exceptionStore().exception());
             } else {
                 try {
 #endif
                     QtPrivate::fulfillPromise(promise, std::forward<F>(handler));
 #ifndef QT_NO_EXCEPTIONS
                 } catch (...) {
-                    promise.reportException(std::current_exception());
+                    promise.setException(std::current_exception());
                 }
             }
 #endif
@@ -783,7 +827,60 @@ public:
             QtPrivate::fulfillPromise(promise, parentFuture);
         }
 
-        promise.reportFinished();
+        promise.finish();
+    }
+};
+
+struct UnwrapHandler
+{
+    template<class T>
+    static auto unwrapImpl(T *outer)
+    {
+        Q_ASSERT(outer);
+
+        using ResultType = typename QtPrivate::Future<std::decay_t<T>>::type;
+        using NestedType = typename QtPrivate::Future<ResultType>::type;
+        QFutureInterface<NestedType> promise(QFutureInterfaceBase::State::Pending);
+
+        outer->then([promise](const QFuture<ResultType> &outerFuture) mutable {
+            // We use the .then([](QFuture<ResultType> outerFuture) {...}) version
+            // (where outerFuture == *outer), to propagate the exception if the
+            // outer future has failed.
+            Q_ASSERT(outerFuture.isFinished());
+#ifndef QT_NO_EXCEPTIONS
+            if (outerFuture.d.hasException()) {
+                promise.reportStarted();
+                promise.reportException(outerFuture.d.exceptionStore().exception());
+                promise.reportFinished();
+                return;
+            }
+#endif
+
+            promise.reportStarted();
+            ResultType nestedFuture = outerFuture.result();
+
+            nestedFuture.then([promise] (const QFuture<NestedType> &nested) mutable {
+#ifndef QT_NO_EXCEPTIONS
+                if (nested.d.hasException()) {
+                    promise.reportException(nested.d.exceptionStore().exception());
+                } else
+#endif
+                {
+                    if constexpr (!std::is_void_v<NestedType>)
+                        promise.reportResults(nested.results());
+                }
+                promise.reportFinished();
+            }).onCanceled([promise] () mutable {
+                promise.reportCanceled();
+                promise.reportFinished();
+            });
+        }).onCanceled([promise]() mutable {
+            // propagate the cancellation of the outer future
+            promise.reportStarted();
+            promise.reportCanceled();
+            promise.reportFinished();
+        });
+        return promise.future();
     }
 };
 
@@ -800,6 +897,11 @@ static QFuture<ArgsType<Signal>> connect(Sender *sender, Signal signal)
     using ArgsType = ArgsType<Signal>;
     QFutureInterface<ArgsType> promise;
     promise.reportStarted();
+    if (!sender) {
+        promise.reportCanceled();
+        promise.reportFinished();
+        return promise.future();
+    }
 
     using Connections = std::pair<QMetaObject::Connection, QMetaObject::Connection>;
     auto connections = std::make_shared<Connections>();
@@ -807,34 +909,41 @@ static QFuture<ArgsType<Signal>> connect(Sender *sender, Signal signal)
     if constexpr (std::is_void_v<ArgsType>) {
         connections->first =
                 QObject::connect(sender, signal, sender, [promise, connections]() mutable {
-                    promise.reportFinished();
                     QObject::disconnect(connections->first);
                     QObject::disconnect(connections->second);
+                    promise.reportFinished();
                 });
-    } else if constexpr (QtPrivate::isTupleV<ArgsType>) {
+    } else if constexpr (QtPrivate::ArgResolver<Signal>::HasExtraArgs) {
         connections->first = QObject::connect(sender, signal, sender,
                                               [promise, connections](auto... values) mutable {
-                                                  promise.reportResult(std::make_tuple(values...));
-                                                  promise.reportFinished();
                                                   QObject::disconnect(connections->first);
                                                   QObject::disconnect(connections->second);
+                                                  promise.reportResult(QtPrivate::createTuple(
+                                                          std::move(values)...));
+                                                  promise.reportFinished();
                                               });
     } else {
         connections->first = QObject::connect(sender, signal, sender,
                                               [promise, connections](ArgsType value) mutable {
-                                                  promise.reportResult(value);
-                                                  promise.reportFinished();
                                                   QObject::disconnect(connections->first);
                                                   QObject::disconnect(connections->second);
+                                                  promise.reportResult(value);
+                                                  promise.reportFinished();
                                               });
+    }
+
+    if (!connections->first) {
+        promise.reportCanceled();
+        promise.reportFinished();
+        return promise.future();
     }
 
     connections->second =
             QObject::connect(sender, &QObject::destroyed, sender, [promise, connections]() mutable {
-                promise.reportCanceled();
-                promise.reportFinished();
                 QObject::disconnect(connections->first);
                 QObject::disconnect(connections->second);
+                promise.reportCanceled();
+                promise.reportFinished();
             });
 
     return promise.future();
@@ -851,7 +960,7 @@ static QFuture<std::decay_t<T>> makeReadyFuture(T &&value)
     return promise.future();
 }
 
-#if defined(Q_CLANG_QDOC)
+#if defined(Q_QDOC)
 static QFuture<void> makeReadyFuture()
 #else
 template<typename T = void>
@@ -903,5 +1012,149 @@ static QFuture<T> makeExceptionalFuture(const QException &exception)
 #endif // QT_NO_EXCEPTIONS
 
 } // namespace QtFuture
+
+namespace QtPrivate {
+
+template<typename ResultFutures>
+struct WhenAllContext
+{
+    using ValueType = typename ResultFutures::value_type;
+
+    explicit WhenAllContext(qsizetype size) : remaining(size) {}
+
+    template<typename T = ValueType>
+    void checkForCompletion(qsizetype index, T &&future)
+    {
+        futures[index] = std::forward<T>(future);
+        const auto oldRemaining = remaining.fetchAndSubRelaxed(1);
+        Q_ASSERT(oldRemaining > 0);
+        if (oldRemaining <= 1) { // that was the last one
+            promise.addResult(futures);
+            promise.finish();
+        }
+    }
+
+    QAtomicInteger<qsizetype> remaining;
+    QPromise<ResultFutures> promise;
+    ResultFutures futures;
+};
+
+template<typename ResultType>
+struct WhenAnyContext
+{
+    using ValueType = ResultType;
+
+    template<typename T = ResultType, typename = EnableForNonVoid<T>>
+    void checkForCompletion(qsizetype, T &&result)
+    {
+        if (!ready.fetchAndStoreRelaxed(true)) {
+            promise.addResult(std::forward<T>(result));
+            promise.finish();
+        }
+    }
+
+    QAtomicInt ready = false;
+    QPromise<ResultType> promise;
+};
+
+template<qsizetype Index, typename ContextType, typename... Ts>
+void addCompletionHandlersImpl(const QSharedPointer<ContextType> &context,
+                               const std::tuple<Ts...> &t)
+{
+    auto future = std::get<Index>(t);
+    using ResultType = typename ContextType::ValueType;
+    future.then([context](const std::tuple_element_t<Index, std::tuple<Ts...>> &f) {
+        context->checkForCompletion(Index, ResultType { std::in_place_index<Index>, f });
+    }).onCanceled([context, future]() {
+        context->checkForCompletion(Index, ResultType { std::in_place_index<Index>, future });
+    });
+
+    if constexpr (Index != 0)
+        addCompletionHandlersImpl<Index - 1, ContextType, Ts...>(context, t);
+}
+
+template<typename ContextType, typename... Ts>
+void addCompletionHandlers(const QSharedPointer<ContextType> &context, const std::tuple<Ts...> &t)
+{
+    constexpr qsizetype size = std::tuple_size<std::tuple<Ts...>>::value;
+    addCompletionHandlersImpl<size - 1, ContextType, Ts...>(context, t);
+}
+
+template<typename OutputSequence, typename InputIt, typename ValueType>
+QFuture<OutputSequence> whenAllImpl(InputIt first, InputIt last)
+{
+    const qsizetype size = std::distance(first, last);
+    if (size == 0)
+        return QtFuture::makeReadyFuture(OutputSequence());
+
+    auto context = QSharedPointer<QtPrivate::WhenAllContext<OutputSequence>>::create(size);
+    context->futures.resize(size);
+    context->promise.start();
+
+    qsizetype idx = 0;
+    for (auto it = first; it != last; ++it, ++idx) {
+        it->then([context, idx](const ValueType &f) {
+            context->checkForCompletion(idx, f);
+        }).onCanceled([context, idx, f = *it] {
+            context->checkForCompletion(idx, f);
+        });
+    }
+    return context->promise.future();
+}
+
+template<typename OutputSequence, typename... Futures>
+QFuture<OutputSequence> whenAllImpl(Futures &&... futures)
+{
+    constexpr qsizetype size = sizeof...(Futures);
+    auto context = QSharedPointer<QtPrivate::WhenAllContext<OutputSequence>>::create(size);
+    context->futures.resize(size);
+    context->promise.start();
+
+    QtPrivate::addCompletionHandlers(context, std::make_tuple(std::forward<Futures>(futures)...));
+
+    return context->promise.future();
+}
+
+template<typename InputIt, typename ValueType>
+QFuture<QtFuture::WhenAnyResult<typename Future<ValueType>::type>> whenAnyImpl(InputIt first,
+                                                                               InputIt last)
+{
+    using PackagedType = typename Future<ValueType>::type;
+    using ResultType = QtFuture::WhenAnyResult<PackagedType>;
+
+    const qsizetype size = std::distance(first, last);
+    if (size == 0) {
+        return QtFuture::makeReadyFuture(
+                QtFuture::WhenAnyResult { qsizetype(-1), QFuture<PackagedType>() });
+    }
+
+    auto context = QSharedPointer<QtPrivate::WhenAnyContext<ResultType>>::create();
+    context->promise.start();
+
+    qsizetype idx = 0;
+    for (auto it = first; it != last; ++it, ++idx) {
+        it->then([context, idx](const ValueType &f) {
+            context->checkForCompletion(idx, QtFuture::WhenAnyResult { idx, f });
+        }).onCanceled([context, idx, f = *it] {
+            context->checkForCompletion(idx, QtFuture::WhenAnyResult { idx, f });
+        });
+    }
+    return context->promise.future();
+}
+
+template<typename... Futures>
+QFuture<std::variant<std::decay_t<Futures>...>> whenAnyImpl(Futures &&... futures)
+{
+    using ResultType = std::variant<std::decay_t<Futures>...>;
+
+    auto context = QSharedPointer<QtPrivate::WhenAnyContext<ResultType>>::create();
+    context->promise.start();
+
+    QtPrivate::addCompletionHandlers(context, std::make_tuple(std::forward<Futures>(futures)...));
+
+    return context->promise.future();
+}
+
+} // namespace QtPrivate
 
 QT_END_NAMESPACE

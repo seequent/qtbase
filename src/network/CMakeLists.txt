@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from network.pro.
 
 #####################################################################
@@ -5,7 +8,7 @@
 #####################################################################
 
 qt_internal_add_module(Network
-    PLUGIN_TYPES networkaccessbackends
+    PLUGIN_TYPES networkaccess networkinformation tls
     SOURCES
         access/qabstractnetworkcache.cpp access/qabstractnetworkcache.h access/qabstractnetworkcache_p.h
         access/qhsts.cpp access/qhsts_p.h
@@ -14,12 +17,12 @@ qt_internal_add_module(Network
         access/qnetworkaccessbackend.cpp access/qnetworkaccessbackend_p.h
         access/qnetworkaccesscache.cpp access/qnetworkaccesscache_p.h
         access/qnetworkaccesscachebackend.cpp access/qnetworkaccesscachebackend_p.h
-        access/qnetworkaccessdebugpipebackend.cpp access/qnetworkaccessdebugpipebackend_p.h
         access/qnetworkaccessfilebackend.cpp access/qnetworkaccessfilebackend_p.h
         access/qnetworkaccessmanager.cpp access/qnetworkaccessmanager.h access/qnetworkaccessmanager_p.h
         access/qnetworkcookie.cpp access/qnetworkcookie.h access/qnetworkcookie_p.h
         access/qnetworkcookiejar.cpp access/qnetworkcookiejar.h access/qnetworkcookiejar_p.h
         access/qnetworkfile.cpp access/qnetworkfile_p.h
+        access/qhttpheaderparser.cpp access/qhttpheaderparser_p.h
         access/qnetworkreply.cpp access/qnetworkreply.h access/qnetworkreply_p.h
         access/qnetworkreplydataimpl.cpp access/qnetworkreplydataimpl_p.h
         access/qnetworkreplyfileimpl.cpp access/qnetworkreplyfileimpl_p.h
@@ -30,6 +33,7 @@ qt_internal_add_module(Network
         kernel/qhostinfo.cpp kernel/qhostinfo.h kernel/qhostinfo_p.h
         kernel/qnetconmonitor_p.h
         kernel/qnetworkdatagram.cpp kernel/qnetworkdatagram.h kernel/qnetworkdatagram_p.h
+        kernel/qnetworkinformation.cpp kernel/qnetworkinformation_p.h kernel/qnetworkinformation.h
         kernel/qnetworkinterface.cpp kernel/qnetworkinterface.h kernel/qnetworkinterface_p.h
         kernel/qnetworkinterface_unix_p.h
         kernel/qnetworkproxy.cpp kernel/qnetworkproxy.h
@@ -40,12 +44,16 @@ qt_internal_add_module(Network
         socket/qtcpserver.cpp socket/qtcpserver.h socket/qtcpserver_p.h
         socket/qtcpsocket.cpp socket/qtcpsocket.h socket/qtcpsocket_p.h
         socket/qudpsocket.cpp socket/qudpsocket.h
-        ssl/qasn1element.cpp ssl/qasn1element_p.h
         ssl/qpassworddigestor.cpp ssl/qpassworddigestor.h
-        ssl/qssl.cpp ssl/qssl.h ssl/qssl_p.h ssl/qtls_utils_p.h
+        ssl/qssl.cpp ssl/qssl.h ssl/qssl_p.h
         ssl/qsslcertificate.cpp ssl/qsslcertificate.h ssl/qsslcertificate_p.h
         ssl/qsslcertificateextension.cpp ssl/qsslcertificateextension.h ssl/qsslcertificateextension_p.h
-        ssl/qtls_utils_p.h
+        ssl/qsslcipher.h
+        ssl/qsslconfiguration.h
+        ssl/qsslerror.h
+        ssl/qsslkey.h
+        ssl/qsslsocket.h
+        ssl/qtlsbackend.cpp ssl/qtlsbackend_p.h
     DEFINES
         QT_NO_FOREACH
         QT_NO_USING_NAMESPACE
@@ -59,6 +67,8 @@ qt_internal_add_module(Network
         Qt::CorePrivate
     PRECOMPILED_HEADER
         "../corelib/global/qt_pch.h"
+    GENERATE_CPP_EXPORTS
+    GENERATE_PRIVATE_CPP_EXPORTS
 )
 
 #### Keys ignored in scope 1:.:.:network.pro:<TRUE>:
@@ -66,6 +76,11 @@ qt_internal_add_module(Network
 
 ## Scopes:
 #####################################################################
+
+qt_internal_extend_target(Network CONDITION QT_FEATURE_private_tests
+    SOURCES
+        access/qnetworkaccessdebugpipebackend.cpp access/qnetworkaccessdebugpipebackend_p.h
+)
 
 qt_internal_extend_target(Network CONDITION MSVC AND (TEST_architecture_arch STREQUAL "i386")
     LINK_OPTIONS
@@ -127,12 +142,12 @@ qt_internal_extend_target(Network CONDITION QT_FEATURE_brotli AND QT_FEATURE_htt
 
 qt_internal_extend_target(Network CONDITION QT_FEATURE_http AND QT_FEATURE_zstd
     LIBRARIES
-        ZSTD::ZSTD
+        WrapZSTD::WrapZSTD
 )
 
 qt_internal_extend_target(Network CONDITION QT_FEATURE_system_zlib
     LIBRARIES
-        ZLIB::ZLIB
+        WrapZLIB::WrapZLIB
 )
 
 qt_internal_extend_target(Network CONDITION NOT QT_FEATURE_system_zlib
@@ -148,7 +163,9 @@ qt_internal_extend_target(Network CONDITION NOT QT_FEATURE_system_zlib AND NOT n
 qt_internal_extend_target(Network CONDITION QT_FEATURE_topleveldomain
     SOURCES
         kernel/qtldurl.cpp kernel/qtldurl_p.h
-        kernel/qurltlds_p.h
+        ../3rdparty/libpsl/src/lookup_string_in_fixed_set.c
+    INCLUDE_DIRECTORIES
+        ../3rdparty/libpsl
 )
 
 qt_internal_extend_target(Network CONDITION QT_FEATURE_dnslookup
@@ -193,6 +210,8 @@ qt_internal_extend_target(Network CONDITION WIN32
         advapi32
         dnsapi
         iphlpapi
+        secur32
+        winhttp
 )
 
 qt_internal_extend_target(Network CONDITION QT_FEATURE_dnslookup AND WIN32
@@ -213,12 +232,12 @@ qt_internal_extend_target(Network CONDITION IOS OR MACOS
         ${FWSystemConfiguration}
 )
 
-qt_internal_extend_target(Network CONDITION QT_FEATURE_netlistmgr AND NOT IOS AND NOT MACOS
+qt_internal_extend_target(Network CONDITION QT_FEATURE_networklistmanager AND NOT IOS AND NOT MACOS
     SOURCES
         kernel/qnetconmonitor_win.cpp
 )
 
-qt_internal_extend_target(Network CONDITION NOT IOS AND NOT MACOS AND NOT QT_FEATURE_netlistmgr
+qt_internal_extend_target(Network CONDITION NOT IOS AND NOT MACOS AND NOT QT_FEATURE_networklistmanager
     SOURCES
         kernel/qnetconmonitor_stub.cpp
 )
@@ -309,49 +328,18 @@ qt_internal_extend_target(Network CONDITION QT_FEATURE_system_proxies
         QT_USE_SYSTEM_PROXIES
 )
 
-qt_internal_extend_target(Network CONDITION NOT QT_FEATURE_openssl
-    SOURCES
-        ssl/qsslcertificate_qt.cpp
-)
-
 qt_internal_extend_target(Network CONDITION QT_FEATURE_ssl
     SOURCES
         ssl/qocspresponse.cpp ssl/qocspresponse.h ssl/qocspresponse_p.h
-        ssl/qsslcipher.cpp ssl/qsslcipher.h ssl/qsslcipher_p.h
-        ssl/qsslconfiguration.cpp ssl/qsslconfiguration.h ssl/qsslconfiguration_p.h
+        ssl/qsslcipher.cpp ssl/qsslcipher_p.h
+        ssl/qsslconfiguration.cpp ssl/qsslconfiguration_p.h
         ssl/qssldiffiehellmanparameters.cpp ssl/qssldiffiehellmanparameters.h ssl/qssldiffiehellmanparameters_p.h
         ssl/qsslellipticcurve.cpp ssl/qsslellipticcurve.h
-        ssl/qsslerror.cpp ssl/qsslerror.h
-        ssl/qsslkey.h ssl/qsslkey_p.cpp ssl/qsslkey_p.h
+        ssl/qsslerror.cpp
+        ssl/qsslkey_p.cpp ssl/qsslkey_p.h
         ssl/qsslpresharedkeyauthenticator.cpp ssl/qsslpresharedkeyauthenticator.h ssl/qsslpresharedkeyauthenticator_p.h
-        ssl/qsslsocket.cpp ssl/qsslsocket.h ssl/qsslsocket_p.h
-)
-
-qt_internal_extend_target(Network CONDITION QT_FEATURE_schannel AND QT_FEATURE_ssl
-    SOURCES
-        ssl/qsslcertificate_schannel.cpp
-        ssl/qssldiffiehellmanparameters_dummy.cpp
-        ssl/qsslellipticcurve_dummy.cpp
-        ssl/qsslkey_qt.cpp
-        ssl/qsslkey_schannel.cpp
-        ssl/qsslsocket_qt.cpp
-        ssl/qsslsocket_schannel.cpp ssl/qsslsocket_schannel_p.h
-    LIBRARIES
-        Crypt32
-        Secur32
-        bcrypt
-        ncrypt
-)
-
-qt_internal_extend_target(Network CONDITION QT_FEATURE_securetransport AND QT_FEATURE_ssl
-    SOURCES
-        ssl/qssldiffiehellmanparameters_dummy.cpp
-        ssl/qsslellipticcurve_dummy.cpp
-        ssl/qsslkey_mac.cpp
-        ssl/qsslkey_qt.cpp
-        ssl/qsslsocket_mac.cpp ssl/qsslsocket_mac_p.h
-        ssl/qsslsocket_mac_shared.cpp
-        ssl/qsslsocket_qt.cpp
+        ssl/qsslsocket.cpp ssl/qsslsocket_p.h
+        ssl/qsslserver.cpp ssl/qsslserver.h ssl/qsslserver_p.h
 )
 
 qt_internal_extend_target(Network CONDITION QT_FEATURE_dtls AND QT_FEATURE_ssl
@@ -359,61 +347,12 @@ qt_internal_extend_target(Network CONDITION QT_FEATURE_dtls AND QT_FEATURE_ssl
         ssl/qdtls.cpp ssl/qdtls.h ssl/qdtls_p.h
 )
 
-qt_internal_extend_target(Network CONDITION QT_FEATURE_openssl AND QT_FEATURE_ssl
-    SOURCES
-        ssl/qsslcertificate_openssl.cpp
-        ssl/qsslcontext_openssl.cpp ssl/qsslcontext_openssl_p.h
-        ssl/qssldiffiehellmanparameters_openssl.cpp
-        ssl/qsslellipticcurve_openssl.cpp
-        ssl/qsslkey_openssl.cpp
-        ssl/qsslsocket_openssl.cpp ssl/qsslsocket_openssl_p.h
-        ssl/qsslsocket_openssl_symbols.cpp ssl/qsslsocket_openssl_symbols_p.h
-    DEFINES
-        OPENSSL_API_COMPAT=0x10100000L
-)
-
-qt_internal_extend_target(Network CONDITION QT_FEATURE_dtls AND QT_FEATURE_openssl AND QT_FEATURE_ssl
-    SOURCES
-        ssl/qdtls_openssl.cpp ssl/qdtls_openssl_p.h
-)
-
 qt_internal_extend_target(Network CONDITION QT_FEATURE_ocsp AND QT_FEATURE_openssl AND QT_FEATURE_ssl
     SOURCES
         ssl/qocsp_p.h
 )
 
-qt_internal_extend_target(Network CONDITION APPLE AND QT_FEATURE_openssl AND QT_FEATURE_ssl
-    SOURCES
-        ssl/qsslsocket_mac_shared.cpp
-)
-
-qt_internal_extend_target(Network CONDITION ANDROID AND QT_FEATURE_openssl AND QT_FEATURE_ssl AND NOT ANDROID_EMBEDDED
-    SOURCES
-        ssl/qsslsocket_openssl_android.cpp
-)
-
-qt_internal_extend_target(Network CONDITION QT_FEATURE_openssl AND QT_FEATURE_openssl_linked AND QT_FEATURE_ssl
-    LIBRARIES
-        WrapOpenSSL::WrapOpenSSL
-    PRIVATE_MODULE_INTERFACE
-        WrapOpenSSL::WrapOpenSSL
-)
-
-qt_internal_extend_target(Network CONDITION QT_FEATURE_openssl AND QT_FEATURE_ssl AND NOT QT_FEATURE_openssl_linked
-    LIBRARIES
-        WrapOpenSSLHeaders::WrapOpenSSLHeaders
-    PRIVATE_MODULE_INTERFACE
-        WrapOpenSSLHeaders::WrapOpenSSLHeaders
-)
-
-qt_internal_extend_target(Network CONDITION QT_FEATURE_openssl AND QT_FEATURE_ssl AND WIN32
-    SOURCES
-        ssl/qwindowscarootfetcher.cpp ssl/qwindowscarootfetcher_p.h
-    LIBRARIES
-        crypt32
-)
-
-qt_internal_extend_target(Network CONDITION QT_FEATURE_dnslookup AND UNIX AND NOT ANDROID AND NOT INTEGRITY
+qt_internal_extend_target(Network CONDITION QT_FEATURE_dnslookup AND UNIX AND NOT ANDROID
     SOURCES
         kernel/qdnslookup_unix.cpp
 )
@@ -424,3 +363,10 @@ qt_internal_add_docs(Network
 qt_internal_extend_target(Network CONDITION WIN32 PUBLIC_LIBRARIES ws2_32) # special case: mkspecs/common/msvc-desktop.conf
 
 qt_internal_extend_target(Network CONDITION QNX PUBLIC_LIBRARIES socket) # special case: mkspecs/common/qcc-base-qnx.conf
+
+qt_internal_extend_target(Network CONDITION SOLARIS PUBLIC_LIBRARIES socket nsl) # special case
+
+# include the snippet projects for developer-builds
+if(QT_FEATURE_private_tests)
+    add_subdirectory(doc/snippets/network)
+endif()

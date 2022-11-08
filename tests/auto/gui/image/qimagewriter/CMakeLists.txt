@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qimagewriter.pro.
 
 #####################################################################
@@ -13,38 +16,8 @@ list(APPEND test_data ${test_data_glob})
 qt_internal_add_test(tst_qimagewriter
     SOURCES
         tst_qimagewriter.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
     TESTDATA ${test_data}
 )
 
-#### Keys ignored in scope 1:.:.:qimagewriter.pro:<TRUE>:
-# MOC_DIR = "tmp"
-
-## Scopes:
-#####################################################################
-
-if(ANDROID AND NOT ANDROID_EMBEDDED)
-    # Resources:
-    set(qimagewriter_resource_files
-        "images/YCbCr_cmyk.jpg"
-        "images/YCbCr_rgb.jpg"
-        "images/beavis.jpg"
-        "images/colorful.bmp"
-        "images/earth.gif"
-        "images/font.bmp"
-        "images/gnus.xbm"
-        "images/kollada.png"
-        "images/marble.xpm"
-        "images/ship63.pbm"
-        "images/teapot.ppm"
-        "images/trolltech.gif"
-    )
-
-    qt_internal_add_resource(tst_qimagewriter "qimagewriter"
-        PREFIX
-            "/"
-        FILES
-            ${qimagewriter_resource_files}
-    )
-endif()

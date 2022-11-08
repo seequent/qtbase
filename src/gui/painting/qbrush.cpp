@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2019 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2019 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qbrush.h"
 #include "qpixmap.h"
@@ -54,8 +18,16 @@
 #include <QtCore/qnumeric.h>
 #include <QtCore/qfile.h>
 #include <QtCore/qmutex.h>
+#include <QtCore/private/qoffsetstringarray_p.h>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
+
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+// Avoid an ABI break due to the QScopedPointer->std::unique_ptr change
+static_assert(sizeof(QBrush::DataPtr) == sizeof(QScopedPointer<QBrushData, QBrushDataPointerDeleter>));
+#endif
 
 const uchar *qt_patternForBrush(int brushStyle, bool invert)
 {
@@ -109,7 +81,7 @@ Q_GUI_EXPORT QPixmap qt_pixmapForBrush(int brushStyle, bool invert)
 {
 
     QPixmap pm;
-    QString key = QLatin1String("$qt-brush$")
+    QString key = "$qt-brush$"_L1
                   % HexString<uint>(brushStyle)
                   % QLatin1Char(invert ? '1' : '0');
     if (!QPixmapCache::find(key, &pm)) {
@@ -231,7 +203,7 @@ bool Q_GUI_EXPORT qHasPixmapTexture(const QBrush& brush)
 {
     if (brush.style() != Qt::TexturePattern)
         return false;
-    QTexturedBrushData *tx_data = static_cast<QTexturedBrushData *>(brush.d.data());
+    QTexturedBrushData *tx_data = static_cast<QTexturedBrushData *>(brush.d.get());
     return tx_data->m_has_pixmap_texture;
 }
 
@@ -240,31 +212,27 @@ struct QGradientBrushData : public QBrushData
     QGradient gradient;
 };
 
-struct QBrushDataPointerDeleter
+static void deleteData(QBrushData *d)
 {
-    static inline void deleteData(QBrushData *d)
-    {
-        switch (d->style) {
-        case Qt::TexturePattern:
-            delete static_cast<QTexturedBrushData*>(d);
-            break;
-        case Qt::LinearGradientPattern:
-        case Qt::RadialGradientPattern:
-        case Qt::ConicalGradientPattern:
-            delete static_cast<QGradientBrushData*>(d);
-            break;
-        default:
-            delete d;
-        }
+    switch (d->style) {
+    case Qt::TexturePattern:
+        delete static_cast<QTexturedBrushData*>(d);
+        break;
+    case Qt::LinearGradientPattern:
+    case Qt::RadialGradientPattern:
+    case Qt::ConicalGradientPattern:
+        delete static_cast<QGradientBrushData*>(d);
+        break;
+    default:
+        delete d;
     }
+}
 
-    static inline void cleanup(QBrushData *d)
-    {
-        if (d && !d->ref.deref()) {
-            deleteData(d);
-        }
-    }
-};
+void QBrushDataPointerDeleter::operator()(QBrushData *d) const noexcept
+{
+    if (d && !d->ref.deref())
+        deleteData(d);
+}
 
 /*!
     \class QBrush
@@ -532,7 +500,7 @@ QBrush::QBrush(Qt::GlobalColor color, const QPixmap &pixmap)
 */
 
 QBrush::QBrush(const QBrush &other)
-    : d(other.d.data())
+    : d(other.d.get())
 {
     d->ref.ref();
 }
@@ -559,7 +527,7 @@ QBrush::QBrush(const QGradient &gradient)
     };
 
     init(QColor(), enum_table[gradient.type()]);
-    QGradientBrushData *grad = static_cast<QGradientBrushData *>(d.data());
+    QGradientBrushData *grad = static_cast<QGradientBrushData *>(d.get());
     grad->gradient = gradient;
 }
 
@@ -569,11 +537,6 @@ QBrush::QBrush(const QGradient &gradient)
 
 QBrush::~QBrush()
 {
-}
-
-void QBrush::cleanUp(QBrushData *x)
-{
-    QBrushDataPointerDeleter::deleteData(x);
 }
 
 static constexpr inline bool use_same_brushdata(Qt::BrushStyle lhs, Qt::BrushStyle rhs)
@@ -591,12 +554,12 @@ void QBrush::detach(Qt::BrushStyle newStyle)
         return;
     }
 
-    QScopedPointer<QBrushData, QBrushDataPointerDeleter> x;
+    DataPtr x;
     switch(newStyle) {
     case Qt::TexturePattern: {
         QTexturedBrushData *tbd = new QTexturedBrushData;
         if (d->style == Qt::TexturePattern) {
-            QTexturedBrushData *data = static_cast<QTexturedBrushData *>(d.data());
+            QTexturedBrushData *data = static_cast<QTexturedBrushData *>(d.get());
             if (data->m_has_pixmap_texture)
                 tbd->setPixmap(data->pixmap());
             else
@@ -614,7 +577,7 @@ void QBrush::detach(Qt::BrushStyle newStyle)
         case Qt::RadialGradientPattern:
         case Qt::ConicalGradientPattern:
             gbd->gradient =
-                    static_cast<QGradientBrushData *>(d.data())->gradient;
+                    static_cast<QGradientBrushData *>(d.get())->gradient;
             break;
         default:
             break;
@@ -647,7 +610,7 @@ QBrush &QBrush::operator=(const QBrush &b)
         return *this;
 
     b.d->ref.ref();
-    d.reset(b.d.data());
+    d.reset(b.d.get());
     return *this;
 }
 
@@ -748,7 +711,7 @@ void QBrush::setColor(const QColor &c)
 QPixmap QBrush::texture() const
 {
     return d->style == Qt::TexturePattern
-                     ? (static_cast<QTexturedBrushData *>(d.data()))->pixmap()
+                     ? (static_cast<QTexturedBrushData *>(d.get()))->pixmap()
                      : QPixmap();
 }
 
@@ -766,7 +729,7 @@ void QBrush::setTexture(const QPixmap &pixmap)
 {
     if (!pixmap.isNull()) {
         detach(Qt::TexturePattern);
-        QTexturedBrushData *data = static_cast<QTexturedBrushData *>(d.data());
+        QTexturedBrushData *data = static_cast<QTexturedBrushData *>(d.get());
         data->setPixmap(pixmap);
     } else {
         detach(Qt::NoBrush);
@@ -789,7 +752,7 @@ void QBrush::setTexture(const QPixmap &pixmap)
 QImage QBrush::textureImage() const
 {
     return d->style == Qt::TexturePattern
-                     ? (static_cast<QTexturedBrushData *>(d.data()))->image()
+                     ? (static_cast<QTexturedBrushData *>(d.get()))->image()
                      : QImage();
 }
 
@@ -814,7 +777,7 @@ void QBrush::setTextureImage(const QImage &image)
 {
     if (!image.isNull()) {
         detach(Qt::TexturePattern);
-        QTexturedBrushData *data = static_cast<QTexturedBrushData *>(d.data());
+        QTexturedBrushData *data = static_cast<QTexturedBrushData *>(d.get());
         data->setImage(image);
     } else {
         detach(Qt::NoBrush);
@@ -830,7 +793,7 @@ const QGradient *QBrush::gradient() const
     if (d->style == Qt::LinearGradientPattern
         || d->style == Qt::RadialGradientPattern
         || d->style == Qt::ConicalGradientPattern) {
-        return &static_cast<const QGradientBrushData *>(d.data())->gradient;
+        return &static_cast<const QGradientBrushData *>(d.get())->gradient;
     }
     return nullptr;
 }
@@ -866,7 +829,7 @@ Q_GUI_EXPORT bool qt_isExtendedRadialGradient(const QBrush &brush)
 
 bool QBrush::isOpaque() const
 {
-    bool opaqueColor = d->color.alpha() == 255;
+    bool opaqueColor = d->color.alphaF() >= 1.0f;
 
     // Test awfully simple case first
     if (d->style == Qt::SolidPattern)
@@ -880,7 +843,7 @@ bool QBrush::isOpaque() const
         || d->style == Qt::ConicalGradientPattern) {
         QGradientStops stops = gradient()->stops();
         for (int i=0; i<stops.size(); ++i)
-            if (stops.at(i).second.alpha() != 255)
+            if (stops.at(i).second.alphaF() < 1.0f)
                 return false;
         return true;
     } else if (d->style == Qt::TexturePattern) {
@@ -948,16 +911,16 @@ bool QBrush::operator==(const QBrush &b) const
             const QPixmap *us = nullptr, *them = nullptr;
             qint64 cacheKey1, cacheKey2;
             if (qHasPixmapTexture(*this)) {
-                us = (static_cast<QTexturedBrushData *>(d.data()))->m_pixmap;
+                us = (static_cast<QTexturedBrushData *>(d.get()))->m_pixmap;
                 cacheKey1 = us->cacheKey();
             } else
-                cacheKey1 = (static_cast<QTexturedBrushData *>(d.data()))->image().cacheKey();
+                cacheKey1 = (static_cast<QTexturedBrushData *>(d.get()))->image().cacheKey();
 
             if (qHasPixmapTexture(b)) {
-                them = (static_cast<QTexturedBrushData *>(b.d.data()))->m_pixmap;
+                them = (static_cast<QTexturedBrushData *>(b.d.get()))->m_pixmap;
                 cacheKey2 = them->cacheKey();
             } else
-                cacheKey2 = (static_cast<QTexturedBrushData *>(b.d.data()))->image().cacheKey();
+                cacheKey2 = (static_cast<QTexturedBrushData *>(b.d.get()))->image().cacheKey();
 
             if (cacheKey1 != cacheKey2)
                 return false;
@@ -974,8 +937,8 @@ bool QBrush::operator==(const QBrush &b) const
     case Qt::RadialGradientPattern:
     case Qt::ConicalGradientPattern:
         {
-            const QGradientBrushData *d1 = static_cast<QGradientBrushData *>(d.data());
-            const QGradientBrushData *d2 = static_cast<QGradientBrushData *>(b.d.data());
+            const QGradientBrushData *d1 = static_cast<QGradientBrushData *>(d.get());
+            const QGradientBrushData *d2 = static_cast<QGradientBrushData *>(b.d.get());
             return d1->gradient == d2->gradient;
         }
     default:
@@ -989,7 +952,7 @@ bool QBrush::operator==(const QBrush &b) const
 */
 QDebug operator<<(QDebug dbg, const QBrush &b)
 {
-    static const char BRUSH_STYLES[][24] = {
+    static constexpr auto BRUSH_STYLES = qOffsetStringArray(
      "NoBrush",
      "SolidPattern",
      "Dense1Pattern",
@@ -1010,7 +973,7 @@ QDebug operator<<(QDebug dbg, const QBrush &b)
      "ConicalGradientPattern",
      "", "", "", "", "", "",
      "TexturePattern" // 24
-    };
+    );
 
     QDebugStateSaver saver(dbg);
     dbg.nospace() << "QBrush(" << b.color() << ',' << BRUSH_STYLES[b.style()] << ')';
@@ -1277,7 +1240,7 @@ QDataStream &operator>>(QDataStream &s, QBrush &b)
     \snippet brush/brush.cpp 1
 
     It is possible to repeat or reflect the gradient outside its area
-    by specifiying the \l {QGradient::Spread}{spread method} using the
+    by specifying the \l {QGradient::Spread}{spread method} using the
     setSpread() function. The default is to pad the outside area with
     the color at the closest stop point. The currently set \l
     {QGradient::Spread}{spread method} can be retrieved using the
@@ -1668,9 +1631,10 @@ void QGradient::setStops(const QGradientStops &stops)
 QGradientStops QGradient::stops() const
 {
     if (m_stops.isEmpty()) {
-        QGradientStops tmp;
-        tmp << QGradientStop(0, Qt::black) << QGradientStop(1, Qt::white);
-        return tmp;
+        static constexpr QGradientStop blackAndWhite[] = {
+            {0, QColorConstants::Black}, {1, QColorConstants::White},
+        };
+        return QGradientStops::fromReadOnlyData(blackAndWhite);
     }
     return m_stops;
 }
@@ -2548,3 +2512,5 @@ void QConicalGradient::setAngle(qreal angle)
 */
 
 QT_END_NAMESPACE
+
+#include "moc_qbrush.cpp"

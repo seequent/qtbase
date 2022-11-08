@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from sql.pro.
 
 #####################################################################
@@ -7,6 +10,7 @@
 qt_internal_add_module(Sql
     PLUGIN_TYPES sqldrivers
     SOURCES
+        compat/removed_api.cpp
         kernel/qsqlcachedresult.cpp kernel/qsqlcachedresult_p.h
         kernel/qsqldatabase.cpp kernel/qsqldatabase.h
         kernel/qsqldriver.cpp kernel/qsqldriver.h kernel/qsqldriver_p.h
@@ -29,8 +33,11 @@ qt_internal_add_module(Sql
         Qt::Core
     PRIVATE_MODULE_INTERFACE
         Qt::CorePrivate
+    NO_PCH_SOURCES
+        "compat/removed_api.cpp"
     PRECOMPILED_HEADER
         "../corelib/global/qt_pch.h"
+    GENERATE_CPP_EXPORTS
 )
 
 #### Keys ignored in scope 1:.:.:sql.pro:<TRUE>:
@@ -55,3 +62,8 @@ qt_internal_add_docs(Sql
     doc/qtsql.qdocconf
 )
 
+# include the snippet projects for developer-builds
+if(QT_FEATURE_private_tests)
+    add_subdirectory(doc/snippets/code)
+    add_subdirectory(doc/snippets/sqldatabase)
+endif()

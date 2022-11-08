@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from manual.pro.
 
 # special case begin
@@ -31,6 +34,7 @@ add_subdirectory(qlocale)
 add_subdirectory(qmimedatabase)
 add_subdirectory(qnetconmonitor)
 add_subdirectory(qnetworkaccessmanager/qget)
+add_subdirectory(qnetworkinformation)
 #special case begin
 if (QT_FEATURE_openssl AND UNIX)
     add_subdirectory(qnetworkreply)
@@ -38,6 +42,7 @@ endif()
 #special case end
 add_subdirectory(qstorageinfo)
 add_subdirectory(qscreen)
+add_subdirectory(qscreen_xrandr)
 add_subdirectory(qsslsocket)
 add_subdirectory(qsysinfo)
 add_subdirectory(qtabletevent)
@@ -56,8 +61,9 @@ add_subdirectory(windowflags)
 add_subdirectory(windowgeometry)
 add_subdirectory(windowmodality)
 add_subdirectory(widgetgrab)
-add_subdirectory(xembed-raster)
-add_subdirectory(xembed-widgets)
+if(QT_FEATURE_xcb)
+    add_subdirectory(xembed)
+endif()
 add_subdirectory(shortcuts)
 add_subdirectory(dialogs)
 add_subdirectory(windowtransparency)

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <qapplication.h>
 #include <qgroupbox.h>
@@ -72,10 +47,10 @@
 
 #include <private/qdatetimeedit_p.h>
 
+#include <QtWidgets/private/qapplication_p.h>
+
 #ifdef Q_OS_WIN
-# include <windows.h>
-# undef min
-# undef max
+# include <qt_windows.h>
 #endif
 
 
@@ -430,9 +405,9 @@ void tst_QDateTimeEdit::initTestCase()
     if (system.language() != QLocale::C && system.language() != QLocale::English)
         qWarning("Running under locale %s/%s -- this test may generate failures due to language differences",
                  qPrintable(QLocale::languageToString(system.language())),
-                 qPrintable(QLocale::countryToString(system.country())));
-    testWidget = new EditorDateEdit(0);
-    testFocusWidget = new QWidget(0);
+                 qPrintable(QLocale::territoryToString(system.territory())));
+    testWidget = new EditorDateEdit(nullptr);
+    testFocusWidget = new QWidget(nullptr);
     testFocusWidget->resize(200, 100);
     testFocusWidget->show();
 }
@@ -483,121 +458,104 @@ void tst_QDateTimeEdit::constructor_qwidget()
 void tst_QDateTimeEdit::constructor_qdatetime_data()
 {
     QTest::addColumn<QDateTime>("parameter");
-    QTest::addColumn<QDateTime>("displayDateTime");
-    QTest::addColumn<QDate>("minimumDate");
-    QTest::addColumn<QTime>("minimumTime");
-    QTest::addColumn<QDate>("maximumDate");
-    QTest::addColumn<QTime>("maximumTime");
 
-    QTest::newRow("normal") << QDateTime(QDate(2004, 6, 16), QTime(13, 46, 32, 764))
-                            << QDateTime(QDate(2004, 6, 16), QTime(13, 46, 32, 764))
-                            << QDate(1752, 9, 14) << QTime(0, 0, 0, 0)
-                            << QDate(9999, 12, 31) << QTime(23, 59, 59, 999);
-
-    QTest::newRow("invalid") << QDateTime(QDate(9999, 99, 99), QTime(13, 46, 32, 764))
-                             << QDateTime(QDate(2000, 1, 1), QTime(0, 0, 0, 0))
-                             << QDate(1752, 9, 14) << QTime(0, 0, 0, 0)
-                             << QDate(9999, 12, 31) << QTime(23, 59, 59, 999);
+    QTest::newRow("normal") << QDateTime(QDate(2004, 6, 16), QTime(13, 46, 32, 764));
+    QTest::newRow("invalid") << QDateTime(QDate(9999, 99, 99), QTime(13, 46, 32, 764));
 }
 
 void tst_QDateTimeEdit::constructor_qdatetime()
 {
     QFETCH(QDateTime, parameter);
-    QFETCH(QDateTime, displayDateTime);
-    QFETCH(QDate, minimumDate);
-    QFETCH(QTime, minimumTime);
-    QFETCH(QDate, maximumDate);
-    QFETCH(QTime, maximumTime);
-
     testWidget->hide();
 
     QDateTimeEdit dte(parameter);
     dte.show();
-    QCOMPARE(dte.dateTime(), displayDateTime);
-    QCOMPARE(dte.minimumDate(), minimumDate);
-    QCOMPARE(dte.minimumTime(), minimumTime);
-    QCOMPARE(dte.maximumDate(), maximumDate);
-    QCOMPARE(dte.maximumTime(), maximumTime);
+    if (QByteArrayView(QTest::currentDataTag()) == "invalid")
+        QCOMPARE(dte.dateTime(), QDateTime(QDate(2000, 1, 1), QTime(0, 0)));
+    else
+        QCOMPARE(dte.dateTime(), parameter);
+    QCOMPARE(dte.minimumDate(), QDate(1752, 9, 14));
+    QCOMPARE(dte.minimumTime(), QTime(0, 0));
+    QCOMPARE(dte.maximumDate(), QDate(9999, 12, 31));
+    QCOMPARE(dte.maximumTime(), QTime(23, 59, 59, 999));
 }
 
 void tst_QDateTimeEdit::constructor_qdate_data()
 {
     QTest::addColumn<QDate>("parameter");
-    QTest::addColumn<QDateTime>("displayDateTime");
-    QTest::addColumn<QDate>("minimumDate");
-    QTest::addColumn<QTime>("minimumTime");
-    QTest::addColumn<QDate>("maximumDate");
-    QTest::addColumn<QTime>("maximumTime");
 
-    QTest::newRow("normal") << QDate(2004, 6, 16)
-                            << QDateTime(QDate(2004, 6, 16), QTime(0, 0, 0, 0))
-                            << QDate(1752, 9, 14) << QTime(0, 0, 0, 0)
-                            << QDate(9999, 12, 31) << QTime(23, 59, 59, 999);
-
-    QTest::newRow("invalid") << QDate(9999, 99, 99)
-                             << QDateTime(QDate(2000, 1, 1), QTime(0, 0, 0, 0))
-                             << QDate(1752, 9, 14) << QTime(0, 0, 0, 0)
-                             << QDate(9999, 12, 31) << QTime(23, 59, 59, 999);
+    QTest::newRow("normal") << QDate(2004, 6, 16);
+    QTest::newRow("invalid") << QDate(9999, 99, 99);
 }
 
 void tst_QDateTimeEdit::constructor_qdate()
 {
     QFETCH(QDate, parameter);
-    QFETCH(QDateTime, displayDateTime);
-    QFETCH(QDate, minimumDate);
-    QFETCH(QTime, minimumTime);
-    QFETCH(QDate, maximumDate);
-    QFETCH(QTime, maximumTime);
-
     testWidget->hide();
 
-    QDateTimeEdit dte(parameter);
-    dte.show();
-    QCOMPARE(dte.dateTime(), displayDateTime);
-    QCOMPARE(dte.minimumDate(), minimumDate);
-    QCOMPARE(dte.minimumTime(), minimumTime);
-    QCOMPARE(dte.maximumDate(), maximumDate);
-    QCOMPARE(dte.maximumTime(), maximumTime);
+    {
+        QDateTimeEdit dte(parameter);
+        dte.show();
+        if (QByteArrayView(QTest::currentDataTag()) == "invalid")
+            QCOMPARE(dte.dateTime(), QDateTime(QDate(2000, 1, 1), QTime(0, 0)));
+        else
+            QCOMPARE(dte.dateTime(), QDateTime(parameter, QTime(0, 0)));
+        QCOMPARE(dte.minimumDate(), QDate(1752, 9, 14));
+        QCOMPARE(dte.minimumTime(), QTime(0, 0));
+        QCOMPARE(dte.maximumDate(), QDate(9999, 12, 31));
+        QCOMPARE(dte.maximumTime(), QTime(23, 59, 59, 999));
+    }
+    {
+        QDateEdit dte(parameter);
+        dte.show();
+        if (QByteArrayView(QTest::currentDataTag()) == "invalid")
+            QCOMPARE(dte.date(), QDate(2000, 1, 1));
+        else
+            QCOMPARE(dte.date(), parameter);
+        QCOMPARE(dte.minimumDate(), QDate(1752, 9, 14));
+        QCOMPARE(dte.minimumTime(), QTime(0, 0));
+        QCOMPARE(dte.maximumDate(), QDate(9999, 12, 31));
+        QCOMPARE(dte.maximumTime(), QTime(23, 59, 59, 999));
+    }
 }
 
 void tst_QDateTimeEdit::constructor_qtime_data()
 {
     QTest::addColumn<QTime>("parameter");
-    QTest::addColumn<QDateTime>("displayDateTime");
-    QTest::addColumn<QDate>("minimumDate");
-    QTest::addColumn<QTime>("minimumTime");
-    QTest::addColumn<QDate>("maximumDate");
-    QTest::addColumn<QTime>("maximumTime");
 
-    QTest::newRow("normal") << QTime(13, 46, 32, 764)
-                            << QDateTime(QDate(2000, 1, 1), QTime(13, 46, 32, 764))
-                            << QDate(2000, 1, 1) << QTime(0, 0, 0, 0)
-                            << QDate(2000, 1, 1) << QTime(23, 59, 59, 999);
-
-    QTest::newRow("invalid") << QTime(99, 99, 99, 5000)
-                             << QDateTime(QDate(2000, 1, 1), QTime(0, 0, 0, 0))
-                             << QDate(2000, 1, 1) << QTime(0, 0, 0, 0)
-                             << QDate(2000, 1, 1) << QTime(23, 59, 59, 999);
+    QTest::newRow("normal") << QTime(13, 46, 32, 764);
+    QTest::newRow("invalid") << QTime(99, 99, 99, 5000);
 }
 
 void tst_QDateTimeEdit::constructor_qtime()
 {
     QFETCH(QTime, parameter);
-    QFETCH(QDateTime, displayDateTime);
-    QFETCH(QDate, minimumDate);
-    QFETCH(QTime, minimumTime);
-    QFETCH(QDate, maximumDate);
-    QFETCH(QTime, maximumTime);
-
     testWidget->hide();
 
-    QDateTimeEdit dte(parameter);
-    dte.show();
-    QCOMPARE(dte.dateTime(), displayDateTime);
-    QCOMPARE(dte.minimumDate(), minimumDate);
-    QCOMPARE(dte.minimumTime(), minimumTime);
-    QCOMPARE(dte.maximumDate(), maximumDate);
-    QCOMPARE(dte.maximumTime(), maximumTime);
+    {
+        QDateTimeEdit dte(parameter);
+        dte.show();
+        if (QByteArrayView(QTest::currentDataTag()) == "invalid")
+            QCOMPARE(dte.dateTime(), QDateTime(QDate(2000, 1, 1), QTime(0, 0)));
+        else
+            QCOMPARE(dte.dateTime(), QDateTime(QDate(2000, 1, 1), parameter));
+        QCOMPARE(dte.minimumDate(), QDate(2000, 1, 1));
+        QCOMPARE(dte.minimumTime(), QTime(0, 0));
+        QCOMPARE(dte.maximumDate(), QDate(2000, 1, 1));
+        QCOMPARE(dte.maximumTime(), QTime(23, 59, 59, 999));
+    }
+    {
+        QTimeEdit dte(parameter);
+        dte.show();
+        if (QByteArrayView(QTest::currentDataTag()) == "invalid")
+            QCOMPARE(dte.time(), QTime(0, 0));
+        else
+            QCOMPARE(dte.time(), parameter);
+        QCOMPARE(dte.minimumDate(), QDate(2000, 1, 1));
+        QCOMPARE(dte.minimumTime(), QTime(0, 0));
+        QCOMPARE(dte.maximumDate(), QDate(2000, 1, 1));
+        QCOMPARE(dte.maximumTime(), QTime(23, 59, 59, 999));
+    }
 }
 
 void tst_QDateTimeEdit::minimumDate_data()
@@ -867,7 +825,7 @@ void tst_QDateTimeEdit::selectAndScrollWithKeys()
     return;
 #endif
 
-    qApp->setActiveWindow(testWidget);
+    QApplicationPrivate::setActiveWindow(testWidget);
     testWidget->setDate(QDate(2004, 05, 11));
     testWidget->setDisplayFormat("dd/MM/yyyy");
     testWidget->show();
@@ -969,7 +927,7 @@ void tst_QDateTimeEdit::selectAndScrollWithKeys()
 
 void tst_QDateTimeEdit::backspaceKey()
 {
-    qApp->setActiveWindow(testWidget);
+    QApplicationPrivate::setActiveWindow(testWidget);
     testWidget->setDate(QDate(2004, 05, 11));
     testWidget->setDisplayFormat("d/MM/yyyy");
     testWidget->show();
@@ -1035,7 +993,7 @@ void tst_QDateTimeEdit::backspaceKey()
 
 void tst_QDateTimeEdit::deleteKey()
 {
-    qApp->setActiveWindow(testWidget);
+    QApplicationPrivate::setActiveWindow(testWidget);
     testWidget->setDate(QDate(2004, 05, 11));
     testWidget->setDisplayFormat("d/MM/yyyy");
 #ifdef Q_OS_MAC
@@ -1054,7 +1012,7 @@ void tst_QDateTimeEdit::deleteKey()
 
 void tst_QDateTimeEdit::tabKeyNavigation()
 {
-    qApp->setActiveWindow(testWidget);
+    QApplicationPrivate::setActiveWindow(testWidget);
     testWidget->setDate(QDate(2004, 05, 11));
     testWidget->setDisplayFormat("dd/MM/yyyy");
     testWidget->show();
@@ -1072,7 +1030,7 @@ void tst_QDateTimeEdit::tabKeyNavigation()
 
 void tst_QDateTimeEdit::tabKeyNavigationWithPrefix()
 {
-    qApp->setActiveWindow(testWidget);
+    QApplicationPrivate::setActiveWindow(testWidget);
     testWidget->setDate(QDate(2004, 05, 11));
     testWidget->setDisplayFormat("prefix dd/MM/yyyy");
 
@@ -1090,7 +1048,7 @@ void tst_QDateTimeEdit::tabKeyNavigationWithPrefix()
 
 void tst_QDateTimeEdit::tabKeyNavigationWithSuffix()
 {
-    qApp->setActiveWindow(testWidget);
+    QApplicationPrivate::setActiveWindow(testWidget);
     testWidget->setDate(QDate(2004, 05, 11));
     testWidget->setDisplayFormat("dd/MM/yyyy 'suffix'");
 
@@ -1106,7 +1064,7 @@ void tst_QDateTimeEdit::tabKeyNavigationWithSuffix()
 
 void tst_QDateTimeEdit::enterKey()
 {
-    qApp->setActiveWindow(testWidget);
+    QApplicationPrivate::setActiveWindow(testWidget);
     testWidget->setDate(QDate(2004, 5, 11));
     testWidget->setDisplayFormat("prefix d/MM/yyyy 'suffix'");
     testWidget->lineEdit()->setFocus();
@@ -1164,7 +1122,7 @@ void tst_QDateTimeEdit::enterKey()
     // we include this test so a change to the behaviour can't go unnoticed.
     QSignalSpy enterSpy(testWidget, SIGNAL(dateChanged(QDate)));
     QTest::keyClick(testWidget, Qt::Key_Enter);
-    QCOMPARE(enterSpy.count(), 1);
+    QCOMPARE(enterSpy.size(), 1);
     QVariantList list = enterSpy.takeFirst();
     QCOMPARE(list.at(0).toDate(), QDate(2004, 5, 9));
 }
@@ -1358,7 +1316,7 @@ void tst_QDateTimeEdit::editingRanged_data()
         << QDate(2010, 12, 30) << QTime()
         << QDate(2011, 1, 2) << QTime()
         << QString::fromLatin1("01012011")
-        << QDateTime(QDate(2011, 1, 1), QTime());
+        << QDateTime(QDate(2011, 1, 1), QTime(), Qt::UTC);
 }
 
 void tst_QDateTimeEdit::editingRanged()
@@ -1370,19 +1328,19 @@ void tst_QDateTimeEdit::editingRanged()
     QFETCH(QString, userInput);
     QFETCH(QDateTime, expected);
 
-    QDateTimeEdit *edit;
+    QScopedPointer<QDateTimeEdit> edit;
     if (minTime.isValid()) {
-        edit = new QDateTimeEdit;
+        edit.reset(new QDateTimeEdit);
         edit->setDisplayFormat("dd.MM.yyyy hh:mm");
         edit->setDateTimeRange(QDateTime(minDate, minTime), QDateTime(maxDate, maxTime));
     } else {
-        edit = new QDateEdit;
+        edit.reset(new QDateEdit);
         edit->setDisplayFormat("dd.MM.yyyy");
         edit->setDateRange(minDate, maxDate);
     }
 
     int callCount = 0;
-    connect(edit, &QDateTimeEdit::dateTimeChanged, [&](const QDateTime &dateTime) {
+    connect(edit.get(), &QDateTimeEdit::dateTimeChanged, [&](const QDateTime &dateTime) {
         ++callCount;
         if (minTime.isValid()) {
             QVERIFY(dateTime >= QDateTime(minDate, minTime));
@@ -1394,15 +1352,15 @@ void tst_QDateTimeEdit::editingRanged()
     });
 
     edit->show();
-    QApplication::setActiveWindow(edit);
-    if (!QTest::qWaitForWindowActive(edit))
+    QApplicationPrivate::setActiveWindow(edit.get());
+    if (!QTest::qWaitForWindowActive(edit.get()))
         QSKIP("Failed to make window active, aborting");
     edit->setFocus();
 
     // with keyboard tracking, never get a signal with an out-of-range value
     edit->setKeyboardTracking(true);
-    QTest::keyClicks(edit, userInput);
-    QTest::keyClick(edit, Qt::Key_Return);
+    QTest::keyClicks(edit.get(), userInput);
+    QTest::keyClick(edit.get(), Qt::Key_Return);
     QVERIFY(callCount > 0);
 
     // QDateTimeEdit blocks these dates from being entered - see QTBUG-65
@@ -1418,12 +1376,10 @@ void tst_QDateTimeEdit::editingRanged()
     callCount = 0;
 
     edit->setKeyboardTracking(false);
-    QTest::keyClicks(edit, userInput);
-    QTest::keyClick(edit, Qt::Key_Return);
+    QTest::keyClicks(edit.get(), userInput);
+    QTest::keyClick(edit.get(), Qt::Key_Return);
     QCOMPARE(edit->dateTime(), expected);
     QCOMPARE(callCount, 1);
-
-    delete edit;
 }
 
 void tst_QDateTimeEdit::wrappingTime_data()
@@ -2241,7 +2197,7 @@ void tst_QDateTimeEdit::dateSignalChecking()
     QSignalSpy timeSpy(testWidget, SIGNAL(timeChanged(QTime)));
 
     testWidget->setDate(newDate);
-    QCOMPARE(dateSpy.count(), timesEmitted);
+    QCOMPARE(dateSpy.size(), timesEmitted);
 
     if (timesEmitted > 0) {
         QList<QVariant> list = dateSpy.takeFirst();
@@ -2249,8 +2205,8 @@ void tst_QDateTimeEdit::dateSignalChecking()
         d = qvariant_cast<QDate>(list.at(0));
         QCOMPARE(d, newDate);
     }
-    QCOMPARE(dateTimeSpy.count(), timesEmitted);
-    QCOMPARE(timeSpy.count(), 0);
+    QCOMPARE(dateTimeSpy.size(), timesEmitted);
+    QCOMPARE(timeSpy.size(), 0);
 }
 
 void tst_QDateTimeEdit::timeSignalChecking_data()
@@ -2277,7 +2233,7 @@ void tst_QDateTimeEdit::timeSignalChecking()
     QSignalSpy timeSpy(testWidget, SIGNAL(timeChanged(QTime)));
 
     testWidget->setTime(newTime);
-    QCOMPARE(timeSpy.count(), timesEmitted);
+    QCOMPARE(timeSpy.size(), timesEmitted);
 
     if (timesEmitted > 0) {
         QList<QVariant> list = timeSpy.takeFirst();
@@ -2285,8 +2241,8 @@ void tst_QDateTimeEdit::timeSignalChecking()
         t = qvariant_cast<QTime>(list.at(0));
         QCOMPARE(t, newTime);
     }
-    QCOMPARE(dateTimeSpy.count(), timesEmitted);
-    QCOMPARE(dateSpy.count(), 0);
+    QCOMPARE(dateTimeSpy.size(), timesEmitted);
+    QCOMPARE(dateSpy.size(), 0);
 }
 
 void tst_QDateTimeEdit::dateTimeSignalChecking_data()
@@ -2327,7 +2283,7 @@ void tst_QDateTimeEdit::dateTimeSignalChecking()
     QSignalSpy dateTimeSpy(testWidget, SIGNAL(dateTimeChanged(QDateTime)));
 
     testWidget->setDateTime(newDateTime);
-    QCOMPARE(dateSpy.count(), timesDateEmitted);
+    QCOMPARE(dateSpy.size(), timesDateEmitted);
     if (timesDateEmitted > 0) {
         QCOMPARE(timesDateEmitted, 1);
         QList<QVariant> list = dateSpy.takeFirst();
@@ -2335,14 +2291,14 @@ void tst_QDateTimeEdit::dateTimeSignalChecking()
         d = qvariant_cast<QDate>(list.at(0));
         QCOMPARE(d, newDateTime.date());
     }
-    QCOMPARE(timeSpy.count(), timesTimeEmitted);
+    QCOMPARE(timeSpy.size(), timesTimeEmitted);
     if (timesTimeEmitted > 0) {
         QList<QVariant> list = timeSpy.takeFirst();
         QTime t;
         t = qvariant_cast<QTime>(list.at(0));
         QCOMPARE(t, newDateTime.time());
     }
-    QCOMPARE(dateTimeSpy.count(), timesDateTimeEmitted);
+    QCOMPARE(dateTimeSpy.size(), timesDateTimeEmitted);
     if (timesDateTimeEmitted > 0) {
         QList<QVariant> list = dateTimeSpy.takeFirst();
         QDateTime dt;
@@ -3143,9 +3099,9 @@ void tst_QDateTimeEdit::hour12Test()
 void tst_QDateTimeEdit::yyTest()
 {
     testWidget->setDisplayFormat("dd-MMM-yy");
-    testWidget->setTime(QTime(0, 0, 0));
     testWidget->setDateRange(QDate(2005, 1, 1), QDate(2010, 12, 31));
     testWidget->setDate(testWidget->minimumDate());
+    testWidget->setTime(QTime(12, 0, 0)); // Mid-day to avoid DST artefacts.
     testWidget->setCurrentSection(QDateTimeEdit::YearSection);
 
     QString jan = QLocale::system().monthName(1, QLocale::ShortFormat);
@@ -3206,22 +3162,22 @@ void tst_QDateTimeEdit::task149097()
     testWidget->setDisplayFormat("yyyy/MM/dd hh:mm:ss");
     testWidget->setDateTime(QDateTime(QDate(2001, 02, 03), QTime(5, 1, 2)));
 //    QTest::keyClick(testWidget, Qt::Key_Enter);
-    QCOMPARE(dtSpy.count(), 1);
-    QCOMPARE(dSpy.count(), 1);
-    QCOMPARE(tSpy.count(), 1);
+    QCOMPARE(dtSpy.size(), 1);
+    QCOMPARE(dSpy.size(), 1);
+    QCOMPARE(tSpy.size(), 1);
     testWidget->setCurrentSection(QDateTimeEdit::YearSection);
     testWidget->stepBy(1);
 
-    QCOMPARE(dtSpy.count(), 2);
-    QCOMPARE(dSpy.count(), 2);
-    QCOMPARE(tSpy.count(), 1);
+    QCOMPARE(dtSpy.size(), 2);
+    QCOMPARE(dSpy.size(), 2);
+    QCOMPARE(tSpy.size(), 1);
 
     testWidget->setCurrentSection(QDateTimeEdit::MinuteSection);
     testWidget->stepBy(1);
 
-    QCOMPARE(dtSpy.count(), 3);
-    QCOMPARE(dSpy.count(), 2);
-    QCOMPARE(tSpy.count(), 2);
+    QCOMPARE(dtSpy.size(), 3);
+    QCOMPARE(dSpy.size(), 2);
+    QCOMPARE(tSpy.size(), 2);
 }
 
 void tst_QDateTimeEdit::task148725()
@@ -3858,7 +3814,6 @@ void tst_QDateTimeEdit::deleteCalendarWidget()
 {
     {
         // setup
-        QCalendarWidget *cw = 0;
         QDateEdit edit;
         QVERIFY(!edit.calendarWidget());
         edit.setCalendarPopup(true);
@@ -3866,8 +3821,7 @@ void tst_QDateTimeEdit::deleteCalendarWidget()
         edit.calendarWidget()->setObjectName("cw1");;
 
         // delete
-        cw = edit.calendarWidget();
-        delete cw;
+        delete edit.calendarWidget();
 
         // it should create a new widget
         QVERIFY(edit.calendarWidget());
@@ -3881,7 +3835,7 @@ void tst_QDateTimeEdit::setLocaleOnCalendarWidget()
     QList<QLocale> allLocales = QLocale::matchingLocales(
                 QLocale::AnyLanguage,
                 QLocale::AnyScript,
-                QLocale::AnyCountry);
+                QLocale::AnyTerritory);
     QLocale c = QLocale::c();
     dateEdit.setCalendarPopup(true);
     dateEdit.setLocale(c);
@@ -4013,20 +3967,23 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize_data()
     KeyPairList shortAndLongNameIssueKeypresses;
     shortAndLongNameIssueKeypresses << key(Qt::Key_Tab) << key(Qt::Key_3) << key(Qt::Key_1) << key(Qt::Key_Up);
 
+    // When day-of-week is specified, rather than day-of-month, changing month
+    // cares more about preserving day-of-week than day-of-month, so Jan/31 ->
+    // Feb picks 28th even in a leap year, as that's exactly four weeks later.
     QTest::newRow("no fixday, leap, yy/M/dddd")
         << ozzy << y2kStart << QString::fromLatin1("yy/M/dddd")
         << threeDigitDayIssueKeypresses_DayName
-        << QDate(2000, 2, 29) << QString::fromLatin1("00/2/Tuesday");
+        << QDate(2000, 2, 28) << QString::fromLatin1("00/2/Monday");
 
     QTest::newRow("no fixday, leap, yy/M/ddd")
         << ozzy << y2kStart << QString::fromLatin1("yy/M/ddd")
         << threeDigitDayIssueKeypresses_DayName
-        << QDate(2000, 2, 29) << QString::fromLatin1("00/2/Tue");
+        << QDate(2000, 2, 28) << QString::fromLatin1("00/2/Mon");
 
     QTest::newRow("no fixday, leap, yy/MM/dddd")
         << ozzy << y2kStart << QString::fromLatin1("yy/MM/dddd")
         << threeDigitDayIssueKeypresses_DayName
-        << QDate(2000, 2, 29) << QString::fromLatin1("00/02/Tuesday");
+        << QDate(2000, 2, 28) << QString::fromLatin1("00/02/Monday");
 
     QTest::newRow("fixday, leap, yy/MM/dd")
         << ozzy << y2kStart << QString::fromLatin1("yy/MM/dd")
@@ -4076,12 +4033,12 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize_data()
     QTest::newRow("no fixday, leap, yyyy/M/dddd")
         << ozzy << y2kStart << QString::fromLatin1("yyyy/M/dddd")
         << threeDigitDayIssueKeypresses_DayName
-        << QDate(2000, 2, 29) << QString::fromLatin1("2000/2/Tuesday");
+        << QDate(2000, 2, 28) << QString::fromLatin1("2000/2/Monday");
 
     QTest::newRow("no fixday, leap, yyyy/MM/dddd")
         << ozzy << y2kStart << QString::fromLatin1("yyyy/MM/dddd")
         << threeDigitDayIssueKeypresses_DayName
-        << QDate(2000, 2, 29) << QString::fromLatin1("2000/02/Tuesday");
+        << QDate(2000, 2, 28) << QString::fromLatin1("2000/02/Monday");
 
     QTest::newRow("fixday, leap, yyyy/dd/MM")
         << ozzy << y2kStart << QString::fromLatin1("yyyy/dd/MM")
@@ -4116,12 +4073,12 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize_data()
     QTest::newRow("fixday, leap, yyyy/dddd/M")
         << ozzy << y2kStart << QString::fromLatin1("yyyy/dddd/M")
         << threeDigitDayIssueKeypresses_DayName_YearDayMonth
-        << QDate(2000, 2, 29) << QString::fromLatin1("2000/Tuesday/2");
+        << QDate(2000, 2, 28) << QString::fromLatin1("2000/Monday/2");
 
     QTest::newRow("fixday, leap, yyyy/dddd/MM")
         << ozzy << y2kStart << QString::fromLatin1("yyyy/dddd/MM")
         << threeDigitDayIssueKeypresses_DayName_YearDayMonth
-        << QDate(2000, 2, 29) << QString::fromLatin1("2000/Tuesday/02");
+        << QDate(2000, 2, 28) << QString::fromLatin1("2000/Monday/02");
 
     QTest::newRow("fixday, leap, d/M/yyyy")
         << ozzy << y2kStart << QString::fromLatin1("d/M/yyyy")
@@ -4141,7 +4098,7 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize_data()
     QTest::newRow("fixday, leap, dddd/MM/yyyy")
         << ozzy << y2kStart << QString::fromLatin1("dddd/MM/yyyy")
         << threeDigitDayIssueKeypresses_DayName_DayMonthYear
-        << QDate(2000, 2, 29) << QString::fromLatin1("Tuesday/02/2000");
+        << QDate(2000, 2, 28) << QString::fromLatin1("Monday/02/2000");
 
     QTest::newRow("fixday, leap, d/yy/M")
         << ozzy << y2kStart << QString::fromLatin1("d/yy/M")
@@ -4176,12 +4133,12 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize_data()
     QTest::newRow("fixday, leap, dddd/yy/M")
         << ozzy << y2kStart << QString::fromLatin1("dddd/yy/M")
         << threeDigitDayIssueKeypresses_DayName_DayYearMonth
-        << QDate(2000, 2, 29) << QString::fromLatin1("Tuesday/00/2");
+        << QDate(2000, 2, 28) << QString::fromLatin1("Monday/00/2");
 
     QTest::newRow("fixday, leap, dddd/yy/MM")
         << ozzy << y2kStart << QString::fromLatin1("dddd/yy/MM")
         << threeDigitDayIssueKeypresses_DayName_DayYearMonth
-        << QDate(2000, 2, 29) << QString::fromLatin1("Tuesday/00/02");
+        << QDate(2000, 2, 28) << QString::fromLatin1("Monday/00/02");
 
     QTest::newRow("fixday, leap, M/d/yy")
         << ozzy << y2kStart << QString::fromLatin1("M/d/yy")
@@ -4201,7 +4158,7 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize_data()
     QTest::newRow("fixday, leap, M/dddd/yyyy")
         << ozzy << y2kStart << QString::fromLatin1("M/dddd/yyyy")
         << threeDigitDayIssueKeypresses_DayName_MonthDayYear
-        << QDate(2000, 2, 29) << QString::fromLatin1("2/Tuesday/2000");
+        << QDate(2000, 2, 28) << QString::fromLatin1("2/Monday/2000");
 
     QTest::newRow("fixday, leap, MM/dd/yyyy")
         << ozzy << y2kStart << QString::fromLatin1("MM/dd/yyyy")
@@ -4211,7 +4168,7 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize_data()
     QTest::newRow("fixday, leap, MM/dddd/yyyy")
         << ozzy << y2kStart << QString::fromLatin1("MM/dddd/yyyy")
         << threeDigitDayIssueKeypresses_DayName_MonthDayYear
-        << QDate(2000, 2, 29) << QString::fromLatin1("02/Tuesday/2000");
+        << QDate(2000, 2, 28) << QString::fromLatin1("02/Monday/2000");
 
     QTest::newRow("fixday, leap, M/yyyy/dd")
         << ozzy << y2kStart << QString::fromLatin1("M/yyyy/dd")
@@ -4279,6 +4236,9 @@ void tst_QDateTimeEdit::dateEditCorrectSectionSize()
     edit.setDisplayFormat(displayFormat);
     edit.show();
     edit.setFocus();
+    // Day-of-week tests rely on advance through week advancing the
+    // day-of-month, so not stopping at the locale's first day of the week:
+    edit.setWrapping(true);
     // For some reason, we need to set the selected section for the dd/MM/yyyy tests,
     // otherwise the 3 is inserted at the front of 01/01/2000 (301/01/2000), instead of the
     // selected text being replaced. This is not an issue for the yyyy/MM/dd format though...
@@ -4595,12 +4555,12 @@ void tst_QDateTimeEdit::stepModifierPressAndHold()
                 QStyle::CC_SpinBox, &spinBoxStyleOption, subControl, &edit);
 
     QTest::mousePress(&edit, Qt::LeftButton, modifiers, buttonRect.center());
-    QTRY_VERIFY(spy.length() >= 3);
+    QTRY_VERIFY(spy.size() >= 3);
     QTest::mouseRelease(&edit, Qt::LeftButton, modifiers, buttonRect.center());
 
     const auto value = spy.last().at(0);
     QVERIFY(value.userType() == QMetaType::QDate);
-    const QDate expectedDate = startDate.addYears(spy.length() *
+    const QDate expectedDate = startDate.addYears(spy.size() *
                                                   expectedStepModifier);
     QCOMPARE(value.toDate(), expectedDate);
 }

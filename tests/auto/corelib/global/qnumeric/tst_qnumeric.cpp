@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -52,6 +27,8 @@ class tst_QNumeric: public QObject
     // Support for floating-point:
     template<typename F> inline void fuzzyCompare_data();
     template<typename F> inline void fuzzyCompare();
+    template<typename F> inline void fuzzyIsNull_data();
+    template<typename F> inline void fuzzyIsNull();
     template<typename F> inline void checkNaN(F nan);
     template<typename F> inline void rawNaN_data();
     template<typename F> inline void rawNaN();
@@ -71,6 +48,10 @@ private slots:
     void fuzzyCompareF() { fuzzyCompare<float>(); }
     void fuzzyCompareD_data() { fuzzyCompare_data<double>(); }
     void fuzzyCompareD() { fuzzyCompare<double>(); }
+    void fuzzyIsNullF_data() { fuzzyIsNull_data<float>(); }
+    void fuzzyIsNullF() { fuzzyIsNull<float>(); }
+    void fuzzyIsNullD_data() { fuzzyIsNull_data<double>(); }
+    void fuzzyIsNullD() { fuzzyIsNull<double>(); }
     void rawNaNF_data() { rawNaN_data<float>(); }
     void rawNaNF() { rawNaN<float>(); }
     void rawNaND_data() { rawNaN_data<double>(); }
@@ -143,6 +124,45 @@ void tst_QNumeric::fuzzyCompare()
     QCOMPARE(::qFuzzyCompare(-val2, -val1), isEqual);
 }
 
+template<typename F>
+void tst_QNumeric::fuzzyIsNull_data()
+{
+    QTest::addColumn<F>("value");
+    QTest::addColumn<bool>("isNull");
+    using Bounds = std::numeric_limits<F>;
+    const F one(1), huge = Fuzzy<F>::scale, tiny = one / huge;
+
+    QTest::newRow("zero") << F(0) << true;
+    QTest::newRow("min") << Bounds::min() << true;
+    QTest::newRow("denorm_min") << Bounds::denorm_min() << true;
+    QTest::newRow("tiny") << tiny << true;
+
+    QTest::newRow("deci") << F(.1) << false;
+    QTest::newRow("one") << one << false;
+    QTest::newRow("ten") << F(10) << false;
+    QTest::newRow("large") << F(1e9) << false;
+    QTest::newRow("huge") << huge << false;
+}
+
+template<typename F>
+void tst_QNumeric::fuzzyIsNull()
+{
+    QFETCH(F, value);
+    QFETCH(bool, isNull);
+
+    QCOMPARE(::qFuzzyIsNull(value), isNull);
+    QCOMPARE(::qFuzzyIsNull(-value), isNull);
+}
+
+static void clearFpExceptions()
+{
+    // Call after any functions that exercise floating-point exceptions, such as
+    // sqrt(-1) or log(0).
+#ifdef Q_OS_WIN
+    _clearfp();
+#endif
+}
+
 #if defined __FAST_MATH__ && (__GNUC__ * 100 + __GNUC_MINOR__ >= 404)
    // turn -ffast-math off
 #  pragma GCC optimize "no-fast-math"
@@ -151,6 +171,7 @@ void tst_QNumeric::fuzzyCompare()
 template<typename F>
 void tst_QNumeric::checkNaN(F nan)
 {
+    const auto cleanup = qScopeGuard([]() { clearFpExceptions(); });
 #define CHECKNAN(value) \
     do { \
         const F v = (value); \
@@ -159,21 +180,23 @@ void tst_QNumeric::checkNaN(F nan)
         QVERIFY(!qIsFinite(v)); \
         QVERIFY(!qIsInf(v)); \
     } while (0)
+    const F zero(0), one(1), two(2);
 
-    QVERIFY(!(0 > nan));
-    QVERIFY(!(0 < nan));
-    QVERIFY(!(0 == nan));
+    QVERIFY(!(zero > nan));
+    QVERIFY(!(zero < nan));
+    QVERIFY(!(zero == nan));
     QVERIFY(!(nan == nan));
 
     CHECKNAN(nan);
-    CHECKNAN(nan + 1);
-    CHECKNAN(nan - 1);
+    CHECKNAN(nan + one);
+    CHECKNAN(nan - one);
     CHECKNAN(-nan);
-    CHECKNAN(nan * 2.0);
-    CHECKNAN(nan / 2.0);
-    CHECKNAN(1.0 / nan);
-    CHECKNAN(0.0 / nan);
-    CHECKNAN(0.0 * nan);
+    CHECKNAN(nan * two);
+    CHECKNAN(nan / two);
+    CHECKNAN(one / nan);
+    CHECKNAN(zero / nan);
+    CHECKNAN(zero * nan);
+    CHECKNAN(sqrt(-one));
 
     // When any NaN is expected, any NaN will do:
     QCOMPARE(nan, nan);
@@ -261,6 +284,7 @@ void tst_QNumeric::generalNaN()
 template<typename F>
 void tst_QNumeric::infinity()
 {
+    const auto cleanup = qScopeGuard([]() { clearFpExceptions(); });
     const F inf = qInf();
     const F zero(0), one(1), two(2);
     QVERIFY(inf > zero);
@@ -283,6 +307,7 @@ void tst_QNumeric::infinity()
     QCOMPARE(one / -inf, zero);
     QVERIFY(qIsNaN(zero * inf));
     QVERIFY(qIsNaN(zero * -inf));
+    QCOMPARE(log(zero), -inf);
 }
 
 template<typename F>
@@ -366,9 +391,11 @@ void tst_QNumeric::distance()
     QFETCH(F, from);
     QFETCH(F, stop);
     QFETCH(Count, expectedDistance);
-#ifdef Q_OS_QNX
-    QEXPECT_FAIL("denormal", "See QTBUG-37094", Continue);
-#endif
+    if constexpr (std::numeric_limits<F>::has_denorm != std::denorm_present) {
+        if (qstrcmp(QTest::currentDataTag(), "denormal") == 0) {
+            QSKIP("Skipping 'denorm' as this type lacks denormals on this system");
+        }
+    }
     QCOMPARE(qFloatDistance(from, stop), expectedDistance);
     QCOMPARE(qFloatDistance(stop, from), expectedDistance);
 }

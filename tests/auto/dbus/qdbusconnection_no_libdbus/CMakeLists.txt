@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdbusconnection_no_libdbus.pro.
 
 #####################################################################
@@ -10,6 +13,6 @@ qt_internal_add_test(tst_qdbusconnection_no_libdbus
     DEFINES
         SIMULATE_LOAD_FAIL
         tst_QDBusConnectionNoBus=tst_QDBusConnectionNoLibDBus1
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::DBus
 )

@@ -38,6 +38,7 @@ qt*-config_p.h
 qt*-config.pri
 *.pyc
 .mypy_cache
+__pycache__
 
 /include/
 
@@ -90,7 +91,7 @@ qt*-config.pri
 /bin/qglinfo
 /bin/qgltf
 /bin/qhelpconverter
-/bin/qhelpgenerator
+/libexec/qhelpgenerator
 /bin/qlalr
 /bin/qml
 /bin/qmleasing
@@ -190,7 +191,7 @@ qt*-config.pri
 /tests/auto/testlib/selftests/verifyexceptionthrown/verifyexceptionthrown
 /tests/auto/testlib/selftests/waitwithoutgui/waitwithoutgui
 /tests/auto/testlib/selftests/warnings/warnings
-/tests/auto/testlib/selftests/xunit/xunit
+/tests/auto/testlib/selftests/junit/junit
 /tests/auto/widgets/kernel/qapplication/modal/modal
 
 QObject.log

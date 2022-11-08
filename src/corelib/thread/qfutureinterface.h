@@ -1,56 +1,21 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QFUTUREINTERFACE_H
 #define QFUTUREINTERFACE_H
 
-#include <QtCore/qrunnable.h>
 #include <QtCore/qmutex.h>
-#include <QtCore/qexception.h>
 #include <QtCore/qresultstore.h>
+#ifndef QT_NO_EXCEPTIONS
+#include <exception>
+#endif
 
 #include <utility>
-#include <vector>
-#include <mutex>
 
 QT_REQUIRE_CONFIG(future);
 
+QT_FORWARD_DECLARE_CLASS(QRunnable)
+QT_FORWARD_DECLARE_CLASS(QException)
 QT_BEGIN_NAMESPACE
 
 
@@ -63,6 +28,8 @@ class QFutureWatcherBasePrivate;
 namespace QtPrivate {
 template<typename Function, typename ResultType, typename ParentResultType>
 class Continuation;
+
+class ExceptionStore;
 
 template<class Function, class ResultType>
 class CanceledHandler;
@@ -91,6 +58,10 @@ public:
 
     QFutureInterfaceBase(State initialState = NoState);
     QFutureInterfaceBase(const QFutureInterfaceBase &other);
+    QFutureInterfaceBase(QFutureInterfaceBase &&other) noexcept
+        : d(std::exchange(other.d, nullptr)) {}
+    QFutureInterfaceBase &operator=(const QFutureInterfaceBase &other);
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QFutureInterfaceBase)
     virtual ~QFutureInterfaceBase();
 
     // reporting functions available to the engine author:
@@ -99,7 +70,11 @@ public:
     void reportCanceled();
 #ifndef QT_NO_EXCEPTIONS
     void reportException(const QException &e);
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
     void reportException(std::exception_ptr e);
+#else
+    void reportException(const std::exception_ptr &e);
+#endif
 #endif
     void reportResultsReady(int beginIndex, int endIndex);
 
@@ -143,6 +118,8 @@ public:
     int loadState() const;
 
     void cancel();
+    void cancelAndFinish() { cancel(CancelMode::CancelAndFinish); }
+
     void setSuspended(bool suspend);
     void toggleSuspended();
     void reportSuspended() const;
@@ -155,20 +132,28 @@ public:
     void suspendIfRequested();
 
     QMutex &mutex() const;
+    bool hasException() const;
     QtPrivate::ExceptionStore &exceptionStore();
     QtPrivate::ResultStoreBase &resultStoreBase();
     const QtPrivate::ResultStoreBase &resultStoreBase() const;
 
     inline bool operator==(const QFutureInterfaceBase &other) const { return d == other.d; }
     inline bool operator!=(const QFutureInterfaceBase &other) const { return d != other.d; }
-    QFutureInterfaceBase &operator=(const QFutureInterfaceBase &other);
 
+    // ### Qt 7: inline
     void swap(QFutureInterfaceBase &other) noexcept;
 
+    template<typename T>
+    static QFutureInterfaceBase get(const QFuture<T> &future);  // implemented in qfuture.h
+
+    bool isChainCanceled() const;
+
 protected:
-    bool refT() const;
-    bool derefT() const;
+    // ### Qt 7: remove const from refT/derefT
+    bool refT() const noexcept;
+    bool derefT() const noexcept;
     void reset();
+    void rethrowPossibleException();
 public:
 
 #ifndef QFUTURE_TEST
@@ -191,15 +176,29 @@ private:
     friend class QtPrivate::FailureHandler;
 #endif
 
+    template<class T>
+    friend class QPromise;
+
 protected:
     void setContinuation(std::function<void(const QFutureInterfaceBase &)> func);
+    void setContinuation(std::function<void(const QFutureInterfaceBase &)> func,
+                         QFutureInterfaceBasePrivate *continuationFutureData);
+    void cleanContinuation();
     void runContinuation() const;
 
     void setLaunchAsync(bool value);
     bool launchAsync() const;
 
     bool isRunningOrPending() const;
+
+    enum class CancelMode { CancelOnly, CancelAndFinish };
+    void cancel(CancelMode mode);
 };
+
+inline void swap(QFutureInterfaceBase &lhs, QFutureInterfaceBase &rhs) noexcept
+{
+    lhs.swap(rhs);
+}
 
 template <typename T>
 class QFutureInterface : public QFutureInterfaceBase
@@ -216,23 +215,24 @@ public:
         refT();
     }
     QFutureInterface(const QFutureInterfaceBase &dd) : QFutureInterfaceBase(dd) { refT(); }
+    QFutureInterface(QFutureInterfaceBase &&dd) noexcept : QFutureInterfaceBase(std::move(dd)) { refT(); }
+    QFutureInterface &operator=(const QFutureInterface &other)
+    {
+        QFutureInterface copy(other);
+        swap(copy);
+        return *this;
+    }
+    QFutureInterface(QFutureInterface &&other) = default;
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QFutureInterface)
+
     ~QFutureInterface()
     {
-        if (!derefT())
+        if (!derefT() && !hasException())
             resultStoreBase().template clear<T>();
     }
 
     static QFutureInterface canceledResult()
     { return QFutureInterface(State(Started | Finished | Canceled)); }
-
-    QFutureInterface &operator=(const QFutureInterface &other)
-    {
-        other.refT();
-        if (!derefT())
-            resultStoreBase().template clear<T>();
-        QFutureInterfaceBase::operator=(other);
-        return *this;
-    }
 
     inline QFuture<T> future(); // implemented in qfuture.h
 
@@ -257,15 +257,35 @@ public:
     // TODO: Enable and make it return a QList, when QList is fixed to support move-only types
     std::vector<T> takeResults();
 #endif
+
+#ifndef QT_NO_EXCEPTIONS
+    void reportException(const std::exception_ptr &e)
+    {
+        if (hasException())
+            return;
+
+        resultStoreBase().template clear<T>();
+        QFutureInterfaceBase::reportException(e);
+    }
+    void reportException(const QException &e)
+    {
+        if (hasException())
+            return;
+
+        resultStoreBase().template clear<T>();
+        QFutureInterfaceBase::reportException(e);
+    }
+#endif
 };
 
 template <typename T>
 inline bool QFutureInterface<T>::reportResult(const T *result, int index)
 {
-    std::lock_guard<QMutex> locker{mutex()};
+    QMutexLocker<QMutex> locker{&mutex()};
     if (this->queryState(Canceled) || this->queryState(Finished))
         return false;
 
+    Q_ASSERT(!hasException());
     QtPrivate::ResultStoreBase &store = resultStoreBase();
 
     const int resultCountBefore = store.count();
@@ -283,10 +303,11 @@ inline bool QFutureInterface<T>::reportResult(const T *result, int index)
 template<typename T>
 bool QFutureInterface<T>::reportAndMoveResult(T &&result, int index)
 {
-    std::lock_guard<QMutex> locker{mutex()};
+    QMutexLocker<QMutex> locker{&mutex()};
     if (queryState(Canceled) || queryState(Finished))
         return false;
 
+    Q_ASSERT(!hasException());
     QtPrivate::ResultStoreBase &store = resultStoreBase();
 
     const int oldResultCount = store.count();
@@ -312,10 +333,11 @@ inline bool QFutureInterface<T>::reportResult(const T &result, int index)
 template<typename T>
 inline bool QFutureInterface<T>::reportResults(const QList<T> &_results, int beginIndex, int count)
 {
-    std::lock_guard<QMutex> locker{mutex()};
+    QMutexLocker<QMutex> locker{&mutex()};
     if (this->queryState(Canceled) || this->queryState(Finished))
         return false;
 
+    Q_ASSERT(!hasException());
     auto &store = resultStoreBase();
 
     const int resultCountBefore = store.count();
@@ -325,7 +347,7 @@ inline bool QFutureInterface<T>::reportResults(const QList<T> &_results, int beg
     if (store.filterMode()) {
         this->reportResultsReady(resultCountBefore, store.count());
     } else {
-        this->reportResultsReady(insertIndex, insertIndex + _results.count());
+        this->reportResultsReady(insertIndex, insertIndex + _results.size());
     }
     return true;
 }
@@ -343,14 +365,18 @@ inline bool QFutureInterface<T>::reportFinished(const T *result)
 template <typename T>
 inline const T &QFutureInterface<T>::resultReference(int index) const
 {
-    std::lock_guard<QMutex> locker{mutex()};
+    Q_ASSERT(!hasException());
+
+    QMutexLocker<QMutex> locker{&mutex()};
     return resultStoreBase().resultAt(index).template value<T>();
 }
 
 template <typename T>
 inline const T *QFutureInterface<T>::resultPointer(int index) const
 {
-    std::lock_guard<QMutex> locker{mutex()};
+    Q_ASSERT(!hasException());
+
+    QMutexLocker<QMutex> locker{&mutex()};
     return resultStoreBase().resultAt(index).template pointer<T>();
 }
 
@@ -358,14 +384,14 @@ template <typename T>
 inline QList<T> QFutureInterface<T>::results()
 {
     if (this->isCanceled()) {
-        exceptionStore().throwPossibleException();
+        rethrowPossibleException();
         return QList<T>();
     }
 
     QFutureInterfaceBase::waitForResult(-1);
 
     QList<T> res;
-    std::lock_guard<QMutex> locker{mutex()};
+    QMutexLocker<QMutex> locker{&mutex()};
 
     QtPrivate::ResultIteratorBase it = resultStoreBase().begin();
     while (it != resultStoreBase().end()) {
@@ -385,7 +411,9 @@ T QFutureInterface<T>::takeResult()
     // not to mess with other unready results.
     waitForResult(-1);
 
-    const std::lock_guard<QMutex> locker{mutex()};
+    Q_ASSERT(!hasException());
+
+    const QMutexLocker<QMutex> locker{&mutex()};
     QtPrivate::ResultIteratorBase position = resultStoreBase().resultAt(0);
     T ret(std::move_if_noexcept(position.value<T>()));
     reset();
@@ -401,10 +429,13 @@ std::vector<T> QFutureInterface<T>::takeResults()
     Q_ASSERT(isValid());
 
     waitForResult(-1);
+
+    Q_ASSERT(!hasException());
+
     std::vector<T> res;
     res.reserve(resultCount());
 
-    const std::lock_guard<QMutex> locker{mutex()};
+    const QMutexLocker<QMutex> locker{&mutex()};
 
     QtPrivate::ResultIteratorBase it = resultStoreBase().begin();
     for (auto endIt = resultStoreBase().end(); it != endIt; ++it)

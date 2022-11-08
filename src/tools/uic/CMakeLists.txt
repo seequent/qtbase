@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from uic.pro.
 
 #####################################################################
@@ -7,6 +10,7 @@
 qt_get_tool_target_name(target_name uic)
 qt_internal_add_tool(${target_name}
     TARGET_DESCRIPTION "Qt User Interface Compiler"
+    INSTALL_DIR "${INSTALL_LIBEXECDIR}"
     TOOLS_TARGET Widgets # special case
     SOURCES
         cpp/cppwritedeclaration.cpp cpp/cppwritedeclaration.h
@@ -20,6 +24,7 @@ qt_internal_add_tool(${target_name}
         python/pythonwritedeclaration.cpp python/pythonwritedeclaration.h
         python/pythonwriteimports.cpp python/pythonwriteimports.h
         shared/language.cpp shared/language.h
+        shared/writeincludesbase.cpp shared/writeincludesbase.h
         treewalker.cpp treewalker.h
         ui4.cpp ui4.h
         uic.cpp uic.h
@@ -38,6 +43,7 @@ qt_internal_add_tool(${target_name}
     #PUBLIC_LIBRARIES # special case remove
         #Qt::Gui # special case remove
 )
+qt_internal_return_unless_building_tools()
 
 #### Keys ignored in scope 1:.:.:uic.pro:<TRUE>:
 # QMAKE_TARGET_DESCRIPTION = "Qt User Interface Compiler"

@@ -1,14 +1,15 @@
-# Generated from dbus.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 if(NOT TARGET Qt::DBus)
     return()
 endif()
-add_subdirectory(listnames)
-add_subdirectory(pingpong)
+qt_internal_add_example(listnames)
+qt_internal_add_example(pingpong)
 if(QT_FEATURE_process)
-    add_subdirectory(complexpingpong)
+    qt_internal_add_example(complexpingpong)
 endif()
 if(TARGET Qt::Widgets)
-    add_subdirectory(chat)
+    qt_internal_add_example(chat)
     add_subdirectory(remotecontrolledcar)
 endif()

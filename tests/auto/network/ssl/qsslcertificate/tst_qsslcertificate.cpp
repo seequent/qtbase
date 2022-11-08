@@ -1,33 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
+
+#include <QtNetwork/qtnetworkglobal.h>
+#include <QtCore/qset.h>
+
 #include <qsslcertificate.h>
 #include <qsslkey.h>
 #include <qsslsocket.h>
@@ -35,6 +14,7 @@
 #include <qscopeguard.h>
 
 #ifndef QT_NO_OPENSSL
+#include <openssl/opensslv.h>
 #include <openssl/obj_mac.h>
 #endif
 
@@ -58,14 +38,14 @@ class tst_QSslCertificate : public QObject
     QMap<QString, QString> sha1Map;
 
     void createTestRows();
-#ifndef QT_NO_SSL
+#if QT_CONFIG(ssl)
     void compareCertificates(const QSslCertificate & cert1, const QSslCertificate & cert2);
 #endif
 
 public slots:
     void initTestCase();
 
-#ifndef QT_NO_SSL
+#if QT_CONFIG(ssl)
 private slots:
     void hash();
     void emptyConstructor();
@@ -117,9 +97,10 @@ private slots:
 
 // ### add tests for certificate bundles (multiple certificates concatenated into a single
 //     structure); both PEM and DER formatted
-#endif
+#endif // QT_CONFIG(ssl)
 private:
     QString testDataDir;
+    bool isNonOpenSslTls = false;
 };
 
 void tst_QSslCertificate::initTestCase()
@@ -129,6 +110,8 @@ void tst_QSslCertificate::initTestCase()
         testDataDir = QCoreApplication::applicationDirPath();
     if (!testDataDir.endsWith(QLatin1String("/")))
         testDataDir += QLatin1String("/");
+
+    isNonOpenSslTls = QSslSocket::activeBackend() != QStringLiteral("openssl");
 
     QDir dir(testDataDir + "certificates");
     QFileInfoList fileInfoList = dir.entryInfoList(QDir::Files | QDir::Readable);
@@ -155,7 +138,7 @@ void tst_QSslCertificate::initTestCase()
     }
 }
 
-#ifndef QT_NO_SSL
+#if QT_CONFIG(ssl)
 
 void tst_QSslCertificate::hash()
 {
@@ -169,7 +152,7 @@ static QByteArray readFile(const QString &absFilePath)
 {
     QFile file(absFilePath);
     if (!file.open(QIODevice::ReadOnly)) {
-        QWARN("failed to open file");
+        qWarning("failed to open file");
         return QByteArray();
     }
     return file.readAll();
@@ -465,10 +448,9 @@ void tst_QSslCertificate::subjectInfoToString()
     QVERIFY(testInfo(QSslCertificate::StateOrProvinceName, QStringLiteral("Oslo")));
     QVERIFY(testInfo(QSslCertificate::DistinguishedNameQualifier, QString()));
     QVERIFY(testInfo(QSslCertificate::SerialNumber, QString()));
-#ifndef QT_NO_OPENSSL
     // TODO: check why generic code does not handle this!
-    QVERIFY(testInfo(QSslCertificate::EmailAddress, QStringLiteral("ababic@trolltech.com")));
-#endif
+    if (!isNonOpenSslTls)
+        QVERIFY(testInfo(QSslCertificate::EmailAddress, QStringLiteral("ababic@trolltech.com")));
 }
 
 void tst_QSslCertificate::subjectIssuerDisplayName_data()
@@ -511,7 +493,7 @@ void tst_QSslCertificate::utf8SubjectNames()
     static const char *ou = "\xe3\x88\xa7" "A" "\xe3\x89\x81\xef\xbd\xab" "BC";
 
     // the following two tests should help find "\x"-literal encoding bugs in the test itself
-    QCOMPARE(cert.subjectInfo("O")[0].length(), QString::fromUtf8(o).length());
+    QCOMPARE(cert.subjectInfo("O")[0].size(), QString::fromUtf8(o).size());
     QCOMPARE (cert.subjectInfo("O")[0].toUtf8().toHex(), QByteArray(o).toHex());
 
     QCOMPARE(cert.subjectInfo("O")[0], QString::fromUtf8(o));
@@ -889,9 +871,9 @@ void tst_QSslCertificate::task256066toPem()
 
 void tst_QSslCertificate::nulInCN()
 {
-#if QT_CONFIG(securetransport) || QT_CONFIG(schannel)
-    QSKIP("Generic QSslCertificatePrivate fails this test");
-#endif
+    if (isNonOpenSslTls)
+        QSKIP("Generic QSslCertificatePrivate fails this test");
+
     QList<QSslCertificate> certList =
         QSslCertificate::fromPath(testDataDir + "more-certificates/badguy-nul-cn.crt", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
     QCOMPARE(certList.size(), 1);
@@ -908,9 +890,10 @@ void tst_QSslCertificate::nulInCN()
 
 void tst_QSslCertificate::nulInSan()
 {
-#if QT_CONFIG(securetransport) || QT_CONFIG(schannel)
-    QSKIP("Generic QSslCertificatePrivate fails this test");
-#endif
+
+    if (isNonOpenSslTls)
+        QSKIP("Generic QSslCertificatePrivate fails this test");
+
     QList<QSslCertificate> certList =
         QSslCertificate::fromPath(testDataDir + "more-certificates/badguy-nul-san.crt", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
     QCOMPARE(certList.size(), 1);
@@ -958,8 +941,8 @@ void tst_QSslCertificate::largeExpirationDate() // QTBUG-12489
 void tst_QSslCertificate::blacklistedCertificates()
 {
     QList<QSslCertificate> blacklistedCerts = QSslCertificate::fromPath(testDataDir + "more-certificates/blacklisted*.pem", QSsl::Pem, QSslCertificate::PatternSyntax::Wildcard);
-    QVERIFY(blacklistedCerts.count() > 0);
-    for (int a = 0; a < blacklistedCerts.count(); a++) {
+    QVERIFY(blacklistedCerts.size() > 0);
+    for (int a = 0; a < blacklistedCerts.size(); a++) {
         QVERIFY(blacklistedCerts.at(a).isBlacklisted());
     }
 }
@@ -973,51 +956,35 @@ void tst_QSslCertificate::selfsignedCertificates()
 
 void tst_QSslCertificate::toText()
 {
+    if (isNonOpenSslTls)
+        QSKIP("QSslCertificate::toText is not implemented on platforms which do not use openssl");
+
     QList<QSslCertificate> certList =
         QSslCertificate::fromPath(testDataDir + "more-certificates/cert-large-expiration-date.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
 
     QCOMPARE(certList.size(), 1);
     const QSslCertificate &cert = certList.at(0);
 
-    // Openssl's cert dump method changed slightly between 0.9.8, 1.0.0 and 1.01 versions, so we want it to match any output
-
-    QFile f098(testDataDir + "more-certificates/cert-large-expiration-date.txt.0.9.8");
-    QVERIFY(f098.open(QIODevice::ReadOnly | QFile::Text));
-    QByteArray txt098 = f098.readAll();
-
-    QFile f100(testDataDir + "more-certificates/cert-large-expiration-date.txt.1.0.0");
-    QVERIFY(f100.open(QIODevice::ReadOnly | QFile::Text));
-    QByteArray txt100 = f100.readAll();
-
-    QFile f101(testDataDir + "more-certificates/cert-large-expiration-date.txt.1.0.1");
-    QVERIFY(f101.open(QIODevice::ReadOnly | QFile::Text));
-    QByteArray txt101 = f101.readAll();
-
-    QFile f101c(testDataDir + "more-certificates/cert-large-expiration-date.txt.1.0.1c");
-    QVERIFY(f101c.open(QIODevice::ReadOnly | QFile::Text));
-    QByteArray txt101c = f101c.readAll();
-
+    // Openssl's cert dump method changed slightly between 1.1.1 and 3.0.5 versions, so we want it to match any output
     QFile f111(testDataDir + "more-certificates/cert-large-expiration-date.txt.1.1.1");
     QVERIFY(f111.open(QIODevice::ReadOnly | QFile::Text));
     QByteArray txt111 = f111.readAll();
 
+    QFile f305(testDataDir + "more-certificates/cert-large-expiration-date.txt.3.0.5");
+    QVERIFY(f305.open(QIODevice::ReadOnly | QFile::Text));
+    QByteArray txt305 = f305.readAll();
+
     QString txtcert = cert.toText();
 
-#ifdef QT_NO_OPENSSL
-    QEXPECT_FAIL("", "QSslCertificate::toText is not implemented on platforms which do not use openssl", Continue);
-#endif
-    QVERIFY(QString::fromLatin1(txt098) == txtcert ||
-            QString::fromLatin1(txt100) == txtcert ||
-            QString::fromLatin1(txt101) == txtcert ||
-            QString::fromLatin1(txt101c) == txtcert ||
-            QString::fromLatin1(txt111) == txtcert );
+    QVERIFY(QString::fromLatin1(txt111) == txtcert  ||
+            QString::fromLatin1(txt305) == txtcert);
 }
 
 void tst_QSslCertificate::multipleCommonNames()
 {
     QList<QSslCertificate> certList =
         QSslCertificate::fromPath(testDataDir + "more-certificates/test-cn-two-cns-cert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
-    QVERIFY(certList.count() > 0);
+    QVERIFY(certList.size() > 0);
 
     QStringList commonNames = certList[0].subjectInfo(QSslCertificate::CommonName);
     QVERIFY(commonNames.contains(QString("www.example.com")));
@@ -1028,18 +995,19 @@ void tst_QSslCertificate::subjectAndIssuerAttributes()
 {
     QList<QSslCertificate> certList =
         QSslCertificate::fromPath(testDataDir + "more-certificates/test-cn-with-drink-cert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
-    QVERIFY(certList.count() > 0);
+    QVERIFY(certList.size() > 0);
 
     QList<QByteArray> attributes = certList[0].subjectInfoAttributes();
     QVERIFY(attributes.contains(QByteArray("favouriteDrink")));
     attributes.clear();
 
     certList = QSslCertificate::fromPath(testDataDir + "more-certificates/natwest-banking.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
-    QVERIFY(certList.count() > 0);
+    QVERIFY(certList.size() > 0);
 
     QByteArray shortName("1.3.6.1.4.1.311.60.2.1.3");
 #if !defined(QT_NO_OPENSSL) && defined(SN_jurisdictionCountryName)
-    shortName = SN_jurisdictionCountryName;
+    if (!isNonOpenSslTls)
+        shortName = SN_jurisdictionCountryName;
 #endif
     attributes = certList[0].subjectInfoAttributes();
     QVERIFY(attributes.contains(shortName));
@@ -1047,9 +1015,9 @@ void tst_QSslCertificate::subjectAndIssuerAttributes()
 
 void tst_QSslCertificate::verify()
 {
-#if QT_CONFIG(securetransport)
-    QSKIP("Not implemented in SecureTransport");
-#endif
+    if (isNonOpenSslTls)
+        QSKIP("Not implemented in SecureTransport or Schannel");
+
     QList<QSslError> errors;
     QList<QSslCertificate> toVerify;
 
@@ -1059,12 +1027,9 @@ void tst_QSslCertificate::verify()
         qPrintable(QString("errors: %1").arg(toString(errors))) \
     )
 
-#ifdef QT_NO_OPENSSL
-    QEXPECT_FAIL("", "Verifying a chain is not supported without openssl", Abort); // TODO?
-#endif
     // Empty chain is unspecified error
     errors = QSslCertificate::verify(toVerify);
-    VERIFY_VERBOSE(errors.count() == 1);
+    VERIFY_VERBOSE(errors.size() == 1);
     VERIFY_VERBOSE(errors[0] == QSslError(QSslError::UnspecifiedError));
     errors.clear();
 
@@ -1083,7 +1048,7 @@ void tst_QSslCertificate::verify()
     toVerify = QSslCertificate::fromPath(testDataDir + "verify-certs/test-ocsp-good-cert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
 
     errors = QSslCertificate::verify(toVerify);
-    VERIFY_VERBOSE(errors.count() == 0);
+    VERIFY_VERBOSE(errors.size() == 0);
     errors.clear();
 
     // Test a blacklisted certificate
@@ -1118,11 +1083,11 @@ void tst_QSslCertificate::verify()
     toVerify << QSslCertificate::fromPath(testDataDir + "verify-certs/test-intermediate-is-ca-cert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString).first();
     toVerify << QSslCertificate::fromPath(testDataDir + "verify-certs/test-intermediate-ca-cert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString).first();
     errors = QSslCertificate::verify(toVerify);
-    VERIFY_VERBOSE(errors.count() == 0);
+    VERIFY_VERBOSE(errors.size() == 0);
 
     // Recheck the above with hostname validation
     errors = QSslCertificate::verify(toVerify, QLatin1String("example.com"));
-    VERIFY_VERBOSE(errors.count() == 0);
+    VERIFY_VERBOSE(errors.size() == 0);
 
     // Recheck the above with a bad hostname
     errors = QSslCertificate::verify(toVerify, QLatin1String("fail.example.com"));
@@ -1147,11 +1112,11 @@ void tst_QSslCertificate::extensions()
 {
     QList<QSslCertificate> certList =
         QSslCertificate::fromPath(testDataDir + "more-certificates/natwest-banking.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
-    QVERIFY(certList.count() > 0);
+    QVERIFY(certList.size() > 0);
 
     QSslCertificate cert = certList[0];
     QList<QSslCertificateExtension> extensions = cert.extensions();
-    QCOMPARE(extensions.count(), 9);
+    QCOMPARE(extensions.size(), 9);
 
     int unknown_idx = -1;
     int authority_info_idx = -1;
@@ -1159,7 +1124,7 @@ void tst_QSslCertificate::extensions()
     int subject_key_idx = -1;
     int auth_key_idx = -1;
 
-    for (int i=0; i < extensions.length(); ++i) {
+    for (int i=0; i < extensions.size(); ++i) {
         QSslCertificateExtension ext = extensions[i];
 
         //qDebug() << i << ":" << ext.name() << ext.oid();
@@ -1245,16 +1210,16 @@ void tst_QSslCertificate::extensionsCritical()
 {
     QList<QSslCertificate> certList =
         QSslCertificate::fromPath(testDataDir + "verify-certs/test-addons-mozilla-org-cert.pem", QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
-    QVERIFY(certList.count() > 0);
+    QVERIFY(certList.size() > 0);
 
     QSslCertificate cert = certList[0];
     QList<QSslCertificateExtension> extensions = cert.extensions();
-    QCOMPARE(extensions.count(), 9);
+    QCOMPARE(extensions.size(), 9);
 
     int basic_constraints_idx = -1;
     int key_usage_idx = -1;
 
-    for (int i=0; i < extensions.length(); ++i) {
+    for (int i=0; i < extensions.size(); ++i) {
         QSslCertificateExtension ext = extensions[i];
 
         if (ext.name() == QStringLiteral("basicConstraints"))
@@ -1392,6 +1357,10 @@ void tst_QSslCertificate::pkcs12()
         return;
     }
 
+#if !defined(QT_NO_OPENSSL) && OPENSSL_VERSION_MAJOR >= 3
+    QSKIP("leaf.p12 is using RC2, which is disabled by default in OpenSSL v >= 3");
+#endif
+
     QFile f(testDataDir + QLatin1String("pkcs12/leaf.p12"));
     bool ok = f.open(QIODevice::ReadOnly);
     QVERIFY(ok);
@@ -1400,9 +1369,9 @@ void tst_QSslCertificate::pkcs12()
     QSslCertificate cert;
     QList<QSslCertificate> caCerts;
 
-#ifdef QT_NO_OPENSSL
-    QEXPECT_FAIL("", "pkcs12 imports are only supported when openssl is used", Abort); // TODO?
-#endif
+    if (isNonOpenSslTls)
+        QEXPECT_FAIL("", "pkcs12 imports are only supported when openssl is used", Abort); // TODO?
+
     ok = QSslCertificate::importPkcs12(&f, &key, &cert, &caCerts);
     QVERIFY(ok);
     f.close();
@@ -1478,7 +1447,7 @@ void tst_QSslCertificate::invalidDateTime()
     }
 }
 
-#endif // QT_NO_SSL
+#endif // QT_CONFIG(ssl)
 
 QTEST_MAIN(tst_QSslCertificate)
 #include "tst_qsslcertificate.moc"

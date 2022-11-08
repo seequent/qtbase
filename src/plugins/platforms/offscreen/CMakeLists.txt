@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from offscreen.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QOffscreenIntegrationPlugin
     OUTPUT_NAME qoffscreen
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES offscreen # special case
     SOURCES
         main.cpp
@@ -15,7 +18,7 @@ qt_internal_add_plugin(QOffscreenIntegrationPlugin
         qoffscreenwindow.cpp qoffscreenwindow.h
     DEFINES
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui

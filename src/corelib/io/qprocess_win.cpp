@@ -1,44 +1,11 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2017 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2017 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 //#define QPROCESS_DEBUG
+#include <qdebug.h>
+#include <private/qdebug_p.h>
+
 #include "qprocess.h"
 #include "qprocess_p.h"
 #include "qwindowspipereader_p.h"
@@ -49,9 +16,9 @@
 #include <qfileinfo.h>
 #include <qrandom.h>
 #include <qwineventnotifier.h>
+#include <qscopedvaluerollback.h>
 #include <private/qsystemlibrary_p.h>
 #include <private/qthread_p.h>
-#include <qdebug.h>
 
 #include "private/qfsfileengine_p.h" // for longFileName
 
@@ -60,6 +27,8 @@
 #endif
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 QProcessEnvironment QProcessEnvironment::systemEnvironment()
 {
@@ -84,6 +53,46 @@ QProcessEnvironment QProcessEnvironment::systemEnvironment()
 }
 
 #if QT_CONFIG(process)
+
+namespace {
+struct QProcessPoller
+{
+    QProcessPoller(const QProcessPrivate &proc);
+
+    int poll(const QDeadlineTimer &deadline);
+
+    enum { maxHandles = 4 };
+    HANDLE handles[maxHandles];
+    DWORD handleCount = 0;
+};
+
+QProcessPoller::QProcessPoller(const QProcessPrivate &proc)
+{
+    if (proc.stdinChannel.writer)
+        handles[handleCount++] = proc.stdinChannel.writer->syncEvent();
+    if (proc.stdoutChannel.reader)
+        handles[handleCount++] = proc.stdoutChannel.reader->syncEvent();
+    if (proc.stderrChannel.reader)
+        handles[handleCount++] = proc.stderrChannel.reader->syncEvent();
+
+    handles[handleCount++] = proc.pid->hProcess;
+}
+
+int QProcessPoller::poll(const QDeadlineTimer &deadline)
+{
+    DWORD waitRet;
+
+    do {
+        waitRet = WaitForMultipleObjectsEx(handleCount, handles, FALSE,
+                                           deadline.remainingTime(), TRUE);
+    } while (waitRet == WAIT_IO_COMPLETION);
+
+    if (waitRet - WAIT_OBJECT_0 < handleCount)
+        return 1;
+
+    return (waitRet == WAIT_TIMEOUT) ? 0 : -1;
+}
+} // anonymous namespace
 
 static bool qt_create_pipe(Q_PIPE *pipe, bool isInputPipe, BOOL defInheritFlag)
 {
@@ -315,23 +324,31 @@ void QProcessPrivate::destroyPipe(Q_PIPE pipe[2])
     }
 }
 
-template <class T>
-void deleteWorker(T *&worker)
-{
-    if (!worker)
-        return;
-    worker->stop();
-    worker->deleteLater();
-    worker = nullptr;
-}
-
 void QProcessPrivate::closeChannel(Channel *channel)
 {
-    if (channel == &stdinChannel)
-        deleteWorker(channel->writer);
-    else
-        deleteWorker(channel->reader);
+    if (channel == &stdinChannel) {
+        delete channel->writer;
+        channel->writer = nullptr;
+    } else {
+        delete channel->reader;
+        channel->reader = nullptr;
+    }
     destroyPipe(channel->pipe);
+}
+
+void QProcessPrivate::cleanup()
+{
+    q_func()->setProcessState(QProcess::NotRunning);
+
+    closeChannels();
+    delete processFinishedNotifier;
+    processFinishedNotifier = nullptr;
+    if (pid) {
+        CloseHandle(pid->hThread);
+        CloseHandle(pid->hProcess);
+        delete pid;
+        pid = nullptr;
+    }
 }
 
 static QString qt_create_commandline(const QString &program, const QStringList &arguments,
@@ -340,44 +357,44 @@ static QString qt_create_commandline(const QString &program, const QStringList &
     QString args;
     if (!program.isEmpty()) {
         QString programName = program;
-        if (!programName.startsWith(QLatin1Char('\"')) && !programName.endsWith(QLatin1Char('\"')) && programName.contains(QLatin1Char(' ')))
-            programName = QLatin1Char('\"') + programName + QLatin1Char('\"');
-        programName.replace(QLatin1Char('/'), QLatin1Char('\\'));
+        if (!programName.startsWith(u'\"') && !programName.endsWith(u'\"') && programName.contains(u' '))
+            programName = u'\"' + programName + u'\"';
+        programName.replace(u'/', u'\\');
 
-        // add the prgram as the first arg ... it works better
-        args = programName + QLatin1Char(' ');
+        // add the program as the first arg ... it works better
+        args = programName + u' ';
     }
 
-    for (int i=0; i<arguments.size(); ++i) {
+    for (qsizetype i = 0; i < arguments.size(); ++i) {
         QString tmp = arguments.at(i);
         // Quotes are escaped and their preceding backslashes are doubled.
-        int index = tmp.indexOf(QLatin1Char('"'));
+        qsizetype index = tmp.indexOf(u'"');
         while (index >= 0) {
             // Escape quote
-            tmp.insert(index++, QLatin1Char('\\'));
+            tmp.insert(index++, u'\\');
             // Double preceding backslashes (ignoring the one we just inserted)
-            for (int i = index - 2 ; i >= 0 && tmp.at(i) == QLatin1Char('\\') ; --i) {
-                tmp.insert(i, QLatin1Char('\\'));
+            for (qsizetype i = index - 2 ; i >= 0 && tmp.at(i) == u'\\' ; --i) {
+                tmp.insert(i, u'\\');
                 index++;
             }
-            index = tmp.indexOf(QLatin1Char('"'), index + 1);
+            index = tmp.indexOf(u'"', index + 1);
         }
-        if (tmp.isEmpty() || tmp.contains(QLatin1Char(' ')) || tmp.contains(QLatin1Char('\t'))) {
+        if (tmp.isEmpty() || tmp.contains(u' ') || tmp.contains(u'\t')) {
             // The argument must not end with a \ since this would be interpreted
             // as escaping the quote -- rather put the \ behind the quote: e.g.
             // rather use "foo"\ than "foo\"
-            int i = tmp.length();
-            while (i > 0 && tmp.at(i - 1) == QLatin1Char('\\'))
+            qsizetype i = tmp.length();
+            while (i > 0 && tmp.at(i - 1) == u'\\')
                 --i;
-            tmp.insert(i, QLatin1Char('"'));
-            tmp.prepend(QLatin1Char('"'));
+            tmp.insert(i, u'"');
+            tmp.prepend(u'"');
         }
-        args += QLatin1Char(' ') + tmp;
+        args += u' ' + tmp;
     }
 
     if (!nativeArguments.isEmpty()) {
         if (!args.isEmpty())
-             args += QLatin1Char(' ');
+             args += u' ';
         args += nativeArguments;
     }
 
@@ -387,60 +404,59 @@ static QString qt_create_commandline(const QString &program, const QStringList &
 static QByteArray qt_create_environment(const QProcessEnvironmentPrivate::Map &environment)
 {
     QByteArray envlist;
-    if (!environment.isEmpty()) {
-        QProcessEnvironmentPrivate::Map copy = environment;
+    QProcessEnvironmentPrivate::Map copy = environment;
 
-        // add PATH if necessary (for DLL loading)
-        QProcessEnvironmentPrivate::Key pathKey(QLatin1String("PATH"));
-        if (!copy.contains(pathKey)) {
-            QByteArray path = qgetenv("PATH");
-            if (!path.isEmpty())
-                copy.insert(pathKey, QString::fromLocal8Bit(path));
-        }
-
-        // add systemroot if needed
-        QProcessEnvironmentPrivate::Key rootKey(QLatin1String("SystemRoot"));
-        if (!copy.contains(rootKey)) {
-            QByteArray systemRoot = qgetenv("SystemRoot");
-            if (!systemRoot.isEmpty())
-                copy.insert(rootKey, QString::fromLocal8Bit(systemRoot));
-        }
-
-        qsizetype pos = 0;
-        auto it = copy.constBegin();
-        const auto end = copy.constEnd();
-
-        static const wchar_t equal = L'=';
-        static const wchar_t nul = L'\0';
-
-        for ( ; it != end; ++it) {
-            qsizetype tmpSize = sizeof(wchar_t) * (it.key().length() + it.value().length() + 2);
-            // ignore empty strings
-            if (tmpSize == sizeof(wchar_t) * 2)
-                continue;
-            envlist.resize(envlist.size() + tmpSize);
-
-            tmpSize = it.key().length() * sizeof(wchar_t);
-            memcpy(envlist.data()+pos, it.key().utf16(), tmpSize);
-            pos += tmpSize;
-
-            memcpy(envlist.data()+pos, &equal, sizeof(wchar_t));
-            pos += sizeof(wchar_t);
-
-            tmpSize = it.value().length() * sizeof(wchar_t);
-            memcpy(envlist.data()+pos, it.value().utf16(), tmpSize);
-            pos += tmpSize;
-
-            memcpy(envlist.data()+pos, &nul, sizeof(wchar_t));
-            pos += sizeof(wchar_t);
-        }
-        // add the 2 terminating 0 (actually 4, just to be on the safe side)
-        envlist.resize( envlist.size()+4 );
-        envlist[pos++] = 0;
-        envlist[pos++] = 0;
-        envlist[pos++] = 0;
-        envlist[pos++] = 0;
+    // add PATH if necessary (for DLL loading)
+    QProcessEnvironmentPrivate::Key pathKey("PATH"_L1);
+    if (!copy.contains(pathKey)) {
+        QByteArray path = qgetenv("PATH");
+        if (!path.isEmpty())
+            copy.insert(pathKey, QString::fromLocal8Bit(path));
     }
+
+    // add systemroot if needed
+    QProcessEnvironmentPrivate::Key rootKey("SystemRoot"_L1);
+    if (!copy.contains(rootKey)) {
+        QByteArray systemRoot = qgetenv("SystemRoot");
+        if (!systemRoot.isEmpty())
+            copy.insert(rootKey, QString::fromLocal8Bit(systemRoot));
+    }
+
+    qsizetype pos = 0;
+    auto it = copy.constBegin();
+    const auto end = copy.constEnd();
+
+    static const wchar_t equal = L'=';
+    static const wchar_t nul = L'\0';
+
+    for (; it != end; ++it) {
+        qsizetype tmpSize = sizeof(wchar_t) * (it.key().length() + it.value().length() + 2);
+        // ignore empty strings
+        if (tmpSize == sizeof(wchar_t) * 2)
+            continue;
+        envlist.resize(envlist.size() + tmpSize);
+
+        tmpSize = it.key().length() * sizeof(wchar_t);
+        memcpy(envlist.data() + pos, it.key().data(), tmpSize);
+        pos += tmpSize;
+
+        memcpy(envlist.data() + pos, &equal, sizeof(wchar_t));
+        pos += sizeof(wchar_t);
+
+        tmpSize = it.value().length() * sizeof(wchar_t);
+        memcpy(envlist.data() + pos, it.value().data(), tmpSize);
+        pos += tmpSize;
+
+        memcpy(envlist.data() + pos, &nul, sizeof(wchar_t));
+        pos += sizeof(wchar_t);
+    }
+    // add the 2 terminating 0 (actually 4, just to be on the safe side)
+    envlist.resize(envlist.size() + 4);
+    envlist[pos++] = 0;
+    envlist[pos++] = 0;
+    envlist[pos++] = 0;
+    envlist[pos++] = 0;
+
     return envlist;
 }
 
@@ -499,14 +515,6 @@ void QProcessPrivate::startProcess()
 {
     Q_Q(QProcess);
 
-    bool success = false;
-
-    if (pid) {
-        CloseHandle(pid->hThread);
-        CloseHandle(pid->hProcess);
-        delete pid;
-        pid = 0;
-    }
     pid = new PROCESS_INFORMATION;
     memset(pid, 0, sizeof(PROCESS_INFORMATION));
 
@@ -516,13 +524,12 @@ void QProcessPrivate::startProcess()
         QString errorString = QProcess::tr("Process failed to start: %1").arg(qt_error_string());
         cleanup();
         setErrorAndEmit(QProcess::FailedToStart, errorString);
-        q->setProcessState(QProcess::NotRunning);
         return;
     }
 
     const QString args = qt_create_commandline(program, arguments, nativeArguments);
     QByteArray envlist;
-    if (environment.d.constData())
+    if (!environment.inheritsFromParent())
         envlist = qt_create_environment(environment.d.constData()->vars);
 
 #if defined QPROCESS_DEBUG
@@ -544,25 +551,25 @@ void QProcessPrivate::startProcess()
     QProcess::CreateProcessArguments cpargs = {
         nullptr, reinterpret_cast<wchar_t *>(const_cast<ushort *>(args.utf16())),
         nullptr, nullptr, true, dwCreationFlags,
-        environment.isEmpty() ? nullptr : envlist.data(),
+        environment.inheritsFromParent() ? nullptr : envlist.data(),
         nativeWorkingDirectory.isEmpty()
             ? nullptr : reinterpret_cast<const wchar_t *>(nativeWorkingDirectory.utf16()),
         &startupInfo, pid
     };
-    success = callCreateProcess(&cpargs);
 
-    QString errorString;
-    if (!success) {
+    if (!callCreateProcess(&cpargs)) {
         // Capture the error string before we do CloseHandle below
-        errorString = QProcess::tr("Process failed to start: %1").arg(qt_error_string());
-    }
-
-    if (!success) {
+        QString errorString = QProcess::tr("Process failed to start: %1").arg(qt_error_string());
         cleanup();
         setErrorAndEmit(QProcess::FailedToStart, errorString);
-        q->setProcessState(QProcess::NotRunning);
         return;
     }
+
+    // The pipe writer may have already been created before we had
+    // the pipe handle, specifically if the user wrote data from the
+    // stateChanged() slot.
+    if (stdinChannel.writer)
+        stdinChannel.writer->setHandle(stdinChannel.pipe[1]);
 
     q->setProcessState(QProcess::Running);
     // User can call kill()/terminate() from the stateChanged() slot
@@ -642,56 +649,46 @@ bool QProcessPrivate::waitForStarted(const QDeadlineTimer &)
 
 bool QProcessPrivate::drainOutputPipes()
 {
-    if (!stdoutChannel.reader && !stderrChannel.reader)
-        return false;
+    bool readyReadEmitted = false;
 
-    bool someReadyReadEmitted = false;
-    forever {
-        bool readyReadEmitted = false;
-        bool readOperationActive = false;
-        if (stdoutChannel.reader) {
-            readyReadEmitted |= stdoutChannel.reader->waitForReadyRead(0);
-            readOperationActive = stdoutChannel.reader && stdoutChannel.reader->isReadOperationActive();
-        }
-        if (stderrChannel.reader) {
-            readyReadEmitted |= stderrChannel.reader->waitForReadyRead(0);
-            readOperationActive |= stderrChannel.reader && stderrChannel.reader->isReadOperationActive();
-        }
-        someReadyReadEmitted |= readyReadEmitted;
-        if (!readOperationActive || !readyReadEmitted)
-            break;
-        QThread::yieldCurrentThread();
+    if (stdoutChannel.reader) {
+        stdoutChannel.reader->drainAndStop();
+        readyReadEmitted = _q_canReadStandardOutput();
+    }
+    if (stderrChannel.reader) {
+        stderrChannel.reader->drainAndStop();
+        readyReadEmitted |= _q_canReadStandardError();
     }
 
-    return someReadyReadEmitted;
+    return readyReadEmitted;
 }
 
 bool QProcessPrivate::waitForReadyRead(const QDeadlineTimer &deadline)
 {
-    QIncrementalSleepTimer timer(deadline.remainingTime());
-
     forever {
-        if (!writeBuffer.isEmpty() && !_q_canWrite())
+        QProcessPoller poller(*this);
+        int ret = poller.poll(deadline);
+        if (ret < 0)
             return false;
-        if (stdinChannel.writer && stdinChannel.writer->waitForWrite(0))
-            timer.resetIncrements();
+        if (ret == 0)
+            break;
 
-        if ((stdoutChannel.reader && stdoutChannel.reader->waitForReadyRead(0))
-            || (stderrChannel.reader && stderrChannel.reader->waitForReadyRead(0)))
+        if (stdinChannel.writer)
+            stdinChannel.writer->checkForWrite();
+
+        if ((stdoutChannel.reader && stdoutChannel.reader->checkForReadyRead())
+            || (stderrChannel.reader && stderrChannel.reader->checkForReadyRead()))
             return true;
 
         if (!pid)
             return false;
-        if (WaitForSingleObjectEx(pid->hProcess, 0, false) == WAIT_OBJECT_0) {
+
+        if (WaitForSingleObject(pid->hProcess, 0) == WAIT_OBJECT_0) {
             bool readyReadEmitted = drainOutputPipes();
             if (pid)
                 processFinished();
             return readyReadEmitted;
         }
-
-        Sleep(timer.nextSleepTime());
-        if (timer.hasTimedOut())
-            break;
     }
 
     setError(QProcess::Timedout);
@@ -700,58 +697,43 @@ bool QProcessPrivate::waitForReadyRead(const QDeadlineTimer &deadline)
 
 bool QProcessPrivate::waitForBytesWritten(const QDeadlineTimer &deadline)
 {
-    QIncrementalSleepTimer timer(deadline.remainingTime());
-
     forever {
-        bool pendingDataInPipe = stdinChannel.writer && stdinChannel.writer->bytesToWrite();
-
-        // If we don't have pending data, and our write buffer is
-        // empty, we fail.
-        if (!pendingDataInPipe && writeBuffer.isEmpty())
+        // At entry into the loop the pipe writer's buffer can be empty to
+        // start with, in which case we fail immediately. Also, if the input
+        // pipe goes down somewhere in the code below, we avoid waiting for
+        // a full timeout.
+        if (!stdinChannel.writer || !stdinChannel.writer->isWriteOperationActive())
             return false;
 
-        // If we don't have pending data and we do have data in our
-        // write buffer, try to flush that data over to the pipe
-        // writer.  Fail on error.
-        if (!pendingDataInPipe) {
-            if (!_q_canWrite())
-                return false;
-        }
+        QProcessPoller poller(*this);
+        int ret = poller.poll(deadline);
+        if (ret < 0)
+            return false;
+        if (ret == 0)
+            break;
 
-        // Wait for the pipe writer to acknowledge that it has
-        // written. This will succeed if either the pipe writer has
-        // already written the data, or if it manages to write data
-        // within the given timeout. If the write buffer was non-empty
-        // and the stdinChannel.writer is now dead, that means _q_canWrite()
-        // destroyed the writer after it successfully wrote the last
-        // batch.
-        if (!stdinChannel.writer || stdinChannel.writer->waitForWrite(0))
+        if (stdinChannel.writer->checkForWrite())
             return true;
 
         // If we wouldn't write anything, check if we can read stdout.
-        if (stdoutChannel.reader && stdoutChannel.reader->waitForReadyRead(0))
-            timer.resetIncrements();
+        if (stdoutChannel.reader)
+            stdoutChannel.reader->checkForReadyRead();
 
         // Check if we can read stderr.
-        if (stderrChannel.reader && stderrChannel.reader->waitForReadyRead(0))
-            timer.resetIncrements();
+        if (stderrChannel.reader)
+            stderrChannel.reader->checkForReadyRead();
 
         // Check if the process died while reading.
         if (!pid)
             return false;
 
-        // Wait for the process to signal any change in its state,
-        // such as incoming data, or if the process died.
-        if (WaitForSingleObjectEx(pid->hProcess, 0, false) == WAIT_OBJECT_0) {
+        // Check if the process is signaling completion.
+        if (WaitForSingleObject(pid->hProcess, 0) == WAIT_OBJECT_0) {
             drainOutputPipes();
             if (pid)
                 processFinished();
             return false;
         }
-
-        // Only wait for as long as we've been asked.
-        if (timer.hasTimedOut())
-            break;
     }
 
     setError(QProcess::Timedout);
@@ -764,36 +746,35 @@ bool QProcessPrivate::waitForFinished(const QDeadlineTimer &deadline)
     qDebug("QProcessPrivate::waitForFinished(%lld)", deadline.remainingTime());
 #endif
 
-    QIncrementalSleepTimer timer(deadline.remainingTime());
-
     forever {
-        if (!writeBuffer.isEmpty() && !_q_canWrite())
+        QProcessPoller poller(*this);
+        int ret = poller.poll(deadline);
+        if (ret < 0)
             return false;
-        if (stdinChannel.writer && stdinChannel.writer->waitForWrite(0))
-            timer.resetIncrements();
-        if (stdoutChannel.reader && stdoutChannel.reader->waitForReadyRead(0))
-            timer.resetIncrements();
-        if (stderrChannel.reader && stderrChannel.reader->waitForReadyRead(0))
-            timer.resetIncrements();
+        if (ret == 0)
+            break;
+
+        if (stdinChannel.writer)
+            stdinChannel.writer->checkForWrite();
+        if (stdoutChannel.reader)
+            stdoutChannel.reader->checkForReadyRead();
+        if (stderrChannel.reader)
+            stderrChannel.reader->checkForReadyRead();
 
         if (!pid)
             return true;
 
-        if (WaitForSingleObject(pid->hProcess, timer.nextSleepTime()) == WAIT_OBJECT_0) {
+        if (WaitForSingleObject(pid->hProcess, 0) == WAIT_OBJECT_0) {
             drainOutputPipes();
             if (pid)
                 processFinished();
             return true;
         }
-
-        if (timer.hasTimedOut())
-            break;
     }
 
     setError(QProcess::Timedout);
     return false;
 }
-
 
 void QProcessPrivate::findExitCode()
 {
@@ -806,10 +787,39 @@ void QProcessPrivate::findExitCode()
     }
 }
 
-void QProcessPrivate::flushPipeWriter()
+/*! \reimp
+    \internal
+*/
+qint64 QProcess::writeData(const char *data, qint64 len)
 {
-    if (stdinChannel.writer && stdinChannel.writer->bytesToWrite() > 0)
-        stdinChannel.writer->waitForWrite(ULONG_MAX);
+    Q_D(QProcess);
+
+    if (d->stdinChannel.closed) {
+#if defined QPROCESS_DEBUG
+        qDebug("QProcess::writeData(%p \"%s\", %lld) == 0 (write channel closing)",
+               data, QtDebugUtils::toPrintable(data, len, 16).constData(), len);
+#endif
+        return 0;
+    }
+
+    if (!d->stdinChannel.writer) {
+        d->stdinChannel.writer = new QWindowsPipeWriter(d->stdinChannel.pipe[1], this);
+        QObjectPrivate::connect(d->stdinChannel.writer, &QWindowsPipeWriter::bytesWritten,
+                                d, &QProcessPrivate::_q_bytesWritten);
+        QObjectPrivate::connect(d->stdinChannel.writer, &QWindowsPipeWriter::writeFailed,
+                                d, &QProcessPrivate::_q_writeFailed);
+    }
+
+    if (d->isWriteChunkCached(data, len))
+        d->stdinChannel.writer->write(*(d->currentWriteChunk));
+    else
+        d->stdinChannel.writer->write(data, len);
+
+#if defined QPROCESS_DEBUG
+    qDebug("QProcess::writeData(%p \"%s\", %lld) == %lld (written to buffer)",
+           data, QtDebugUtils::toPrintable(data, len, 16).constData(), len, len);
+#endif
+    return len;
 }
 
 qint64 QProcessPrivate::pipeWriterBytesToWrite() const
@@ -817,23 +827,22 @@ qint64 QProcessPrivate::pipeWriterBytesToWrite() const
     return stdinChannel.writer ? stdinChannel.writer->bytesToWrite() : qint64(0);
 }
 
-bool QProcessPrivate::writeToStdin()
+void QProcessPrivate::_q_bytesWritten(qint64 bytes)
 {
     Q_Q(QProcess);
 
-    if (!stdinChannel.writer) {
-        stdinChannel.writer = new QWindowsPipeWriter(stdinChannel.pipe[1], q);
-        QObject::connect(stdinChannel.writer, &QWindowsPipeWriter::bytesWritten,
-                         q, &QProcess::bytesWritten);
-        QObjectPrivate::connect(stdinChannel.writer, &QWindowsPipeWriter::canWrite,
-                                this, &QProcessPrivate::_q_canWrite);
-    } else {
-        if (stdinChannel.writer->isWriteOperationActive())
-            return true;
+    if (!emittedBytesWritten) {
+        QScopedValueRollback<bool> guard(emittedBytesWritten, true);
+        emit q->bytesWritten(bytes);
     }
+    if (stdinChannel.closed && pipeWriterBytesToWrite() == 0)
+        closeWriteChannel();
+}
 
-    stdinChannel.writer->write(writeBuffer.read());
-    return true;
+void QProcessPrivate::_q_writeFailed()
+{
+    closeWriteChannel();
+    setErrorAndEmit(QProcess::WriteError);
 }
 
 // Use ShellExecuteEx() to trigger an UAC prompt when CreateProcess()fails
@@ -842,14 +851,6 @@ static bool startDetachedUacPrompt(const QString &programIn, const QStringList &
                                    const QString &nativeArguments,
                                    const QString &workingDir, qint64 *pid)
 {
-    typedef BOOL (WINAPI *ShellExecuteExType)(SHELLEXECUTEINFOW *);
-
-    static const ShellExecuteExType shellExecuteEx = // XP ServicePack 1 onwards.
-        reinterpret_cast<ShellExecuteExType>(QSystemLibrary::resolve(QLatin1String("shell32"),
-                                                                     "ShellExecuteExW"));
-    if (!shellExecuteEx)
-        return false;
-
     const QString args = qt_create_commandline(QString(),                   // needs arguments only
                                                arguments, nativeArguments);
     SHELLEXECUTEINFOW shellExecuteExInfo;
@@ -866,7 +867,7 @@ static bool startDetachedUacPrompt(const QString &programIn, const QStringList &
         shellExecuteExInfo.lpDirectory = reinterpret_cast<LPCWSTR>(workingDir.utf16());
     shellExecuteExInfo.nShow = SW_SHOWNORMAL;
 
-    if (!shellExecuteEx(&shellExecuteExInfo))
+    if (!ShellExecuteExW(&shellExecuteExInfo))
         return false;
     if (pid)
         *pid = qint64(GetProcessId(shellExecuteExInfo.hProcess));
@@ -879,9 +880,8 @@ bool QProcessPrivate::startDetached(qint64 *pid)
     static const DWORD errorElevationRequired = 740;
 
     if (!openChannelsForDetached()) {
-        closeChannel(&stdinChannel);
-        closeChannel(&stdoutChannel);
-        closeChannel(&stderrChannel);
+        // openChannel sets the error string
+        closeChannels();
         return false;
     }
 
@@ -891,7 +891,7 @@ bool QProcessPrivate::startDetached(qint64 *pid)
 
     void *envPtr = nullptr;
     QByteArray envlist;
-    if (environment.d.constData()) {
+    if (!environment.inheritsFromParent()) {
         envlist = qt_create_environment(environment.d.constData()->vars);
         envPtr = envlist.data();
     }
@@ -923,10 +923,13 @@ bool QProcessPrivate::startDetached(qint64 *pid)
         success = startDetachedUacPrompt(program, arguments, nativeArguments,
                                          workingDirectory, pid);
     }
+    if (!success) {
+        if (pid)
+            *pid = -1;
+        setErrorAndEmit(QProcess::FailedToStart);
+    }
 
-    closeChannel(&stdinChannel);
-    closeChannel(&stdoutChannel);
-    closeChannel(&stderrChannel);
+    closeChannels();
     return success;
 }
 

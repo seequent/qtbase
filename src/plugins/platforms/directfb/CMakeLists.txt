@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from directfb.pro.
 
 # begin special case:
@@ -11,7 +14,7 @@ qt_find_package(EGL)
 
 qt_internal_add_plugin(QDirectFbIntegrationPlugin
     OUTPUT_NAME qdirectfb
-    TYPE platforms
+    PLUGIN_TYPE platforms
     SOURCES
         main.cpp
         qdirectfbbackingstore.cpp qdirectfbbackingstore.h
@@ -23,7 +26,7 @@ qt_internal_add_plugin(QDirectFbIntegrationPlugin
         qdirectfbintegration.cpp qdirectfbintegration.h
         qdirectfbscreen.cpp qdirectfbscreen.h
         qdirectfbwindow.cpp qdirectfbwindow.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         PkgConfig::DirectFB
         EGL::EGL # special case
         Qt::Core

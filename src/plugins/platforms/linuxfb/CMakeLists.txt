@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from linuxfb.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QLinuxFbIntegrationPlugin
     OUTPUT_NAME qlinuxfb
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES linuxfb # special case
     SOURCES
         main.cpp
@@ -14,7 +17,7 @@ qt_internal_add_plugin(QLinuxFbIntegrationPlugin
         qlinuxfbscreen.cpp qlinuxfbscreen.h
     DEFINES
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::FbSupportPrivate
@@ -29,14 +32,14 @@ qt_internal_add_plugin(QLinuxFbIntegrationPlugin
 #####################################################################
 
 qt_internal_extend_target(QLinuxFbIntegrationPlugin CONDITION TARGET Qt::InputSupportPrivate
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::InputSupportPrivate
 )
 
 qt_internal_extend_target(QLinuxFbIntegrationPlugin CONDITION TARGET Qt::KmsSupportPrivate
     SOURCES
         qlinuxfbdrmscreen.cpp qlinuxfbdrmscreen.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::KmsSupportPrivate
 )
 

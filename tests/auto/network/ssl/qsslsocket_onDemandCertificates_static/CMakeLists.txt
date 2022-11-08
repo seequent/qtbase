@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qsslsocket_onDemandCertificates_static.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -11,9 +14,7 @@ endif()
 qt_internal_add_test(tst_qsslsocket_onDemandCertificates_static
     SOURCES
         tst_qsslsocket_onDemandCertificates_static.cpp
-    DEFINES
-        SRCDIR=\\\"${CMAKE_CURRENT_SOURCE_DIR}/\\\"
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
     QT_TEST_SERVER_LIST "squid" "danted" # special case

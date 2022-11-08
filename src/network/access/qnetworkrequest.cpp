@@ -1,48 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtNetwork module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qnetworkrequest.h"
 #include "qnetworkrequest_p.h"
 #include "qplatformdefs.h"
 #include "qnetworkcookie.h"
 #include "qsslconfiguration.h"
-#if QT_CONFIG(http) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(http) || defined(Q_QDOC)
 #include "qhttp2configuration.h"
 #include "private/http2protocol_p.h"
 #endif
@@ -58,6 +22,11 @@
 #include <algorithm>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
+
+QT_IMPL_METATYPE_EXTERN(QNetworkRequest)
+QT_IMPL_METATYPE_EXTERN_TAGGED(QNetworkRequest::RedirectPolicy, QNetworkRequest__RedirectPolicy)
 
 /*!
     \class QNetworkRequest
@@ -169,10 +138,10 @@ QT_BEGIN_NAMESPACE
         Replies only, type: QMetaType::QUrl (no default)
         If present, it indicates that the server is redirecting the
         request to a different URL. The Network Access API does follow
-        redirections by default, but if
-        QNetworkRequest::ManualRedirectPolicy is enabled and
-        the redirect was not handled in redirected() then this
-        attribute will be present.
+        redirections by default, unless
+        QNetworkRequest::ManualRedirectPolicy is used. Additionally, if
+        QNetworkRequest::UserVerifiedRedirectPolicy is used, then this
+        attribute will be set if the redirect was not followed.
         The returned URL might be relative. Use QUrl::resolved()
         to create an absolute URL out of it.
 
@@ -272,7 +241,8 @@ QT_BEGIN_NAMESPACE
         Requests only, type: QMetaType::Bool (default: true)
         Indicates whether the QNetworkAccessManager code is
         allowed to use HTTP/2 with this request. This applies
-        to SSL requests or 'cleartext' HTTP/2.
+        to SSL requests or 'cleartext' HTTP/2 if Http2CleartextAllowedAttribute
+        is set.
 
     \value Http2WasUsedAttribute
         Replies only, type: QMetaType::Bool (default: false)
@@ -304,8 +274,9 @@ QT_BEGIN_NAMESPACE
         If set, this attribute will force QNetworkAccessManager to use
         HTTP/2 protocol without initial HTTP/2 protocol negotiation.
         Use of this attribute implies prior knowledge that a particular
-        server supports HTTP/2. The attribute works with SSL or 'cleartext'
-        HTTP/2. If a server turns out to not support HTTP/2, when HTTP/2 direct
+        server supports HTTP/2. The attribute works with SSL or with 'cleartext'
+        HTTP/2 if Http2CleartextAllowedAttribute is set.
+        If a server turns out to not support HTTP/2, when HTTP/2 direct
         was specified, QNetworkAccessManager gives up, without attempting to
         fall back to HTTP/1.1. If both Http2AllowedAttribute and
         Http2DirectAttribute are set, Http2DirectAttribute takes priority.
@@ -318,6 +289,28 @@ QT_BEGIN_NAMESPACE
         If set, this attribute will make QNetworkAccessManager delete
         the QNetworkReply after having emitted "finished".
         (This value was introduced in 5.14.)
+
+    \value ConnectionCacheExpiryTimeoutSecondsAttribute
+        Requests only, type: QMetaType::Int
+        To set when the TCP connections to a server (HTTP1 and HTTP2) should
+        be closed after the last pending request had been processed.
+        (This value was introduced in 6.3.)
+
+    \value Http2CleartextAllowedAttribute
+        Requests only, type: QMetaType::Bool (default: false)
+        If set, this attribute will tell QNetworkAccessManager to attempt
+        an upgrade to HTTP/2 over cleartext (also known as h2c).
+        Until Qt 7 the default value for this attribute can be overridden
+        to true by setting the QT_NETWORK_H2C_ALLOWED environment variable.
+        This attribute is ignored if the Http2AllowedAttribute is not set.
+        (This value was introduced in 6.3.)
+
+    \value UseCredentialsAttribute
+        Requests only, type: QMetaType::Bool (default: false)
+        Indicates if the underlying XMLHttpRequest cross-site Access-Control
+        requests should be made using credentials. Has no effect on
+        same-origin requests. This only affects the WebAssembly platform.
+        (This value was introduced in 6.5.)
 
     \value User
         Special type. Additional information can be passed in
@@ -393,6 +386,11 @@ QT_BEGIN_NAMESPACE
                                        for example, to ask the user whether to
                                        accept the redirect, or to decide
                                        based on some app-specific configuration.
+
+    \note When Qt handles redirects it will, for legacy and compatibility
+    reasons, issue the redirected request using GET when the server returns
+    a 301 or 302 response, regardless of the original method used, unless it was
+    HEAD.
 */
 
 /*!
@@ -441,6 +439,7 @@ public:
         peerVerifyName = other.peerVerifyName;
 #if QT_CONFIG(http)
         h2Configuration = other.h2Configuration;
+        decompressedSafetyCheckThreshold = other.decompressedSafetyCheckThreshold;
 #endif
         transferTimeout = other.transferTimeout;
     }
@@ -455,6 +454,7 @@ public:
             peerVerifyName == other.peerVerifyName
 #if QT_CONFIG(http)
             && h2Configuration == other.h2Configuration
+            && decompressedSafetyCheckThreshold == other.decompressedSafetyCheckThreshold
 #endif
             && transferTimeout == other.transferTimeout
             ;
@@ -470,6 +470,7 @@ public:
     QString peerVerifyName;
 #if QT_CONFIG(http)
     QHttp2Configuration h2Configuration;
+    qint64 decompressedSafetyCheckThreshold = 10ll * 1024ll * 1024ll;
 #endif
     int transferTimeout;
 };
@@ -483,12 +484,12 @@ public:
 QNetworkRequest::QNetworkRequest()
     : d(new QNetworkRequestPrivate)
 {
-
 #if QT_CONFIG(http)
-    // Initial values proposed by RFC 7540 are quite draconian,
-    // so unless an application will set its own parameters, we
-    // make stream window size larger and increase (via WINDOW_UPDATE)
-    // the session window size. These are our 'defaults':
+    // Initial values proposed by RFC 7540 are quite draconian, but we
+    // know about servers configured with this value as maximum possible,
+    // rejecting our SETTINGS frame and sending us a GOAWAY frame with the
+    // flow control error set. If this causes a problem - the app should
+    // set a proper configuration. We'll use our defaults, as documented.
     d->h2Configuration.setStreamReceiveWindowSize(Http2::qtDefaultStreamReceiveWindowSize);
     d->h2Configuration.setSessionReceiveWindowSize(Http2::maxSessionReceiveWindowSize);
     d->h2Configuration.setServerPushEnabled(false);
@@ -716,9 +717,8 @@ QSslConfiguration QNetworkRequest::sslConfiguration() const
 /*!
     Sets this network request's SSL configuration to be \a config. The
     settings that apply are the private key, the local certificate,
-    the SSL protocol (SSLv2, SSLv3, TLSv1.0 where applicable), the CA
-    certificates and the ciphers that the SSL backend is allowed to
-    use.
+    the TLS protocol (e.g. TLS 1.3), the CA certificates and the ciphers that
+    the SSL backend is allowed to use.
 
     \sa sslConfiguration(), QSslConfiguration::defaultConfiguration()
 */
@@ -852,7 +852,7 @@ void QNetworkRequest::setPeerVerifyName(const QString &peerName)
     d->peerVerifyName = peerName;
 }
 
-#if QT_CONFIG(http) || defined(Q_CLANG_QDOC)
+#if QT_CONFIG(http) || defined(Q_QDOC)
 /*!
     \since 5.14
 
@@ -865,7 +865,7 @@ void QNetworkRequest::setPeerVerifyName(const QString &peerName)
 
     \list
       \li Window size for connection-level flowcontrol is 2147483647 octets
-      \li Window size for stream-level flowcontrol is 21474836 octets
+      \li Window size for stream-level flowcontrol is 214748364 octets
       \li Max frame size is 16384
     \endlist
 
@@ -896,8 +896,51 @@ void QNetworkRequest::setHttp2Configuration(const QHttp2Configuration &configura
 {
     d->h2Configuration = configuration;
 }
-#endif // QT_CONFIG(http) || defined(Q_CLANG_QDOC)
-#if QT_CONFIG(http) || defined(Q_CLANG_QDOC) || defined (Q_OS_WASM)
+
+/*!
+    \since 6.2
+
+    Returns the threshold for archive bomb checks.
+
+    If the decompressed size of a reply is smaller than this, Qt will simply
+    decompress it, without further checking.
+
+    \sa setDecompressedSafetyCheckThreshold()
+*/
+qint64 QNetworkRequest::decompressedSafetyCheckThreshold() const
+{
+    return d->decompressedSafetyCheckThreshold;
+}
+
+/*!
+    \since 6.2
+
+    Sets the \a threshold for archive bomb checks.
+
+    Some supported compression algorithms can, in a tiny compressed file, encode
+    a spectacularly huge decompressed file. This is only possible if the
+    decompressed content is extremely monotonous, which is seldom the case for
+    real files being transmitted in good faith: files exercising such insanely
+    high compression ratios are typically payloads of buffer-overrun attacks, or
+    denial-of-service (by using up too much memory) attacks. Consequently, files
+    that decompress to huge sizes, particularly from tiny compressed forms, are
+    best rejected as suspected malware.
+
+    If a reply's decompressed size is bigger than this threshold (by default,
+    10 MiB, i.e. 10 * 1024 * 1024), Qt will check the compression ratio: if that
+    is unreasonably large (40:1 for GZip and Deflate, or 100:1 for Brotli and
+    ZStandard), the reply will be treated as an error. Setting the threshold
+    to \c{-1} disables this check.
+
+    \sa decompressedSafetyCheckThreshold()
+*/
+void QNetworkRequest::setDecompressedSafetyCheckThreshold(qint64 threshold)
+{
+    d->decompressedSafetyCheckThreshold = threshold;
+}
+#endif // QT_CONFIG(http) || defined(Q_QDOC)
+
+#if QT_CONFIG(http) || defined(Q_QDOC) || defined (Q_OS_WASM)
 /*!
     \since 5.15
 
@@ -931,7 +974,7 @@ void QNetworkRequest::setTransferTimeout(int timeout)
 {
     d->transferTimeout = timeout;
 }
-#endif // QT_CONFIG(http) || defined(Q_CLANG_QDOC) || defined (Q_OS_WASM)
+#endif // QT_CONFIG(http) || defined(Q_QDOC) || defined (Q_OS_WASM)
 
 static QByteArray headerName(QNetworkRequest::KnownHeaders header)
 {
@@ -1007,9 +1050,10 @@ static QByteArray headerValue(QNetworkRequest::KnownHeaders header, const QVaria
     case QNetworkRequest::LastModifiedHeader:
     case QNetworkRequest::IfModifiedSinceHeader:
         switch (value.userType()) {
+            // Generate RFC 1123/822 dates:
         case QMetaType::QDate:
+            return QNetworkHeadersPrivate::toHttpDate(value.toDate().startOfDay(Qt::UTC));
         case QMetaType::QDateTime:
-            // generate RFC 1123/822 dates:
             return QNetworkHeadersPrivate::toHttpDate(value.toDateTime());
 
         default:
@@ -1023,7 +1067,7 @@ static QByteArray headerValue(QNetworkRequest::KnownHeaders header, const QVaria
 
         QByteArray result;
         bool first = true;
-        for (const QNetworkCookie &cookie : qAsConst(cookies)) {
+        for (const QNetworkCookie &cookie : std::as_const(cookies)) {
             if (!first)
                 result += "; ";
             first = false;
@@ -1039,7 +1083,7 @@ static QByteArray headerValue(QNetworkRequest::KnownHeaders header, const QVaria
 
         QByteArray result;
         bool first = true;
-        for (const QNetworkCookie &cookie : qAsConst(cookies)) {
+        for (const QNetworkCookie &cookie : std::as_const(cookies)) {
             if (!first)
                 result += ", ";
             first = false;
@@ -1120,7 +1164,7 @@ static QVariant parseCookieHeader(const QByteArray &raw)
     const QList<QByteArray> cookieList = raw.split(';');
     for (const QByteArray &cookie : cookieList) {
         QList<QNetworkCookie> parsed = QNetworkCookie::parseCookies(cookie.trimmed());
-        if (parsed.count() != 1)
+        if (parsed.size() != 1)
             return QVariant();  // invalid Cookie: header
 
         result += parsed;
@@ -1439,7 +1483,7 @@ QDateTime QNetworkHeadersPrivate::fromHttpDate(const QByteArray &value)
             // eat the weekday, the comma and the space following it
             QString sansWeekday = QString::fromLatin1(value.constData() + pos + 2);
             // must be RFC 850 date
-            dt = c.toDateTime(sansWeekday, QLatin1String("dd-MMM-yy hh:mm:ss 'GMT'"));
+            dt = c.toDateTime(sansWeekday, "dd-MMM-yy hh:mm:ss 'GMT'"_L1);
         }
     }
 #endif // datestring
@@ -1451,8 +1495,7 @@ QDateTime QNetworkHeadersPrivate::fromHttpDate(const QByteArray &value)
 
 QByteArray QNetworkHeadersPrivate::toHttpDate(const QDateTime &dt)
 {
-    return QLocale::c().toString(dt, u"ddd, dd MMM yyyy hh:mm:ss 'GMT'")
-        .toLatin1();
+    return QLocale::c().toString(dt.toUTC(), u"ddd, dd MMM yyyy hh:mm:ss 'GMT'").toLatin1();
 }
 
 QT_END_NAMESPACE

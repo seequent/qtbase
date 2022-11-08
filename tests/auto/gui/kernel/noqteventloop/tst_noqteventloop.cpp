@@ -1,40 +1,18 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 
 #include <QEvent>
+#include <QtTest/QSignalSpy>
 #include <QtCore/qthread.h>
 #include <QtGui/qguiapplication.h>
 #include <QtGui/qpainter.h>
 #include <QtGui/qrasterwindow.h>
 #include <QtNetwork/qtcpserver.h>
 #include <QtNetwork/qtcpsocket.h>
+#include <QtNetwork/qlocalserver.h>
+#include <QtNetwork/qlocalsocket.h>
 #include <QtCore/qelapsedtimer.h>
 #include <QtCore/qtimer.h>
 #include <QtCore/qwineventnotifier.h>
@@ -51,6 +29,7 @@ class tst_NoQtEventLoop : public QObject
 private slots:
     void consumeMouseEvents();
     void consumeSocketEvents();
+    void consumeLocalSocketEvents();
     void consumeWinEvents_data();
     void consumeWinEvents();
     void deliverEventsInLivelock();
@@ -152,7 +131,8 @@ public:
     }
 
 
-    void run() {
+    void run() override
+    {
         struct ScopedCleanup
         {
             /* This is in order to ensure that the window is hidden when returning from run(),
@@ -316,6 +296,44 @@ void tst_NoQtEventLoop::consumeSocketEvents()
     }
 
     QVERIFY(server.hasPendingConnections());
+}
+
+void tst_NoQtEventLoop::consumeLocalSocketEvents()
+{
+    int argc = 1;
+    char *argv[] = { const_cast<char *>("test"), 0 };
+    QGuiApplication app(argc, argv);
+    QLocalServer server;
+    QLocalSocket client;
+    QSignalSpy readyReadSpy(&client, &QIODevice::readyRead);
+
+    QVERIFY(server.listen("consumeLocalSocketEvents"));
+    client.connectToServer("consumeLocalSocketEvents");
+    QVERIFY(client.waitForConnected(200));
+    QVERIFY(server.waitForNewConnection(200));
+    QLocalSocket *clientSocket = server.nextPendingConnection();
+    QVERIFY(clientSocket);
+    QSignalSpy bytesWrittenSpy(clientSocket, &QIODevice::bytesWritten);
+    server.close();
+
+    bool timeExpired = false;
+    QTimer::singleShot(3000, Qt::CoarseTimer, [&timeExpired]() {
+        timeExpired = true;
+    });
+    QVERIFY(clientSocket->putChar(0));
+
+    // Exec own message loop
+    MSG msg;
+    while (::GetMessage(&msg, NULL, 0, 0)) {
+        ::TranslateMessage(&msg);
+        ::DispatchMessage(&msg);
+
+        if (timeExpired || readyReadSpy.count() != 0)
+            break;
+    }
+    QVERIFY(!timeExpired);
+    QCOMPARE(bytesWrittenSpy.count(), 1);
+    QCOMPARE(readyReadSpy.count(), 1);
 }
 
 void tst_NoQtEventLoop::consumeWinEvents_data()

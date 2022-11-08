@@ -1,8 +1,15 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qtranslator.pro.
 
 #####################################################################
 ## tst_qtranslator Test:
 #####################################################################
+
+if (NOT QT_CONFIG_thread)
+    return()
+endif()
 
 qt_internal_add_test(tst_qtranslator
     SOURCES
@@ -11,8 +18,10 @@ qt_internal_add_test(tst_qtranslator
 
 # Resources:
 set(qtranslator_resource_files
+    "dependencies_la.qm"
     "hellotr_empty.qm"
     "hellotr_la.qm"
+    "msgfmt_from_po.qm"
 )
 
 qt_internal_add_resource(tst_qtranslator "qtranslator"
@@ -26,7 +35,7 @@ qt_internal_add_resource(tst_qtranslator "qtranslator"
 ## Scopes:
 #####################################################################
 
-if(ANDROID AND NOT ANDROID_EMBEDDED)
+if(ANDROID)
     # Resources:
     set(android_testdata_resource_files
         "dependencies_la.qm"

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 #ifndef QFONTENGINE_FT_P_H
 #define QFONTENGINE_FT_P_H
 //
@@ -85,6 +49,8 @@ public:
                                   const QByteArray &fontData = QByteArray());
     void release(const QFontEngine::FaceId &face_id);
 
+    static int getFaceIndexByStyleName(const QString &faceFileName, const QString &styleName);
+
     // locks the struct for usage. Any read/write operations require locking.
     void lock()
     {
@@ -117,7 +83,6 @@ public:
 private:
     friend class QFontEngineFT;
     friend class QtFreetypeData;
-    friend struct QScopedPointerDeleter<QFreetypeFace>;
     QFreetypeFace() = default;
     ~QFreetypeFace() {}
     void cleanup();
@@ -143,7 +108,7 @@ public:
 
     struct GlyphAndSubPixelPosition
     {
-        GlyphAndSubPixelPosition(glyph_t g, QFixed spp) : glyph(g), subPixelPosition(spp) {}
+        GlyphAndSubPixelPosition(glyph_t g, const QFixedPoint spp) : glyph(g), subPixelPosition(spp) {}
 
         bool operator==(const GlyphAndSubPixelPosition &other) const
         {
@@ -151,7 +116,7 @@ public:
         }
 
         glyph_t glyph;
-        QFixed subPixelPosition;
+        QFixedPoint subPixelPosition;
     };
 
     struct QGlyphSet
@@ -161,13 +126,14 @@ public:
         FT_Matrix transformationMatrix;
         bool outline_drawing;
 
-        void removeGlyphFromCache(glyph_t index, QFixed subPixelPosition);
+        void removeGlyphFromCache(glyph_t index, const QFixedPoint &subPixelPosition);
         void clear();
-        inline bool useFastGlyphData(glyph_t index, QFixed subPixelPosition) const {
-            return (index < 256 && subPixelPosition == 0);
+        inline bool useFastGlyphData(glyph_t index, const QFixedPoint &subPixelPosition) const {
+            return (index < 256 && subPixelPosition.x == 0 && subPixelPosition.y == 0);
         }
-        inline Glyph *getGlyph(glyph_t index, QFixed subPixelPosition = 0) const;
-        void setGlyph(glyph_t index, QFixed spp, Glyph *glyph);
+        inline Glyph *getGlyph(glyph_t index,
+                               const QFixedPoint &subPixelPositionX = QFixedPoint()) const;
+        void setGlyph(glyph_t index, const QFixedPoint &spp, Glyph *glyph);
 
         inline bool isGlyphMissing(glyph_t index) const { return missing_glyphs.contains(index); }
         inline void setGlyphMissing(glyph_t index) const { missing_glyphs.insert(index); }
@@ -182,10 +148,15 @@ private:
     QFontEngine::FaceId faceId() const override;
     QFontEngine::Properties properties() const override;
     QFixed emSquareSize() const override;
-    bool supportsSubPixelPositions() const override
+    bool supportsHorizontalSubPixelPositions() const override
     {
         return default_hint_style == HintLight ||
                default_hint_style == HintNone;
+    }
+
+    bool supportsVerticalSubPixelPositions() const override
+    {
+        return supportsHorizontalSubPixelPositions();
     }
 
     bool getSfntTableData(uint tag, uchar *buffer, uint *length) const override;
@@ -219,17 +190,19 @@ private:
     glyph_metrics_t boundingBox(glyph_t glyph, const QTransform &matrix) override;
 
     void recalcAdvances(QGlyphLayout *glyphs, ShaperFlags flags) const override;
-    QImage alphaMapForGlyph(glyph_t g) override { return alphaMapForGlyph(g, 0); }
-    QImage alphaMapForGlyph(glyph_t, QFixed) override;
-    QImage alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t) override;
-    QImage alphaRGBMapForGlyph(glyph_t, QFixed subPixelPosition, const QTransform &t) override;
-    QImage bitmapForGlyph(glyph_t, QFixed subPixelPosition, const QTransform &t, const QColor &color) override;
+    QImage alphaMapForGlyph(glyph_t g) override { return alphaMapForGlyph(g, QFixedPoint()); }
+    QImage alphaMapForGlyph(glyph_t, const QFixedPoint &) override;
+    QImage alphaMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &t) override;
+    QImage alphaRGBMapForGlyph(glyph_t, const QFixedPoint &subPixelPosition, const QTransform &t) override;
+    QImage bitmapForGlyph(glyph_t, const QFixedPoint &subPixelPosition, const QTransform &t, const QColor &color) override;
     glyph_metrics_t alphaMapBoundingBox(glyph_t glyph,
-                                        QFixed subPixelPosition,
+                                        const QFixedPoint &subPixelPosition,
                                         const QTransform &matrix,
                                         QFontEngine::GlyphFormat format) override;
-    Glyph *glyphData(glyph_t glyph, QFixed subPixelPosition,
-                     GlyphFormat neededFormat, const QTransform &t) override;
+    Glyph *glyphData(glyph_t glyph,
+                     const QFixedPoint &subPixelPosition,
+                     GlyphFormat neededFormat,
+                     const QTransform &t) override;
     bool hasInternalCaching() const override { return cacheEnabled; }
     bool expectsGammaCorrectedBlending() const override;
 
@@ -252,10 +225,24 @@ private:
     inline bool isBitmapFont() const { return defaultFormat == Format_Mono; }
     inline bool isScalableBitmap() const { return freetype->isScalableBitmap(); }
 
-    inline Glyph *loadGlyph(uint glyph, QFixed subPixelPosition, GlyphFormat format = Format_None, bool fetchMetricsOnly = false, bool disableOutlineDrawing = false) const
+    inline Glyph *loadGlyph(uint glyph,
+                            const QFixedPoint &subPixelPosition,
+                            GlyphFormat format = Format_None,
+                            bool fetchMetricsOnly = false,
+                            bool disableOutlineDrawing = false) const
     { return loadGlyph(cacheEnabled ? &defaultGlyphSet : nullptr, glyph, subPixelPosition, format, fetchMetricsOnly, disableOutlineDrawing); }
-    Glyph *loadGlyph(QGlyphSet *set, uint glyph, QFixed subPixelPosition, GlyphFormat = Format_None, bool fetchMetricsOnly = false, bool disableOutlineDrawing = false) const;
-    Glyph *loadGlyphFor(glyph_t g, QFixed subPixelPosition, GlyphFormat format, const QTransform &t, bool fetchBoundingBox = false, bool disableOutlineDrawing = false);
+    Glyph *loadGlyph(QGlyphSet *set,
+                     uint glyph,
+                     const QFixedPoint &subPixelPosition,
+                     GlyphFormat = Format_None,
+                     bool fetchMetricsOnly = false,
+                     bool disableOutlineDrawing = false) const;
+    Glyph *loadGlyphFor(glyph_t g,
+                        const QFixedPoint &subPixelPosition,
+                        GlyphFormat format,
+                        const QTransform &t,
+                        bool fetchBoundingBox = false,
+                        bool disableOutlineDrawing = false);
 
     QGlyphSet *loadGlyphSet(const QTransform &matrix);
 
@@ -341,12 +328,16 @@ private:
 Q_DECLARE_TYPEINFO(QFontEngineFT::QGlyphSet, Q_RELOCATABLE_TYPE);
 
 
-inline size_t qHash(const QFontEngineFT::GlyphAndSubPixelPosition &g)
+inline size_t qHash(const QFontEngineFT::GlyphAndSubPixelPosition &g, size_t seed = 0)
 {
-    return (g.glyph << 8)  | (g.subPixelPosition * 10).round().toInt();
+    return qHashMulti(seed,
+                      g.glyph,
+                      g.subPixelPosition.x.value(),
+                      g.subPixelPosition.y.value());
 }
 
-inline QFontEngineFT::Glyph *QFontEngineFT::QGlyphSet::getGlyph(glyph_t index, QFixed subPixelPosition) const
+inline QFontEngineFT::Glyph *QFontEngineFT::QGlyphSet::getGlyph(glyph_t index,
+                                                                const QFixedPoint &subPixelPosition) const
 {
     if (useFastGlyphData(index, subPixelPosition))
         return fast_glyph_data[index];

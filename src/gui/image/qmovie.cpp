@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 /*!
     \class QMovie
@@ -186,6 +150,7 @@
 #include "qbuffer.h"
 #include "qdir.h"
 #include "private/qobject_p.h"
+#include "private/qproperty_p.h"
 
 #define QMOVIE_INVALID_DELAY -1
 
@@ -247,20 +212,24 @@ public:
     void _q_loadNextFrame();
     void _q_loadNextFrame(bool starting);
 
-    QImageReader *reader;
-    int speed;
-    QMovie::MovieState movieState;
+    QImageReader *reader = nullptr;
+
+    void setSpeed(int percentSpeed) { q_func()->setSpeed(percentSpeed); }
+    Q_OBJECT_COMPAT_PROPERTY_WITH_ARGS(QMoviePrivate, int, speed, &QMoviePrivate::setSpeed, 100)
+
+    QMovie::MovieState movieState = QMovie::NotRunning;
     QRect frameRect;
     QPixmap currentPixmap;
-    int currentFrameNumber;
-    int nextFrameNumber;
-    int greatestFrameNumber;
-    int nextDelay;
-    int playCounter;
-    qint64 initialDevicePos;
-    QMovie::CacheMode cacheMode;
-    bool haveReadAll;
-    bool isFirstIteration;
+    int currentFrameNumber = -1;
+    int nextFrameNumber = 0;
+    int greatestFrameNumber = -1;
+    int nextDelay = 0;
+    int playCounter = -1;
+    qint64 initialDevicePos = 0;
+    Q_OBJECT_BINDABLE_PROPERTY_WITH_ARGS(QMoviePrivate, QMovie::CacheMode, cacheMode,
+                                         QMovie::CacheNone)
+    bool haveReadAll = false;
+    bool isFirstIteration = true;
     QMap<int, QFrameInfo> frameMap;
     QString absoluteFilePath;
 
@@ -270,10 +239,6 @@ public:
 /*! \internal
  */
 QMoviePrivate::QMoviePrivate(QMovie *qq)
-    : reader(nullptr), speed(100), movieState(QMovie::NotRunning),
-      currentFrameNumber(-1), nextFrameNumber(0), greatestFrameNumber(-1),
-      nextDelay(0), playCounter(-1),
-      cacheMode(QMovie::CacheNone), haveReadAll(false), isFirstIteration(true)
 {
     q_ptr = qq;
     nextImageTimer.setSingleShot(true);
@@ -928,13 +893,24 @@ void QMovie::setSpeed(int percentSpeed)
     Q_D(QMovie);
     if (!d->speed && d->movieState == Running)
         d->nextImageTimer.start(nextFrameDelay());
-    d->speed = percentSpeed;
+    if (percentSpeed != d->speed) {
+        d->speed = percentSpeed;
+        d->speed.notify();
+    } else {
+        d->speed.removeBindingUnlessInWrapper();
+    }
 }
 
 int QMovie::speed() const
 {
     Q_D(const QMovie);
     return d->speed;
+}
+
+QBindable<int> QMovie::bindableSpeed()
+{
+    Q_D(QMovie);
+    return &d->speed;
 }
 
 /*!
@@ -1057,6 +1033,12 @@ void QMovie::setCacheMode(CacheMode cacheMode)
 {
     Q_D(QMovie);
     d->cacheMode = cacheMode;
+}
+
+QBindable<QMovie::CacheMode> QMovie::bindableCacheMode()
+{
+    Q_D(QMovie);
+    return &d->cacheMode;
 }
 
 QT_END_NAMESPACE

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from plugins.pro.
 
 if(TARGET Qt::Sql)
@@ -19,4 +22,8 @@ if(TARGET Qt::Widgets)
 endif()
 if(TARGET Qt::PrintSupport)
     add_subdirectory(printsupport)
+endif()
+if (TARGET Qt::Network)
+    add_subdirectory(networkinformation)
+    add_subdirectory(tls)
 endif()

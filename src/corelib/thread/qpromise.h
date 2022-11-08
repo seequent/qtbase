@@ -1,47 +1,11 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QPROMISE_H
 #define QPROMISE_H
 
 #include <QtCore/qglobal.h>
-#include <QtCore/qfuture.h>
+#include <QtCore/qfutureinterface.h>
 
 #include <utility>
 
@@ -49,39 +13,35 @@ QT_REQUIRE_CONFIG(future);
 
 QT_BEGIN_NAMESPACE
 
+namespace QtPrivate {
+
+template<class T, class U>
+using EnableIfSameOrConvertible = std::enable_if_t<std::is_convertible_v<T, U>>;
+
+} // namespace QtPrivate
+
 template<typename T>
 class QPromise
 {
-    static_assert (std::is_copy_constructible_v<T>
-                   || std::is_move_constructible_v<T>
+    static_assert (std::is_move_constructible_v<T>
                    || std::is_same_v<T, void>,
-                   "Type with copy or move constructors or type void is required");
+                   "A move-constructible type or type void is required");
 public:
     QPromise() = default;
     Q_DISABLE_COPY(QPromise)
-    QPromise(QPromise<T> &&other) : d(other.d)
-    {
-        other.d = QFutureInterface<T>();
-    }
-    QPromise(QFutureInterface<T> &other) : d(other) {}
-    QPromise& operator=(QPromise<T> &&other)
-    {
-        QPromise<T> tmp(std::move(other));
-        tmp.swap(*this);
-        return *this;
-    }
+    QPromise(QPromise<T> &&other) = default;
+    QPromise(const QFutureInterface<T> &other) : d(other) {}
+    QPromise(QFutureInterface<T> &&other) noexcept : d(std::move(other)) {}
+    QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QPromise)
     ~QPromise()
     {
-        const int state = d.loadState();
-        // If QFutureInterface has no state, there is nothing to be done
-        if (state == static_cast<int>(QFutureInterfaceBase::State::NoState))
-            return;
-        // Otherwise, if computation is not finished at this point, cancel
+        // If computation is not finished at this point, cancel
         // potential waits
-        if (!(state & QFutureInterfaceBase::State::Finished)) {
-            d.cancel();
-            finish();  // required to finalize the state
+        if (d.d && !(d.loadState() & QFutureInterfaceBase::State::Finished)) {
+            d.cancelAndFinish(); // cancel and finalize the state
+            d.runContinuation();
         }
+        d.cleanContinuation();
     }
 
     // Core QPromise APIs
@@ -93,7 +53,11 @@ public:
     }
 #ifndef QT_NO_EXCEPTIONS
     void setException(const QException &e) { d.reportException(e); }
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
     void setException(std::exception_ptr e) { d.reportException(e); }
+#else
+    void setException(const std::exception_ptr &e) { d.reportException(e); }
+#endif
 #endif
     void start() { d.reportStarted(); }
     void finish() { d.reportFinished(); }
@@ -112,15 +76,15 @@ public:
 
     void swap(QPromise<T> &other) noexcept
     {
-        qSwap(this->d, other.d);
+        d.swap(other.d);
     }
 
-#if defined(Q_CLANG_QDOC)  // documentation-only simplified signatures
+#if defined(Q_QDOC)  // documentation-only simplified signatures
     bool addResult(const T &result, int index = -1) { }
     bool addResult(T &&result, int index = -1) { }
 #endif
 private:
-    mutable QFutureInterface<T> d = QFutureInterface<T>();
+    mutable QFutureInterface<T> d;
 };
 
 template<typename T>

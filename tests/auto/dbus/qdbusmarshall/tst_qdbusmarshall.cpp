@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 #include <QtCore/QtCore>
 #include <QTest>
 #include <QTestEventLoop>
@@ -738,14 +713,14 @@ void tst_QDBusMarshall::sendArgument_data()
                                      << QVariant::fromValue(QVariant::fromValue(QDBusVariant(1)));
 
     arg = QDBusArgument();
-    arg.beginArray(QVariant::Int);
+    arg.beginArray(QMetaType::Int);
     arg << 1 << 2 << 3 << -4;
     arg.endArray();
     QTest::newRow("array-of-int") << QVariant::fromValue(arg) << "ai" << int(QDBusArgument::ArrayType)
                                   << QVariant::fromValue(arg);
 
     arg = QDBusArgument();
-    arg.beginMap(QVariant::Int, QVariant::UInt);
+    arg.beginMap(QMetaType::Int, QMetaType::UInt);
     arg.beginMapEntry();
     arg << 1 << 2U;
     arg.endMapEntry();
@@ -782,9 +757,9 @@ void tst_QDBusMarshall::sendBasic()
              qPrintable(reply.errorName() + ": " + reply.errorMessage()));
     //qDebug() << reply;
 
-    QCOMPARE(reply.arguments().count(), msg.arguments().count());
+    QCOMPARE(reply.arguments().size(), msg.arguments().size());
     QTEST(reply.signature(), "sig");
-    for (int i = 0; i < reply.arguments().count(); ++i) {
+    for (int i = 0; i < reply.arguments().size(); ++i) {
         QVERIFY(compare(reply.arguments().at(i), msg.arguments().at(i)));
         //printf("\n! %s\n* %s\n", qPrintable(qDBusArgumentToString(reply.arguments().at(i))), qPrintable(stringResult));
         QCOMPARE(QDBusUtil::argumentToString(reply.arguments().at(i)), stringResult);
@@ -806,9 +781,9 @@ void tst_QDBusMarshall::sendVariant()
     QDBusMessage reply = con.call(msg);
  //   qDebug() << reply;
 
-    QCOMPARE(reply.arguments().count(), msg.arguments().count());
+    QCOMPARE(reply.arguments().size(), msg.arguments().size());
     QCOMPARE(reply.signature(), QString("v"));
-    for (int i = 0; i < reply.arguments().count(); ++i)
+    for (int i = 0; i < reply.arguments().size(); ++i)
         QVERIFY(compare(reply.arguments().at(i), msg.arguments().at(i)));
 }
 
@@ -987,7 +962,7 @@ void tst_QDBusMarshall::sendCallErrors_data()
             << (QVariantList() << QLocale::c())
             << "org.freedesktop.DBus.Error.Failed"
             << "Marshalling failed: Unregistered type QLocale passed in arguments"
-            << "QDBusMarshaller: type `QLocale' (18) is not registered with D-BUS. Use qDBusRegisterMetaType to register it";
+            << "QDBusMarshaller: type 'QLocale' (18) is not registered with D-BUS. Use qDBusRegisterMetaType to register it";
 
     // this type is known to the meta type system, but not registered with D-Bus
     qRegisterMetaType<UnregisteredType>();
@@ -995,7 +970,7 @@ void tst_QDBusMarshall::sendCallErrors_data()
             << (QVariantList() << QVariant::fromValue(UnregisteredType()))
             << "org.freedesktop.DBus.Error.Failed"
             << "Marshalling failed: Unregistered type UnregisteredType passed in arguments"
-            << QString("QDBusMarshaller: type `UnregisteredType' (%1) is not registered with D-BUS. Use qDBusRegisterMetaType to register it")
+            << QString("QDBusMarshaller: type 'UnregisteredType' (%1) is not registered with D-BUS. Use qDBusRegisterMetaType to register it")
             .arg(qMetaTypeId<UnregisteredType>());
 
     QTest::newRow("invalid-object-path-arg") << serviceName << objectPath << interfaceName << "ping"
@@ -1230,7 +1205,7 @@ void tst_QDBusMarshall::receiveUnknownType()
         QTestEventLoop::instance().enterLoop(1);
         QVERIFY(!QTestEventLoop::instance().timeout());
         QCOMPARE(spy.list.size(), 1);
-        QCOMPARE(spy.list.at(0).arguments().count(), 1);
+        QCOMPARE(spy.list.at(0).arguments().size(), 1);
         QFETCH(int, receivedTypeId);
         //qDebug() << spy.list.at(0).arguments().at(0).typeName();
         QCOMPARE(spy.list.at(0).arguments().at(0).userType(), receivedTypeId);

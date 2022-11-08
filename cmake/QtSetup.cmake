@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 ## Set a default build type if none was specified
 
 # Set the QT_IS_BUILDING_QT variable so we can verify whether we are building
@@ -11,10 +14,34 @@ if(NOT FEATURE_developer_build AND INPUT_developer_build
     set(FEATURE_developer_build ON)
 endif()
 
+# Pre-calculate the no_prefix feature if it's set by configure via INPUT_no_prefix.
+# This needs to be done before qtbase/configure.cmake is processed.
+if(NOT FEATURE_no_prefix AND INPUT_no_prefix
+        AND NOT "${INPUT_no_prefix}" STREQUAL "undefined")
+    set(FEATURE_no_prefix ON)
+endif()
+
 set(_default_build_type "Release")
 if(FEATURE_developer_build)
     set(_default_build_type "Debug")
 endif()
+
+function(qt_internal_set_message_log_level out_var)
+    # Decide whether output should be verbose or not.
+    # Default to verbose (--log-level=STATUS) in a developer-build and
+    # non-verbose (--log-level=NOTICE) otherwise.
+    # If a custom CMAKE_MESSAGE_LOG_LEVEL was specified, it takes priority.
+    # Passing an explicit --log-level=Foo has the highest priority.
+    if(NOT CMAKE_MESSAGE_LOG_LEVEL)
+        if(FEATURE_developer_build OR QT_FEATURE_developer_build)
+            set(CMAKE_MESSAGE_LOG_LEVEL "STATUS")
+        else()
+            set(CMAKE_MESSAGE_LOG_LEVEL "NOTICE")
+        endif()
+        set(${out_var} "${CMAKE_MESSAGE_LOG_LEVEL}" PARENT_SCOPE)
+    endif()
+endfunction()
+qt_internal_set_message_log_level(CMAKE_MESSAGE_LOG_LEVEL)
 
 # Reset content of extra build internal vars for each inclusion of QtSetup.
 unset(QT_EXTRA_BUILD_INTERNALS_VARS)
@@ -35,10 +62,45 @@ elseif(CMAKE_CONFIGURATION_TYPES)
         message(STATUS
             "Default build configuration set to '${CMAKE_NINJA_MULTI_DEFAULT_BUILD_TYPE}'.")
     endif()
+    if(CMAKE_GENERATOR STREQUAL "Ninja")
+        message(FATAL_ERROR
+            "It's not possible to build multiple configurations with the single config Ninja "
+            "generator. Consider configuring with -G\"Ninja Multi-Config\" instead of -GNinja."
+        )
+    endif()
+else()
+    message(STATUS "CMAKE_BUILD_TYPE was set to: '${CMAKE_BUILD_TYPE}'")
 endif()
 
-# Appends a 'debug postfix' to library targets (not executables)
-# e.g. lib/libQt6DBus_debug.5.12.0.dylib
+# Append a config-specific postfix to library names to ensure distinct names
+# in a multi-config build.
+# e.g. lib/libQt6DBus_relwithdebinfo.6.3.0.dylib
+# Don't apply the postfix to the first encountered release-like config, so we have at least one
+# config without a postifx.
+if(QT_GENERATOR_IS_MULTI_CONFIG AND CMAKE_CONFIGURATION_TYPES)
+    set(__qt_setup_release_configs Release RelWithDebInfo MinSizeRel)
+    set(__qt_setup_found_first_release_config FALSE)
+    foreach(__qt_setup_config_type IN LISTS CMAKE_CONFIGURATION_TYPES)
+        # Skip assigning postfix for the first release-like config.
+        if(NOT __qt_setup_found_first_release_config
+                AND __qt_setup_config_type IN_LIST __qt_setup_release_configs)
+            set(__qt_setup_found_first_release_config TRUE)
+            continue()
+        endif()
+
+        string(TOLOWER "${__qt_setup_config_type}" __qt_setup_config_type_lower)
+        string(TOUPPER "${__qt_setup_config_type}" __qt_setup_config_type_upper)
+        set(CMAKE_${__qt_setup_config_type_upper}_POSTFIX "_${__qt_setup_config_type_lower}")
+        if(APPLE)
+            set(CMAKE_FRAMEWORK_MULTI_CONFIG_POSTFIX_${__qt_setup_config_type_upper}
+                "_${__qt_setup_config_type_lower}")
+        endif()
+    endforeach()
+endif()
+
+# Override the generic debug postfixes above with custom debug postfixes (even in a single config
+# build) to follow the conventions we had since Qt 5.
+# e.g. lib/libQt6DBus_debug.6.3.0.dylib
 if(WIN32)
     if(MINGW)
         # On MinGW we don't have "d" suffix for debug libraries like on Linux,
@@ -61,24 +123,41 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_LINK_DEPENDS_NO_SHARED ON)
 
 # Detect non-prefix builds: either when the qtbase install prefix is set to the binary dir
-# or when a developer build is explicitly enabled and no install prefix is specified.
+# or when a developer build is explicitly enabled and no install prefix (or staging prefix)
+# is specified.
 # This detection only happens when building qtbase, and later is propagated via the generated
 # QtBuildInternalsExtra.cmake file.
 if (PROJECT_NAME STREQUAL "QtBase" AND NOT QT_BUILD_STANDALONE_TESTS)
-    if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND FEATURE_developer_build)
-        # Handle non-prefix builds by setting the CMake install prefix to point to qtbase's build
-        # dir.
-        # While building another repo (like qtsvg) the CMAKE_PREFIX_PATH
-        # should be set on the command line to point to the qtbase build dir.
-        set(CMAKE_INSTALL_PREFIX ${QtBase_BINARY_DIR} CACHE PATH
+    if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+        # Handle both FEATURE_ and QT_FEATURE_ cases when they are specified on the command line
+        # explicitly. It's possible for one to be set, but not the other, because
+        # qtbase/configure.cmake is not processed by this point.
+        if((FEATURE_developer_build
+            OR QT_FEATURE_developer_build
+            OR FEATURE_no_prefix
+            OR QT_FEATURE_no_prefix
+            )
+            AND NOT CMAKE_STAGING_PREFIX)
+            # Handle non-prefix builds by setting the CMake install prefix to point to qtbase's
+            # build dir. While building another repo (like qtsvg) the CMAKE_PREFIX_PATH should be
+            # set on the command line to point to the qtbase build dir.
+            set(__qt_default_prefix "${QtBase_BINARY_DIR}")
+        else()
+            if(CMAKE_HOST_WIN32)
+                set(__qt_default_prefix "C:/Qt/")
+            else()
+                set(__qt_default_prefix "/usr/local/")
+            endif()
+            string(APPEND __qt_default_prefix
+                "Qt-${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
+        endif()
+        set(CMAKE_INSTALL_PREFIX ${__qt_default_prefix} CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
+        unset(__qt_default_prefix)
     endif()
-    if(CMAKE_CROSSCOMPILING)
+    if(CMAKE_STAGING_PREFIX)
         set(__qt_prefix "${CMAKE_STAGING_PREFIX}")
     else()
-        set(__qt_prefix "")
-    endif()
-    if(__qt_prefix STREQUAL "")
         set(__qt_prefix "${CMAKE_INSTALL_PREFIX}")
     endif()
     if(__qt_prefix STREQUAL QtBase_BINARY_DIR)
@@ -117,7 +196,7 @@ if(FEATURE_developer_build)
 
     # Disable benchmarks for single configuration generators which do not build
     # with release configuration.
-    if (CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE STREQUAL Release)
+    if (CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE STREQUAL Debug)
         set(__build_benchmarks OFF)
     endif()
 else()
@@ -146,11 +225,31 @@ if(QT_BUILD_STANDALONE_TESTS)
 endif()
 set(BUILD_TESTING ${QT_BUILD_TESTS} CACHE INTERNAL "")
 
+set(_qt_batch_tests OFF)
+if(INPUT_batch_tests)
+    set(_qt_batch_tests ON)
+endif()
+option(QT_BUILD_TESTS_BATCHED "Link all tests into a single binary." ${_qt_batch_tests})
+
+if(QT_BUILD_TESTS AND QT_BUILD_TESTS_BATCHED AND CMAKE_VERSION VERSION_LESS "3.18")
+    message(FATAL_ERROR
+        "Test batching requires at least CMake 3.18, due to requiring per-source "
+        "TARGET_DIRECTORY assignments.")
+endif()
+
+# QT_BUILD_TOOLS_WHEN_CROSSCOMPILING -> QT_FORCE_BUILD_TOOLS
+# pre-6.4 compatibility flag (remove sometime in the future)
+if(CMAKE_CROSSCOMPILING AND QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+    message(WARNING "QT_BUILD_TOOLS_WHEN_CROSSCOMPILING is deprecated. "
+        "Please use QT_FORCE_BUILD_TOOLS instead.")
+    set(QT_FORCE_BUILD_TOOLS TRUE CACHE INTERNAL "" FORCE)
+endif()
+
 # When cross-building, we don't build tools by default. Sometimes this also covers Qt apps as well.
 # Like in qttools/assistant/assistant.pro, load(qt_app), which is guarded by a qtNomakeTools() call.
 
 set(_qt_build_tools_by_default_default ON)
-if(CMAKE_CROSSCOMPILING AND NOT QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
+if(CMAKE_CROSSCOMPILING AND NOT QT_FORCE_BUILD_TOOLS)
     set(_qt_build_tools_by_default_default OFF)
 endif()
 option(QT_BUILD_TOOLS_BY_DEFAULT "Should tools be built as part of the default 'all' target."
@@ -163,26 +262,31 @@ enable_testing()
 option(QT_BUILD_EXAMPLES "Build Qt examples" OFF)
 option(QT_BUILD_EXAMPLES_BY_DEFAULT "Should examples be built as part of the default 'all' target." ON)
 
+# FIXME: Support prefix builds as well QTBUG-96232
+if(QT_WILL_INSTALL)
+    set(_qt_build_examples_as_external OFF)
+else()
+    set(_qt_build_examples_as_external ON)
+endif()
+option(QT_BUILD_EXAMPLES_AS_EXTERNAL "Should examples be built as ExternalProjects."
+       ${_qt_build_examples_as_external})
+unset(_qt_build_examples_as_external)
+
 option(QT_BUILD_MANUAL_TESTS "Build Qt manual tests" OFF)
 
-## Find host tools (if non native):
-set(QT_HOST_PATH "" CACHE PATH "Installed Qt host directory path, used for cross compiling.")
-
-if (CMAKE_CROSSCOMPILING)
-    if(NOT IS_DIRECTORY "${QT_HOST_PATH}")
-        message(FATAL_ERROR "You need to set QT_HOST_PATH to cross compile Qt.")
-    endif()
+if(WASM)
+    option(QT_BUILD_MINIMAL_STATIC_TESTS "Build minimal subset of tests for static Qt builds" ON)
+else()
+    option(QT_BUILD_MINIMAL_STATIC_TESTS "Build minimal subset of tests for static Qt builds" OFF)
 endif()
 
-if(NOT "${QT_HOST_PATH}" STREQUAL "")
-    find_package(Qt${PROJECT_VERSION_MAJOR}HostInfo
-                 CONFIG
-                 REQUIRED
-                 PATHS "${QT_HOST_PATH}"
-                       "${QT_HOST_PATH_CMAKE_DIR}"
-                 NO_CMAKE_FIND_ROOT_PATH
-                 NO_DEFAULT_PATH)
-endif()
+option(QT_BUILD_MINIMAL_ANDROID_MULTI_ABI_TESTS
+    "Build minimal subset of tests for Android multi-ABI Qt builds" OFF)
+
+## Path used to find host tools, either when cross-compiling or just when using the tools from
+## a different host build.
+set(QT_HOST_PATH "$ENV{QT_HOST_PATH}" CACHE PATH
+    "Installed Qt host directory path, used for cross compiling.")
 
 ## Android platform settings
 if(ANDROID)
@@ -202,14 +306,7 @@ include(QtCompilerOptimization)
 ## Compiler flags:
 include(QtCompilerFlags)
 
-## Set up non-prefix build:
-qt_set_up_nonprefix_build()
-
 qt_set_language_standards()
-
-## Enable support for sanitizers:
-qt_internal_set_up_sanitizer_features()
-include(${CMAKE_CURRENT_LIST_DIR}/3rdparty/extra-cmake-modules/modules/ECMEnableSanitizers.cmake)
 
 option(QT_USE_CCACHE "Enable the use of ccache")
 if(QT_USE_CCACHE)
@@ -220,7 +317,7 @@ if(QT_USE_CCACHE)
         set(CMAKE_OBJC_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
         set(CMAKE_OBJCXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
     else()
-        message(WARNING "Ccache use was requested, but the program was not found.")
+        message(FATAL_ERROR "Ccache use was requested, but the program was not found.")
     endif()
 endif()
 

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qbasictimer.h"
 #include "qabstracteventdispatcher.h"
@@ -79,7 +43,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QBasicTimer::QBasicTimer()
 
-    Contructs a basic timer.
+    Constructs a basic timer.
 
     \sa start()
 */
@@ -138,7 +102,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn void QBasicTimer::start(int msec, QObject *object)
+    \fn void QBasicTimer::start(qint64 msec, QObject *object)
 
     Starts (or restarts) the timer with a \a msec milliseconds timeout. The
     timer will be a Qt::CoarseTimer. See Qt::TimerType for information on the
@@ -146,9 +110,12 @@ QT_BEGIN_NAMESPACE
 
     The given \a object will receive timer events.
 
+    \note In Qt versions prior to 6.5, \a msec was \c{int}, not
+    \c{qint64}.
+
     \sa stop(), isActive(), QObject::timerEvent(), Qt::CoarseTimer
  */
-void QBasicTimer::start(int msec, QObject *obj)
+void QBasicTimer::start(qint64 msec, QObject *obj)
 {
     start(msec, Qt::CoarseTimer, obj);
 }
@@ -162,9 +129,12 @@ void QBasicTimer::start(int msec, QObject *obj)
 
     \a obj will receive timer events.
 
+    \note In Qt versions prior to 6.5, \a msec was \c{int}, not
+    \c{qint64}.
+
     \sa stop(), isActive(), QObject::timerEvent(), Qt::TimerType
  */
-void QBasicTimer::start(int msec, Qt::TimerType timerType, QObject *obj)
+void QBasicTimer::start(qint64 msec, Qt::TimerType timerType, QObject *obj)
 {
     QAbstractEventDispatcher *eventDispatcher = QAbstractEventDispatcher::instance();
     if (Q_UNLIKELY(msec < 0)) {

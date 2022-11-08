@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qgraphicsview.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ qt_internal_add_test(tst_qgraphicsview
         tst_qgraphicsview_2.cpp
     DEFINES
         QT_NO_CAST_TO_ASCII
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -26,7 +29,7 @@ qt_internal_add_test(tst_qgraphicsview
 #####################################################################
 
 qt_internal_extend_target(tst_qgraphicsview CONDITION QT_FEATURE_opengl
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::OpenGL
         Qt::OpenGLWidgets
 )

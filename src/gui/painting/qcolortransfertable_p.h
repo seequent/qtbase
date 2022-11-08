@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2018 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2018 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QCOLORTRANSFERTABLE_P_H
 #define QCOLORTRANSFERTABLE_P_H
@@ -71,12 +35,12 @@ public:
     QColorTransferTable(uint32_t size, const QList<uint8_t> &table) noexcept
         : m_tableSize(size), m_table8(table)
     {
-        Q_ASSERT(qsizetype(size) <= table.count());
+        Q_ASSERT(qsizetype(size) <= table.size());
     }
     QColorTransferTable(uint32_t size, const QList<uint16_t> &table) noexcept
         : m_tableSize(size), m_table16(table)
     {
-        Q_ASSERT(qsizetype(size) <= table.count());
+        Q_ASSERT(qsizetype(size) <= table.size());
     }
 
     bool isEmpty() const
@@ -119,7 +83,7 @@ public:
         x = std::clamp(x, 0.0f, 1.0f);
         x *= m_tableSize - 1;
         const uint32_t lo = static_cast<uint32_t>(std::floor(x));
-        const uint32_t hi = std::min(lo + 1, m_tableSize);
+        const uint32_t hi = std::min(lo + 1, m_tableSize - 1);
         const float frac = x - lo;
         if (!m_table16.isEmpty())
             return (m_table16[lo] * (1.0f - frac) + m_table16[hi] * frac) * (1.0f/65535.0f);
@@ -138,28 +102,32 @@ public:
             return 1.0f;
         if (!m_table16.isEmpty()) {
             const float v = x * 65535.0f;
-            uint32_t i = static_cast<uint32_t>(std::floor(resultLargerThan * (m_tableSize - 1))) + 1;
+            uint32_t i = static_cast<uint32_t>(std::floor(resultLargerThan * (m_tableSize - 1)));
             auto it = std::lower_bound(m_table16.cbegin() + i, m_table16.cend(), v);
             i = it - m_table16.cbegin();
+            if (i == 0)
+                return 0.0f;
             if (i >= m_tableSize - 1)
                 return 1.0f;
             const float y1 = m_table16[i - 1];
             const float y2 = m_table16[i];
-            Q_ASSERT(x >= y1 && x < y2);
+            Q_ASSERT(v >= y1 && v <= y2);
             const float fr = (v - y1) / (y2 - y1);
             return (i + fr) * (1.0f / (m_tableSize - 1));
 
         }
         if (!m_table8.isEmpty()) {
             const float v = x * 255.0f;
-            uint32_t i = static_cast<uint32_t>(std::floor(resultLargerThan * (m_tableSize - 1))) + 1;
+            uint32_t i = static_cast<uint32_t>(std::floor(resultLargerThan * (m_tableSize - 1)));
             auto it = std::lower_bound(m_table8.cbegin() + i, m_table8.cend(), v);
             i = it - m_table8.cbegin();
+            if (i == 0)
+                return 0.0f;
             if (i >= m_tableSize - 1)
                 return 1.0f;
             const float y1 = m_table8[i - 1];
             const float y2 = m_table8[i];
-            Q_ASSERT(x >= y1 && x < y2);
+            Q_ASSERT(v >= y1 && v <= y2);
             const float fr = (v - y1) / (y2 - y1);
             return (i + fr) * (1.0f / (m_tableSize - 1));
         }

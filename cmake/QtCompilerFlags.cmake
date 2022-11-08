@@ -1,6 +1,11 @@
-# Set warnings. All compilers except MSVC support -Wall -Wextra
-# Allow opting out by setting a QT_COMPILE_WARNINGS_OFF property on targets. This would be the
-# equivalent of qmake's CONFIG += warn_off.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Enable compiler warnings by default. All compilers except MSVC support -Wall -Wextra
+#
+# You can disable the warnings for specific targets (for instance containing 3rd party code)
+# by calling qt_disable_warnings(target). This will set the QT_COMPILE_OPTIONS_DISABLE_WARNINGS
+# property checked below, and is equivalent to qmake's CONFIG += warn_off.
 
 set(_qt_compiler_warning_flags_on "")
 set(_qt_compiler_warning_flags_off "")
@@ -9,7 +14,11 @@ if (MSVC)
     list(APPEND _qt_compiler_warning_flags_on /W3)
     list(APPEND _qt_compiler_warning_flags_off -W0)
 else()
-    list(APPEND _qt_compiler_warning_flags_on -Wall -Wextra)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GHS") # There is no -Wextra flag for GHS compiler.
+        list(APPEND _qt_compiler_warning_flags_on -Wall)
+    else()
+        list(APPEND _qt_compiler_warning_flags_on -Wall -Wextra)
+    endif()
     list(APPEND _qt_compiler_warning_flags_off -w)
 endif()
 

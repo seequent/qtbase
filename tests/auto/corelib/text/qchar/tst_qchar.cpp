@@ -1,36 +1,10 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <qchar.h>
 #include <qfile.h>
 #include <qstringlist.h>
-#include <private/qunicodetables_p.h>
 
 class tst_QChar : public QObject
 {
@@ -67,10 +41,11 @@ private slots:
     void digitValue();
     void mirroredChar();
     void decomposition();
-    void lineBreakClass();
     void script();
+#if !defined(Q_OS_WASM)
     void normalization_data();
     void normalization();
+#endif // !defined(Q_OS_WASM)
     void normalization_manual();
     void normalizationCorrections();
     void unicodeVersion();
@@ -91,9 +66,9 @@ void tst_QChar::fromUcs4_data()
         QTest::addRow("0x%08X", ucs4) << ucs4;
     };
 
-    row(0x2f868);
-    row(0x1D157);
-    row(0x1D157);
+    row(0x2f868); // a CJK Compatibility Ideograph
+    row(0x11139); // Chakma digit 3
+    row(0x1D157); // Musical Symbol Void Notehead
 }
 
 void tst_QChar::fromUcs4()
@@ -748,24 +723,6 @@ void tst_QChar::decomposition()
     }
 }
 
-void tst_QChar::lineBreakClass()
-{
-    QVERIFY(QUnicodeTables::lineBreakClass(0x0029) == QUnicodeTables::LineBreak_CP);
-    QVERIFY(QUnicodeTables::lineBreakClass(0x0041) == QUnicodeTables::LineBreak_AL);
-    QVERIFY(QUnicodeTables::lineBreakClass(0x0033) == QUnicodeTables::LineBreak_NU);
-    QVERIFY(QUnicodeTables::lineBreakClass(0x00ad) == QUnicodeTables::LineBreak_BA);
-    QVERIFY(QUnicodeTables::lineBreakClass(0x05d0) == QUnicodeTables::LineBreak_HL);
-    QVERIFY(QUnicodeTables::lineBreakClass(0xfffc) == QUnicodeTables::LineBreak_CB);
-    QVERIFY(QUnicodeTables::lineBreakClass(0xe0164) == QUnicodeTables::LineBreak_CM);
-    QVERIFY(QUnicodeTables::lineBreakClass(0x2f9a4) == QUnicodeTables::LineBreak_ID);
-    QVERIFY(QUnicodeTables::lineBreakClass(0x10000) == QUnicodeTables::LineBreak_AL);
-    QVERIFY(QUnicodeTables::lineBreakClass(0x1f1e6) == QUnicodeTables::LineBreak_RI);
-
-    // mapped to AL:
-    QVERIFY(QUnicodeTables::lineBreakClass(0xfffd) == QUnicodeTables::LineBreak_AL); // AI -> AL
-    QVERIFY(QUnicodeTables::lineBreakClass(0x100000) == QUnicodeTables::LineBreak_AL); // XX -> AL
-}
-
 void tst_QChar::script()
 {
     QVERIFY(QChar::script(0x0020) == QChar::Script_Common);
@@ -804,6 +761,8 @@ void tst_QChar::script()
     QVERIFY(QChar::script(0xe0100) == QChar::Script_Inherited);
 }
 
+// wasm is limited in reading filesystems, so omit this test for now
+#if !defined(Q_OS_WASM)
 void tst_QChar::normalization_data()
 {
     QTest::addColumn<QStringList>("columns");
@@ -842,7 +801,7 @@ void tst_QChar::normalization_data()
 
         line = line.trimmed();
         if (line.endsWith(';'))
-            line.truncate(line.length()-1);
+            line.truncate(line.size()-1);
 
         QList<QByteArray> l = line.split(';');
 
@@ -926,6 +885,7 @@ void tst_QChar::normalization()
         // #################
 
 }
+#endif // !defined(Q_OS_WASM)
 
 void tst_QChar::normalization_manual()
 {
@@ -996,6 +956,25 @@ void tst_QChar::normalization_manual()
         QVERIFY(decomposed.normalized(QString::NormalizationForm_C) == composed);
         QVERIFY(decomposed.normalized(QString::NormalizationForm_KD) == decomposed);
         QVERIFY(decomposed.normalized(QString::NormalizationForm_KC) == composed);
+    }
+    // QTBUG-71894 - erratum fixed in Unicode 4.1.0; SCount bounds are < not <=
+    {
+        // Hangul compose, test 0x11a7:
+        const QChar c[] = { QChar(0xae30), QChar(0x11a7), {} };
+        const QChar d[] = { QChar(0x1100), QChar(0x1175), QChar(0x11a7), {} };
+        const QString composed(c, 2);
+        const QString decomposed(d, 3);
+
+        QCOMPARE(decomposed.normalized(QString::NormalizationForm_C), composed);
+    }
+    {
+        // Hangul compose, test 0x11c3:
+        const QChar c[] = { QChar(0xae30), QChar(0x11c3), {} };
+        const QChar d[] = { QChar(0x1100), QChar(0x1175), QChar(0x11c3), {} };
+        const QString composed(c, 2);
+        const QString decomposed(d, 3);
+
+        QCOMPARE(decomposed.normalized(QString::NormalizationForm_C), composed);
     }
 }
 

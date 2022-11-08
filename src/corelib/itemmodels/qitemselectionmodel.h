@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QITEMSELECTIONMODEL_H
 #define QITEMSELECTIONMODEL_H
@@ -60,8 +24,8 @@ public:
 
     void swap(QItemSelectionRange &other) noexcept
     {
-        qSwap(tl, other.tl);
-        qSwap(br, other.br);
+        tl.swap(other.tl);
+        br.swap(other.br);
     }
 
     inline int top() const { return tl.row(); }
@@ -120,11 +84,16 @@ class QItemSelectionModelPrivate;
 class Q_CORE_EXPORT QItemSelectionModel : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QAbstractItemModel *model READ model WRITE setModel NOTIFY modelChanged)
-    Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged STORED false DESIGNABLE false)
-    Q_PROPERTY(QModelIndex currentIndex READ currentIndex NOTIFY currentChanged STORED false DESIGNABLE false)
-    Q_PROPERTY(QItemSelection selection READ selection NOTIFY selectionChanged STORED false DESIGNABLE false)
-    Q_PROPERTY(QModelIndexList selectedIndexes READ selectedIndexes NOTIFY selectionChanged STORED false DESIGNABLE false)
+    Q_PROPERTY(QAbstractItemModel *model READ model WRITE setModel NOTIFY modelChanged
+               BINDABLE bindableModel)
+    Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged STORED false
+               DESIGNABLE false)
+    Q_PROPERTY(QModelIndex currentIndex READ currentIndex NOTIFY currentChanged STORED false
+               DESIGNABLE false)
+    Q_PROPERTY(QItemSelection selection READ selection NOTIFY selectionChanged STORED false
+               DESIGNABLE false)
+    Q_PROPERTY(QModelIndexList selectedIndexes READ selectedIndexes NOTIFY selectionChanged
+               STORED false DESIGNABLE false)
 
     Q_DECLARE_PRIVATE(QItemSelectionModel)
 
@@ -169,6 +138,7 @@ public:
 
     const QAbstractItemModel *model() const;
     QAbstractItemModel *model();
+    QBindable<QAbstractItemModel *> bindableModel();
 
     void setModel(QAbstractItemModel *model);
 
@@ -201,11 +171,12 @@ private:
     Q_PRIVATE_SLOT(d_func(), void _q_rowsAboutToBeInserted(const QModelIndex&, int, int))
     Q_PRIVATE_SLOT(d_func(), void _q_layoutAboutToBeChanged(const QList<QPersistentModelIndex> &parents = QList<QPersistentModelIndex>(), QAbstractItemModel::LayoutChangeHint hint = QAbstractItemModel::NoHint))
     Q_PRIVATE_SLOT(d_func(), void _q_layoutChanged(const QList<QPersistentModelIndex> &parents = QList<QPersistentModelIndex>(), QAbstractItemModel::LayoutChangeHint hint = QAbstractItemModel::NoHint))
+    Q_PRIVATE_SLOT(d_func(), void _q_modelDestroyed())
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QItemSelectionModel::SelectionFlags)
 
-// We export each out-of-line method invidually to prevent MSVC from
+// We export each out-of-line method individually to prevent MSVC from
 // exporting the whole QList class.
 class QItemSelection : public QList<QItemSelectionRange>
 {
@@ -231,7 +202,7 @@ Q_CORE_EXPORT QDebug operator<<(QDebug, const QItemSelectionRange &);
 
 QT_END_NAMESPACE
 
-Q_DECLARE_METATYPE(QItemSelectionRange)
-Q_DECLARE_METATYPE(QItemSelection)
+QT_DECL_METATYPE_EXTERN(QItemSelectionRange, Q_CORE_EXPORT)
+QT_DECL_METATYPE_EXTERN(QItemSelection, Q_CORE_EXPORT)
 
 #endif // QITEMSELECTIONMODEL_H

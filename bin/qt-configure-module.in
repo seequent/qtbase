@@ -1,10 +1,17 @@
 #!/bin/sh
+set -eu
+
 script_dir_path=`dirname $0`
 script_dir_path=`(cd "$script_dir_path"; /bin/pwd)`
 
 printUsage()
 {
-    echo 'Usage: qt-configure-module <module-source-dir> [options]'
+    cat <<EOF
+Usage: qt-configure-module <module-source-dir> [options]
+
+To display the available options for a Qt module, run
+qt-configure-module <module-source-dir> -help
+EOF
 }
 
 if [ "$#" -lt 1 ]; then
@@ -23,7 +30,7 @@ fi
 optfile=config.opt
 echo > "$optfile"
 for arg in "$@"; do
-echo $arg >> "$optfile"
+echo "$arg" >> "$optfile"
 done
 
 cmake_script_path="$script_dir_path/@__relative_path_to_cmake_scripts_dir@/QtProcessConfigureArgs.cmake"

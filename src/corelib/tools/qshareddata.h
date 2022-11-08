@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QSHAREDDATA_H
 #define QSHAREDDATA_H
@@ -85,7 +49,7 @@ public:
     const T *data() const noexcept { return d; }
     const T *get() const noexcept { return d; }
     const T *constData() const noexcept { return d; }
-    T *take() noexcept { return qExchange(d, nullptr); }
+    T *take() noexcept { return std::exchange(d, nullptr); }
 
     QSharedDataPointer() noexcept : d(nullptr) { }
     ~QSharedDataPointer() { if (d && !d->ref.deref()) delete d; }
@@ -102,7 +66,7 @@ public:
         if (ptr != d) {
             if (ptr)
                 ptr->ref.ref();
-            T *old = qExchange(d, ptr);
+            T *old = std::exchange(d, ptr);
             if (old && !old->ref.deref())
                 delete old;
         }
@@ -118,14 +82,14 @@ public:
         reset(o);
         return *this;
     }
-    QSharedDataPointer(QSharedDataPointer &&o) noexcept : d(qExchange(o.d, nullptr)) {}
+    QSharedDataPointer(QSharedDataPointer &&o) noexcept : d(std::exchange(o.d, nullptr)) {}
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QSharedDataPointer)
 
     operator bool () const noexcept { return d != nullptr; }
     bool operator!() const noexcept { return d == nullptr; }
 
     void swap(QSharedDataPointer &other) noexcept
-    { qSwap(d, other.d); }
+    { qt_ptr_swap(d, other.d); }
 
 #define DECLARE_COMPARE_SET(T1, A1, T2, A2) \
     friend bool operator<(T1, T2) noexcept \
@@ -171,7 +135,7 @@ public:
     T *data() const noexcept { return d; }
     T *get() const noexcept { return d; }
     const T *constData() const noexcept { return d; }
-    T *take() noexcept { return qExchange(d, nullptr); }
+    T *take() noexcept { return std::exchange(d, nullptr); }
 
     void detach() { if (d && d->ref.loadRelaxed() != 1) detach_helper(); }
 
@@ -199,7 +163,7 @@ public:
         if (ptr != d) {
             if (ptr)
                 ptr->ref.ref();
-            T *old = qExchange(d, ptr);
+            T *old = std::exchange(d, ptr);
             if (old && !old->ref.deref())
                 delete old;
         }
@@ -215,14 +179,14 @@ public:
         reset(o);
         return *this;
     }
-    QExplicitlySharedDataPointer(QExplicitlySharedDataPointer &&o) noexcept : d(qExchange(o.d, nullptr)) {}
+    QExplicitlySharedDataPointer(QExplicitlySharedDataPointer &&o) noexcept : d(std::exchange(o.d, nullptr)) {}
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QExplicitlySharedDataPointer)
 
     operator bool () const noexcept { return d != nullptr; }
     bool operator!() const noexcept { return d == nullptr; }
 
     void swap(QExplicitlySharedDataPointer &other) noexcept
-    { qSwap(d, other.d); }
+    { qt_ptr_swap(d, other.d); }
 
     DECLARE_COMPARE_SET(const QExplicitlySharedDataPointer &p1, p1.d, const QExplicitlySharedDataPointer &p2, p2.d)
     DECLARE_COMPARE_SET(const QExplicitlySharedDataPointer &p1, p1.d, const T *ptr, ptr)

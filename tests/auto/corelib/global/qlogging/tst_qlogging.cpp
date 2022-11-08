@@ -1,31 +1,7 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// Copyright (C) 2022 Intel Corporation.
+// Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <qdebug.h>
 #include <qglobal.h>
@@ -33,6 +9,8 @@
 # include <QtCore/QProcess>
 #endif
 #include <QtTest/QTest>
+#include <QList>
+#include <QMap>
 
 class tst_qmessagehandler : public QObject
 {
@@ -62,7 +40,10 @@ private slots:
     void formatLogMessage();
 
 private:
-    QStringList m_baseEnvironment;
+    QString backtraceHelperPath();
+#if QT_CONFIG(process)
+    QProcessEnvironment m_baseEnvironment;
+#endif
 };
 
 static QtMsgType s_type;
@@ -89,13 +70,9 @@ tst_qmessagehandler::tst_qmessagehandler()
 void tst_qmessagehandler::initTestCase()
 {
 #if QT_CONFIG(process)
-    m_baseEnvironment = QProcess::systemEnvironment();
-    for (int i = 0; i < m_baseEnvironment.count(); ++i) {
-        if (m_baseEnvironment.at(i).startsWith("QT_MESSAGE_PATTERN=")) {
-            m_baseEnvironment.removeAt(i);
-            break;
-        }
-    }
+    m_baseEnvironment = QProcessEnvironment::systemEnvironment();
+    m_baseEnvironment.remove("QT_MESSAGE_PATTERN");
+    m_baseEnvironment.insert("QT_FORCE_STDERR_LOGGING", "1");
 #endif // QT_CONFIG(process)
 }
 
@@ -667,16 +644,16 @@ void tst_qmessagehandler::qMessagePattern_data()
 
     // %{file} is tricky because of shadow builds
     QTest::newRow("basic") << "%{type} %{appname} %{line} %{function} %{message}" << true << (QList<QByteArray>()
-            << "debug  39 T::T static constructor"
+            << "debug  14 T::T static constructor"
             //  we can't be sure whether the QT_MESSAGE_PATTERN is already destructed
             << "static destructor"
-            << "debug tst_qlogging 60 MyClass::myFunction from_a_function 34"
-            << "debug tst_qlogging 70 main qDebug"
-            << "info tst_qlogging 71 main qInfo"
-            << "warning tst_qlogging 72 main qWarning"
-            << "critical tst_qlogging 73 main qCritical"
-            << "warning tst_qlogging 76 main qDebug with category"
-            << "debug tst_qlogging 80 main qDebug2");
+            << "debug tst_qlogging 35 MyClass::myFunction from_a_function 34"
+            << "debug tst_qlogging 45 main qDebug"
+            << "info tst_qlogging 46 main qInfo"
+            << "warning tst_qlogging 47 main qWarning"
+            << "critical tst_qlogging 48 main qCritical"
+            << "warning tst_qlogging 51 main qDebug with category"
+            << "debug tst_qlogging 55 main qDebug2");
 
 
     QTest::newRow("invalid") << "PREFIX: %{unknown} %{message}" << false << (QList<QByteArray>()
@@ -737,11 +714,7 @@ void tst_qmessagehandler::qMessagePattern_data()
     QTest::newRow("time-process") << "<%{time process}>%{message}" << true << (QList<QByteArray>()
             << "<     ");
 
-#ifdef QT_CMAKE_BUILD
 #define BACKTRACE_HELPER_NAME "qlogging_helper"
-#else
-#define BACKTRACE_HELPER_NAME "helper"
-#endif
 
 #ifdef __GLIBC__
 #ifdef QT_NAMESPACE
@@ -750,16 +723,30 @@ void tst_qmessagehandler::qMessagePattern_data()
 #define QT_NAMESPACE_STR ""
 #endif
 
+#if QT_CONFIG(static)
+    QSKIP("These test cases don't work with static Qt builds");
+#else
 #ifndef QT_NO_DEBUG
-    QTest::newRow("backtrace") << "[%{backtrace}] %{message}" << true << (QList<QByteArray>()
-            // MyClass::qt_static_metacall is explicitly marked as hidden in the Q_OBJECT macro
-            << "[MyClass::myFunction|MyClass::mySlot1|?" BACKTRACE_HELPER_NAME "?|" QT_NAMESPACE_STR "QMetaMethod::invoke|" QT_NAMESPACE_STR "QMetaObject::invokeMethod] from_a_function 34");
+    QList<QByteArray> expectedBacktrace = {
+        // MyClass::qt_static_metacall is explicitly marked as hidden in the
+        // Q_OBJECT macro hence the ?helper? frame
+        "[MyClass::myFunction|MyClass::mySlot1|?" BACKTRACE_HELPER_NAME "?|",
+
+        // QMetaObject::invokeMethodImpl calls internal function
+        // (QMetaMethodPrivate::invokeImpl, at the tims of this writing), which
+        // will usually show only as ?libQt6Core.so? or equivalent, so we skip
+
+        // end of backtrace, actual message
+        "|" QT_NAMESPACE_STR "QMetaObject::invokeMethodImpl] from_a_function 34"
+    };
+    QTest::newRow("backtrace") << "[%{backtrace}] %{message}" << true << expectedBacktrace;
 #endif
 
     QTest::newRow("backtrace depth,separator") << "[%{backtrace depth=2 separator=\"\n\"}] %{message}" << true << (QList<QByteArray>()
             << "[MyClass::myFunction\nMyClass::mySlot1] from_a_function 34"
             << "[T::T\n");
-#endif
+#endif // #if !QT_CONFIG(process)
+#endif // #ifdef __GLIBC__
 
 }
 
@@ -777,18 +764,14 @@ void tst_qmessagehandler::qMessagePattern()
     QFETCH(QList<QByteArray>, expected);
 
     QProcess process;
-#ifndef Q_OS_ANDROID
-    const QString appExe(QLatin1String(HELPER_BINARY));
-#else
-    const QString appExe(QCoreApplication::applicationDirPath() + QLatin1String("/lib" BACKTRACE_HELPER_NAME ".so"));
-#endif
+    const QString appExe(backtraceHelperPath());
 
     //
     // test QT_MESSAGE_PATTERN
     //
-    QStringList environment = m_baseEnvironment;
-    environment.prepend("QT_MESSAGE_PATTERN=\"" + pattern + QLatin1Char('"'));
-    process.setEnvironment(environment);
+    QProcessEnvironment environment = m_baseEnvironment;
+    environment.insert("QT_MESSAGE_PATTERN", pattern);
+    process.setProcessEnvironment(environment);
 
     process.start(appExe);
     QVERIFY2(process.waitForStarted(), qPrintable(
@@ -801,15 +784,16 @@ void tst_qmessagehandler::qMessagePattern()
     QVERIFY(!output.isEmpty());
     QCOMPARE(!output.contains("QT_MESSAGE_PATTERN"), valid);
 
-    for (const QByteArray &e : qAsConst(expected)) {
+    for (const QByteArray &e : std::as_const(expected)) {
         if (!output.contains(e)) {
-            qDebug() << output;
-            qDebug() << "expected: " << e;
-            QVERIFY(output.contains(e));
+            // use QDebug so we get proper string escaping for the newlines
+            QString buf;
+            QDebug(&buf) << "Got:" << output << ";  Expected:" << e;
+            QVERIFY2(output.contains(e), qPrintable(buf));
         }
     }
     if (pattern.startsWith("%{pid}"))
-        QVERIFY2(output.startsWith('"' + pid), "PID: " + pid + "\noutput:\n" + output);
+        QVERIFY2(output.startsWith(pid), "PID: " + pid + "\noutput:\n" + output);
 #endif
 }
 
@@ -827,22 +811,10 @@ void tst_qmessagehandler::setMessagePattern()
     //
 
     QProcess process;
-#ifndef Q_OS_ANDROID
-    const QString appExe(QLatin1String(HELPER_BINARY));
-#else
-    const QString appExe(QCoreApplication::applicationDirPath() + QLatin1String("/libhelper.so"));
-#endif
+    const QString appExe(backtraceHelperPath());
 
     // make sure there is no QT_MESSAGE_PATTERN in the environment
-    QStringList environment;
-    environment.reserve(m_baseEnvironment.size());
-    const auto doesNotStartWith = [](QLatin1String s) {
-        return [s](const QString &str) { return !str.startsWith(s); };
-    };
-    std::copy_if(m_baseEnvironment.cbegin(), m_baseEnvironment.cend(),
-                 std::back_inserter(environment),
-                 doesNotStartWith(QLatin1String("QT_MESSAGE_PATTERN")));
-    process.setEnvironment(environment);
+    process.setProcessEnvironment(m_baseEnvironment);
 
     process.start(appExe);
     QVERIFY2(process.waitForStarted(), qPrintable(
@@ -902,7 +874,11 @@ void tst_qmessagehandler::formatLogMessage_data()
             << format << "[F] msg"
             << QtFatalMsg << BA("") << 0 << BA("func") << QByteArray() << "msg";
     QTest::newRow("if_cat")
+#ifndef Q_OS_ANDROID
             << format << "[F] cat: msg"
+#else
+            << format << "[F] : msg"
+#endif
             << QtFatalMsg << BA("") << 0 << BA("func") << BA("cat") << "msg";
 }
 
@@ -924,6 +900,19 @@ void tst_qmessagehandler::formatLogMessage()
     QCOMPARE(r, result);
 }
 
+QString tst_qmessagehandler::backtraceHelperPath()
+{
+#ifdef Q_OS_ANDROID
+    QString appExe(QCoreApplication::applicationDirPath()
+                   + QLatin1String("/lib" BACKTRACE_HELPER_NAME ".so"));
+#elif defined(Q_OS_WEBOS)
+    QString appExe(QCoreApplication::applicationDirPath()
+                   + QLatin1String("/" BACKTRACE_HELPER_NAME));
+#else
+    QString appExe(QLatin1String(HELPER_BINARY));
+#endif
+    return appExe;
+}
 
 QTEST_MAIN(tst_qmessagehandler)
 #include "tst_qlogging.moc"

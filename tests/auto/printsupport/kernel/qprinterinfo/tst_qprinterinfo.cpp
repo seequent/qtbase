@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QtGlobal>
@@ -33,10 +8,11 @@
 
 #include <algorithm>
 
-#ifdef Q_OS_UNIX
+#if defined(Q_OS_UNIX) && !defined(Q_OS_INTEGRITY)
 #  include <unistd.h>
 #  include <sys/types.h>
 #  include <sys/wait.h>
+#  define USE_PIPE_EXEC
 #endif
 
 
@@ -63,9 +39,9 @@ private:
     QString getDefaultPrinterFromSystem();
     QStringList getPrintersFromSystem();
 
-#ifdef Q_OS_UNIX
+#ifdef USE_PIPE_EXEC
     QString getOutputFromCommand(const QStringList& command);
-#endif // Q_OS_UNIX
+#endif // USE_PIPE_EXEC
 #endif
 };
 
@@ -89,7 +65,7 @@ QString tst_QPrinterInfo::getDefaultPrinterFromSystem()
 #ifdef Q_OS_WIN32
     // TODO "cscript c:\windows\system32\prnmngr.vbs -g"
 #endif // Q_OS_WIN32
-#ifdef Q_OS_UNIX
+#ifdef USE_PIPE_EXEC
     QStringList command;
     command << "lpstat" << "-d";
     QString output = getOutputFromCommand(command);
@@ -103,7 +79,7 @@ QString tst_QPrinterInfo::getDefaultPrinterFromSystem()
     QRegularExpression defaultReg("default.*: *([a-zA-Z0-9_-]+)");
     match = defaultReg.match(output);
     printer = match.captured(1);
-#endif // Q_OS_UNIX
+#endif // USE_PIPE_EXEC
     return printer;
 }
 
@@ -114,11 +90,11 @@ QStringList tst_QPrinterInfo::getPrintersFromSystem()
 #ifdef Q_OS_WIN32
     // TODO "cscript c:\windows\system32\prnmngr.vbs -l"
 #endif // Q_OS_WIN32
-#ifdef Q_OS_UNIX
+#ifdef USE_PIPE_EXEC
     QString output = getOutputFromCommand({ "lpstat", "-e" });
     QStringList list = output.split(QChar::fromLatin1('\n'));
 
-    QRegularExpression reg("^([.a-zA-Z0-9-_@]+)");
+    QRegularExpression reg("^([.a-zA-Z0-9-_@/]+)");
     QRegularExpressionMatch match;
     for (int c = 0; c < list.size(); ++c) {
         match = reg.match(list[c]);
@@ -127,12 +103,12 @@ QStringList tst_QPrinterInfo::getPrintersFromSystem()
             ans << printer;
         }
     }
-#endif // Q_OS_UNIX
+#endif // USE_PIPE_EXEC
 
     return ans;
 }
 
-#ifdef Q_OS_UNIX
+#ifdef USE_PIPE_EXEC
 // This function does roughly the same as the `command substitution` in
 // the shell.
 QString getOutputFromCommandInternal(const QStringList &command)
@@ -198,7 +174,7 @@ QString tst_QPrinterInfo::getOutputFromCommand(const QStringList &command)
 {
     // Forces the ouptut from the command to be in English
     const QByteArray origSoftwareEnv = qgetenv("SOFTWARE");
-    qputenv("SOFTWARE", QByteArray());
+    qputenv("SOFTWARE", nullptr);
     QString output = getOutputFromCommandInternal(command);
     qputenv("SOFTWARE", origSoftwareEnv);
     return output;

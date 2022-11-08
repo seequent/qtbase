@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from minimal.pro.
 
 #####################################################################
@@ -8,7 +11,7 @@ qt_find_package(WrapFreetype PROVIDED_TARGETS WrapFreetype::WrapFreetype) # spec
 
 qt_internal_add_plugin(QMinimalIntegrationPlugin
     OUTPUT_NAME qminimal
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES minimal # special case
     SOURCES
         main.cpp
@@ -16,7 +19,7 @@ qt_internal_add_plugin(QMinimalIntegrationPlugin
         qminimalintegration.cpp qminimalintegration.h
     DEFINES
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui

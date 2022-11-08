@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QSIZE_H
 #define QSIZE_H
@@ -50,6 +14,7 @@ struct CGSize;
 
 QT_BEGIN_NAMESPACE
 
+class QSizeF;
 
 class Q_CORE_EXPORT QSize
 {
@@ -109,9 +74,23 @@ public:
     [[nodiscard]] CGSize toCGSize() const noexcept;
 #endif
 
+    [[nodiscard]] inline constexpr QSizeF toSizeF() const noexcept;
+
 private:
     int wd;
     int ht;
+
+    template <std::size_t I,
+              typename S,
+              std::enable_if_t<(I < 2), bool> = true,
+              std::enable_if_t<std::is_same_v<std::decay_t<S>, QSize>, bool> = true>
+    friend constexpr decltype(auto) get(S &&s) noexcept
+    {
+        if constexpr (I == 0)
+            return (std::forward<S>(s).wd);
+        else if constexpr (I == 1)
+            return (std::forward<S>(s).ht);
+    }
 };
 Q_DECLARE_TYPEINFO(QSize, Q_RELOCATABLE_TYPE);
 
@@ -289,6 +268,18 @@ public:
 private:
     qreal wd;
     qreal ht;
+
+    template <std::size_t I,
+              typename S,
+              std::enable_if_t<(I < 2), bool> = true,
+              std::enable_if_t<std::is_same_v<std::decay_t<S>, QSizeF>, bool> = true>
+    friend constexpr decltype(auto) get(S &&s) noexcept
+    {
+        if constexpr (I == 0)
+            return (std::forward<S>(s).wd);
+        else if constexpr (I == 1)
+            return (std::forward<S>(s).ht);
+    }
 };
 Q_DECLARE_TYPEINFO(QSizeF, Q_RELOCATABLE_TYPE);
 
@@ -375,7 +366,7 @@ constexpr inline QSizeF &QSizeF::operator*=(qreal c) noexcept
 
 inline QSizeF &QSizeF::operator/=(qreal c)
 {
-    Q_ASSERT(!qFuzzyIsNull(c));
+    Q_ASSERT(!qFuzzyIsNull(c) && qIsFinite(c));
     wd = wd / c;
     ht = ht / c;
     return *this;
@@ -396,10 +387,32 @@ constexpr inline QSize QSizeF::toSize() const noexcept
     return QSize(qRound(wd), qRound(ht));
 }
 
+constexpr QSizeF QSize::toSizeF() const noexcept { return *this; }
+
 #ifndef QT_NO_DEBUG_STREAM
 Q_CORE_EXPORT QDebug operator<<(QDebug, const QSizeF &);
 #endif
 
 QT_END_NAMESPACE
+
+/*****************************************************************************
+  QSize/QSizeF tuple protocol
+ *****************************************************************************/
+
+namespace std {
+    template <>
+    class tuple_size<QT_PREPEND_NAMESPACE(QSize)> : public integral_constant<size_t, 2> {};
+    template <>
+    class tuple_element<0, QT_PREPEND_NAMESPACE(QSize)> { public: using type = int; };
+    template <>
+    class tuple_element<1, QT_PREPEND_NAMESPACE(QSize)> { public: using type = int; };
+
+    template <>
+    class tuple_size<QT_PREPEND_NAMESPACE(QSizeF)> : public integral_constant<size_t, 2> {};
+    template <>
+    class tuple_element<0, QT_PREPEND_NAMESPACE(QSizeF)> { public: using type = QT_PREPEND_NAMESPACE(qreal); };
+    template <>
+    class tuple_element<1, QT_PREPEND_NAMESPACE(QSizeF)> { public: using type = QT_PREPEND_NAMESPACE(qreal); };
+}
 
 #endif // QSIZE_H

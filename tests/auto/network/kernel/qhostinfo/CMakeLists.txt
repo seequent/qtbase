@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qhostinfo.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -11,7 +14,7 @@ endif()
 qt_internal_add_test(tst_qhostinfo
     SOURCES
         tst_qhostinfo.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
 )
@@ -23,6 +26,6 @@ qt_internal_add_test(tst_qhostinfo
 #####################################################################
 
 qt_internal_extend_target(tst_qhostinfo CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ws2_32
 )

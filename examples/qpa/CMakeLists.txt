@@ -1,7 +1,8 @@
-# Generated from qpa.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 if(NOT TARGET Qt::Gui)
     return()
 endif()
-add_subdirectory(windows)
-add_subdirectory(qrasterwindow)
+qt_internal_add_example(windows)
+qt_internal_add_example(qrasterwindow)

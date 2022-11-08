@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from vnc.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QVncIntegrationPlugin
     OUTPUT_NAME qvnc
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES vnc # special case
     SOURCES
         main.cpp
@@ -16,7 +19,7 @@ qt_internal_add_plugin(QVncIntegrationPlugin
         qvncscreen.cpp qvncscreen.h
     DEFINES
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::FbSupportPrivate
@@ -32,7 +35,7 @@ qt_internal_add_plugin(QVncIntegrationPlugin
 #####################################################################
 
 qt_internal_extend_target(QVncIntegrationPlugin CONDITION TARGET Qt::InputSupportPrivate
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::InputSupportPrivate
 )
 

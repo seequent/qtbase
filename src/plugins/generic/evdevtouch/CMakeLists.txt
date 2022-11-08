@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from evdevtouch.pro.
 
 #####################################################################
@@ -6,11 +9,11 @@
 
 qt_internal_add_plugin(QEvdevTouchScreenPlugin
     OUTPUT_NAME qevdevtouchplugin
-    TYPE generic
+    PLUGIN_TYPE generic
     DEFAULT_IF FALSE
     SOURCES
         main.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui

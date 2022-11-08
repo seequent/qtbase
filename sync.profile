@@ -1,4 +1,8 @@
-%modules = ( # path to module name map
+%modules = (
+    # path to module name map
+    # "module_name" => "path to look for headers"
+    # ! - for non qt module
+    # > - points to directory where module was defined in cmake file
     "QtGui" => "$basedir/src/gui",
     "QtWidgets" => "$basedir/src/widgets",
     "QtPrintSupport" => "$basedir/src/printsupport",
@@ -15,13 +19,20 @@
     "QtInputSupport" => "$basedir/src/platformsupport/input",
     "QtFbSupport" => "$basedir/src/platformsupport/fbconvenience",
     "QtKmsSupport" => "$basedir/src/platformsupport/kmsconvenience",
-    "QtZlib" => "!>$basedir/src/corelib;$basedir/src/3rdparty/zlib",
+    "QtZlib" => "!>$basedir/src/corelib;$basedir/src/3rdparty/zlib/src",
+    "QtPng" => "!>$basedir/src/3rdparty/libpng;$basedir/src/3rdparty/libpng",
+    "QtJpeg" => "!>$basedir/src/3rdparty/libjpeg;$basedir/src/3rdparty/libjpeg/src",
+    "QtHarfbuzz" => "!>$basedir/src/3rdparty/harfbuzz-ng;$basedir/src/3rdparty/harfbuzz-ng/include",
+    "QtFreetype" => "!>$basedir/src/3rdparty/freetype;$basedir/src/3rdparty/freetype/include",
     "QtEglFSDeviceIntegration" => "$basedir/src/plugins/platforms/eglfs",
     "QtEglFsKmsSupport" => "$basedir/src/plugins/platforms/eglfs/deviceintegration/eglfs_kms_support",
     "QtEglFsKmsGbmSupport" => "$basedir/src/plugins/platforms/eglfs/deviceintegration/eglfs_kms",
     "QtMockPlugins1" => "$basedir/tests/auto/cmake/mockplugins/mockplugins1",
     "QtMockPlugins2" => "$basedir/tests/auto/cmake/mockplugins/mockplugins2",
     "QtMockPlugins3" => "$basedir/tests/auto/cmake/mockplugins/mockplugins3",
+    "QtMockStaticResources1" => "$basedir/tests/auto/cmake/test_static_resources/mock_static_resources1",
+    "QtTestAutogeneratingCppExports" => "$basedir/tests/auto/cmake/test_generating_cpp_exports/test_autogenerating_cpp_exports",
+    "QtTestAutogeneratingCppExportsCustomName" => "$basedir/tests/auto/cmake/test_generating_cpp_exports/test_autogenerating_cpp_exports_custom_name",
 );
 %moduleheaders = ( # restrict the module headers to those found in relative path
     "QtEglFSDeviceIntegration" => "api",
@@ -34,15 +45,12 @@
     "qconfig.h" => "QtConfig",
     "qplugin.h" => "QtPlugin",
     "qalgorithms.h" => "QtAlgorithms",
-    "qvector.h" => "QVector",
     "qcontainerfwd.h" => "QtContainerFwd",
     "qdebug.h" => "QtDebug",
     "qevent.h" => "QtEvents",
     "qnamespace.h" => "Qt",
     "qnumeric.h" => "QtNumeric",
-    "qvariant.h" => "QVariantHash,QVariantList,QVariantMap",
     "qvulkanfunctions.h" => "QVulkanFunctions,QVulkanDeviceFunctions",
-    "qgl.h" => "QGL",
     "qtsqlglobal.h" => "QSql",
     "qssl.h" => "QSsl",
     "qtest.h" => "QTest",
@@ -53,10 +61,6 @@
     "qutf8stringview.h" => "QUtf8StringView",
 );
 %deprecatedheaders = (
-    "QtGui" =>  {
-        "QGenericPlugin" => "QtGui/QGenericPlugin",
-        "QGenericPluginFactory" => "QtGui/QGenericPluginFactory"
-    },
     "QtSql" => {
         "qsql.h" => "QtSql/qtsqlglobal.h"
     },

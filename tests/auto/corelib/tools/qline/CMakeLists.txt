@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qline.pro.
 
 #####################################################################
@@ -13,6 +16,6 @@ qt_internal_add_test(tst_qline
 #####################################################################
 
 qt_internal_extend_target(tst_qline CONDITION UNIX AND NOT APPLE AND NOT HAIKU AND NOT INTEGRITY AND NOT VXWORKS
-    PUBLIC_LIBRARIES
+    LIBRARIES
         m
 )

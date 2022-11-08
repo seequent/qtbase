@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qtriangulator_p.h"
 
@@ -570,8 +534,8 @@ public:
     class ComplexToSimple
     {
     public:
-        inline ComplexToSimple(QTriangulator<T> *parent) : m_parent(parent),
-            m_edges(0), m_events(0), m_splits(0) { }
+        inline ComplexToSimple(QTriangulator<T> *parent)
+            : m_parent(parent), m_edges(0), m_events(0), m_splits(0), m_initialPointCount(0) { }
         void decompose();
     private:
         struct Edge
@@ -674,7 +638,8 @@ public:
     class SimpleToMonotone
     {
     public:
-        inline SimpleToMonotone(QTriangulator<T> *parent) : m_parent(parent), m_edges(0), m_upperVertex(0) { }
+        inline SimpleToMonotone(QTriangulator<T> *parent)
+            : m_parent(parent), m_edges(0), m_upperVertex(0), m_clockwiseOrder(false) { }
         void decompose();
     private:
         enum VertexType {MergeVertex, EndVertex, RegularVertex, StartVertex, SplitVertex};
@@ -730,7 +695,8 @@ public:
     class MonotoneToTriangles
     {
     public:
-        inline MonotoneToTriangles(QTriangulator<T> *parent) : m_parent(parent) { }
+        inline MonotoneToTriangles(QTriangulator<T> *parent)
+            : m_parent(parent), m_first(0), m_length(0) { }
         void decompose();
     private:
         inline T indices(int index) const {return m_parent->m_indices.at(index + m_first);}
@@ -748,7 +714,8 @@ public:
         int m_length;
     };
 
-    inline QTriangulator() : m_vertices(0) { }
+    inline QTriangulator()
+        : m_vertices(0), m_hint(0) { }
 
     // Call this only once.
     void initialize(const qreal *polygon, int count, uint hint, const QTransform &matrix);

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdbusxml2cpp.pro.
 
 #####################################################################
@@ -13,7 +16,7 @@ qt_internal_add_tool(${target_name}
     DEFINES
         QT_NO_CAST_FROM_ASCII
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::DBusPrivate
     # COMPILE_OPTIONS  # special case
@@ -22,6 +25,7 @@ qt_internal_add_tool(${target_name}
     # _LOADED = "qt_tool"
     # _OPTION = "host_build"
 )
+qt_internal_return_unless_building_tools()
 
 #### Keys ignored in scope 1:.:.:qdbusxml2cpp.pro:<TRUE>:
 # QMAKE_TARGET_DESCRIPTION = "Qt D-Bus XML to C++ Compiler"

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Wraps install() command. In a prefix build, simply passes along arguments to install().
 # In a non-prefix build, handles association of targets to export names, and also calls export().
 function(qt_install)
@@ -18,14 +21,18 @@ function(qt_install)
         install(${ARGV})
     endif()
 
-    # Exit early if this is a prefix build.
-    if(QT_WILL_INSTALL)
-        return()
-    endif()
-
-    # In a non-prefix build, when install(EXPORT) is called,
-    # also call export(EXPORT) to generate build tree target files.
+    # When install(EXPORT) is called, also call export(EXPORT)
+    # to generate build tree target files.
     if(NOT is_install_targets AND arg_EXPORT)
+        # For prefixed builds (both top-level and per-repo) export build tree CMake Targets files so
+        # they can be used in CMake ExternalProjects. One such case is examples built as
+        # ExternalProjects as part of the Qt build.
+        # In a top-level build the exported config files are placed under qtbase/lib/cmake.
+        # In a per-repo build, they will be placed in each repo's build dir/lib/cmake.
+        if(QT_WILL_INSTALL)
+            qt_path_join(arg_DESTINATION "${QT_BUILD_DIR}" "${arg_DESTINATION}")
+        endif()
+
         set(namespace_option "")
         if(arg_NAMESPACE)
             set(namespace_option NAMESPACE ${arg_NAMESPACE})
@@ -88,40 +95,48 @@ function(qt_copy_or_install)
     qt_non_prefix_copy(COPY ${argv_copy} ${copy_arguments})
 endfunction()
 
-# Hacky way to remove the install target in non-prefix builds.
-# We need to associate targets with export names, and that is only possible to do with the
-# install(TARGETS) command. But in a non-prefix build, we don't want to install anything.
-# To make sure that developers don't accidentally run make install, replace the generated
-# cmake_install.cmake file with an empty file. To do this, always create a new temporary file
-# at CMake configuration step, and use it as an input to a custom command that replaces the
-# cmake_install.cmake file with an empty one. This means we will always replace the file on
-# every reconfiguration, but not when doing null builds.
-function(qt_remove_install_target)
-    # On superbuilds we only do this for qtbase - it will correctly remove the
-    # cmake_install.cmake at the root of the repository.
-    if(QT_SUPERBUILD)
-      if(NOT (PROJECT_NAME STREQUAL "QtBase"))
-        return()
-      endif()
-    endif()
-
-    set(file_in "${CMAKE_BINARY_DIR}/.remove_cmake_install_in.txt")
-    set(file_generated "${CMAKE_BINARY_DIR}/.remove_cmake_install_generated.txt")
-    set(cmake_install_file "${CMAKE_BINARY_DIR}/cmake_install.cmake")
-    file(WRITE ${file_in} "")
-
-    add_custom_command(OUTPUT ${file_generated}
-        COMMAND ${CMAKE_COMMAND} -E copy ${file_in} ${file_generated}
-        COMMAND ${CMAKE_COMMAND} -E remove ${cmake_install_file}
-        COMMAND ${CMAKE_COMMAND} -E touch ${cmake_install_file}
-        COMMENT "Removing cmake_install.cmake"
-        MAIN_DEPENDENCY ${file_in})
-
-    add_custom_target(remove_cmake_install ALL DEPENDS ${file_generated})
-endfunction()
-
-function(qt_set_up_nonprefix_build)
+# Create a versioned hard-link for the given target.
+# E.g. "bin/qmake6" -> "bin/qmake".
+# If no hard link can be created, make a copy instead.
+#
+# In a multi-config build, create the link for the main config only.
+function(qt_internal_install_versioned_link install_dir target)
     if(NOT QT_WILL_INSTALL)
-        qt_remove_install_target()
+        return()
     endif()
+
+    if(NOT QT_CREATE_VERSIONED_HARD_LINK)
+        return()
+    endif()
+
+    qt_path_join(install_base_file_path "$\{qt_full_install_prefix}"
+        "${install_dir}" "$<TARGET_FILE_BASE_NAME:${target}>")
+    set(original "${install_base_file_path}$<TARGET_FILE_SUFFIX:${target}>")
+    set(linkname "${install_base_file_path}${PROJECT_VERSION_MAJOR}$<TARGET_FILE_SUFFIX:${target}>")
+    set(code "set(qt_full_install_prefix \"$\{CMAKE_INSTALL_PREFIX}\")"
+        "  if(NOT \"$ENV\{DESTDIR}\" STREQUAL \"\")"
+        )
+    if(CMAKE_HOST_WIN32)
+        list(APPEND code
+            "    if(qt_full_install_prefix MATCHES \"^[a-zA-Z]:\")"
+            "        string(SUBSTRING \"$\{qt_full_install_prefix}\" 2 -1 qt_full_install_prefix)"
+            "    endif()"
+            )
+    endif()
+    list(APPEND code
+        "    string(PREPEND qt_full_install_prefix \"$ENV\{DESTDIR}\")"
+        "  endif()"
+        "  message(STATUS \"Creating hard link ${original} -> ${linkname}\")"
+        "  file(CREATE_LINK \"${original}\" \"${linkname}\" COPY_ON_ERROR)")
+
+    if(QT_GENERATOR_IS_MULTI_CONFIG)
+        # Wrap the code in a configuration check,
+        # because install(CODE) does not support a CONFIGURATIONS argument.
+        qt_create_case_insensitive_regex(main_config_regex ${QT_MULTI_CONFIG_FIRST_CONFIG})
+        list(PREPEND code "if(\"\${CMAKE_INSTALL_CONFIG_NAME}\" MATCHES \"${main_config_regex}\")")
+        list(APPEND code "endif()")
+    endif()
+
+    list(JOIN code "\n" code)
+    install(CODE "${code}")
 endfunction()

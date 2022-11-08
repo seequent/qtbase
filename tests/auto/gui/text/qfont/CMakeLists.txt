@@ -1,35 +1,34 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qfont.pro.
 
 #####################################################################
 ## tst_qfont Test:
 #####################################################################
 
-qt_internal_add_test(tst_qfont
-    SOURCES
-        tst_qfont.cpp
-    PUBLIC_LIBRARIES
-        Qt::CorePrivate
-        Qt::Gui
-        Qt::GuiPrivate
-)
-
 # Resources:
 set(testfont_resource_files
+    "datastream.515"
     "weirdfont.otf"
 )
 
-qt_internal_add_resource(tst_qfont "testfont"
-    PREFIX
-        "/"
-    FILES
-        ${testfont_resource_files}
+qt_internal_add_test(tst_qfont
+    SOURCES
+        tst_qfont.cpp
+    LIBRARIES
+        Qt::CorePrivate
+        Qt::Gui
+        Qt::GuiPrivate
+        Qt::TestPrivate
+    TESTDATA ${testfont_resource_files}
+    BUILTIN_TESTDATA
 )
-
 
 ## Scopes:
 #####################################################################
 
 qt_internal_extend_target(tst_qfont CONDITION TARGET Qt::Widgets
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Widgets
 )

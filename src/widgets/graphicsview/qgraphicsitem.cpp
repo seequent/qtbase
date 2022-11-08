@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 /*!
     \class QGraphicsItem
@@ -132,7 +96,6 @@
 
     \image graphicsview-parentchild.png
 
-    \target Transformations
     \section1 Transformations
 
     QGraphicsItem supports projective transformations in addition to its base
@@ -244,7 +207,7 @@
     \li keyPressEvent() and keyReleaseEvent() handle key press and release events
     \li mousePressEvent(), mouseMoveEvent(), mouseReleaseEvent(), and
     mouseDoubleClickEvent() handles mouse press, move, release, click and
-    doubleclick events
+    double-click events
     \endlist
 
     You can filter events for any other item by installing event filters. This
@@ -829,6 +792,8 @@
 
 QT_BEGIN_NAMESPACE
 
+QT_IMPL_METATYPE_EXTERN_TAGGED(QGraphicsItem*, QGraphicsItem_ptr)
+
 static inline void _q_adjustRect(QRect *rect)
 {
     Q_ASSERT(rect);
@@ -1071,7 +1036,7 @@ void QGraphicsItemPrivate::setIsMemberOfGroup(bool enabled)
     Q_Q(QGraphicsItem);
     isMemberOfGroup = enabled;
     if (!qgraphicsitem_cast<QGraphicsItemGroup *>(q)) {
-        for (QGraphicsItem *child : qAsConst(children))
+        for (QGraphicsItem *child : std::as_const(children))
             child->d_func()->setIsMemberOfGroup(enabled);
     }
 }
@@ -2210,7 +2175,7 @@ bool QGraphicsItem::isBlockedByModalPanel(QGraphicsItem **blockingPanel) const
     if (!scene_d->popupWidgets.isEmpty() && scene_d->popupWidgets.first() == this)
         return false;
 
-    for (int i = 0; i < scene_d->modalPanels.count(); ++i) {
+    for (int i = 0; i < scene_d->modalPanels.size(); ++i) {
         QGraphicsItem *modalPanel = scene_d->modalPanels.at(i);
         if (modalPanel->panelModality() == QGraphicsItem::SceneModal) {
             // Scene modal panels block all non-descendents.
@@ -2271,7 +2236,7 @@ void QGraphicsItem::setToolTip(const QString &toolTip)
     If no cursor has been set, the cursor of the item beneath is used.
 
     \sa setCursor(), hasCursor(), unsetCursor(), QWidget::cursor,
-    QApplication::overrideCursor()
+    QGuiApplication::overrideCursor()
 */
 QCursor QGraphicsItem::cursor() const
 {
@@ -2291,7 +2256,7 @@ QCursor QGraphicsItem::cursor() const
     If no cursor has been set, the cursor of the item beneath is used.
 
     \sa cursor(), hasCursor(), unsetCursor(), QWidget::cursor,
-    QApplication::overrideCursor()
+    QGuiApplication::overrideCursor()
 */
 void QGraphicsItem::setCursor(const QCursor &cursor)
 {
@@ -2493,7 +2458,7 @@ void QGraphicsItemPrivate::setVisibleHelper(bool newVisible, bool explicitly,
     const bool updateChildren = update && !((flags & QGraphicsItem::ItemClipsChildrenToShape
                                              || flags & QGraphicsItem::ItemContainsChildrenInShape)
                                             && !(flags & QGraphicsItem::ItemHasNoContents));
-    for (QGraphicsItem *child : qAsConst(children)) {
+    for (QGraphicsItem *child : std::as_const(children)) {
         if (!newVisible || !child->d_ptr->explicitlyHidden)
             child->d_ptr->setVisibleHelper(newVisible, false, updateChildren, hiddenByPanel);
     }
@@ -2652,23 +2617,25 @@ void QGraphicsItemPrivate::setEnabledHelper(bool newEnabled, bool explicitly, bo
 
     // Certain properties are dropped when an item is disabled.
     if (!newEnabled) {
-        if (scene && scene->mouseGrabberItem() == q_ptr)
-            q_ptr->ungrabMouse();
-        if (q_ptr->hasFocus()) {
-            // Disabling the closest non-panel ancestor of the focus item
-            // causes focus to pop to the next item, otherwise it's cleared.
-            QGraphicsItem *focusItem = scene->focusItem();
-            bool clear = true;
-            if (isWidget && !focusItem->isPanel() && q_ptr->isAncestorOf(focusItem)) {
-                do {
-                    if (focusItem == q_ptr) {
-                        clear = !static_cast<QGraphicsWidget *>(q_ptr)->focusNextPrevChild(true);
-                        break;
-                    }
-                } while ((focusItem = focusItem->parentWidget()) && !focusItem->isPanel());
+        if (scene) {
+            if (scene->mouseGrabberItem() == q_ptr)
+                q_ptr->ungrabMouse();
+            if (q_ptr->hasFocus()) {
+                // Disabling the closest non-panel ancestor of the focus item
+                // causes focus to pop to the next item, otherwise it's cleared.
+                QGraphicsItem *focusItem = scene->focusItem();
+                bool clear = true;
+                if (isWidget && !focusItem->isPanel() && q_ptr->isAncestorOf(focusItem)) {
+                    do {
+                        if (focusItem == q_ptr) {
+                            clear = !static_cast<QGraphicsWidget *>(q_ptr)->focusNextPrevChild(true);
+                            break;
+                        }
+                    } while ((focusItem = focusItem->parentWidget()) && !focusItem->isPanel());
+                }
+                if (clear)
+                    q_ptr->clearFocus();
             }
-            if (clear)
-                q_ptr->clearFocus();
         }
         if (q_ptr->isSelected())
             q_ptr->setSelected(false);
@@ -2683,7 +2650,7 @@ void QGraphicsItemPrivate::setEnabledHelper(bool newEnabled, bool explicitly, bo
     if (update)
         q_ptr->update();
 
-    for (QGraphicsItem *child : qAsConst(children)) {
+    for (QGraphicsItem *child : std::as_const(children)) {
         if (!newEnabled || !child->d_ptr->explicitlyDisabled)
             child->d_ptr->setEnabledHelper(newEnabled, /* explicitly = */ false);
     }
@@ -2712,7 +2679,7 @@ void QGraphicsItemPrivate::setEnabledHelper(bool newEnabled, bool explicitly, bo
     If you disable a parent item, all its children will also be disabled. If
     you enable a parent item, all children will be enabled, unless they have
     been explicitly disabled (i.e., if you call setEnabled(false) on a child,
-    it will not be reenabled if its parent is disabled, and then enabled
+    it will not be re-enabled if its parent is disabled, and then enabled
     again).
 
     Items are enabled by default.
@@ -3005,7 +2972,7 @@ QRectF QGraphicsItemPrivate::effectiveBoundingRect(const QRectF &rect) const
     Returns the effective bounding rect of the item.
     If the item has no effect, this is the same as the item's bounding rect.
     If the item has an effect, the effective rect can be larger than the item's
-    bouding rect, depending on the effect.
+    bounding rect, depending on the effect.
 
     \sa boundingRect()
 */
@@ -3124,7 +3091,7 @@ Qt::MouseButtons QGraphicsItem::acceptedMouseButtons() const
     mouse events to the first item beneath it that does.
 
     To disable mouse events for an item (i.e., make it transparent for mouse
-    events), call setAcceptedMouseButtons(0).
+    events), call setAcceptedMouseButtons(Qt::NoButton).
 
     \sa acceptedMouseButtons(), mousePressEvent()
 */
@@ -3246,7 +3213,7 @@ bool QGraphicsItem::filtersChildEvents() const
     \since 4.6
 
     If \a enabled is true, this item is set to filter all events for
-    all its children (i.e., all events intented for any of its
+    all its children (i.e., all events intended for any of its
     children are instead sent to this item); otherwise, if \a enabled
     is false, this item will only handle its own events. The default
     value is false.
@@ -3263,7 +3230,7 @@ void QGraphicsItem::setFiltersChildEvents(bool enabled)
 }
 
 /*!
-    \obsolete
+    \deprecated
 
     Returns \c true if this item handles child events (i.e., all events
     intended for any of its children are instead sent to this item);
@@ -3285,10 +3252,10 @@ bool QGraphicsItem::handlesChildEvents() const
 }
 
 /*!
-    \obsolete
+    \deprecated
 
     If \a enabled is true, this item is set to handle all events for
-    all its children (i.e., all events intented for any of its
+    all its children (i.e., all events intended for any of its
     children are instead sent to this item); otherwise, if \a enabled
     is false, this item will only handle its own events. The default
     value is false.
@@ -3950,7 +3917,7 @@ void QGraphicsItem::ensureVisible(const QRectF &rect, int xmargin, int ymargin)
             sceneRect = sceneTransform().mapRect(rect);
         else
             sceneRect = sceneBoundingRect();
-        for (QGraphicsView *view : qAsConst(d_ptr->scene->d_func()->views))
+        for (QGraphicsView *view : std::as_const(d_ptr->scene->d_func()->views))
             view->ensureVisible(sceneRect, xmargin, ymargin);
     }
 }
@@ -4284,7 +4251,8 @@ void QGraphicsItem::setTransformOriginPoint(const QPointF &origin)
     \snippet code/src_gui_graphicsview_qgraphicsitem.cpp 4
 
     Unlike transform(), which returns only an item's local transformation, this
-    function includes the item's (and any parents') position, and all the transfomation properties.
+    function includes the item's (and any parents') position, and all the
+    transformation properties.
 
     \sa transform(), setTransform(), scenePos(), {The Graphics View Coordinate System}, {Transformations}
 */
@@ -4493,7 +4461,7 @@ QTransform QGraphicsItem::itemTransform(const QGraphicsItem *other, bool *ok) co
     To simplify interaction with items using a transformed view, QGraphicsItem
     provides mapTo... and mapFrom... functions that can translate between
     items' and the scene's coordinates. For example, you can call mapToScene()
-    to map an item coordiate to a scene coordinate, or mapFromScene() to map
+    to map an item coordinate to a scene coordinate, or mapFromScene() to map
     from scene coordinates to item coordinates.
 
     The transformation matrix is combined with the item's rotation(), scale()
@@ -4659,7 +4627,7 @@ inline void QGraphicsItemPrivate::sendScenePosChange()
         if (flags & QGraphicsItem::ItemSendsScenePositionChanges)
             q->itemChange(QGraphicsItem::ItemScenePositionHasChanged, q->scenePos());
         if (scenePosDescendants) {
-            for (QGraphicsItem *item : qAsConst(scene->d_func()->scenePosItems)) {
+            for (QGraphicsItem *item : std::as_const(scene->d_func()->scenePosItems)) {
                 if (q->isAncestorOf(item))
                     item->itemChange(QGraphicsItem::ItemScenePositionHasChanged, item->scenePos());
             }
@@ -4963,7 +4931,7 @@ bool QGraphicsItem::contains(const QPointF &point) const
     The default implementation is based on shape intersection, and it calls
     shape() on both items. Because the complexity of arbitrary shape-shape
     intersection grows with an order of magnitude when the shapes are complex,
-    this operation can be noticably time consuming. You have the option of
+    this operation can be noticeably time-consuming. You have the option of
     reimplementing this function in a subclass of QGraphicsItem to provide a
     custom algorithm. This allows you to make use of natural constraints in
     the shapes of your own items, in order to improve the performance of the
@@ -5033,7 +5001,7 @@ bool QGraphicsItem::collidesWithPath(const QPainterPath &path, Qt::ItemSelection
     _q_adjustRect(&rectB);
     if (!rectA.intersects(rectB)) {
         // This we can determine efficiently. If the two rects neither
-        // intersect nor contain eachother, then the two items do not collide.
+        // intersect nor contain each other, then the two items do not collide.
         return false;
     }
 
@@ -7027,7 +6995,7 @@ void QGraphicsItem::keyReleaseEvent(QKeyEvent *event)
     If you do reimplement this function, \a event will by default be
     accepted (see QEvent::accept()), and this item is then the mouse
     grabber. This allows the item to receive future move, release and
-    doubleclick events. If you call QEvent::ignore() on \a event, this
+    double-click events. If you call QEvent::ignore() on \a event, this
     item will lose the mouse grab, and \a event will propagate to any
     topmost item beneath. No further mouse events will be delivered to
     this item unless a new mouse press event is received.
@@ -7115,7 +7083,7 @@ void QGraphicsItem::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
             selectedItems = d_ptr->scene->selectedItems();
             initialPositions = d_ptr->scene->d_func()->movingItemsInitialPositions;
             if (initialPositions.isEmpty()) {
-                for (QGraphicsItem *item : qAsConst(selectedItems))
+                for (QGraphicsItem *item : std::as_const(selectedItems))
                     initialPositions[item] = item->pos();
                 initialPositions[this] = pos();
             }
@@ -7149,14 +7117,14 @@ void QGraphicsItem::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
             if ((item->flags() & ItemIsMovable) && !QGraphicsItemPrivate::movableAncestorIsSelected(item)) {
                 QPointF currentParentPos;
                 QPointF buttonDownParentPos;
-                if (item->d_ptr->ancestorFlags & QGraphicsItemPrivate::AncestorIgnoresTransformations) {
+                if (view && (item->d_ptr->ancestorFlags & QGraphicsItemPrivate::AncestorIgnoresTransformations)) {
                     // Items whose ancestors ignore transformations need to
                     // map screen coordinates to local coordinates, then map
                     // those to the parent.
                     QTransform viewToItemTransform = (item->deviceTransform(view->viewportTransform())).inverted();
                     currentParentPos = mapToParent(viewToItemTransform.map(QPointF(view->mapFromGlobal(event->screenPos()))));
                     buttonDownParentPos = mapToParent(viewToItemTransform.map(QPointF(view->mapFromGlobal(event->buttonDownScreenPos(Qt::LeftButton)))));
-                } else if (item->flags() & ItemIgnoresTransformations) {
+                } else if (view && (item->flags() & ItemIgnoresTransformations)) {
                     // Root items that ignore transformations need to
                     // calculate their diff by mapping viewport coordinates
                     // directly to parent coordinates.
@@ -7224,7 +7192,7 @@ void QGraphicsItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
                     // temporarily removing this item from the selection list.
                     if (d_ptr->selected) {
                         scene->d_func()->selectedItems.remove(this);
-                        for (QGraphicsItem *item : qAsConst(scene->d_func()->selectedItems)) {
+                        for (QGraphicsItem *item : std::as_const(scene->d_func()->selectedItems)) {
                             if (item->isSelected()) {
                                 selectionChanged = true;
                                 break;
@@ -7248,11 +7216,11 @@ void QGraphicsItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 
 /*!
     This event handler, for event \a event, can be reimplemented to
-    receive mouse doubleclick events for this item.
+    receive mouse double-click events for this item.
 
     When doubleclicking an item, the item will first receive a mouse
     press event, followed by a release event (i.e., a click), then a
-    doubleclick event, and finally a release event.
+    double-click event, and finally a release event.
 
     Calling QEvent::ignore() or QEvent::accept() on \a event has no
     effect.
@@ -7697,13 +7665,13 @@ void QGraphicsItemPrivate::children_append(QDeclarativeListProperty<QGraphicsObj
 int QGraphicsItemPrivate::children_count(QDeclarativeListProperty<QGraphicsObject> *list)
 {
     QGraphicsItemPrivate *d = QGraphicsItemPrivate::get(static_cast<QGraphicsObject *>(list->object));
-    return d->children.count();
+    return d->children.size();
 }
 
 QGraphicsObject *QGraphicsItemPrivate::children_at(QDeclarativeListProperty<QGraphicsObject> *list, int index)
 {
     QGraphicsItemPrivate *d = QGraphicsItemPrivate::get(static_cast<QGraphicsObject *>(list->object));
-    if (index >= 0 && index < d->children.count())
+    if (index >= 0 && index < d->children.size())
         return d->children.at(index)->toGraphicsObject();
     else
         return nullptr;
@@ -7712,7 +7680,7 @@ QGraphicsObject *QGraphicsItemPrivate::children_at(QDeclarativeListProperty<QGra
 void QGraphicsItemPrivate::children_clear(QDeclarativeListProperty<QGraphicsObject> *list)
 {
     QGraphicsItemPrivate *d = QGraphicsItemPrivate::get(static_cast<QGraphicsObject *>(list->object));
-    int childCount = d->children.count();
+    int childCount = d->children.size();
     if (d->sendParentChangeNotification) {
         for (int index = 0; index < childCount; index++)
             d->children.at(0)->setParentItem(nullptr);
@@ -7920,7 +7888,7 @@ void QGraphicsItemPrivate::resetHeight()
 /*!
   \fn QGraphicsObject::rotationChanged()
 
-  This signal gets emitted whenever the roation of the item changes.
+  This signal gets emitted whenever the rotation of the item changes.
 */
 
 /*!
@@ -7959,7 +7927,7 @@ void QGraphicsItemPrivate::resetHeight()
 /*!
   \fn void QGraphicsObject::enabledChanged()
 
-  This signal gets emitted whenever the item get's enabled or disabled.
+  This signal gets emitted whenever the item gets enabled or disabled.
 
   \sa isEnabled()
 */
@@ -7987,7 +7955,7 @@ void QGraphicsItemPrivate::resetHeight()
   \property QGraphicsObject::transformOriginPoint
   \brief the transformation origin
 
-  This property sets a specific point in the items coordiante system as the
+  This property sets a specific point in the item's coordinate system as the
   origin for scale and rotation.
 
   \sa scale, rotation, QGraphicsItem::transformOriginPoint()
@@ -9583,9 +9551,9 @@ QRectF QGraphicsPixmapItem::boundingRect() const
         return QRectF();
     if (d->flags & ItemIsSelectable) {
         qreal pw = 1.0;
-        return QRectF(d->offset, QSizeF(d->pixmap.size()) / d->pixmap.devicePixelRatio()).adjusted(-pw/2, -pw/2, pw/2, pw/2);
+        return QRectF(d->offset, d->pixmap.deviceIndependentSize()).adjusted(-pw/2, -pw/2, pw/2, pw/2);
     } else {
-        return QRectF(d->offset, QSizeF(d->pixmap.size()) / d->pixmap.devicePixelRatio());
+        return QRectF(d->offset, d->pixmap.deviceIndependentSize());
     }
 }
 
@@ -10090,6 +10058,7 @@ bool QGraphicsTextItem::sceneEvent(QEvent *event)
     case QEvent::GraphicsSceneMouseRelease:
     case QEvent::KeyPress:
     case QEvent::KeyRelease:
+    case QEvent::InputMethod:
         // Reset the focus widget's input context, regardless
         // of how this item gained or lost focus.
         if (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) {
@@ -10305,18 +10274,22 @@ void QGraphicsTextItem::hoverLeaveEvent(QGraphicsSceneHoverEvent *event)
 QVariant QGraphicsTextItem::inputMethodQuery(Qt::InputMethodQuery query) const
 {
     QVariant v;
-    if (query == Qt::ImHints)
+    if (query == Qt::ImEnabled)
+        return isEnabled();
+    else if (query == Qt::ImHints)
         v = int(inputMethodHints());
     else if (dd->control)
         v = dd->control->inputMethodQuery(query, QVariant());
-    if (v.userType() == QMetaType::QRectF)
-        v = v.toRectF().translated(-dd->controlOffset());
-    else if (v.userType() == QMetaType::QPointF)
-        v = v.toPointF() - dd->controlOffset();
-    else if (v.userType() == QMetaType::QRect)
-        v = v.toRect().translated(-dd->controlOffset().toPoint());
-    else if (v.userType() == QMetaType::QPoint)
-        v = v.toPoint() - dd->controlOffset().toPoint();
+    if (dd->control) {
+        if (v.userType() == QMetaType::QRectF)
+            v = v.toRectF().translated(-dd->controlOffset());
+        else if (v.userType() == QMetaType::QPointF)
+            v = v.toPointF() - dd->controlOffset();
+        else if (v.userType() == QMetaType::QRect)
+            v = v.toRect().translated(-dd->controlOffset().toPoint());
+        else if (v.userType() == QMetaType::QPoint)
+            v = v.toPoint() - dd->controlOffset().toPoint();
+    }
     return v;
 }
 
@@ -10391,16 +10364,16 @@ QWidgetTextControl *QGraphicsTextItemPrivate::textControl() const
         control = new QWidgetTextControl(that);
         control->setTextInteractionFlags(Qt::NoTextInteraction);
 
-        QObject::connect(control, SIGNAL(updateRequest(QRectF)),
-                         qq, SLOT(_q_update(QRectF)));
-        QObject::connect(control, SIGNAL(documentSizeChanged(QSizeF)),
-                         qq, SLOT(_q_updateBoundingRect(QSizeF)));
-        QObject::connect(control, SIGNAL(visibilityRequest(QRectF)),
-                         qq, SLOT(_q_ensureVisible(QRectF)));
-        QObject::connect(control, SIGNAL(linkActivated(QString)),
-                         qq, SIGNAL(linkActivated(QString)));
-        QObject::connect(control, SIGNAL(linkHovered(QString)),
-                         qq, SIGNAL(linkHovered(QString)));
+        QObject::connect(control, &QWidgetTextControl::updateRequest, qq,
+                         [dd = that->dd](const QRectF &rect) { dd->_q_update(rect); });
+        QObject::connect(control, &QWidgetTextControl::documentSizeChanged, qq,
+                         [dd = that->dd](QSizeF size) { dd->_q_updateBoundingRect(size); });
+        QObject::connect(control, &QWidgetTextControl::visibilityRequest, qq,
+                         [dd = that->dd](const QRectF &rect) { dd->_q_ensureVisible(rect); });
+        QObject::connect(control, &QWidgetTextControl::linkActivated, qq,
+                         &QGraphicsTextItem::linkActivated);
+        QObject::connect(control, &QWidgetTextControl::linkHovered, qq,
+                         &QGraphicsTextItem::linkHovered);
 
         const QSizeF pgSize = control->document()->pageSize();
         if (pgSize.height() != -1) {
@@ -10603,7 +10576,7 @@ void QGraphicsSimpleTextItemPrivate::updateBoundingRect()
         br = QRectF();
     } else {
         QString tmp = text;
-        tmp.replace(QLatin1Char('\n'), QChar::LineSeparator);
+        tmp.replace(u'\n', QChar::LineSeparator);
         QStackTextEngine engine(tmp, font);
         QTextLayout layout(&engine);
         br = setupTextLayout(&layout);
@@ -10764,7 +10737,7 @@ void QGraphicsSimpleTextItem::paint(QPainter *painter, const QStyleOptionGraphic
     painter->setFont(d->font);
 
     QString tmp = d->text;
-    tmp.replace(QLatin1Char('\n'), QChar::LineSeparator);
+    tmp.replace(u'\n', QChar::LineSeparator);
     QStackTextEngine engine(tmp, d->font);
     QTextLayout layout(&engine);
 
@@ -10776,7 +10749,7 @@ void QGraphicsSimpleTextItem::paint(QPainter *painter, const QStyleOptionGraphic
     } else {
         QTextLayout::FormatRange range;
         range.start = 0;
-        range.length = layout.text().length();
+        range.length = layout.text().size();
         range.format.setTextOutline(d->pen);
         layout.setFormats(QList<QTextLayout::FormatRange>(1, range));
     }

@@ -1,20 +1,31 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from androiddeployqt.pro.
 
 #####################################################################
 ## androiddeployqt App:
 #####################################################################
 
-qt_internal_add_app(androiddeployqt
+qt_get_tool_target_name(target_name androiddeployqt)
+qt_internal_add_tool(${target_name}
+    TARGET_DESCRIPTION "Qt Android Deployment Tool"
+    TOOLS_TARGET Core
+    USER_FACING
+    INSTALL_VERSIONED_LINK
     SOURCES
         main.cpp
     DEFINES
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core # special case
+    INCLUDE_DIRECTORIES
+        ../shared
 )
-set_target_properties(androiddeployqt PROPERTIES
+qt_internal_return_unless_building_tools()
+set_target_properties(${target_name} PROPERTIES
     WIN32_EXECUTABLE FALSE
 )
 
@@ -24,7 +35,7 @@ set_target_properties(androiddeployqt PROPERTIES
 ## Scopes:
 #####################################################################
 
-qt_internal_extend_target(androiddeployqt CONDITION windows
+qt_internal_extend_target(${target_name} CONDITION windows
     COMPILE_OPTIONS
         -U__STRICT_ANSI__
 )

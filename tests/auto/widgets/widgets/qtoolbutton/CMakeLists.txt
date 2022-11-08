@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qtoolbutton.pro.
 
 #####################################################################
@@ -7,7 +10,8 @@
 qt_internal_add_test(tst_qtoolbutton
     SOURCES
         tst_qtoolbutton.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
+        Qt::WidgetsPrivate
 )

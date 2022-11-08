@@ -1,30 +1,27 @@
-# Generated from qfile.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## tst_qfile Test:
 #####################################################################
 
 # Collect test data
-# list(APPEND test_data "BLACKLIST") # special case remove
 list(APPEND test_data "dosfile.txt")
 list(APPEND test_data "noendofline.txt")
 list(APPEND test_data "testfile.txt")
 list(APPEND test_data "testlog.txt")
 list(APPEND test_data "two.dots.file")
 list(APPEND test_data "tst_qfile.cpp")
-# list(APPEND test_data "Makefile") # special case remove
 list(APPEND test_data "forCopying.txt")
 list(APPEND test_data "forRenaming.txt")
 list(APPEND test_data "resources/file1.ext1")
 
 qt_internal_add_test(tst_qfile
     SOURCES
-        ../../../../shared/emulationdetector.h
         tst_qfile.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../shared
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
+        Qt::TestPrivate
     TESTDATA ${test_data}
 )
 
@@ -65,7 +62,7 @@ qt_internal_add_resource(tst_qfile "copy-fallback"
 #####################################################################
 
 qt_internal_extend_target(tst_qfile CONDITION TARGET Qt::Network
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Network
 )
 
@@ -80,8 +77,11 @@ qt_internal_extend_target(tst_qfile CONDITION CONFIG___contains___builtin_testda
 )
 
 qt_internal_extend_target(tst_qfile CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ole32
         uuid
 )
 add_subdirectory(stdinprocess)
+if(QT_FEATURE_process)
+    add_dependencies(tst_qfile stdinprocess_helper)
+endif()

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 #include "qtransform.h"
 
 #include "qdatastream.h"
@@ -45,7 +9,7 @@
 #include "qpainterpath.h"
 #include "qpainterpath_p.h"
 #include "qvariant.h"
-#include <qmath.h>
+#include "qmath_p.h"
 #include <qnumeric.h>
 
 #include <private/qbezier_p.h>
@@ -213,6 +177,7 @@ static void nanWarning(const char *func)
     transformation is achieved by setting both the projection factors and
     the scaling factors.
 
+    \section2 Combining Transforms
     Here's the combined transformations example using basic matrix
     operations:
 
@@ -222,6 +187,26 @@ static void nanWarning(const char *func)
     \li
     \snippet transform/main.cpp 2
     \endtable
+
+    The combined transform first scales each operand, then rotates it, and
+    finally translates it, just as in the order in which the product of its
+    factors is written. This means the point to which the transforms are
+    applied is implicitly multiplied on the left with the transform
+    to its right.
+
+    \section2 Relation to Matrix Notation
+    The matrix notation in QTransform is the transpose of a commonly-taught
+    convention which represents transforms and points as matrices and vectors.
+    That convention multiplies its matrix on the left and column vector to the
+    right. In other words, when several transforms are applied to a point, the
+    right-most matrix acts directly on the vector first. Then the next matrix
+    to the left acts on the result of the first operation - and so on. As a
+    result, that convention multiplies the matrices that make up a composite
+    transform in the reverse of the order in QTransform, as you can see in
+    \l {Combining Transforms}. Transposing the matrices, and combining them to
+    the right of a row vector that represents the point, lets the matrices of
+    transforms appear, in their product, in the order in which we think of the
+    transforms being applied to the point.
 
     \sa QPainter, {Coordinate System}, {painting/affine}{Affine
     Transformations Example}, {Transformations Example}
@@ -548,29 +533,33 @@ QTransform & QTransform::shear(qreal sh, qreal sv)
     return *this;
 }
 
-const qreal deg2rad = qreal(0.017453292519943295769);        // pi/180
-const qreal inv_dist_to_plane = 1. / 1024.;
-
 /*!
-    \fn QTransform &QTransform::rotate(qreal angle, Qt::Axis axis)
+    \since 6.5
 
-    Rotates the coordinate system counterclockwise by the given \a angle
-    about the specified \a axis and returns a reference to the matrix.
+    Rotates the coordinate system counterclockwise by the given angle \a a
+    about the specified \a axis at distance \a distanceToPlane from the
+    screen and returns a reference to the matrix.
 
+//! [transform-rotate-note]
     Note that if you apply a QTransform to a point defined in widget
     coordinates, the direction of the rotation will be clockwise
     because the y-axis points downwards.
 
     The angle is specified in degrees.
+//! [transform-rotate-note]
+
+    If \a distanceToPlane is zero, it will be ignored. This is suitable
+    for implementing orthographic projections where the z coordinate should
+    be dropped rather than projected.
 
     \sa setMatrix()
 */
-QTransform & QTransform::rotate(qreal a, Qt::Axis axis)
+QTransform & QTransform::rotate(qreal a, Qt::Axis axis, qreal distanceToPlane)
 {
     if (a == 0)
         return *this;
 #ifndef QT_NO_DEBUG
-    if (qIsNaN(a)) {
+    if (qIsNaN(a) || qIsNaN(distanceToPlane)) {
         nanWarning("rotate");
         return *this;
     }
@@ -585,7 +574,7 @@ QTransform & QTransform::rotate(qreal a, Qt::Axis axis)
     else if (a == 180.)
         cosa = -1.;
     else{
-        qreal b = deg2rad*a;          // convert to radians
+        qreal b = qDegreesToRadians(a);
         sina = qSin(b);               // fast and convenient
         cosa = qCos(b);
     }
@@ -633,13 +622,16 @@ QTransform & QTransform::rotate(qreal a, Qt::Axis axis)
         if (m_dirty < TxRotate)
             m_dirty = TxRotate;
     } else {
+        if (!qIsNull(distanceToPlane))
+            sina /= distanceToPlane;
+
         QTransform result;
         if (axis == Qt::YAxis) {
             result.m_matrix[0][0] = cosa;
-            result.m_matrix[0][2] = -sina * inv_dist_to_plane;
+            result.m_matrix[0][2] = -sina;
         } else {
             result.m_matrix[1][1] = cosa;
-            result.m_matrix[1][2] = -sina * inv_dist_to_plane;
+            result.m_matrix[1][2] = -sina;
         }
         result.m_type = TxProject;
         *this = result * *this;
@@ -648,24 +640,49 @@ QTransform & QTransform::rotate(qreal a, Qt::Axis axis)
     return *this;
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
 /*!
-    \fn QTransform & QTransform::rotateRadians(qreal angle, Qt::Axis axis)
+    \overload
 
-    Rotates the coordinate system counterclockwise by the given \a angle
-    about the specified \a axis and returns a reference to the matrix.
+    Rotates the coordinate system counterclockwise by the given angle \a a
+    about the specified \a axis at distance 1024.0 from the screen and
+    returns a reference to the matrix.
 
+    \include qtransform.cpp transform-rotate-note
+
+    \sa setMatrix
+*/
+QTransform &QTransform::rotate(qreal a, Qt::Axis axis)
+{
+    return rotate(a, axis, 1024.0);
+}
+#endif
+
+/*!
+    \since 6.5
+
+    Rotates the coordinate system counterclockwise by the given angle \a a
+    about the specified \a axis at distance \a distanceToPlane from the
+    screen and returns a reference to the matrix.
+
+//! [transform-rotate-radians-note]
     Note that if you apply a QTransform to a point defined in widget
     coordinates, the direction of the rotation will be clockwise
     because the y-axis points downwards.
 
     The angle is specified in radians.
+//! [transform-rotate-radians-note]
+
+    If \a distanceToPlane is zero, it will be ignored. This is suitable
+    for implementing orthographic projections where the z coordinate should
+    be dropped rather than projected.
 
     \sa setMatrix()
 */
-QTransform & QTransform::rotateRadians(qreal a, Qt::Axis axis)
+QTransform & QTransform::rotateRadians(qreal a, Qt::Axis axis, qreal distanceToPlane)
 {
 #ifndef QT_NO_DEBUG
-    if (qIsNaN(a)) {
+    if (qIsNaN(a) || qIsNaN(distanceToPlane)) {
         nanWarning("rotateRadians");
         return *this;
     }
@@ -716,19 +733,40 @@ QTransform & QTransform::rotateRadians(qreal a, Qt::Axis axis)
         if (m_dirty < TxRotate)
             m_dirty = TxRotate;
     } else {
+        if (!qIsNull(distanceToPlane))
+            sina /= distanceToPlane;
+
         QTransform result;
         if (axis == Qt::YAxis) {
             result.m_matrix[0][0] = cosa;
-            result.m_matrix[0][2] = -sina * inv_dist_to_plane;
+            result.m_matrix[0][2] = -sina;
         } else {
             result.m_matrix[1][1] = cosa;
-            result.m_matrix[1][2] = -sina * inv_dist_to_plane;
+            result.m_matrix[1][2] = -sina;
         }
         result.m_type = TxProject;
         *this = result * *this;
     }
     return *this;
 }
+
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+/*!
+    \overload
+
+    Rotates the coordinate system counterclockwise by the given angle \a a
+    about the specified \a axis at distance 1024.0 from the screen and
+    returns a reference to the matrix.
+
+    \include qtransform.cpp transform-rotate-radians-note
+
+    \sa setMatrix()
+*/
+QTransform &QTransform::rotateRadians(qreal a, Qt::Axis axis)
+{
+    return rotateRadians(a, axis, 1024.0);
+}
+#endif
 
 /*!
     \fn bool QTransform::operator==(const QTransform &matrix) const
@@ -1466,16 +1504,16 @@ QRegion QTransform::map(const QRegion &r) const
         QRegion res;
         if (m11() < 0 || m22() < 0) {
             for (const QRect &rect : r)
-                res += mapRect(QRectF(rect)).toRect();
+                res += qt_mapFillRect(QRectF(rect), *this);
         } else {
             QVarLengthArray<QRect, 32> rects;
             rects.reserve(r.rectCount());
             for (const QRect &rect : r) {
-                QRect nr = mapRect(QRectF(rect)).toRect();
+                QRect nr = qt_mapFillRect(QRectF(rect), *this);
                 if (!nr.isEmpty())
                     rects.append(nr);
             }
-            res.setRects(rects.constData(), rects.count());
+            res.setRects(rects.constData(), rects.size());
         }
         return res;
     }
@@ -1704,7 +1742,7 @@ QPolygon QTransform::mapToPolygon(const QRect &rect) const
         MAP(rect.x(), bottom, x[3], y[3]);
     }
 
-    // all coordinates are correctly, tranform to a pointarray
+    // all coordinates are correctly, transform to a pointarray
     // (rounding to the next integer)
     a.setPoints(4, qRound(x[0]), qRound(y[0]),
                 qRound(x[1]), qRound(y[1]),
@@ -1722,7 +1760,7 @@ QPolygon QTransform::mapToPolygon(const QRect &rect) const
 */
 bool QTransform::squareToQuad(const QPolygonF &quad, QTransform &trans)
 {
-    if (quad.count() != 4)
+    if (quad.size() != 4)
         return false;
 
     qreal dx0 = quad[0].x();

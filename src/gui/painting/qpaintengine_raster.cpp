@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QtCore/qglobal.h>
 #include <QtCore/qmutex.h>
@@ -49,7 +13,7 @@
 #include <qpainterpath.h>
 #include <qdebug.h>
 #include <qbitmap.h>
-#include <qmath.h>
+#include "qmath_p.h"
 #include <qrandom.h>
 
 //   #include <private/qdatabuffer_p.h>
@@ -462,12 +426,12 @@ bool QRasterPaintEngine::begin(QPaintDevice *device)
     d->rasterizer->setClipRect(d->deviceRect);
 
     s->penData.init(d->rasterBuffer.data(), this);
-    s->penData.setup(s->pen.brush(), s->intOpacity, s->composition_mode);
+    s->penData.setup(s->pen.brush(), s->intOpacity, s->composition_mode, s->flags.cosmetic_brush);
     s->stroker = &d->basicStroker;
     d->basicStroker.setClipRect(d->deviceRect);
 
     s->brushData.init(d->rasterBuffer.data(), this);
-    s->brushData.setup(s->brush, s->intOpacity, s->composition_mode);
+    s->brushData.setup(s->brush, s->intOpacity, s->composition_mode, s->flags.cosmetic_brush);
 
     d->rasterBuffer->compositionMode = QPainter::CompositionMode_SourceOver;
 
@@ -526,31 +490,6 @@ void QRasterPaintEngine::updateMatrix(const QTransform &matrix)
     QRasterPaintEngineState *s = state();
     // FALCON: get rid of this line, see drawImage call below.
     s->matrix = matrix;
-    QTransform::TransformationType txop = s->matrix.type();
-
-    switch (txop) {
-
-    case QTransform::TxNone:
-        s->flags.int_xform = true;
-        break;
-
-    case QTransform::TxTranslate:
-        s->flags.int_xform = qreal(int(s->matrix.dx())) == s->matrix.dx()
-                            && qreal(int(s->matrix.dy())) == s->matrix.dy();
-        break;
-
-    case QTransform::TxScale:
-        s->flags.int_xform = qreal(int(s->matrix.dx())) == s->matrix.dx()
-                            && qreal(int(s->matrix.dy())) == s->matrix.dy()
-                            && qreal(int(s->matrix.m11())) == s->matrix.m11()
-                            && qreal(int(s->matrix.m22())) == s->matrix.m22();
-        break;
-
-    default: // shear / perspective...
-        s->flags.int_xform = false;
-        break;
-    }
-
     s->flags.tx_noshear = qt_scaleForTransform(s->matrix, &s->txscale);
 
     ensureOutlineMapper();
@@ -577,14 +516,15 @@ QRasterPaintEngineState::QRasterPaintEngineState()
 
     txscale = 1.;
 
+    flag_bits = 0;
     flags.fast_pen = true;
     flags.non_complex_pen = false;
     flags.antialiased = false;
     flags.bilinear = false;
     flags.fast_text = true;
-    flags.int_xform = true;
     flags.tx_noshear = true;
     flags.fast_images = true;
+    flags.cosmetic_brush = true;
 
     clip = nullptr;
     flags.has_clip_ownership = false;
@@ -683,7 +623,8 @@ void QRasterPaintEngine::updatePen(const QPen &pen)
     s->strokeFlags = 0;
 
     s->penData.clip = d->clip();
-    s->penData.setup(pen_style == Qt::NoPen ? QBrush() : pen.brush(), s->intOpacity, s->composition_mode);
+    s->penData.setup(pen_style == Qt::NoPen ? QBrush() : pen.brush(), s->intOpacity,
+                     s->composition_mode, s->flags.cosmetic_brush);
 
     if (s->strokeFlags & QRasterPaintEngine::DirtyTransform
         || pen.brush().transform().type() >= QTransform::TxNone) {
@@ -782,7 +723,7 @@ void QRasterPaintEngine::updateBrush(const QBrush &brush)
     QRasterPaintEngineState *s = state();
     // must set clip prior to setup, as setup uses it...
     s->brushData.clip = d->clip();
-    s->brushData.setup(brush, s->intOpacity, s->composition_mode);
+    s->brushData.setup(brush, s->intOpacity, s->composition_mode, s->flags.cosmetic_brush);
     if (s->fillFlags & DirtyTransform
         || brush.transform().type() >= QTransform::TxNone)
         d_func()->updateMatrixData(&s->brushData, brush, d->brushMatrix());
@@ -809,7 +750,8 @@ void QRasterPaintEngine::updateRasterState()
                        && s->intOpacity == 256
                        && (mode == QPainter::CompositionMode_SourceOver
                            || (mode == QPainter::CompositionMode_Source
-                               && s->penData.solidColor.isOpaque()));
+                               && (s->penData.solidColor.spec() != QColor::ExtendedRgb &&
+                                   s->penData.solidColor.alphaF() >= 1.0f)));
     }
 
     s->dirty = 0;
@@ -868,20 +810,25 @@ void QRasterPaintEngine::renderHintsChanged()
 
     bool was_aa = s->flags.antialiased;
     bool was_bilinear = s->flags.bilinear;
+    bool was_cosmetic_brush = s->flags.cosmetic_brush;
 
     s->flags.antialiased = bool(s->renderHints & QPainter::Antialiasing);
     s->flags.bilinear = bool(s->renderHints & QPainter::SmoothPixmapTransform);
+    s->flags.cosmetic_brush = !bool(s->renderHints & QPainter::NonCosmeticBrushPatterns);
 
     if (was_aa != s->flags.antialiased)
         s->strokeFlags |= DirtyHints;
 
-    if (was_bilinear != s->flags.bilinear) {
+    if (was_bilinear != s->flags.bilinear || was_cosmetic_brush != s->flags.cosmetic_brush) {
         s->strokeFlags |= DirtyPen;
         s->fillFlags |= DirtyBrush;
     }
 
     Q_D(QRasterPaintEngine);
     d->recalculateFastImages();
+
+    if (was_aa != s->flags.antialiased)
+        d->updateClipping();
 }
 
 /*!
@@ -969,7 +916,7 @@ void QRasterPaintEnginePrivate::drawImage(const QPointF &pt,
     if (iw <= 0)
         return;
 
-    // adapt the y paremeters...
+    // adapt the y parameters...
     int cy1 = clip.y();
     int cy2 = clip.y() + clip.height();
     int y = qRound(pt.y());
@@ -1039,7 +986,7 @@ void QRasterPaintEnginePrivate::blitImage(const QPointF &pt,
     if (iw <= 0)
         return;
 
-    // adapt the y paremeters...
+    // adapt the y parameters...
     int cy1 = clip.y();
     int cy2 = clip.y() + clip.height();
     int y = qRound(pt.y());
@@ -1217,7 +1164,7 @@ void QRasterPaintEngine::clip(const QVectorPath &path, Qt::ClipOperation op)
 #endif
             const qreal *points = path.points();
             QRectF r(points[0], points[1], points[4]-points[0], points[5]-points[1]);
-            if (setClipRectInDeviceCoords(s->matrix.mapRect(r).toAlignedRect(), op))
+            if (setClipRectInDeviceCoords(qt_mapFillRect(r, s->matrix), op))
                 return;
         }
     }
@@ -1276,7 +1223,7 @@ void QRasterPaintEngine::clip(const QRect &rect, Qt::ClipOperation op)
         QPaintEngineEx::clip(rect, op);
         return;
 
-    } else if (!setClipRectInDeviceCoords(s->matrix.mapRect(QRectF(rect)).toRect(), op)) {
+    } else if (!setClipRectInDeviceCoords(qt_mapFillRect(rect, s->matrix), op)) {
         QPaintEngineEx::clip(rect, op);
         return;
     }
@@ -1469,16 +1416,17 @@ static void fillRect_normalized(const QRect &r, QSpanData *data,
 
         if (data->fillRect && (mode == QPainter::CompositionMode_Source
                                || (mode == QPainter::CompositionMode_SourceOver
-                                   && data->solidColor.isOpaque())))
+                                   && (data->solidColor.spec() != QColor::ExtendedRgb &&
+                                       data->solidColor.alphaF() >= 1.0f))))
         {
-            data->fillRect(data->rasterBuffer, x1, y1, width, height, data->solidColor);
+            data->fillRect(data->rasterBuffer, x1, y1, width, height, data->solidColor.rgba64());
             return;
         }
     }
 
     ProcessSpans blend = isUnclipped ? data->unclipped_blend : data->blend;
 
-    const int nspans = 256;
+    const int nspans = 512;
     QT_FT_Span spans[nspans];
 
     Q_ASSERT(data->blend);
@@ -1633,8 +1581,9 @@ void QRasterPaintEngine::stroke(const QVectorPath &path, const QPen &pen)
             patternLength += pattern.at(i);
 
         if (patternLength > 0) {
-            int n = qFloor(dashOffset / patternLength);
-            dashOffset -= n * patternLength;
+            dashOffset = std::fmod(dashOffset, patternLength);
+            if (dashOffset < 0)
+                dashOffset += patternLength;
             while (dashOffset >= pattern.at(dashIndex)) {
                 dashOffset -= pattern.at(dashIndex);
                 if (++dashIndex >= pattern.size())
@@ -1649,17 +1598,18 @@ void QRasterPaintEngine::stroke(const QVectorPath &path, const QPen &pen)
         const QLineF *lines = reinterpret_cast<const QLineF *>(path.points());
 
         for (int i = 0; i < lineCount; ++i) {
-            if (lines[i].p1() == lines[i].p2()) {
+            const QLineF line = s->matrix.map(lines[i]);
+            if (line.p1() == line.p2()) {
                 if (s->lastPen.capStyle() != Qt::FlatCap) {
                     QPointF p = lines[i].p1();
-                    QLineF line = s->matrix.map(QLineF(QPointF(p.x() - width*0.5, p.y()),
+                    QLineF mappedline = s->matrix.map(QLineF(QPointF(p.x() - width*0.5, p.y()),
                                                        QPointF(p.x() + width*0.5, p.y())));
-                    d->rasterizer->rasterizeLine(line.p1(), line.p2(), width / line.length());
+                    d->rasterizer->rasterizeLine(mappedline.p1(), mappedline.p2(),
+                                                 width / mappedline.length());
                 }
                 continue;
             }
 
-            const QLineF line = s->matrix.map(lines[i]);
             if (qpen_style(s->lastPen) == Qt::SolidLine) {
                 d->rasterizer->rasterizeLine(line.p1(), line.p2(),
                                             width / line.length(),
@@ -1741,7 +1691,7 @@ void QRasterPaintEngine::fill(const QVectorPath &path, const QBrush &brush)
     QRectF cpRect = path.controlPointRect();
     const QRectF pathDeviceRect = s->matrix.mapRect(cpRect);
     // Skip paths that by conservative estimates are completely outside the paint device.
-    if (!pathDeviceRect.intersects(QRectF(d->deviceRect)))
+    if (!pathDeviceRect.intersects(QRectF(d->deviceRect)) || !pathDeviceRect.isValid())
         return;
 
     ProcessSpans blend = d->getBrushFunc(pathDeviceRect, &s->brushData);
@@ -1818,6 +1768,19 @@ void QRasterPaintEngine::fillRect(const QRectF &r, const QBrush &brush)
     fillRect(r, &s->brushData);
 }
 
+static QColor qPremultiplyWithExtraAlpha(const QColor &c, int alpha)
+{
+    if (alpha == 0)
+        return Qt::transparent;
+    if (c.spec() == QColor::ExtendedRgb) {
+        float r, g, b, a;
+        c.getRgbF(&r, &g, &b, &a);
+        a = a * alpha * (1.f / 256.f);
+        return QColor::fromRgbF(r * a, g * a, b * a, a);
+    }
+    return qPremultiply(combineAlpha256(c.rgba64(), alpha));
+}
+
 /*!
     \reimp
 */
@@ -1829,9 +1792,9 @@ void QRasterPaintEngine::fillRect(const QRectF &r, const QColor &color)
     Q_D(QRasterPaintEngine);
     QRasterPaintEngineState *s = state();
 
-    d->solid_color_filler.solidColor = qPremultiply(combineAlpha256(color.rgba64(), s->intOpacity));
+    d->solid_color_filler.solidColor = qPremultiplyWithExtraAlpha(color, s->intOpacity);
 
-    if (d->solid_color_filler.solidColor.isTransparent()
+    if (d->solid_color_filler.solidColor.alphaF() <= 0.0f
         && s->composition_mode == QPainter::CompositionMode_SourceOver) {
         return;
     }
@@ -2292,7 +2255,7 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
             break;
         }
 
-        if (d->solid_color_filler.solidColor.isTransparent() && s->composition_mode == QPainter::CompositionMode_SourceOver)
+        if (d->solid_color_filler.solidColor.alphaF() <= 0.0f && s->composition_mode == QPainter::CompositionMode_SourceOver)
             return;
 
         d->solid_color_filler.clip = d->clip();
@@ -2315,6 +2278,7 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
             || d->rasterBuffer->compositionMode == QPainter::CompositionMode_Source))
     {
         RotationType rotationType = qRotationType(s->matrix);
+        Q_ASSUME(d->rasterBuffer->format < QImage::NImageFormats);
         const QPixelLayout::BPP plBpp = qPixelLayouts[d->rasterBuffer->format].bpp;
 
         if (rotationType != NoRotation && qMemRotateFunctions[plBpp][rotationType] && img.rect().contains(sr.toAlignedRect())) {
@@ -2357,15 +2321,20 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
         QRectF targetBounds = s->matrix.mapRect(r);
         bool exceedsPrecision = r.width() > 0x7fff
                              || r.height() > 0x7fff
+                             || targetBounds.left() < -0x7fff
+                             || targetBounds.top() < -0x7fff
+                             || targetBounds.right() > 0x7fff
+                             || targetBounds.bottom() > 0x7fff
                              || targetBounds.width() > 0x7fff
                              || targetBounds.height() > 0x7fff
                              || s->matrix.m11() >= 512
                              || s->matrix.m22() >= 512;
-
         if (!exceedsPrecision && d->canUseFastImageBlending(d->rasterBuffer->compositionMode, img)) {
             if (s->matrix.type() > QTransform::TxScale) {
                 SrcOverTransformFunc func = qTransformFunctions[d->rasterBuffer->format][img.format()];
-                if (func && (!clip || clip->hasRectClip)) {
+                // The fast transform methods doesn't really work on small targets, see QTBUG-93475
+                // And it can't antialias the edges
+                if (func && (!clip || clip->hasRectClip) && !s->flags.antialiased && targetBounds.width() >= 16 && targetBounds.height() >= 16) {
                     func(d->rasterBuffer->buffer(), d->rasterBuffer->bytesPerLine(), img.bits(),
                          img.bytesPerLine(), r, sr, !clip ? d->deviceRect : clip->clipRect,
                          s->matrix, s->intOpacity);
@@ -2590,6 +2559,8 @@ void QRasterPaintEngine::alphaPenBlt(const void* src, int bpl, int depth, int rx
         return;
 
     QRasterBuffer *rb = d->rasterBuffer.data();
+    if (rb->colorSpace.transferFunction() == QColorSpace::TransferFunction::Linear)
+        useGammaCorrection = false;
 
     const QRect rect(rx, ry, w, h);
     const QClipData *clip = d->clip();
@@ -2629,20 +2600,20 @@ void QRasterPaintEngine::alphaPenBlt(const void* src, int bpl, int depth, int rx
         if (unclipped) {
             if (depth == 1) {
                 if (s->penData.bitmapBlit) {
-                    s->penData.bitmapBlit(rb, rx, ry, s->penData.solidColor,
+                    s->penData.bitmapBlit(rb, rx, ry, s->penData.solidColor.rgba64(),
                                           scanline, w, h, bpl);
                     return;
                 }
             } else if (depth == 8) {
                 if (s->penData.alphamapBlit) {
-                    s->penData.alphamapBlit(rb, rx, ry, s->penData.solidColor,
+                    s->penData.alphamapBlit(rb, rx, ry, s->penData.solidColor.rgba64(),
                                             scanline, w, h, bpl, nullptr, useGammaCorrection);
                     return;
                 }
             } else if (depth == 32) {
                 // (A)RGB Alpha mask where the alpha component is not used.
                 if (s->penData.alphaRGBBlit) {
-                    s->penData.alphaRGBBlit(rb, rx, ry, s->penData.solidColor,
+                    s->penData.alphaRGBBlit(rb, rx, ry, s->penData.solidColor.rgba64(),
                                             (const uint *) scanline, w, h, bpl / 4, nullptr, useGammaCorrection);
                     return;
                 }
@@ -2671,10 +2642,10 @@ void QRasterPaintEngine::alphaPenBlt(const void* src, int bpl, int depth, int rx
                 ry = ny;
             }
             if (depth == 8)
-                s->penData.alphamapBlit(rb, rx, ry, s->penData.solidColor,
+                s->penData.alphamapBlit(rb, rx, ry, s->penData.solidColor.rgba64(),
                                         scanline, w, h, bpl, clip, useGammaCorrection);
             else if (depth == 32)
-                s->penData.alphaRGBBlit(rb, rx, ry, s->penData.solidColor,
+                s->penData.alphaRGBBlit(rb, rx, ry, s->penData.solidColor.rgba64(),
                                         (const uint *) scanline, w, h, bpl / 4, clip, useGammaCorrection);
             return;
         }
@@ -2699,7 +2670,7 @@ void QRasterPaintEngine::alphaPenBlt(const void* src, int bpl, int depth, int rx
     if (w <= 0 || h <= 0)
         return;
 
-    const int NSPANS = 256;
+    const int NSPANS = 512;
     QSpan spans[NSPANS];
     int current = 0;
 
@@ -2812,6 +2783,9 @@ bool QRasterPaintEngine::drawCachedGlyphs(int numGlyphs, const glyph_t *glyphs,
     Q_D(QRasterPaintEngine);
     QRasterPaintEngineState *s = state();
 
+    bool verticalSubPixelPositions = fontEngine->supportsVerticalSubPixelPositions()
+            && (s->renderHints & QPainter::VerticalSubpixelPositioning) != 0;
+
     if (fontEngine->hasInternalCaching()) {
         QFontEngine::GlyphFormat neededFormat =
             painter()->device()->devType() == QInternal::Widget
@@ -2822,7 +2796,9 @@ bool QRasterPaintEngine::drawCachedGlyphs(int numGlyphs, const glyph_t *glyphs,
             neededFormat = QFontEngine::Format_Mono;
 
         for (int i = 0; i < numGlyphs; i++) {
-            QFixed spp = fontEngine->subPixelPositionForX(positions[i].x);
+            QFixedPoint spp = fontEngine->subPixelPositionFor(positions[i]);
+            if (!verticalSubPixelPositions)
+                spp.y = 0;
 
             const QFontEngine::Glyph *alphaMap = fontEngine->glyphData(glyphs[i], spp, neededFormat, s->matrix);
             if (!alphaMap)
@@ -2847,9 +2823,13 @@ bool QRasterPaintEngine::drawCachedGlyphs(int numGlyphs, const glyph_t *glyphs,
                 Q_UNREACHABLE();
             };
 
+            QFixed y = verticalSubPixelPositions
+                    ? qFloor(positions[i].y)
+                    : qRound(positions[i].y);
+
             alphaPenBlt(alphaMap->data, bytesPerLine, depth,
                         qFloor(positions[i].x) + alphaMap->x,
-                        qRound(positions[i].y) - alphaMap->y,
+                        qFloor(y) - alphaMap->y,
                         alphaMap->width, alphaMap->height,
                         fontEngine->expectsGammaCorrectedBlending());
         }
@@ -2858,13 +2838,13 @@ bool QRasterPaintEngine::drawCachedGlyphs(int numGlyphs, const glyph_t *glyphs,
         QFontEngine::GlyphFormat glyphFormat = fontEngine->glyphFormat != QFontEngine::Format_None ? fontEngine->glyphFormat : d->glyphCacheFormat;
 
         QImageTextureGlyphCache *cache =
-            static_cast<QImageTextureGlyphCache *>(fontEngine->glyphCache(nullptr, glyphFormat, s->matrix, QColor(s->penData.solidColor)));
+            static_cast<QImageTextureGlyphCache *>(fontEngine->glyphCache(nullptr, glyphFormat, s->matrix, s->penData.solidColor));
         if (!cache) {
-            cache = new QImageTextureGlyphCache(glyphFormat, s->matrix, QColor(s->penData.solidColor));
+            cache = new QImageTextureGlyphCache(glyphFormat, s->matrix, s->penData.solidColor);
             fontEngine->setGlyphCache(nullptr, cache);
         }
 
-        cache->populate(fontEngine, numGlyphs, glyphs, positions);
+        cache->populate(fontEngine, numGlyphs, glyphs, positions, s->renderHints);
         cache->fillInPendingGlyphs();
 
         const QImage &image = cache->image();
@@ -2881,15 +2861,20 @@ bool QRasterPaintEngine::drawCachedGlyphs(int numGlyphs, const glyph_t *glyphs,
         int margin = fontEngine->glyphMargin(glyphFormat);
         const uchar *bits = image.bits();
         for (int i=0; i<numGlyphs; ++i) {
+            QFixedPoint subPixelPosition = fontEngine->subPixelPositionFor(positions[i]);
+            if (!verticalSubPixelPositions)
+                subPixelPosition.y = 0;
 
-            QFixed subPixelPosition = fontEngine->subPixelPositionForX(positions[i].x);
             QTextureGlyphCache::GlyphAndSubPixelPosition glyph(glyphs[i], subPixelPosition);
             const QTextureGlyphCache::Coord &c = cache->coords[glyph];
             if (c.isNull())
                 continue;
 
             int x = qFloor(positions[i].x) + c.baseLineX - margin;
-            int y = qRound(positions[i].y) - c.baseLineY - margin;
+            int y = (verticalSubPixelPositions
+                        ? qFloor(positions[i].y)
+                        : qRound(positions[i].y));
+            y -= c.baseLineY + margin;
 
             // printf("drawing [%d %d %d %d] baseline [%d %d], glyph: %d, to: %d %d, pos: %d %d\n",
             //        c.x, c.y,
@@ -2990,7 +2975,7 @@ inline bool QRasterPaintEnginePrivate::isUnclipped(const QRectF &rect,
                                                    int penWidth) const
 {
     const QRectF norm = rect.normalized();
-    if (norm.left() < INT_MIN || norm.top() < INT_MIN
+    if (norm.left() <= INT_MIN || norm.top() <= INT_MIN
             || norm.right() > INT_MAX || norm.bottom() > INT_MAX
             || norm.width() > INT_MAX || norm.height() > INT_MAX)
         return false;
@@ -3024,13 +3009,19 @@ QRasterPaintEnginePrivate::getPenFunc(const QRectF &rect,
     return isUnclipped(rect, penWidth) ? data->unclipped_blend : data->blend;
 }
 
-static QPair<int, int> visibleGlyphRange(const QRectF &clip, QFontEngine *fontEngine,
-                                         glyph_t *glyphs, QFixedPoint *positions, int numGlyphs)
+struct VisibleGlyphRange
 {
-    QFixed clipLeft = QFixed::fromReal(clip.left());
-    QFixed clipRight = QFixed::fromReal(clip.right());
-    QFixed clipTop = QFixed::fromReal(clip.top());
-    QFixed clipBottom = QFixed::fromReal(clip.bottom());
+    int begin;
+    int end;
+};
+
+static VisibleGlyphRange visibleGlyphRange(const QRectF &clip, QFontEngine *fontEngine,
+                                           glyph_t *glyphs, QFixedPoint *positions, int numGlyphs)
+{
+    QFixed clipLeft = QFixed::fromReal(clip.left() - 1);
+    QFixed clipRight = QFixed::fromReal(clip.right() + 1);
+    QFixed clipTop = QFixed::fromReal(clip.top() - 1);
+    QFixed clipBottom = QFixed::fromReal(clip.bottom() + 1);
 
     int first = 0;
     while (first < numGlyphs) {
@@ -3054,7 +3045,7 @@ static QPair<int, int> visibleGlyphRange(const QRectF &clip, QFontEngine *fontEn
             break;
         --last;
     }
-    return QPair<int, int>(first, last + 1);
+    return {first, last + 1};
 }
 
 /*!
@@ -3080,13 +3071,13 @@ void QRasterPaintEngine::drawStaticTextItem(QStaticTextItem *textItem)
         if (!invertible)
             return;
 
-        QPair<int, int> range = visibleGlyphRange(invMat.mapRect(clipBoundingRect()),
-                                                  textItem->fontEngine(), textItem->glyphs,
-                                                  textItem->glyphPositions, textItem->numGlyphs);
+        const auto range = visibleGlyphRange(invMat.mapRect(clipBoundingRect()),
+                                             textItem->fontEngine(), textItem->glyphs,
+                                             textItem->glyphPositions, textItem->numGlyphs);
         QStaticTextItem copy = *textItem;
-        copy.glyphs += range.first;
-        copy.glyphPositions += range.first;
-        copy.numGlyphs = range.second - range.first;
+        copy.glyphs += range.begin;
+        copy.glyphPositions += range.begin;
+        copy.numGlyphs = range.end - range.begin;
         QPaintEngineEx::drawStaticTextItem(&copy);
     } else {
         QPaintEngineEx::drawStaticTextItem(textItem);
@@ -3135,20 +3126,20 @@ void QRasterPaintEngine::drawTextItem(const QPointF &p, const QTextItem &textIte
 
         ti.fontEngine->getGlyphPositions(ti.glyphs, QTransform::fromTranslate(p.x(), p.y()),
                                          ti.flags, glyphs, positions);
-        QPair<int, int> range = visibleGlyphRange(invMat.mapRect(clipBoundingRect()),
-                                                  ti.fontEngine, glyphs.data(), positions.data(),
-                                                  glyphs.size());
+        const auto range = visibleGlyphRange(invMat.mapRect(clipBoundingRect()),
+                                             ti.fontEngine, glyphs.data(), positions.data(),
+                                             glyphs.size());
 
-        if (range.first >= range.second)
+        if (range.begin >= range.end)
             return;
 
         QStaticTextItem staticTextItem;
         staticTextItem.color = s->pen.color();
         staticTextItem.font = s->font;
         staticTextItem.setFontEngine(ti.fontEngine);
-        staticTextItem.numGlyphs = range.second - range.first;
-        staticTextItem.glyphs = glyphs.data() + range.first;
-        staticTextItem.glyphPositions = positions.data() + range.first;
+        staticTextItem.numGlyphs = range.end - range.begin;
+        staticTextItem.glyphs = glyphs.data() + range.begin;
+        staticTextItem.glyphPositions = positions.data() + range.begin;
         QPaintEngineEx::drawStaticTextItem(&staticTextItem);
     } else {
         QPaintEngineEx::drawTextItem(p, ti);
@@ -3243,6 +3234,11 @@ void QRasterPaintEnginePrivate::rasterizeLine_dashed(QLineF line,
 
     qreal length = line.length();
     Q_ASSERT(length > 0);
+    if (length / (patternLength * width) > QDashStroker::repetitionLimit()) {
+        rasterizer->rasterizeLine(line.p1(), line.p2(), width / length, squareCap);
+        return;
+    }
+
     while (length > 0) {
         const bool rasterize = *inDash;
         qreal dash = (pattern.at(*dashIndex) - *dashOffset) * width;
@@ -3404,7 +3400,7 @@ void QRasterPaintEngine::drawBitmap(const QPointF &pos, const QImage &image, QSp
 
     Q_ASSERT(image.depth() == 1);
 
-    const int spanCount = 256;
+    const int spanCount = 512;
     QT_FT_Span spans[spanCount];
     int n = 0;
 
@@ -3508,7 +3504,7 @@ QRasterPaintEngine::ClipType QRasterPaintEngine::clipType() const
     \internal
     Returns the bounding rect of the currently set clip.
 */
-QRect QRasterPaintEngine::clipBoundingRect() const
+QRectF QRasterPaintEngine::clipBoundingRect() const
 {
     Q_D(const QRasterPaintEngine);
 
@@ -3520,7 +3516,7 @@ QRect QRasterPaintEngine::clipBoundingRect() const
     if (clip->hasRectClip)
         return clip->clipRect;
 
-    return QRect(clip->xmin, clip->ymin, clip->xmax - clip->xmin, clip->ymax - clip->ymin);
+    return QRectF(clip->xmin, clip->ymin, clip->xmax - clip->xmin, clip->ymax - clip->ymin);
 }
 
 void QRasterPaintEnginePrivate::initializeRasterizer(QSpanData *data)
@@ -3673,6 +3669,18 @@ void QRasterPaintEnginePrivate::rasterize(QT_FT_Outline *outline,
     free(rasterPoolOnHeap);
 }
 
+void QRasterPaintEnginePrivate::updateClipping()
+{
+    Q_Q(QRasterPaintEngine);
+    QRasterPaintEngineState *s = q->state();
+
+    if (!s->clipEnabled)
+        return;
+
+    qrasterpaintengine_state_setNoClip(s);
+    replayClipOperations();
+}
+
 void QRasterPaintEnginePrivate::recalculateFastImages()
 {
     Q_Q(QRasterPaintEngine);
@@ -3731,6 +3739,8 @@ QImage QRasterBuffer::colorizeBitmap(const QImage &image, const QColor &color)
 
     const QImage sourceImage = image.convertToFormat(QImage::Format_MonoLSB);
     QImage dest = QImage(sourceImage.size(), QImage::Format_ARGB32_Premultiplied);
+    if (sourceImage.isNull() || dest.isNull())
+        return image; // we must have run out of memory
 
     QRgb fg = qPremultiply(color.rgba());
     QRgb bg = 0;
@@ -3740,8 +3750,6 @@ QImage QRasterBuffer::colorizeBitmap(const QImage &image, const QColor &color)
     for (int y=0; y<height; ++y) {
         const uchar *source = sourceImage.constScanLine(y);
         QRgb *target = reinterpret_cast<QRgb *>(dest.scanLine(y));
-        if (!source || !target)
-            QT_THROW(std::bad_alloc()); // we must have run out of memory
         for (int x=0; x < width; ++x)
             target[x] = (source[x>>3] >> (x&7)) & 1 ? fg : bg;
     }
@@ -3769,6 +3777,7 @@ QImage::Format QRasterBuffer::prepare(QImage *image)
     bytes_per_line = image->bytesPerLine();
 
     format = image->format();
+    colorSpace = image->colorSpace();
     if (image->depth() == 1 && image->colorTable().size() == 2) {
         monoDestinationWithClut = true;
         const QList<QRgb> colorTable = image->colorTable();
@@ -3812,6 +3821,7 @@ void QClipData::initialize()
     Q_CHECK_PTR(m_clipLines);
     QT_TRY {
         allocated = clipSpanHeight;
+        count = 0;
         QT_TRY {
             if (hasRegionClip) {
                 const auto rects = clipRegion.begin();
@@ -3823,7 +3833,6 @@ void QClipData::initialize()
 
                 int y = 0;
                 int firstInBand = 0;
-                count = 0;
                 while (firstInBand < numRects) {
                     const int currMinY = rects[firstInBand].y();
                     const int currMaxY = currMinY + rects[firstInBand].height();
@@ -3881,7 +3890,6 @@ void QClipData::initialize()
                 }
 
                 const int len = clipRect.width();
-                count = 0;
                 while (y < ymax) {
                     QSpan *span = m_spans + count;
                     span->x = xmin;
@@ -4092,7 +4100,7 @@ static void qt_span_fill_clipped(int spanCount, const QSpan *spans, void *userDa
 
     Q_ASSERT(fillData->blend && fillData->unclipped_blend);
 
-    const int NSPANS = 256;
+    const int NSPANS = 512;
     QSpan cspans[NSPANS];
     int currentClip = 0;
     const QSpan *end = spans + spanCount;
@@ -4270,7 +4278,7 @@ protected:
 void QGradientCache::generateGradientColorTable(const QGradient& gradient, QRgba64 *colorTable, int size, int opacity) const
 {
     const QGradientStops stops = gradient.stops();
-    int stopCount = stops.count();
+    int stopCount = stops.size();
     Q_ASSERT(stopCount > 0);
 
     bool colorInterpolation = (gradient.interpolationMode() == QGradient::ColorInterpolation);
@@ -4476,7 +4484,8 @@ void QSpanData::init(QRasterBuffer *rb, const QRasterPaintEngine *pe)
 
 Q_GUI_EXPORT extern QImage qt_imageForBrush(int brushStyle, bool invert);
 
-void QSpanData::setup(const QBrush &brush, int alpha, QPainter::CompositionMode compositionMode)
+void QSpanData::setup(const QBrush &brush, int alpha, QPainter::CompositionMode compositionMode,
+                      bool isCosmetic)
 {
     Qt::BrushStyle brushStyle = qbrush_style(brush);
     cachedGradient.reset();
@@ -4484,8 +4493,8 @@ void QSpanData::setup(const QBrush &brush, int alpha, QPainter::CompositionMode 
     case Qt::SolidPattern: {
         type = Solid;
         QColor c = qbrush_color(brush);
-        solidColor = qPremultiply(combineAlpha256(c.rgba64(), alpha));
-        if (solidColor.isTransparent() && compositionMode == QPainter::CompositionMode_SourceOver)
+        solidColor = qPremultiplyWithExtraAlpha(c, alpha);
+        if (solidColor.alphaF() <= 0.0f && compositionMode == QPainter::CompositionMode_SourceOver)
             type = None;
         break;
     }
@@ -4498,7 +4507,7 @@ void QSpanData::setup(const QBrush &brush, int alpha, QPainter::CompositionMode 
 
             auto cacheInfo = qt_gradient_cache()->getBuffer(*g, alpha);
             gradient.colorTable32 = cacheInfo->buffer32;
-#if QT_CONFIG(raster_64bit)
+#if QT_CONFIG(raster_64bit) || QT_CONFIG(raster_fp)
             gradient.colorTable64 = cacheInfo->buffer64;
 #endif
             cachedGradient = std::move(cacheInfo);
@@ -4522,7 +4531,7 @@ void QSpanData::setup(const QBrush &brush, int alpha, QPainter::CompositionMode 
 
             auto cacheInfo = qt_gradient_cache()->getBuffer(*g, alpha);
             gradient.colorTable32 = cacheInfo->buffer32;
-#if QT_CONFIG(raster_64bit)
+#if QT_CONFIG(raster_64bit) || QT_CONFIG(raster_fp)
             gradient.colorTable64 = cacheInfo->buffer64;
 #endif
             cachedGradient = std::move(cacheInfo);
@@ -4550,7 +4559,7 @@ void QSpanData::setup(const QBrush &brush, int alpha, QPainter::CompositionMode 
 
             auto cacheInfo = qt_gradient_cache()->getBuffer(*g, alpha);
             gradient.colorTable32 = cacheInfo->buffer32;
-#if QT_CONFIG(raster_64bit)
+#if QT_CONFIG(raster_64bit) || QT_CONFIG(raster_fp)
             gradient.colorTable64 = cacheInfo->buffer64;
 #endif
             cachedGradient = std::move(cacheInfo);
@@ -4583,7 +4592,7 @@ void QSpanData::setup(const QBrush &brush, int alpha, QPainter::CompositionMode 
         if (!tempImage)
             tempImage = new QImage();
         *tempImage = rasterBuffer->colorizeBitmap(qt_imageForBrush(brushStyle, true), brush.color());
-        initTexture(tempImage, alpha, QTextureData::Pattern);
+        initTexture(tempImage, alpha, isCosmetic ? QTextureData::Pattern : QTextureData::Tiled);
         break;
     case Qt::TexturePattern:
         type = Texture;

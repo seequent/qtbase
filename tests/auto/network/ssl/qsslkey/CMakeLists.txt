@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qsslkey.pro.
 
 #####################################################################
@@ -17,7 +20,7 @@ list(APPEND test_data ${test_data_glob})
 qt_internal_add_test(tst_qsslkey
     SOURCES
         tst_qsslkey.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Network
     TESTDATA ${test_data}
 )
@@ -26,7 +29,7 @@ qt_internal_add_test(tst_qsslkey
 #####################################################################
 
 qt_internal_extend_target(tst_qsslkey CONDITION QT_FEATURE_private_tests
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
 )

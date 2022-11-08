@@ -1,33 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2020 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
-
-#include <emulationdetector.h>
+// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2022 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QTestEventLoop>
@@ -42,12 +15,15 @@
 #include <QtCore/QRegularExpression>
 #include <QtCore/QDebug>
 #include <QtCore/QMetaType>
+#include <QtCore/QScopeGuard>
 #include <QtNetwork/QHostInfo>
 
 #include <qplatformdefs.h>
 #ifdef Q_OS_UNIX
 #  include <private/qcore_unix_p.h>
 #endif
+
+#include <QtTest/private/qemulationdetector_p.h>
 
 #include <stdlib.h>
 
@@ -120,6 +96,7 @@ private slots:
     void discardUnwantedOutput();
     void setWorkingDirectory();
     void setNonExistentWorkingDirectory();
+    void detachedSetNonExistentWorkingDirectory();
 
     void exitStatus_data();
     void exitStatus();
@@ -151,6 +128,8 @@ private slots:
     void startStopStartStopBuffers();
     void processEventsInAReadyReadSlot_data();
     void processEventsInAReadyReadSlot();
+    void startFromCurrentWorkingDir_data();
+    void startFromCurrentWorkingDir();
 
     // keep these at the end, since they use lots of processes and sometimes
     // caused obscure failures to occur in tests that followed them (esp. on the Mac)
@@ -265,7 +244,7 @@ void tst_QProcess::simpleStart()
 
     process.reset();
 
-    QCOMPARE(spy.count(), 3);
+    QCOMPARE(spy.size(), 3);
     QCOMPARE(qvariant_cast<QProcess::ProcessState>(spy.at(0).at(0)), QProcess::Starting);
     QCOMPARE(qvariant_cast<QProcess::ProcessState>(spy.at(1).at(0)), QProcess::Running);
     QCOMPARE(qvariant_cast<QProcess::ProcessState>(spy.at(2).at(0)), QProcess::NotRunning);
@@ -376,9 +355,7 @@ void tst_QProcess::readFromProcess()
 {
     QProcess *process = qobject_cast<QProcess *>(sender());
     QVERIFY(process);
-    int lines = 0;
     while (process->canReadLine()) {
-        ++lines;
         process->readLine();
     }
 }
@@ -402,10 +379,10 @@ void tst_QProcess::crashTest()
 
     QVERIFY(process->waitForFinished(30000));
 
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
     QCOMPARE(*static_cast<const QProcess::ProcessError *>(spy.at(0).at(0).constData()), QProcess::Crashed);
 
-    QCOMPARE(spy2.count(), 1);
+    QCOMPARE(spy2.size(), 1);
     QCOMPARE(*static_cast<const QProcess::ExitStatus *>(spy2.at(0).at(1).constData()), QProcess::CrashExit);
 
     QCOMPARE(process->exitStatus(), QProcess::CrashExit);
@@ -413,7 +390,7 @@ void tst_QProcess::crashTest()
     // delete process;
     process.reset();
 
-    QCOMPARE(stateSpy.count(), 3);
+    QCOMPARE(stateSpy.size(), 3);
     QCOMPARE(qvariant_cast<QProcess::ProcessState>(stateSpy.at(0).at(0)), QProcess::Starting);
     QCOMPARE(qvariant_cast<QProcess::ProcessState>(stateSpy.at(1).at(0)), QProcess::Running);
     QCOMPARE(qvariant_cast<QProcess::ProcessState>(stateSpy.at(2).at(0)), QProcess::NotRunning);
@@ -440,10 +417,10 @@ void tst_QProcess::crashTest2()
     if (QTestEventLoop::instance().timeout())
         QFAIL("Failed to detect crash : operation timed out");
 
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
     QCOMPARE(*static_cast<const QProcess::ProcessError *>(spy.at(0).at(0).constData()), QProcess::Crashed);
 
-    QCOMPARE(spy2.count(), 1);
+    QCOMPARE(spy2.size(), 1);
     QCOMPARE(*static_cast<const QProcess::ExitStatus *>(spy2.at(0).at(1).constData()), QProcess::CrashExit);
 
     QCOMPARE(process.exitStatus(), QProcess::CrashExit);
@@ -549,9 +526,9 @@ void tst_QProcess::echoTest2()
             break;
     }
 
-    QVERIFY(spy0.count() > 0);
-    QVERIFY(spy1.count() > 0);
-    QVERIFY(spy2.count() > 0);
+    QVERIFY(spy0.size() > 0);
+    QVERIFY(spy1.size() > 0);
+    QVERIFY(spy2.size() > 0);
 
     QCOMPARE(process.readAllStandardOutput(), QByteArray("Hello"));
     QCOMPARE(process.readAllStandardError(), QByteArray("Hello"));
@@ -652,8 +629,8 @@ void tst_QProcess::exitStatus()
     QFETCH(QStringList, processList);
     QFETCH(QList<QProcess::ExitStatus>, exitStatus);
 
-    QCOMPARE(exitStatus.count(), processList.count());
-    for (int i = 0; i < processList.count(); ++i) {
+    QCOMPARE(exitStatus.size(), processList.size());
+    for (int i = 0; i < processList.size(); ++i) {
         process.start(processList.at(i));
         QVERIFY(process.waitForStarted(5000));
         QVERIFY(process.waitForFinished(30000));
@@ -706,7 +683,7 @@ void tst_QProcess::readTimeoutAndThenCrash()
     QVERIFY(process.waitForFinished(5000));
     QCOMPARE(process.state(), QProcess::NotRunning);
 
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
     QCOMPARE(*static_cast<const QProcess::ProcessError *>(spy.at(0).at(0).constData()), QProcess::Crashed);
 }
 
@@ -883,7 +860,7 @@ void tst_QProcess::emitReadyReadOnlyWhenNewDataArrives()
 
     proc.start("testProcessEcho/testProcessEcho");
 
-    QCOMPARE(spy.count(), 0);
+    QCOMPARE(spy.size(), 0);
 
     proc.write("A");
 
@@ -891,7 +868,7 @@ void tst_QProcess::emitReadyReadOnlyWhenNewDataArrives()
     if (QTestEventLoop::instance().timeout())
         QFAIL("Operation timed out");
 
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
 
     QTestEventLoop::instance().enterLoop(1);
     QVERIFY(QTestEventLoop::instance().timeout());
@@ -1080,6 +1057,16 @@ void tst_QProcess::mergedChannels()
 
     QVERIFY(process.waitForStarted(5000));
 
+    {
+        QCOMPARE(process.write("abc"), qlonglong(3));
+        while (process.bytesAvailable() < 6)
+            QVERIFY(process.waitForReadyRead(5000));
+        QCOMPARE(process.readAllStandardOutput(), QByteArray("aabbcc"));
+        QTest::ignoreMessage(QtWarningMsg,
+            "QProcess::readAllStandardError: Called with MergedChannels");
+        QCOMPARE(process.readAllStandardError(), QByteArray());
+    }
+
     for (int i = 0; i < 100; ++i) {
         QCOMPARE(process.write("abc"), qlonglong(3));
         while (process.bytesAvailable() < 6)
@@ -1146,9 +1133,8 @@ void tst_QProcess::forwardedChannels()
     QVERIFY(process.waitForStarted(5000));
     QCOMPARE(process.write("input"), 5);
     process.closeWriteChannel();
-    QVERIFY(process.waitForFinished(5000));
+    QVERIFY(process.waitForFinished(40000));    // testForwarding has a 30s wait
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
-    QCOMPARE(process.exitCode(), 0);
     const char *err;
     switch (process.exitCode()) {
     case 0: err = "ok"; break;
@@ -1237,8 +1223,13 @@ void tst_QProcess::processInAThread()
 
 void tst_QProcess::processesInMultipleThreads()
 {
-    if (EmulationDetector::isRunningArmOnX86())
-        QSKIP("Flakily hangs in QEMU. QTBUG-67760");
+    if (QTestPrivate::isRunningArmOnX86())
+        QSKIP("Test is too slow to run on emulator");
+
+#if defined(Q_OS_QNX)
+    QSKIP("QNX: Large amount of threads is unstable and do not finish in given time");
+#endif
+
     for (int i = 0; i < 10; ++i) {
         // run from 1 to 10 threads, but run at least some tests
         // with more threads than the ideal
@@ -1247,17 +1238,15 @@ void tst_QProcess::processesInMultipleThreads()
             threadCount = qMax(threadCount, QThread::idealThreadCount() + 2);
 
         QList<TestThread *> threads(threadCount);
+        QScopeGuard cleanup([&threads]() { qDeleteAll(threads); });
         for (int j = 0; j < threadCount; ++j)
             threads[j] = new TestThread;
         for (int j = 0; j < threadCount; ++j)
             threads[j]->start();
-        for (int j = 0; j < threadCount; ++j) {
+        for (int j = 0; j < threadCount; ++j)
             QVERIFY(threads[j]->wait(10000));
-        }
-        for (int j = 0; j < threadCount; ++j) {
+        for (int j = 0; j < threadCount; ++j)
             QCOMPARE(threads[j]->code(), 0);
-        }
-        qDeleteAll(threads);
     }
 }
 
@@ -1291,13 +1280,13 @@ void tst_QProcess::waitForReadyReadInAReadyReadSlot()
     QTestEventLoop::instance().enterLoop(30);
     QVERIFY(!QTestEventLoop::instance().timeout());
 
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
 
     process.disconnect();
     QVERIFY(process.waitForFinished(5000));
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
     QCOMPARE(process.exitCode(), 0);
-    QVERIFY(process.bytesAvailable() > bytesAvailable);
+    QVERIFY(process.bytesAvailable() >= bytesAvailable);
 }
 
 void tst_QProcess::waitForReadyReadInAReadyReadSlotSlot()
@@ -1307,6 +1296,8 @@ void tst_QProcess::waitForReadyReadInAReadyReadSlotSlot()
     bytesAvailable = process->bytesAvailable();
     process->write("bar", 4);
     QVERIFY(process->waitForReadyRead(5000));
+    QVERIFY(process->bytesAvailable() > bytesAvailable);
+    bytesAvailable = process->bytesAvailable();
     QTestEventLoop::instance().exitLoop();
 }
 
@@ -1325,7 +1316,7 @@ void tst_QProcess::waitForBytesWrittenInABytesWrittenSlot()
     QTestEventLoop::instance().enterLoop(30);
     QVERIFY(!QTestEventLoop::instance().timeout());
 
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
     process.write("", 1);
     process.disconnect();
     QVERIFY(process.waitForFinished());
@@ -1515,7 +1506,7 @@ void tst_QProcess::failToStart()
 
     for (int j = 0; j < 8; ++j) {
         for (int i = 0; i < attempts; ++i) {
-            QCOMPARE(errorSpy.count(), j * attempts + i);
+            QCOMPARE(errorSpy.size(), j * attempts + i);
             process.start("/blurp");
 
             switch (j) {
@@ -1539,12 +1530,12 @@ void tst_QProcess::failToStart()
             }
 
             QCOMPARE(process.error(), QProcess::FailedToStart);
-            QCOMPARE(errorSpy.count(), j * attempts + i + 1);
-            QCOMPARE(finishedSpy.count(), 0);
+            QCOMPARE(errorSpy.size(), j * attempts + i + 1);
+            QCOMPARE(finishedSpy.size(), 0);
 
             int it = j * attempts + i + 1;
 
-            QCOMPARE(stateSpy.count(), it * 2);
+            QCOMPARE(stateSpy.size(), it * 2);
             QCOMPARE(qvariant_cast<QProcess::ProcessState>(stateSpy.at(it * 2 - 2).at(0)), QProcess::Starting);
             QCOMPARE(qvariant_cast<QProcess::ProcessState>(stateSpy.at(it * 2 - 1).at(0)), QProcess::NotRunning);
         }
@@ -1568,8 +1559,8 @@ void tst_QProcess::failToStartWithWait()
         process.waitForStarted();
 
         QCOMPARE(process.error(), QProcess::FailedToStart);
-        QCOMPARE(errorSpy.count(), i + 1);
-        QCOMPARE(finishedSpy.count(), 0);
+        QCOMPARE(errorSpy.size(), i + 1);
+        QCOMPARE(finishedSpy.size(), 0);
     }
 }
 
@@ -1595,8 +1586,8 @@ void tst_QProcess::failToStartWithEventLoop()
         loop.exec();
 
         QCOMPARE(process.error(), QProcess::FailedToStart);
-        QCOMPARE(errorSpy.count(), i + 1);
-        QCOMPARE(finishedSpy.count(), 0);
+        QCOMPARE(errorSpy.size(), i + 1);
+        QCOMPARE(finishedSpy.size(), 0);
     }
 }
 
@@ -1628,7 +1619,7 @@ void tst_QProcess::failToStartEmptyArgs()
     };
 
     QVERIFY(!process.waitForStarted());
-    QCOMPARE(errorSpy.count(), 1);
+    QCOMPARE(errorSpy.size(), 1);
     QCOMPARE(process.error(), QProcess::FailedToStart);
 }
 
@@ -1867,9 +1858,9 @@ void tst_QProcess::waitForReadyReadForNonexistantProcess()
     QVERIFY(!process.waitForReadyRead()); // used to crash
     process.start("doesntexist");
     QVERIFY(!process.waitForReadyRead());
-    QCOMPARE(errorSpy.count(), 1);
+    QCOMPARE(errorSpy.size(), 1);
     QCOMPARE(errorSpy.at(0).at(0).toInt(), 0);
-    QCOMPARE(finishedSpy.count(), 0);
+    QCOMPARE(finishedSpy.size(), 0);
 }
 
 void tst_QProcess::setStandardInputFile()
@@ -2263,9 +2254,26 @@ void tst_QProcess::setNonExistentWorkingDirectory()
     QCOMPARE(int(process.error()), int(QProcess::FailedToStart));
 
 #ifdef Q_OS_UNIX
-#  ifdef QPROCESS_USE_SPAWN
-    QEXPECT_FAIL("", "QProcess cannot detect failure to start when using posix_spawn()", Continue);
-#  endif
+    QVERIFY2(process.errorString().startsWith("chdir:"), process.errorString().toLocal8Bit());
+#endif
+}
+
+void tst_QProcess::detachedSetNonExistentWorkingDirectory()
+{
+    QProcess process;
+    process.setWorkingDirectory("this/directory/should/not/exist/for/sure");
+
+    // use absolute path because on Windows, the executable is relative to the parent's CWD
+    // while on Unix with fork it's relative to the child's (with posix_spawn, it could be either).
+    process.setProgram(QFileInfo("testSetWorkingDirectory/testSetWorkingDirectory").absoluteFilePath());
+
+    qint64 pid = -1;
+    QVERIFY(!process.startDetached(&pid));
+    QCOMPARE(pid, -1);
+    QCOMPARE(process.error(), QProcess::FailedToStart);
+    QVERIFY(process.errorString() != "Unknown error");
+
+#ifdef Q_OS_UNIX
     QVERIFY2(process.errorString().startsWith("chdir:"), process.errorString().toLocal8Bit());
 #endif
 }
@@ -2307,7 +2315,7 @@ void tst_QProcess::invalidProgramString()
 
     process.start(programString);
     QCOMPARE(process.error(), QProcess::FailedToStart);
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
 
     QVERIFY(!QProcess::startDetached(programString));
 }
@@ -2326,8 +2334,8 @@ void tst_QProcess::onlyOneStartedSignal()
     process.start("testProcessNormal/testProcessNormal");
     QVERIFY(process.waitForStarted(5000));
     QVERIFY(process.waitForFinished(5000));
-    QCOMPARE(spyStarted.count(), 1);
-    QCOMPARE(spyFinished.count(), 1);
+    QCOMPARE(spyStarted.size(), 1);
+    QCOMPARE(spyFinished.size(), 1);
 
     spyStarted.clear();
     spyFinished.clear();
@@ -2336,8 +2344,8 @@ void tst_QProcess::onlyOneStartedSignal()
     QVERIFY(process.waitForFinished(5000));
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
     QCOMPARE(process.exitCode(), 0);
-    QCOMPARE(spyStarted.count(), 1);
-    QCOMPARE(spyFinished.count(), 1);
+    QCOMPARE(spyStarted.size(), 1);
+    QCOMPARE(spyFinished.size(), 1);
 }
 
 class BlockOnReadStdOut : public QObject
@@ -2504,6 +2512,95 @@ void tst_QProcess::processEventsInAReadyReadSlot()
         QVERIFY(process.waitForReadyRead());
     if (process.state() == QProcess::Running)
         QVERIFY(process.waitForFinished());
+}
+
+enum class ChdirMode {
+    None = 0,
+    InParent,
+    InChild
+};
+Q_DECLARE_METATYPE(ChdirMode)
+
+void tst_QProcess::startFromCurrentWorkingDir_data()
+{
+    qRegisterMetaType<ChdirMode>();
+    QTest::addColumn<QString>("programPrefix");
+    QTest::addColumn<ChdirMode>("chdirMode");
+    QTest::addColumn<bool>("success");
+
+    constexpr bool IsWindows = true
+#ifdef Q_OS_UNIX
+            && false
+#endif
+            ;
+
+    // baseline: trying to execute the directory, this can't possibly succeed!
+    QTest::newRow("plain-same-cwd") << QString() << ChdirMode::None << false;
+
+    // cross-platform behavior: neither OS searches the setWorkingDirectory()
+    // dir without "./"
+    QTest::newRow("plain-child-chdir") << QString() << ChdirMode::InChild << false;
+
+    // cross-platform behavior: both OSes search the parent's CWD with "./"
+    QTest::newRow("prefixed-parent-chdir") << "./" << ChdirMode::InParent << true;
+
+    // opposite behaviors: Windows searches the parent's CWD and Unix searches
+    // the child's with "./"
+    QTest::newRow("prefixed-child-chdir") << "./" << ChdirMode::InChild << !IsWindows;
+
+    // Windows searches the parent's CWD without "./"
+    QTest::newRow("plain-parent-chdir") << QString() << ChdirMode::InParent << IsWindows;
+}
+
+void tst_QProcess::startFromCurrentWorkingDir()
+{
+    QFETCH(QString, programPrefix);
+    QFETCH(ChdirMode, chdirMode);
+    QFETCH(bool, success);
+
+    QProcess process;
+    qRegisterMetaType<QProcess::ProcessError>();
+    QSignalSpy errorSpy(&process, &QProcess::errorOccurred);
+    QVERIFY(errorSpy.isValid());
+
+    // both the dir name and the executable name
+    const QString target = QStringLiteral("testProcessNormal");
+    process.setProgram(programPrefix + target);
+
+#ifdef Q_OS_UNIX
+    // Reset PATH, to be sure it doesn't contain . or the empty path.
+    // We can't do this on Windows because DLLs are searched in PATH
+    // and Windows always searches "." anyway.
+    auto restoreEnv = qScopeGuard([old = qgetenv("PATH")] {
+        qputenv("PATH", old);
+    });
+    qputenv("PATH", "/");
+#endif
+
+    switch (chdirMode) {
+    case ChdirMode::InParent: {
+        auto restoreCwd = qScopeGuard([old = QDir::currentPath()] {
+            QDir::setCurrent(old);
+        });
+        QVERIFY(QDir::setCurrent(target));
+        process.start();
+        break;
+    }
+    case ChdirMode::InChild:
+        process.setWorkingDirectory(target);
+        Q_FALLTHROUGH();
+    case ChdirMode::None:
+        process.start();
+        break;
+    }
+
+    QCOMPARE(process.waitForStarted(), success);
+    QCOMPARE(errorSpy.size(), int(!success));
+    if (success) {
+        QVERIFY(process.waitForFinished());
+    } else {
+        QCOMPARE(process.error(), QProcess::FailedToStart);
+    }
 }
 
 QTEST_MAIN(tst_QProcess)

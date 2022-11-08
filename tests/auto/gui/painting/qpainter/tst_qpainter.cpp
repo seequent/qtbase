@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -68,6 +43,9 @@ Q_OBJECT
 
 public:
     tst_QPainter();
+
+    enum ClipType { ClipRect, ClipRectF, ClipRegionSingle, ClipRegionMulti, ClipPathR, ClipPath };
+    Q_ENUM(ClipType);
 
 private slots:
     void cleanupTestCase();
@@ -155,6 +133,8 @@ private slots:
 
     void clipBoundingRect();
     void transformedClip();
+    void scaledClipConsistency_data();
+    void scaledClipConsistency();
 
     void setOpacity_data();
     void setOpacity();
@@ -300,6 +280,10 @@ private slots:
     void fillPolygon();
 
     void drawImageAtPointF();
+    void scaledDashes();
+#if QT_CONFIG(raster_fp)
+    void hdrColors();
+#endif
 
 private:
     void fillData();
@@ -599,7 +583,7 @@ QImage tst_QPainter::getResImage( const QString &dir, const QString &addition, c
     QImage res;
     QString resFilename  = dir + QLatin1String("/res_") + addition + QLatin1Char('.') + extension;
     if ( !res.load( resFilename ) ) {
-        QWARN(QString("Could not load result data %s %1").arg(resFilename).toLatin1());
+        qWarning() << "Could not load result data" << resFilename;
         return QImage();
     }
     return res;
@@ -610,14 +594,14 @@ QBitmap tst_QPainter::getBitmap( const QString &dir, const QString &filename, bo
     QBitmap bm;
     QString bmFilename = dir + QLatin1Char('/') + filename + QLatin1String(".xbm");
     if ( !bm.load( bmFilename ) ) {
-        QWARN(QString("Could not load bitmap '%1'").arg(bmFilename).toLatin1());
+        qWarning() << "Could not load bitmap" << bmFilename;
         return QBitmap();
     }
     if ( mask ) {
         QBitmap mask;
         QString maskFilename = dir + QLatin1Char('/') + filename + QLatin1String("-mask.xbm");
         if (!mask.load(maskFilename)) {
-            QWARN(QString("Could not load mask '%1'").arg(maskFilename).toLatin1());
+            qWarning() << "Could not load mask" << maskFilename;
             return QBitmap();
         }
         bm.setMask( mask );
@@ -1060,6 +1044,7 @@ void tst_QPainter::fillRect_data()
     QTest::newRow("argb32pm") << QImage::Format_ARGB32_Premultiplied;
     QTest::newRow("rgba8888pm") << QImage::Format_RGBA8888_Premultiplied;
     QTest::newRow("rgba64pm") << QImage::Format_RGBA64_Premultiplied;
+    QTest::newRow("rgbaFP16pm") << QImage::Format_RGBA16FPx4_Premultiplied;
 }
 
 void tst_QPainter::fillRect()
@@ -1558,6 +1543,8 @@ void tst_QPainter::qimageFormats_data()
     QTest::newRow("Qimage::Format_BGR888") << QImage::Format_BGR888;
     QTest::newRow("Qimage::Format_A2RGB30_Premultiplied") << QImage::Format_A2RGB30_Premultiplied;
     QTest::newRow("Qimage::Format_RGB30") << QImage::Format_RGB30;
+    QTest::newRow("QImage::Format_RGBX16FPx4") << QImage::Format_RGBX16FPx4;
+    QTest::newRow("QImage::Format_RGBA32FPx4_Premultiplied") << QImage::Format_RGBA32FPx4_Premultiplied;
 }
 
 /*
@@ -1745,10 +1732,11 @@ void tst_QPainter::setClipRect()
 
 /*
     Verify that the clipping works correctly.
-    The red outline should be covered by the blue rect on top and left,
-    while it should be clipped on the right and bottom and thus the red outline be visible
+    Just like fillRect, cliprect should snap rightwards and downwards in case of .5 coordinates.
+    The red outline should be covered by the blue rect on top,
+    while it should be clipped on the other edges and thus the red outline be visible
 
-    See: QTBUG-83229
+    See: QTBUG-83229, modified by QTBUG-100329
 */
 void tst_QPainter::clipRect()
 {
@@ -1774,7 +1762,7 @@ void tst_QPainter::clipRect()
     p.end();
 
     QCOMPARE(image.pixelColor(clipRect.left() + 1, clipRect.top()), QColor(Qt::blue));
-    QCOMPARE(image.pixelColor(clipRect.left(), clipRect.top() + 1), QColor(Qt::blue));
+    QCOMPARE(image.pixelColor(clipRect.left(), clipRect.top() + 1), QColor(Qt::red));
     QCOMPARE(image.pixelColor(clipRect.left() + 1, clipRect.bottom()), QColor(Qt::red));
     QCOMPARE(image.pixelColor(clipRect.right(), clipRect.top() + 1), QColor(Qt::red));
 }
@@ -2842,7 +2830,14 @@ void tst_QPainter::monoImages()
     }
 }
 
-#if !defined(Q_OS_AIX) && !defined(Q_CC_MSVC) && !defined(Q_OS_SOLARIS) && !defined(__UCLIBC__)
+#if defined(Q_OS_DARWIN) || defined(Q_OS_FREEBSD) || defined(Q_OS_ANDROID)
+#  define TEST_FPE_EXCEPTIONS
+#elif defined(Q_OS_LINUX) && defined(__GLIBC__)
+#  define TEST_FPE_EXCEPTIONS
+#elif defined(Q_OS_WIN) && defined(Q_CC_GNU)
+#  define TEST_FPE_EXCEPTIONS
+#endif
+#ifdef TEST_FPE_EXCEPTIONS
 #include <fenv.h>
 
 static const QString fpeExceptionString(int exception)
@@ -4576,6 +4571,96 @@ void tst_QPainter::transformedClip()
     }
 }
 
+void tst_QPainter::scaledClipConsistency_data()
+{
+    QTest::addColumn<ClipType>("clipType");
+
+    QTest::newRow("clipRect") << ClipRect;
+    QTest::newRow("clipRectF") << ClipRectF;
+    QTest::newRow("clipRegionSingle") << ClipRegionSingle;
+    QTest::newRow("clipRegionMulti") << ClipRegionMulti;
+    QTest::newRow("clipPathR") << ClipPathR;
+    QTest::newRow("clipPath") << ClipPath;
+}
+
+void tst_QPainter::scaledClipConsistency()
+{
+    QFETCH(ClipType, clipType);
+
+    const QList<QRect> clipRects = {
+        // Varying odd and even coordinates and width/height
+        QRect(1, 1, 7, 8),
+        QRect(8, 0, 8, 9),
+        QRect(0, 9, 8, 7),
+        QRect(8, 9, 8, 7),
+    };
+    // Assert that these are edge to edge:
+    QPointF center = QRectF(clipRects[0]).bottomRight();
+    Q_ASSERT(QRectF(clipRects[1]).bottomLeft() == center);
+    Q_ASSERT(QRectF(clipRects[2]).topRight() == center);
+    Q_ASSERT(QRectF(clipRects[3]).topLeft() == center);
+
+    QRegion multiRegion;
+    for (const QRect &clipRect : clipRects)
+        multiRegion += clipRect;
+
+    QColor fillColor(Qt::black);
+    fillColor.setAlphaF(0.5);
+
+    for (int i = 100; i <= 300; i++) {
+        qreal dpr = qreal(i) / 100.0;
+        QImage img(QSize(16, 16) * dpr, QImage::Format_RGB32);
+        img.fill(Qt::white);
+        img.setDevicePixelRatio(dpr);
+
+        for (const QRect &clipRect : clipRects) {
+            QPainter p(&img);
+            switch (clipType) {
+            case ClipRect:
+                p.setClipRect(clipRect);
+                break;
+            case ClipRectF:
+                p.setClipRect(QRectF(clipRect));
+                break;
+            case ClipRegionSingle:
+                p.setClipRegion(QRegion(clipRect));
+                break;
+            case ClipRegionMulti:
+                p.setClipRegion(multiRegion);
+                break;
+            case ClipPath:
+                p.rotate(0.001); // Avoid the path being optimized to a rectf
+                Q_FALLTHROUGH();
+            case ClipPathR: {
+                QPainterPath path;
+                path.addRect(clipRect); // Will be recognized and converted back to a rectf
+                p.setClipPath(path);
+                break;
+            }
+            default:
+                Q_ASSERT(false);
+                break;
+            }
+            p.fillRect(p.window(), fillColor);
+            if (clipType == ClipRegionMulti)
+                break; // once is enough, we're not using the clipRect anyway
+        }
+
+        int qtWidth = img.width() / 4;
+        int qtHeight = img.height() / 4;
+        QPoint imgCenter = img.rect().center();
+        const QRgb targetColor = img.pixel(qtWidth, qtHeight);
+
+        // Test that there are no gaps or overlaps where the cliprects meet
+        for (int offset = -2; offset <= 2; offset++) {
+            QCOMPARE(img.pixel(imgCenter.x() + offset, qtHeight), targetColor);
+            QCOMPARE(img.pixel(imgCenter.x() + offset, img.height() - qtHeight), targetColor);
+            QCOMPARE(img.pixel(qtWidth, imgCenter.y() + offset), targetColor);
+            QCOMPARE(img.pixel(img.width() - qtWidth, imgCenter.y() + offset), targetColor);
+        }
+    }
+}
+
 #if defined(Q_OS_MAC)
 // Only Mac supports sub pixel positions in raster engine currently
 void tst_QPainter::drawText_subPixelPositionsInRaster_qtbug5053()
@@ -4926,16 +5011,16 @@ void tst_QPainter::blendARGBonRGB_data()
     QTest::newRow("ARGB_PM over RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
                                         << QPainter::CompositionMode_SourceOver << qRgba(85, 0, 0, 85) << 85;
 #if QT_CONFIG(raster_64bit)
-    QTest::newRow("ARGB source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
-                                       << QPainter::CompositionMode_Source << qRgba(255, 0, 0, 85) << 85;
-    QTest::newRow("ARGB source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
-                                       << QPainter::CompositionMode_Source << qRgba(255, 0, 0, 120) << 85;
+    QTest::newRow("ARGB@85 source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
+                                          << QPainter::CompositionMode_Source << qRgba(255, 0, 0, 85) << 85;
+    QTest::newRow("ARGB@120 source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
+                                           << QPainter::CompositionMode_Source << qRgba(255, 0, 0, 120) << 85;
 #endif
-    QTest::newRow("ARGB_PM source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
-                                          << QPainter::CompositionMode_Source << qRgba(85, 0, 0, 85) << 85;
+    QTest::newRow("ARGB_PM@85 source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
+                                             << QPainter::CompositionMode_Source << qRgba(85, 0, 0, 85) << 85;
 #if QT_CONFIG(raster_64bit)
-    QTest::newRow("ARGB_PM source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
-                                          << QPainter::CompositionMode_Source << qRgba(180, 0, 0, 180) << 170;
+    QTest::newRow("ARGB_PM@180 source RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32_Premultiplied
+                                              << QPainter::CompositionMode_Source << qRgba(180, 0, 0, 180) << 170;
 #endif
     QTest::newRow("ARGB source-in RGB30") << QImage::Format_RGB30 << QImage::Format_ARGB32
                                           << QPainter::CompositionMode_SourceIn << qRgba(255, 0, 0, 85) << 85;
@@ -5096,7 +5181,7 @@ void tst_QPainter::drawPolyline()
         p.setPen(pen);
         QVERIFY(p.pen().isCosmetic());
         if (r) {
-            for (int i = 0; i < points.count()-1; i++) {
+            for (int i = 0; i < points.size()-1; i++) {
                 p.drawLine(points.at(i), points.at(i+1));
             }
         } else {
@@ -5358,6 +5443,79 @@ void tst_QPainter::drawImageAtPointF()
     paint.drawImage(QPointF(std::numeric_limits<int>::min(), 48), image1);
     paint.end();
 }
+
+void tst_QPainter::scaledDashes()
+{
+    // Test that we do not hit the limit-huge-number-of-dashes path
+    QRgb fore = qRgb(0, 0, 0xff);
+    QRgb back = qRgb(0xff, 0xff, 0);
+    QImage image(5, 32, QImage::Format_RGB32);
+    image.fill(back);
+    QPainter p(&image);
+    QPen pen(QColor(fore), 3, Qt::DotLine);
+    p.setPen(pen);
+    p.scale(1, 2);
+    p.drawLine(2, 0, 2, 16);
+    p.end();
+
+    bool foreFound = false;
+    bool backFound = false;
+    int i = 0;
+    while (i < 32 && (!foreFound || !backFound)) {
+        QRgb pix = image.pixel(3, i);
+        if (pix == fore)
+            foreFound = true;
+        else if (pix == back)
+            backFound = true;
+        i++;
+    }
+
+    QVERIFY(foreFound);
+    QVERIFY(backFound);
+}
+
+#if QT_CONFIG(raster_fp)
+void tst_QPainter::hdrColors()
+{
+    QImage img(10, 10, QImage::Format_RGBA32FPx4_Premultiplied);
+    img.fill(Qt::transparent);
+
+    QColor color = QColor::fromRgbF(2.0f, -0.25f, 1.5f);
+    img.setPixelColor(2, 2, color);
+    QCOMPARE(img.pixelColor(2, 2), color);
+
+    {
+        QPainterPath path;
+        path.addEllipse(4, 4, 2, 2);
+        QPainter p(&img);
+        p.fillPath(path, color);
+        p.end();
+    }
+    QCOMPARE(img.pixelColor(4, 4), color);
+
+    img.fill(color);
+    QCOMPARE(img.pixelColor(8, 8), color);
+
+    QColor color2 = QColor::fromRgbF(0.0f, 1.25f, 2.5f);
+    {
+        QPainter p(&img);
+        p.fillRect(0, 0, 3, 3, color2);
+        p.end();
+    }
+    QCOMPARE(img.pixelColor(1, 1), color2);
+    QCOMPARE(img.pixelColor(4, 4), color);
+
+    QImage img2(10, 10, QImage::Format_RGBX32FPx4);
+    img2.fill(Qt::black); // fill to avoid random FP values like Inf which can break SourceOver composition
+    {
+        QPainter p(&img2);
+        p.drawImage(0, 0, img);
+        p.end();
+    }
+    QCOMPARE(img2.pixelColor(2, 2), color2);
+    QCOMPARE(img2.pixelColor(5, 5), color);
+}
+#endif
 
 QTEST_MAIN(tst_QPainter)
 

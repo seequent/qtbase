@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QMETATYPE_P_H
 #define QMETATYPE_P_H
@@ -55,78 +19,6 @@
 #include "qmetatype.h"
 
 QT_BEGIN_NAMESPACE
-
-namespace QModulesPrivate {
-enum Names { Core, Gui, Widgets, Unknown, ModulesCount /* ModulesCount has to be at the end */ };
-
-static inline int moduleForType(const uint typeId)
-{
-    if (typeId <= QMetaType::LastCoreType)
-        return Core;
-    if (typeId >= QMetaType::FirstGuiType && typeId <= QMetaType::LastGuiType)
-        return Gui;
-    if (typeId >= QMetaType::FirstWidgetsType && typeId <= QMetaType::LastWidgetsType)
-        return Widgets;
-    return Unknown;
-}
-
-template <typename T>
-class QTypeModuleInfo
-{
-public:
-    enum Module : bool {
-        IsCore = false,
-        IsWidget = false,
-        IsGui = false,
-        IsUnknown = true
-    };
-};
-
-#define QT_ASSIGN_TYPE_TO_MODULE(TYPE, MODULE) \
-template<> \
-class QTypeModuleInfo<TYPE > \
-{ \
-public: \
-    enum Module : bool { \
-        IsCore = (((MODULE) == (QModulesPrivate::Core))), \
-        IsWidget = (((MODULE) == (QModulesPrivate::Widgets))), \
-        IsGui = (((MODULE) == (QModulesPrivate::Gui))), \
-        IsUnknown = !(IsCore || IsWidget || IsGui) \
-    }; \
-    static inline int module() { return MODULE; } \
-    static_assert((IsUnknown && !(IsCore || IsWidget || IsGui)) \
-                 || (IsCore && !(IsUnknown || IsWidget || IsGui)) \
-                 || (IsWidget && !(IsUnknown || IsCore || IsGui)) \
-                 || (IsGui && !(IsUnknown || IsCore || IsWidget))); \
-};
-
-
-#define QT_DECLARE_CORE_MODULE_TYPES_ITER(TypeName, TypeId, Name) \
-    QT_ASSIGN_TYPE_TO_MODULE(Name, QModulesPrivate::Core);
-#define QT_DECLARE_GUI_MODULE_TYPES_ITER(TypeName, TypeId, Name) \
-    QT_ASSIGN_TYPE_TO_MODULE(Name, QModulesPrivate::Gui);
-#define QT_DECLARE_WIDGETS_MODULE_TYPES_ITER(TypeName, TypeId, Name) \
-    QT_ASSIGN_TYPE_TO_MODULE(Name, QModulesPrivate::Widgets);
-
-QT_WARNING_PUSH
-#if defined(Q_CC_CLANG) && Q_CC_CLANG >= 900
-QT_WARNING_DISABLE_CLANG("-Wconstant-logical-operand")
-#endif
-
-QT_FOR_EACH_STATIC_PRIMITIVE_TYPE(QT_DECLARE_CORE_MODULE_TYPES_ITER)
-QT_FOR_EACH_STATIC_PRIMITIVE_POINTER(QT_DECLARE_CORE_MODULE_TYPES_ITER)
-QT_FOR_EACH_STATIC_CORE_CLASS(QT_DECLARE_CORE_MODULE_TYPES_ITER)
-QT_FOR_EACH_STATIC_CORE_POINTER(QT_DECLARE_CORE_MODULE_TYPES_ITER)
-QT_FOR_EACH_STATIC_CORE_TEMPLATE(QT_DECLARE_CORE_MODULE_TYPES_ITER)
-QT_FOR_EACH_STATIC_GUI_CLASS(QT_DECLARE_GUI_MODULE_TYPES_ITER)
-QT_FOR_EACH_STATIC_WIDGETS_CLASS(QT_DECLARE_WIDGETS_MODULE_TYPES_ITER)
-
-QT_WARNING_POP
-} // namespace QModulesPrivate
-
-#undef QT_DECLARE_CORE_MODULE_TYPES_ITER
-#undef QT_DECLARE_GUI_MODULE_TYPES_ITER
-#undef QT_DECLARE_WIDGETS_MODULE_TYPES_ITER
 
 #define QMETATYPE_CONVERTER(To, From, assign_and_return) \
     case makePair(QMetaType::To, QMetaType::From): \
@@ -148,11 +40,15 @@ QT_WARNING_POP
 
 class QMetaTypeModuleHelper
 {
+    Q_DISABLE_COPY_MOVE(QMetaTypeModuleHelper)
+protected:
+    QMetaTypeModuleHelper() = default;
+    ~QMetaTypeModuleHelper() = default;
 public:
     static constexpr auto makePair(int from, int to) -> quint64
     {
         return (quint64(from) << 32) + quint64(to);
-    };
+    }
 
     virtual const QtPrivate::QMetaTypeInterface *interfaceForType(int) const = 0;
     virtual bool convert(const void *, int, void *, int) const { return false; }
@@ -219,6 +115,80 @@ template<> struct TypeDefinition<QQuaternion> { static const bool IsAvailable = 
 #ifdef QT_NO_ICON
 template<> struct TypeDefinition<QIcon> { static const bool IsAvailable = false; };
 #endif
+
+template <typename T> inline bool isInterfaceFor(const QtPrivate::QMetaTypeInterface *iface)
+{
+    // typeId for built-in types are fixed and require no registration
+    static_assert(QMetaTypeId2<T>::IsBuiltIn, "This function only works for built-in types");
+    static constexpr int typeId = QtPrivate::BuiltinMetaType<T>::value;
+    return iface->typeId.loadRelaxed() == typeId;
+}
+
+template <typename FPointer>
+inline bool checkMetaTypeFlagOrPointer(const QtPrivate::QMetaTypeInterface *iface, FPointer ptr, QMetaType::TypeFlag Flag)
+{
+    // helper to the isXxxConstructible & isDestructible functions below: a
+    // meta type has the trait if the trait is trivial or we have the pointer
+    // to perform the operation
+    Q_ASSERT(!isInterfaceFor<void>(iface));
+    Q_ASSERT(iface->size);
+    return ptr != nullptr || (iface->flags & Flag) == 0;
+}
+
+inline bool isDefaultConstructible(const QtPrivate::QMetaTypeInterface *iface) noexcept
+{
+    return checkMetaTypeFlagOrPointer(iface, iface->defaultCtr, QMetaType::NeedsConstruction);
+}
+
+inline bool isCopyConstructible(const QtPrivate::QMetaTypeInterface *iface) noexcept
+{
+    return checkMetaTypeFlagOrPointer(iface, iface->copyCtr, QMetaType::NeedsCopyConstruction);
+}
+
+inline bool isMoveConstructible(const QtPrivate::QMetaTypeInterface *iface) noexcept
+{
+    return checkMetaTypeFlagOrPointer(iface, iface->moveCtr, QMetaType::NeedsMoveConstruction);
+}
+
+inline bool isDestructible(const QtPrivate::QMetaTypeInterface *iface) noexcept
+{
+    return checkMetaTypeFlagOrPointer(iface, iface->dtor, QMetaType::NeedsDestruction);
+}
+
+inline void defaultConstruct(const QtPrivate::QMetaTypeInterface *iface, void *where)
+{
+    Q_ASSERT(isDefaultConstructible(iface));
+    if (iface->defaultCtr)
+        iface->defaultCtr(iface, where);
+    else
+        memset(where, 0, iface->size);
+}
+
+inline void copyConstruct(const QtPrivate::QMetaTypeInterface *iface, void *where, const void *copy)
+{
+    Q_ASSERT(isCopyConstructible(iface));
+    if (iface->copyCtr)
+        iface->copyCtr(iface, where, copy);
+    else
+        memcpy(where, copy, iface->size);
+}
+
+inline void construct(const QtPrivate::QMetaTypeInterface *iface, void *where, const void *copy)
+{
+    if (copy)
+        copyConstruct(iface, where, copy);
+    else
+        defaultConstruct(iface, where);
+}
+
+inline void destruct(const QtPrivate::QMetaTypeInterface *iface, void *where)
+{
+    Q_ASSERT(isDestructible(iface));
+    if (iface->dtor)
+        iface->dtor(iface, where);
+}
+
+const char *typedefNameForType(const QtPrivate::QMetaTypeInterface *type_d);
 
 template<typename T>
 static const QT_PREPEND_NAMESPACE(QtPrivate::QMetaTypeInterface) *getInterfaceFromType()

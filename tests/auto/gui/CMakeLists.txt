@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from gui.pro.
 
 add_subdirectory(kernel)
@@ -17,3 +20,4 @@ endif()
 if(QT_FEATURE_vulkan AND NOT UIKIT)
     add_subdirectory(qvulkan)
 endif()
+add_subdirectory(platform)

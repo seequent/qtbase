@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2017 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2017 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <qlist.h>
@@ -39,7 +14,6 @@
 #  define HAVE_FALLBACK_ENGINE
 #endif
 
-#define COMMA   ,
 #define QVERIFY_3TIMES(statement)    \
     do {\
         if (!static_cast<bool>(statement))\
@@ -190,8 +164,8 @@ QT_WARNING_POP
     QRandomGenerator64 systemRng64 = *system64;
     systemRng64 = *system64;
 
-    static_assert(std::is_same<decltype(rng64.generate()) COMMA quint64>::value);
-    static_assert(std::is_same<decltype(system64->generate()) COMMA quint64>::value);
+    static_assert(std::is_same_v<decltype(rng64.generate()), quint64>);
+    static_assert(std::is_same_v<decltype(system64->generate()), quint64>);
 }
 
 void tst_QRandomGenerator::knownSequence()
@@ -636,7 +610,7 @@ template <typename UInt> static void boundedQuality_template()
         QVector<UInt> buffer(BufferCount, filler);
         generate(buffer.begin(), buffer.end(), [&] { return rng.bounded(Bound); });
 
-        for (UInt value : qAsConst(buffer)) {
+        for (UInt value : std::as_const(buffer)) {
             QVERIFY(value < Bound);
             histogram[value]++;
         }
@@ -750,18 +724,16 @@ void tst_QRandomGenerator::qualityReal()
         return;
     RandomGenerator rng(control);
 
-    enum {
-        SampleSize = 16000,
+    constexpr int SampleSize = 16000;
 
-        // Expected value: sample size times proportion of the range:
-        PerfectOctile = SampleSize / 8,
-        PerfectHalf = SampleSize / 2,
+    // Expected value: sample size times proportion of the range:
+    constexpr int PerfectOctile = SampleSize / 8;
+    constexpr int PerfectHalf = SampleSize / 2;
 
-        // Variance is (1 - proportion of range) * expected; sqrt() for standard deviations.
-        // Should usually be within twice that and almost never outside four times:
-        RangeHalf = 252,         // floor(4 * sqrt((1 - 0.5) * PerfectHalf))
-        RangeOctile = 167        // floor(4 * sqrt((1 - 0.125) * PerfectOctile))
-    };
+    // Variance is (1 - proportion of range) * expected; sqrt() for standard deviations.
+    // Should usually be within twice that and almost never outside four times:
+    constexpr int RangeHalf = 252;     // floor(4 * sqrt((1 - 0.5) * PerfectHalf))
+    constexpr int RangeOctile = 167;   // floor(4 * sqrt((1 - 0.125) * PerfectOctile))
 
     double data[SampleSize];
     std::generate(std::begin(data), std::end(data), [&rng] { return rng.generateDouble(); });
@@ -922,18 +894,20 @@ void tst_QRandomGenerator::stdGenerateCanonical()
 {
     QFETCH(uint, control);
     RandomGenerator rng(control);
+    auto generate_canonical = [&rng]() {
+        return std::generate_canonical<qreal, 32>(rng);
+    };
 
     for (int i = 0; i < 4; ++i) {
         QVERIFY_3TIMES([&] {
-            qreal value = std::generate_canonical<qreal COMMA 32>(rng);
+            qreal value = generate_canonical();
             return value > 0 && value < 1 && value != RandomValueFP;
         }());
     }
 
     // and should hopefully be different from repeated calls
     for (int i = 0; i < 4; ++i)
-        QVERIFY_3TIMES(std::generate_canonical<qreal COMMA 32>(rng) !=
-                std::generate_canonical<qreal COMMA 32>(rng));
+        QVERIFY_3TIMES(generate_canonical() != generate_canonical());
 }
 
 void tst_QRandomGenerator::stdUniformRealDistribution_data()
@@ -1000,18 +974,18 @@ template <typename Generator> void stdRandomDistributions_template()
 {
     Generator rd;
 
-    std::bernoulli_distribution()(rd);
+    (void)std::bernoulli_distribution()(rd);
 
-    std::binomial_distribution<quint32>()(rd);
-    std::binomial_distribution<quint64>()(rd);
+    (void)std::binomial_distribution<quint32>()(rd);
+    (void)std::binomial_distribution<quint64>()(rd);
 
-    std::negative_binomial_distribution<quint32>()(rd);
-    std::negative_binomial_distribution<quint64>()(rd);
+    (void)std::negative_binomial_distribution<quint32>()(rd);
+    (void)std::negative_binomial_distribution<quint64>()(rd);
 
-    std::poisson_distribution<int>()(rd);
-    std::poisson_distribution<qint64>()(rd);
+    (void)std::poisson_distribution<int>()(rd);
+    (void)std::poisson_distribution<qint64>()(rd);
 
-    std::normal_distribution<qreal>()(rd);
+    (void)std::normal_distribution<qreal>()(rd);
 
     {
         std::discrete_distribution<int> discrete{0, 1, 1, 10000, 2};

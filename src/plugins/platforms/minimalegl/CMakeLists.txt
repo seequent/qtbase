@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from minimalegl.pro.
 qt_find_package(EGL) # special case
 
@@ -7,7 +10,7 @@ qt_find_package(EGL) # special case
 
 qt_internal_add_plugin(QMinimalEglIntegrationPlugin
     OUTPUT_NAME qminimalegl
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES minimalegl # special case
     SOURCES
         main.cpp
@@ -16,7 +19,7 @@ qt_internal_add_plugin(QMinimalEglIntegrationPlugin
         qminimaleglwindow.cpp qminimaleglwindow.h
     DEFINES
         QT_EGL_NO_X11
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui
@@ -33,7 +36,7 @@ qt_internal_add_plugin(QMinimalEglIntegrationPlugin
 qt_internal_extend_target(QMinimalEglIntegrationPlugin CONDITION QT_FEATURE_opengl
     SOURCES
         qminimaleglbackingstore.cpp qminimaleglbackingstore.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::OpenGL
 )
 

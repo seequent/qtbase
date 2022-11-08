@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qfilesystemmodel.pro.
 
 #####################################################################
@@ -6,15 +9,13 @@
 
 qt_internal_add_test(tst_qfilesystemmodel
     SOURCES
-        ../../../../shared/emulationdetector.h
         tst_qfilesystemmodel.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../shared
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::Widgets
         Qt::WidgetsPrivate
+        Qt::TestPrivate
 )
 
 ## Scopes:

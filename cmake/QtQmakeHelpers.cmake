@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Create a QMake list (values space-separated) containing paths.
 # Entries that contain whitespace characters are quoted.
 function(qt_to_qmake_path_list out_var)
@@ -13,57 +16,22 @@ function(qt_to_qmake_path_list out_var)
     set("${out_var}" "${result}" PARENT_SCOPE)
 endfunction()
 
-macro(qt_add_string_to_qconfig_cpp str)
-    string(LENGTH "${str}" length)
-    string(APPEND QT_CONFIG_STRS "    \"${str}\\0\"\n")
-    string(APPEND QT_CONFIG_STR_OFFSETS "    ${QT_CONFIG_STR_OFFSET},\n")
-    math(EXPR QT_CONFIG_STR_OFFSET "${QT_CONFIG_STR_OFFSET}+${length}+1")
-endmacro()
 
-function(qt_generate_qconfig_cpp)
-    set(QT_CONFIG_STR_OFFSET "0")
-    set(QT_CONFIG_STR_OFFSETS "")
+function(qt_generate_qconfig_cpp in_file out_file)
     set(QT_CONFIG_STRS "")
 
-    # Chop off the "/mkspecs" part of INSTALL_MKSPECSDIR
-    get_filename_component(hostdatadir "${INSTALL_MKSPECSDIR}" DIRECTORY)
-    if("${hostdatadir}" STREQUAL "")
-        set(hostdatadir ".")
-    endif()
-
-    # Start first part.
-    qt_add_string_to_qconfig_cpp("${INSTALL_DOCDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_INCLUDEDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_LIBDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_LIBEXECDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_BINDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_PLUGINSDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_QMLDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_ARCHDATADIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_DATADIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_TRANSLATIONSDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_EXAMPLESDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_TESTSDIR}")
-
-    # Save first part.
-    set(QT_CONFIG_STR_OFFSETS_FIRST "${QT_CONFIG_STR_OFFSETS}")
-    set(QT_CONFIG_STRS_FIRST "${QT_CONFIG_STRS}")
-
-    # Start second part.
-    set(QT_CONFIG_STR_OFFSETS "")
-    set(QT_CONFIG_STRS "")
-
-    qt_add_string_to_qconfig_cpp("") # config.input.sysroot
-    qt_add_string_to_qconfig_cpp("false") # qmake_sysrootify
-    qt_add_string_to_qconfig_cpp("${INSTALL_BINDIR}")
-    qt_add_string_to_qconfig_cpp("${INSTALL_LIBDIR}")
-    qt_add_string_to_qconfig_cpp("${hostdatadir}")
-    qt_add_string_to_qconfig_cpp("${QT_QMAKE_TARGET_MKSPEC}")
-    qt_add_string_to_qconfig_cpp("${QT_QMAKE_HOST_MKSPEC}")
-
-    # Save second part.
-    set(QT_CONFIG_STR_OFFSETS_SECOND "${QT_CONFIG_STR_OFFSETS}")
-    set(QT_CONFIG_STRS_SECOND "${QT_CONFIG_STRS}")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_DOCDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_INCLUDEDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_LIBDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_LIBEXECDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_BINDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_PLUGINSDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_QMLDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_ARCHDATADIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_DATADIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_TRANSLATIONSDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_EXAMPLESDIR})qconfig\",\n")
+    string(APPEND QT_CONFIG_STRS "    R\"qconfig(${INSTALL_TESTSDIR})qconfig\"")
 
     # Settings path / sysconf dir.
     set(QT_SYS_CONF_DIR "${INSTALL_SYSCONFDIR}")
@@ -82,30 +50,45 @@ function(qt_generate_qconfig_cpp)
          "${lib_location_absolute_path}" "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}")
     set(QT_CONFIGURE_LIBLOCATION_TO_PREFIX_PATH "${from_lib_location_to_prefix}")
 
-    # The QT_CONFIGURE_HOSTBINDIR_TO_*PREFIX_PATH defines are exclusively used by qmake to determine
-    # the prefix from the location of the qmake executable. In our build of qmake host_prefix is
-    # always the same as ext_prefix, and we can just use CMAKE_INSTALL_PREFIX for the calculation of
-    # the relative path between <ext_prefix>/bin and <ext_prefix>.
-    set(bin_dir_absolute_path "${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
-    file(RELATIVE_PATH from_bin_dir_to_prefix "${bin_dir_absolute_path}" "${CMAKE_INSTALL_PREFIX}")
-    set(QT_CONFIGURE_HOSTBINDIR_TO_HOSTPREFIX_PATH "${from_bin_dir_to_prefix}")
-    set(QT_CONFIGURE_HOSTBINDIR_TO_EXTPREFIX_PATH "${from_bin_dir_to_prefix}")
+    # Ensure Windows drive letter is prepended to the install prefix hardcoded
+    # into qconfig.cpp, otherwise qmake can't find Qt modules in a static Qt
+    # build if there's no qt.conf. Mostly relevant for CI.
+    # Given input like
+    #    \work/qt/install
+    # or
+    #    \work\qt\install
+    # Expected output is something like
+    #   C:/work/qt/install
+    # so it includes a drive letter and forward slashes.
+    if(QT_FEATURE_relocatable)
+        # A relocatable Qt does not need a hardcoded prefix path.
+        # This makes reproducible builds a closer reality, because we don't embed a CI path
+        # into the binaries.
+        set(QT_CONFIGURE_PREFIX_PATH_STR "")
+    else()
+        set(QT_CONFIGURE_PREFIX_PATH_STR "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}")
+        if(CMAKE_HOST_WIN32)
+            get_filename_component(
+                QT_CONFIGURE_PREFIX_PATH_STR
+                "${QT_CONFIGURE_PREFIX_PATH_STR}" REALPATH)
+        endif()
+    endif()
 
-    configure_file(global/qconfig.cpp.in global/qconfig.cpp @ONLY)
+    configure_file(${in_file} ${out_file} @ONLY)
 endfunction()
 
 # In the cross-compiling case, creates a wrapper around the host Qt's
-# qmake executable. Also creates a qmake configuration file that sets
+# qmake and qtpaths executables. Also creates a qmake configuration file that sets
 # up the host qmake's properties for cross-compiling with this Qt
 # build.
-function(qt_generate_qmake_wrapper_for_target)
+function(qt_generate_qmake_and_qtpaths_wrapper_for_target)
     if(NOT CMAKE_CROSSCOMPILING)
         return()
     endif()
 
     # Call the configuration file something else but qt.conf to avoid
     # being picked up by the qmake executable that's created if
-    # QT_BUILD_TOOLS_WHEN_CROSSCOMPILING is enabled.
+    # QT_FORCE_BUILD_TOOLS is enabled.
     qt_path_join(qt_conf_path "${INSTALL_BINDIR}" "target_qt.conf")
 
     set(prefix "${CMAKE_INSTALL_PREFIX}")
@@ -115,7 +98,8 @@ function(qt_generate_qmake_wrapper_for_target)
         "${host_prefix}")
     file(RELATIVE_PATH ext_prefix_relative_to_conf_file "${ext_prefix}/${INSTALL_BINDIR}"
         "${ext_prefix}")
-    file(RELATIVE_PATH ext_prefix_relative_to_host_prefix "${host_prefix}" "${ext_prefix}")
+    file(RELATIVE_PATH ext_datadir_relative_to_host_prefix "${host_prefix}"
+        "${ext_prefix}/${INSTALL_MKSPECSDIR}/..")
 
     set(content "")
 
@@ -136,43 +120,65 @@ function(qt_generate_qmake_wrapper_for_target)
         set(sysrootify_prefix true)
     else()
         set(sysrootify_prefix false)
-        string(APPEND content "[DevicePaths]
+        if(NOT ext_prefix STREQUAL prefix)
+            string(APPEND content "[DevicePaths]
 Prefix=${prefix}
 ")
+        endif()
     endif()
 
     string(APPEND content
         "[Paths]
 Prefix=${ext_prefix_relative_to_conf_file}
 HostPrefix=${host_prefix_relative_to_conf_file}
-HostData=${ext_prefix_relative_to_host_prefix}
+HostBinaries=${QT${PROJECT_VERSION_MAJOR}_HOST_INFO_BINDIR}
+HostLibraries=${QT${PROJECT_VERSION_MAJOR}_HOST_INFO_LIBDIR}
+HostLibraryExecutables=${QT${PROJECT_VERSION_MAJOR}_HOST_INFO_LIBEXECDIR}
+HostData=${ext_datadir_relative_to_host_prefix}
 Sysroot=${sysroot}
 SysrootifyPrefix=${sysrootify_prefix}
 TargetSpec=${QT_QMAKE_TARGET_MKSPEC}
 HostSpec=${QT_QMAKE_HOST_MKSPEC}
 ")
     file(GENERATE OUTPUT "${qt_conf_path}" CONTENT "${content}")
-
-    qt_path_join(qmake_wrapper_in_file "${CMAKE_CURRENT_SOURCE_DIR}/bin/qmake-wrapper-for-target")
-    set(qmake_wrapper "qmake")
-    if(QT_BUILD_TOOLS_WHEN_CROSSCOMPILING)
-        # Avoid collisions with the cross-compiled qmake binary.
-        string(PREPEND qmake_wrapper "host-")
-    endif()
-    if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
-        string(APPEND qmake_wrapper_in_file ".bat")
-        string(APPEND qmake_wrapper ".bat")
-    endif()
-    string(APPEND qmake_wrapper_in_file ".in")
-
-    set(host_qt_bindir "${host_prefix}/${QT${PROJECT_VERSION_MAJOR}_HOST_INFO_BINDIR}")
-    qt_path_join(qmake_wrapper "preliminary" "${qmake_wrapper}")
-
-    configure_file("${qmake_wrapper_in_file}" "${qmake_wrapper}" @ONLY)
     qt_install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${qt_conf_path}"
         DESTINATION "${INSTALL_BINDIR}")
-    qt_copy_or_install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/${qmake_wrapper}"
-        DESTINATION "${INSTALL_BINDIR}")
+
+    if(QT_GENERATE_WRAPPER_SCRIPTS_FOR_ALL_HOSTS)
+        set(hosts "unix" "non-unix")
+    elseif(CMAKE_HOST_UNIX)
+        set(hosts "unix")
+    else()
+        set(hosts "non-unix")
+    endif()
+
+    set(wrapper_prefix)
+    if(QT_FORCE_BUILD_TOOLS)
+        # Avoid collisions with the cross-compiled qmake/qtpaths binaries.
+        set(wrapper_prefix "host-")
+    endif()
+
+    set(host_qt_bindir "${host_prefix}/${QT${PROJECT_VERSION_MAJOR}_HOST_INFO_BINDIR}")
+
+    foreach(host_type ${hosts})
+        foreach(tool_name qmake qtpaths)
+            set(wrapper_extension)
+            set(newline_style LF)
+
+            if(host_type STREQUAL "non-unix")
+                set(wrapper_extension ".bat")
+                set(newline_style CRLF)
+            endif()
+
+            set(wrapper_in_file
+                "${CMAKE_CURRENT_SOURCE_DIR}/bin/qmake-and-qtpaths-wrapper${wrapper_extension}.in")
+
+            set(wrapper "preliminary/${wrapper_prefix}${tool_name}${wrapper_extension}")
+            configure_file("${wrapper_in_file}" "${wrapper}" @ONLY NEWLINE_STYLE ${newline_style})
+            qt_copy_or_install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/${wrapper}"
+                DESTINATION "${INSTALL_BINDIR}")
+        endforeach()
+    endforeach()
 endfunction()
 
 # Transforms a CMake Qt module name to a qmake Qt module name.

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -75,6 +50,7 @@ private slots:
     void taskQTBUG_40609_addingWidgetToItsOwnLayout();
     void taskQTBUG_40609_addingLayoutToItself();
     void taskQTBUG_52357_spacingWhenItemIsHidden();
+    void taskQTBUG_91261_itemIndexRange();
     void replaceWidget();
     void dontCrashWhenExtendsToEnd();
 };
@@ -234,6 +210,9 @@ void tst_QGridLayout::badDistributionBug()
 
 void tst_QGridLayout::setMinAndMaxSize()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("This test crashes on Wayland, see also QTBUG-107184");
+
     QWidget widget;
     setFrameless(&widget);
     QGridLayout layout(&widget);
@@ -682,7 +661,7 @@ void tst_QGridLayout::spacingsAndMargins()
         QSKIP("The screen is too small to run this test case");
 
 // We are relying on the order here...
-    for (int pi = 0; pi < sizehinters.count(); ++pi) {
+    for (int pi = 0; pi < sizehinters.size(); ++pi) {
         QPoint pt = sizehinters.at(pi)->mapTo(&toplevel, QPoint(0, 0));
         QCOMPARE(pt, expectedpositions.at(pi));
     }
@@ -852,7 +831,7 @@ void tst_QGridLayout::minMaxSize()
         QList<QPointer<SizeHinterFrame> > sizehinters;
         for (int i = 0; i < rows; ++i) {
             for (int j = 0; j < columns; ++j) {
-                SizeInfo si = sizeinfos.at(sizehinters.count());
+                SizeInfo si = sizeinfos.at(sizehinters.size());
                 int numpixels = si.hfwNumPixels;
                 if (pass == 1 && numpixels == -1)
                     numpixels = -2; //### yuk, (and don't fake it if it already tests sizehint)
@@ -881,7 +860,7 @@ void tst_QGridLayout::minMaxSize()
             QTRY_COMPARE(toplevel.size(), toplevel.sizeHint());
         }
         // We are relying on the order here...
-        for (int pi = 0; pi < sizehinters.count(); ++pi) {
+        for (int pi = 0; pi < sizehinters.size(); ++pi) {
             QPoint pt = sizehinters.at(pi)->mapTo(&toplevel, QPoint(0, 0));
             QCOMPARE(pt, sizeinfos.at(pi).expectedPos);
         }
@@ -1051,7 +1030,7 @@ void tst_QGridLayout::styleDependentSpacingsAndMargins()
     widget.adjustSize();
     QApplication::processEvents();
 
-    for (int pi = 0; pi < expectedpositions.count(); ++pi) {
+    for (int pi = 0; pi < expectedpositions.size(); ++pi) {
         QCOMPARE(sizehinters.at(pi)->pos(), expectedpositions.at(pi));
     }
 }
@@ -1441,7 +1420,7 @@ void tst_QGridLayout::layoutSpacing()
 
     QLayout *layout = widget->layout();
     QVERIFY(layout);
-    for (int pi = 0; pi < expectedpositions.count(); ++pi) {
+    for (int pi = 0; pi < expectedpositions.size(); ++pi) {
         QLayoutItem *item = layout->itemAt(pi);
         //qDebug()  << item->widget()->pos();
         QCOMPARE(item->widget()->pos(), expectedpositions.at(pi));
@@ -1664,6 +1643,56 @@ void tst_QGridLayout::taskQTBUG_52357_spacingWhenItemIsHidden()
     int tempWidth = button1.width() + button2.width() + button3.width() + 2 * layout.spacing();
     button2.hide();
     QTRY_COMPARE_WITH_TIMEOUT(tempWidth, button1.width() + button3.width() + layout.spacing(), 1000);
+}
+
+void tst_QGridLayout::taskQTBUG_91261_itemIndexRange()
+{
+    QWidget widget;
+    QGridLayout lay(&widget);
+    QPushButton *btn = new QPushButton(&widget);
+    lay.addWidget(btn, 0, 0);
+
+    {
+        auto ptr = lay.itemAt(-1);
+        QCOMPARE(ptr, nullptr);
+
+        ptr = lay.itemAt(0);
+        QCOMPARE(ptr->widget(), btn);
+
+        ptr = lay.itemAt(1);
+        QCOMPARE(ptr, nullptr);
+    }
+
+    {
+        int row = -1;
+        int column = -1;
+        int rowSpan;
+        int columnSpan;
+
+        lay.getItemPosition(-1, &row, &column, &rowSpan, &columnSpan);
+        QCOMPARE(row, -1);
+        QCOMPARE(column, -1);
+
+        lay.getItemPosition(1, &row, &column, &rowSpan, &columnSpan);
+        QCOMPARE(row, -1);
+        QCOMPARE(column, -1);
+
+        lay.getItemPosition(0, &row, &column, &rowSpan, &columnSpan);
+        QCOMPARE(row, 0);
+        QCOMPARE(column, 0);
+    }
+
+    {
+        auto ptr = lay.takeAt(-1);
+        QCOMPARE(ptr, nullptr);
+
+        ptr = lay.takeAt(1);
+        QCOMPARE(ptr, nullptr);
+
+        ptr = lay.takeAt(0);
+        QCOMPARE(ptr->widget(), btn);
+        delete ptr;
+    }
 }
 
 void tst_QGridLayout::replaceWidget()

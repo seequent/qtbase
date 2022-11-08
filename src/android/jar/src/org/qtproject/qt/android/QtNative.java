@@ -1,56 +1,20 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 BogDan Vatra <bogdan@kde.org>
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Android port of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 BogDan Vatra <bogdan@kde.org>
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 package org.qtproject.qt.android;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
-import java.io.IOException;
 import java.util.HashMap;
 
 import android.app.Activity;
 import android.app.Service;
-import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.ContentResolver;
 import android.content.Intent;
@@ -62,9 +26,10 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.system.Os;
 import android.content.ClipboardManager;
-import android.content.ClipboardManager.OnPrimaryClipChangedListener;
 import android.content.ClipData;
+import android.content.ClipDescription;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.view.ContextMenu;
@@ -73,6 +38,8 @@ import android.view.Menu;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.InputDevice;
+import android.view.Display;
+import android.hardware.display.DisplayManager;
 import android.database.Cursor;
 import android.provider.DocumentsContract;
 
@@ -97,12 +64,14 @@ public class QtNative
     public static final String QtTAG = "Qt JAVA"; // string used for Log.x
     private static ArrayList<Runnable> m_lostActions = new ArrayList<Runnable>(); // a list containing all actions which could not be performed (e.g. the main activity is destroyed, etc.)
     private static boolean m_started = false;
+    private static boolean m_isKeyboardHiding = false;
     private static int m_displayMetricsScreenWidthPixels = 0;
     private static int m_displayMetricsScreenHeightPixels = 0;
     private static int m_displayMetricsAvailableLeftPixels = 0;
     private static int m_displayMetricsAvailableTopPixels = 0;
     private static int m_displayMetricsAvailableWidthPixels = 0;
     private static int m_displayMetricsAvailableHeightPixels = 0;
+    private static float m_displayMetricsRefreshRate = 60;
     private static double m_displayMetricsXDpi = .0;
     private static double m_displayMetricsYDpi = .0;
     private static double m_displayMetricsScaledDensity = 1.0;
@@ -116,6 +85,9 @@ public class QtNative
     public static QtThread m_qtThread = new QtThread();
     private static HashMap<String, Uri> m_cachedUris = new HashMap<String, Uri>();
     private static ArrayList<String> m_knownDirs = new ArrayList<String>();
+    private static final int KEYBOARD_HEIGHT_THRESHOLD = 100;
+
+    private static final String INVALID_OR_NULL_URI_ERROR_MESSAGE = "Received invalid/null Uri";
 
     private static final Runnable runPendingCppRunnablesRunnable = new Runnable() {
         @Override
@@ -123,6 +95,13 @@ public class QtNative
             runPendingCppRunnables();
         }
     };
+
+    public static boolean isStarted()
+    {
+        boolean hasActivity = m_activity != null && m_activityDelegate != null;
+        boolean hasService = m_service != null && m_serviceDelegate != null;
+        return m_started && (hasActivity || hasService);
+    }
 
     private static ClassLoader m_classLoader = null;
     public static ClassLoader classLoader()
@@ -169,10 +148,22 @@ public class QtNative
         return joinedString.split(",");
     }
 
+    private static String getCurrentMethodNameLog()
+    {
+        return new Exception().getStackTrace()[1].getMethodName() + ": ";
+    }
+
     private static Uri getUriWithValidPermission(Context context, String uri, String openMode)
     {
+        Uri parsedUri;
         try {
-            Uri parsedUri = Uri.parse(uri);
+            parsedUri = Uri.parse(uri);
+        } catch (NullPointerException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        try {
             String scheme = parsedUri.getScheme();
 
             // We only want to check permissions for content Uris
@@ -184,32 +175,30 @@ public class QtNative
 
             for (int i = 0; i < permissions.size(); ++i) {
                 Uri iterUri = permissions.get(i).getUri();
-                boolean isRightPermission = permissions.get(i).isReadPermission();
+                boolean isRequestPermission = permissions.get(i).isReadPermission();
 
                 if (!openMode.equals("r"))
-                   isRightPermission = permissions.get(i).isWritePermission();
+                   isRequestPermission = permissions.get(i).isWritePermission();
 
-                if (iterUri.getPath().equals(uriStr) && isRightPermission)
+                if (iterUri.getPath().equals(uriStr) && isRequestPermission)
                     return iterUri;
             }
 
-            // Android 6 and earlier could still manage to open the file so we can return the
-            // parsed uri here
-            if (Build.VERSION.SDK_INT < 24)
-                return parsedUri;
-            return null;
+            // if we only have transient permissions on uri all the above will fail,
+            // but we will be able to read the file anyway, so continue with uri here anyway
+            // and check for SecurityExceptions later
+            return parsedUri;
         } catch (SecurityException e) {
-            e.printStackTrace();
-            return null;
+            Log.e(QtTAG, getCurrentMethodNameLog() + e.toString());
+            return parsedUri;
         }
     }
 
     public static boolean openURL(Context context, String url, String mime)
     {
-        Uri uri = getUriWithValidPermission(context, url, "r");
-
+        final Uri uri = getUriWithValidPermission(context, url, "r");
         if (uri == null) {
-            Log.e(QtTAG, "openURL(): No permissions to open Uri");
+            Log.e(QtTAG, getCurrentMethodNameLog() + INVALID_OR_NULL_URI_ERROR_MESSAGE);
             return false;
         }
 
@@ -222,18 +211,41 @@ public class QtNative
             activity().startActivity(intent);
 
             return true;
-        } catch (IllegalArgumentException e) {
-            Log.e(QtTAG, "openURL(): Invalid Uri");
-            e.printStackTrace();
-            return false;
-        } catch (UnsupportedOperationException e) {
-            Log.e(QtTAG, "openURL(): Unsupported operation for given Uri");
-            e.printStackTrace();
-            return false;
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(QtTAG, getCurrentMethodNameLog() + e.toString());
             return false;
         }
+    }
+
+    public static ParcelFileDescriptor openParcelFdForContentUrl(Context context, String contentUrl,
+                                                                 String openMode)
+    {
+        Uri uri = m_cachedUris.get(contentUrl);
+        if (uri == null)
+            uri = getUriWithValidPermission(context, contentUrl, openMode);
+
+        if (uri == null) {
+            Log.e(QtTAG, getCurrentMethodNameLog() + INVALID_OR_NULL_URI_ERROR_MESSAGE);
+            return null;
+        }
+
+        try {
+            final ContentResolver resolver = context.getContentResolver();
+            return resolver.openFileDescriptor(uri, openMode);
+        } catch (FileNotFoundException | IllegalArgumentException | SecurityException e) {
+            Log.e(QtTAG, getCurrentMethodNameLog() + e.toString());
+        }
+
+        return null;
+    }
+
+    public static FileDescriptor openFdObjectForContentUrl(Context context, String contentUrl,
+                                                           String openMode)
+    {
+        final ParcelFileDescriptor pfd = openParcelFdForContentUrl(context, contentUrl, openMode);
+        if (pfd != null)
+            return pfd.getFileDescriptor();
+        return null;
     }
 
     public static int openFdForContentUrl(Context context, String contentUrl, String openMode)
@@ -241,25 +253,21 @@ public class QtNative
         Uri uri = m_cachedUris.get(contentUrl);
         if (uri == null)
             uri = getUriWithValidPermission(context, contentUrl, openMode);
-        int error = -1;
 
+        int fileDescriptor = -1;
         if (uri == null) {
-            Log.e(QtTAG, "openFdForContentUrl(): No permissions to open Uri");
-            return error;
+            Log.e(QtTAG, getCurrentMethodNameLog() + INVALID_OR_NULL_URI_ERROR_MESSAGE);
+            return fileDescriptor;
         }
 
         try {
-            ContentResolver resolver = context.getContentResolver();
-            ParcelFileDescriptor fdDesc = resolver.openFileDescriptor(uri, openMode);
-            return fdDesc.detachFd();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-            return error;
-        } catch (IllegalArgumentException e) {
-            Log.e(QtTAG, "openFdForContentUrl(): Invalid Uri");
-            e.printStackTrace();
-            return error;
+            final ContentResolver resolver = context.getContentResolver();
+            fileDescriptor = resolver.openFileDescriptor(uri, openMode).detachFd();
+        } catch (IllegalArgumentException | SecurityException | FileNotFoundException e) {
+            Log.e(QtTAG, getCurrentMethodNameLog() + e.toString());
         }
+
+        return fileDescriptor;
     }
 
     public static long getSize(Context context, String contentUrl)
@@ -270,7 +278,7 @@ public class QtNative
             uri = getUriWithValidPermission(context, contentUrl, "r");
 
         if (uri == null) {
-            Log.e(QtTAG, "getSize(): No permissions to open Uri");
+            Log.e(QtTAG, getCurrentMethodNameLog() + INVALID_OR_NULL_URI_ERROR_MESSAGE);
             return size;
         } else if (!m_cachedUris.containsKey(contentUrl)) {
             m_cachedUris.put(contentUrl, uri);
@@ -278,22 +286,19 @@ public class QtNative
 
         try {
             ContentResolver resolver = context.getContentResolver();
-            Cursor cur = resolver.query(uri, new String[] { DocumentsContract.Document.COLUMN_SIZE }, null, null, null);
+            Cursor cur = resolver.query(uri, new String[] {
+                    DocumentsContract.Document.COLUMN_SIZE },
+                    null, null, null);
             if (cur != null) {
                 if (cur.moveToFirst())
                     size = cur.getLong(0);
                 cur.close();
             }
             return size;
-        } catch (IllegalArgumentException e) {
-            Log.e(QtTAG, "getSize(): Invalid Uri");
-            e.printStackTrace();
-            return size;
-        }  catch (UnsupportedOperationException e) {
-            Log.e(QtTAG, "getSize(): Unsupported operation for given Uri");
-            e.printStackTrace();
-            return size;
+        } catch (IllegalArgumentException | SecurityException | UnsupportedOperationException e) {
+            Log.e(QtTAG, getCurrentMethodNameLog() + e.toString());
         }
+        return size;
     }
 
     public static boolean checkFileExists(Context context, String contentUrl)
@@ -303,7 +308,7 @@ public class QtNative
         if (uri == null)
             uri = getUriWithValidPermission(context, contentUrl, "r");
         if (uri == null) {
-            Log.e(QtTAG, "checkFileExists(): No permissions to open Uri");
+            Log.e(QtTAG, getCurrentMethodNameLog() + INVALID_OR_NULL_URI_ERROR_MESSAGE);
             return exists;
         } else {
             if (!m_cachedUris.containsKey(contentUrl))
@@ -318,15 +323,10 @@ public class QtNative
                 cur.close();
             }
             return exists;
-        } catch (IllegalArgumentException e) {
-            Log.e(QtTAG, "checkFileExists(): Invalid Uri");
-            e.printStackTrace();
-            return exists;
-        } catch (UnsupportedOperationException e) {
-            Log.e(QtTAG, "checkFileExists(): Unsupported operation for given Uri");
-            e.printStackTrace();
-            return false;
+        } catch (IllegalArgumentException | SecurityException | UnsupportedOperationException e) {
+            Log.e(QtTAG, getCurrentMethodNameLog() + e.toString());
         }
+        return exists;
     }
 
     public static boolean checkIfWritable(Context context, String contentUrl)
@@ -340,11 +340,11 @@ public class QtNative
         Uri uri = m_cachedUris.get(contentUrl);
         if (m_knownDirs.contains(contentUrl))
             return true;
-        if (uri == null) {
+        if (uri == null)
             uri = getUriWithValidPermission(context, contentUrl, "r");
-        }
+
         if (uri == null) {
-            Log.e(QtTAG, "isDir(): No permissions to open Uri");
+            Log.e(QtTAG, getCurrentMethodNameLog() + INVALID_OR_NULL_URI_ERROR_MESSAGE);
             return isDir;
         } else {
             if (!m_cachedUris.containsKey(contentUrl))
@@ -357,10 +357,13 @@ public class QtNative
             if (!paths.get(0).equals("tree"))
                 return false;
             ContentResolver resolver = context.getContentResolver();
-            Uri docUri = DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri));
+            Uri docUri = DocumentsContract.buildDocumentUriUsingTree(uri,
+                    DocumentsContract.getTreeDocumentId(uri));
             if (!docUri.toString().startsWith(uri.toString()))
                 return false;
-            Cursor cur = resolver.query(docUri, new String[] { DocumentsContract.Document.COLUMN_MIME_TYPE }, null, null, null);
+            Cursor cur = resolver.query(docUri, new String[] {
+                    DocumentsContract.Document.COLUMN_MIME_TYPE },
+                    null, null, null);
             if (cur != null) {
                 if (cur.moveToFirst()) {
                     final String dirStr = new String(DocumentsContract.Document.MIME_TYPE_DIR);
@@ -371,22 +374,18 @@ public class QtNative
                 cur.close();
             }
             return isDir;
-        } catch (IllegalArgumentException e) {
-            Log.e(QtTAG, "checkIfDir(): Invalid Uri");
-            e.printStackTrace();
-            return false;
-        } catch (UnsupportedOperationException e) {
-            Log.e(QtTAG, "checkIfDir(): Unsupported operation for given Uri");
-            e.printStackTrace();
-            return false;
+        } catch (IllegalArgumentException | SecurityException | UnsupportedOperationException e) {
+            Log.e(QtTAG, getCurrentMethodNameLog() + e.toString());
         }
+        return false;
     }
+
     public static String[] listContentsFromTreeUri(Context context, String contentUrl)
     {
         Uri treeUri = Uri.parse(contentUrl);
-        final ArrayList<String> results = new ArrayList<String>();
+        final ArrayList<String> results = new ArrayList<>();
         if (treeUri == null) {
-            Log.e(QtTAG, "listContentsFromTreeUri(): Invalid uri");
+            Log.e(QtTAG, getCurrentMethodNameLog() + INVALID_OR_NULL_URI_ERROR_MESSAGE);
             return results.toArray(new String[results.size()]);
         }
         final ContentResolver resolver = context.getContentResolver();
@@ -394,16 +393,20 @@ public class QtNative
                 DocumentsContract.getTreeDocumentId(treeUri));
         final Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(docUri,
                                 DocumentsContract.getDocumentId(docUri));
-        Cursor c = null;
-        final String dirStr = new String(DocumentsContract.Document.MIME_TYPE_DIR);
+        Cursor c;
+        final String dirStr = DocumentsContract.Document.MIME_TYPE_DIR;
         try {
             c = resolver.query(childrenUri, new String[] {
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE }, null, null, null);
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE },
+                    null, null, null);
             while (c.moveToNext()) {
                 final String fileString = c.getString(1);
                 if (!m_cachedUris.containsKey(contentUrl + "/" + fileString)) {
                     m_cachedUris.put(contentUrl + "/" + fileString,
-                                     DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0)));
+                                     DocumentsContract.buildDocumentUriUsingTree(treeUri,
+                                             c.getString(0)));
                 }
                 results.add(fileString);
                 if (c.getString(2).equals(dirStr))
@@ -416,6 +419,7 @@ public class QtNative
         }
         return results.toArray(new String[results.size()]);
     }
+
     // this method loads full path libs
     public static void loadQtLibraries(final ArrayList<String> libraries)
     {
@@ -554,8 +558,8 @@ public class QtNative
         synchronized (m_mainActivityMutex) {
             final Looper mainLooper = Looper.getMainLooper();
             final Handler handler = new Handler(mainLooper);
-            final boolean actionIsQueued = !m_activityPaused && m_activity != null && mainLooper != null && handler.post(action);
-            if (!actionIsQueued)
+            final boolean active = (m_activity != null && !m_activityPaused) || m_service != null;
+            if (!active || mainLooper == null || !handler.post(action))
                 m_lostActions.add(action);
         }
     }
@@ -591,7 +595,19 @@ public class QtNative
         });
     }
 
-    public static boolean startApplication(String params, final String environment, String mainLib) throws Exception
+    public static List<Display> getAvailableDisplays()
+    {
+        Context context = getContext();
+        DisplayManager displayManager =
+                (DisplayManager)context.getSystemService(Context.DISPLAY_SERVICE);
+        if (displayManager != null) {
+            Display[] displays = displayManager.getDisplays();
+            return Arrays.asList(displays);
+        }
+        return new ArrayList<Display>();
+    }
+
+    public static boolean startApplication(String params, String mainLib) throws Exception
     {
         if (params == null)
             params = "-platform\tandroid";
@@ -605,17 +621,14 @@ public class QtNative
             m_qtThread.run(new Runnable() {
                 @Override
                 public void run() {
-                    res[0] = startQtAndroidPlugin(qtParams, environment);
-                    setDisplayMetrics(m_displayMetricsScreenWidthPixels,
-                                      m_displayMetricsScreenHeightPixels,
-                                      m_displayMetricsAvailableLeftPixels,
-                                      m_displayMetricsAvailableTopPixels,
-                                      m_displayMetricsAvailableWidthPixels,
-                                      m_displayMetricsAvailableHeightPixels,
-                                      m_displayMetricsXDpi,
-                                      m_displayMetricsYDpi,
-                                      m_displayMetricsScaledDensity,
-                                      m_displayMetricsDensity);
+                    res[0] = startQtAndroidPlugin(qtParams);
+                    setDisplayMetrics(
+                            m_displayMetricsScreenWidthPixels, m_displayMetricsScreenHeightPixels,
+                            m_displayMetricsAvailableLeftPixels, m_displayMetricsAvailableTopPixels,
+                            m_displayMetricsAvailableWidthPixels,
+                            m_displayMetricsAvailableHeightPixels, m_displayMetricsXDpi,
+                            m_displayMetricsYDpi, m_displayMetricsScaledDensity,
+                            m_displayMetricsDensity, m_displayMetricsRefreshRate);
                 }
             });
             m_qtThread.post(new Runnable() {
@@ -630,16 +643,12 @@ public class QtNative
         return res[0];
     }
 
-    public static void setApplicationDisplayMetrics(int screenWidthPixels,
-                                                    int screenHeightPixels,
-                                                    int availableLeftPixels,
-                                                    int availableTopPixels,
+    public static void setApplicationDisplayMetrics(int screenWidthPixels, int screenHeightPixels,
+                                                    int availableLeftPixels, int availableTopPixels,
                                                     int availableWidthPixels,
-                                                    int availableHeightPixels,
-                                                    double XDpi,
-                                                    double YDpi,
-                                                    double scaledDensity,
-                                                    double density)
+                                                    int availableHeightPixels, double XDpi,
+                                                    double YDpi, double scaledDensity,
+                                                    double density, float refreshRate)
     {
         /* Fix buggy dpi report */
         if (XDpi < android.util.DisplayMetrics.DENSITY_LOW)
@@ -649,16 +658,9 @@ public class QtNative
 
         synchronized (m_mainActivityMutex) {
             if (m_started) {
-                setDisplayMetrics(screenWidthPixels,
-                                  screenHeightPixels,
-                                  availableLeftPixels,
-                                  availableTopPixels,
-                                  availableWidthPixels,
-                                  availableHeightPixels,
-                                  XDpi,
-                                  YDpi,
-                                  scaledDensity,
-                                  density);
+                setDisplayMetrics(screenWidthPixels, screenHeightPixels, availableLeftPixels,
+                                  availableTopPixels, availableWidthPixels, availableHeightPixels,
+                                  XDpi, YDpi, scaledDensity, density, refreshRate);
             } else {
                 m_displayMetricsScreenWidthPixels = screenWidthPixels;
                 m_displayMetricsScreenHeightPixels = screenHeightPixels;
@@ -670,6 +672,7 @@ public class QtNative
                 m_displayMetricsYDpi = YDpi;
                 m_displayMetricsScaledDensity = scaledDensity;
                 m_displayMetricsDensity = density;
+                m_displayMetricsRefreshRate = refreshRate;
             }
         }
     }
@@ -677,15 +680,16 @@ public class QtNative
 
 
     // application methods
-    public static native boolean startQtAndroidPlugin(String params, String env);
+    public static native boolean startQtAndroidPlugin(String params);
     public static native void startQtApplication();
     public static native void waitForServiceSetup();
     public static native void quitQtCoreApplication();
     public static native void quitQtAndroidPlugin();
     public static native void terminateQt();
+    public static native boolean updateNativeActivity();
     // application methods
 
-    private static void quitApp()
+    public static void quitApp()
     {
         runAction(new Runnable() {
             @Override
@@ -695,6 +699,8 @@ public class QtNative
                      m_activity.finish();
                  if (m_service != null)
                      m_service.stopSelf();
+
+                 m_started = false;
             }
         });
     }
@@ -717,9 +723,11 @@ public class QtNative
             }
             return 1;
         }
-        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN && index == event.getActionIndex()) {
+        if (action == MotionEvent.ACTION_DOWN
+            || action == MotionEvent.ACTION_POINTER_DOWN && index == event.getActionIndex()) {
             return 0;
-        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_UP && index == event.getActionIndex()) {
+        } else if (action == MotionEvent.ACTION_UP
+            || action == MotionEvent.ACTION_POINTER_UP && index == event.getActionIndex()) {
             return 3;
         }
         return 2;
@@ -769,6 +777,10 @@ public class QtNative
 
                 case MotionEvent.ACTION_UP:
                     touchEnd(id, 2);
+                    break;
+
+                case MotionEvent.ACTION_CANCEL:
+                    touchCancel(id);
                     break;
 
                 default:
@@ -839,13 +851,8 @@ public class QtNative
         int perm = PackageManager.PERMISSION_DENIED;
         synchronized (m_mainActivityMutex) {
             Context context = getContext();
-            try {
-                if (m_checkSelfPermissionMethod == null)
-                    m_checkSelfPermissionMethod = Context.class.getMethod("checkSelfPermission", String.class);
-                perm = (Integer)m_checkSelfPermissionMethod.invoke(context, permission);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            PackageManager pm = context.getPackageManager();
+            perm = pm.checkPermission(permission, context.getPackageName());
         }
 
         return perm;
@@ -863,6 +870,11 @@ public class QtNative
                     m_activityDelegate.updateSelection(selStart, selEnd, candidatesStart, candidatesEnd);
             }
         });
+    }
+
+    private static int getSelectHandleWidth()
+    {
+        return m_activityDelegate.getSelectHandleWidth();
     }
 
     private static void updateHandles(final int mode,
@@ -912,6 +924,7 @@ public class QtNative
 
     private static void hideSoftwareKeyboard()
     {
+        m_isKeyboardHiding = true;
         runAction(new Runnable() {
             @Override
             public void run() {
@@ -934,25 +947,30 @@ public class QtNative
         });
     }
 
-    private static void notifyAccessibilityLocationChange()
+    public static boolean isSoftwareKeyboardVisible()
+    {
+        return m_activityDelegate.isKeyboardVisible() && !m_isKeyboardHiding;
+    }
+
+    private static void notifyAccessibilityLocationChange(final int viewId)
     {
         runAction(new Runnable() {
             @Override
             public void run() {
                 if (m_activityDelegate != null) {
-                    m_activityDelegate.notifyAccessibilityLocationChange();
+                    m_activityDelegate.notifyAccessibilityLocationChange(viewId);
                 }
             }
         });
     }
 
-    private static void notifyObjectHide(final int viewId)
+    private static void notifyObjectHide(final int viewId, final int parentId)
     {
         runAction(new Runnable() {
             @Override
             public void run() {
                 if (m_activityDelegate != null) {
-                    m_activityDelegate.notifyObjectHide(viewId);
+                    m_activityDelegate.notifyObjectHide(viewId, parentId);
                 }
             }
         });
@@ -968,6 +986,35 @@ public class QtNative
                 }
             }
         });
+    }
+
+    private static void notifyValueChanged(int viewId, String value)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                if (m_activityDelegate != null) {
+                    m_activityDelegate.notifyValueChanged(viewId, value);
+                }
+            }
+        });
+    }
+
+    private static void notifyScrolledEvent(final int viewId)
+    {
+        runAction(new Runnable() {
+            @Override
+            public void run() {
+                if (m_activityDelegate != null) {
+                    m_activityDelegate.notifyScrolledEvent(viewId);
+                }
+            }
+        });
+    }
+
+    public static void notifyQtAndroidPluginRunning(final boolean running)
+    {
+        m_activityDelegate.notifyQtAndroidPluginRunning(running);
     }
 
     private static void registerClipboardManager()
@@ -999,8 +1046,16 @@ public class QtNative
 
     private static void clearClipData()
     {
-        if (Build.VERSION.SDK_INT >= 28 && m_clipboardManager != null)
-            m_clipboardManager.clearPrimaryClip();
+        if (m_clipboardManager != null) {
+            if (Build.VERSION.SDK_INT >= 28) {
+                m_clipboardManager.clearPrimaryClip();
+            } else {
+                String[] mimeTypes = { ClipDescription.MIMETYPE_UNKNOWN };
+                ClipData data = new ClipData("", mimeTypes, new ClipData.Item(new Intent()));
+                m_clipboardManager.setPrimaryClip(data);
+            }
+        }
+        m_usePrimaryClip = false;
     }
     private static void setClipboardText(String text)
     {
@@ -1012,17 +1067,7 @@ public class QtNative
 
     public static boolean hasClipboardText()
     {
-        try {
-            if (m_clipboardManager != null && m_clipboardManager.hasPrimaryClip()) {
-                ClipData primaryClip = m_clipboardManager.getPrimaryClip();
-                for (int i = 0; i < primaryClip.getItemCount(); ++i)
-                    if (primaryClip.getItemAt(i).getText() != null)
-                        return true;
-            }
-        } catch (Exception e) {
-            Log.e(QtTAG, "Failed to get clipboard data", e);
-        }
-        return false;
+       return hasClipboardMimeType("text/plain");
     }
 
     private static String getClipboardText()
@@ -1068,19 +1113,27 @@ public class QtNative
         }
     }
 
-    public static boolean hasClipboardHtml()
+    private static boolean hasClipboardMimeType(String mimeType)
     {
-        try {
-            if (m_clipboardManager != null && m_clipboardManager.hasPrimaryClip()) {
-                ClipData primaryClip = m_clipboardManager.getPrimaryClip();
-                for (int i = 0; i < Objects.requireNonNull(primaryClip).getItemCount(); ++i)
-                    if (primaryClip.getItemAt(i).getHtmlText() != null)
-                        return true;
-            }
-        } catch (Exception e) {
-            Log.e(QtTAG, "Failed to get clipboard data", e);
+        if (m_clipboardManager == null)
+            return false;
+
+        ClipDescription description = m_clipboardManager.getPrimaryClipDescription();
+        // getPrimaryClipDescription can fail if the app does not have input focus
+        if (description == null)
+            return false;
+
+        for (int i = 0; i < description.getMimeTypeCount(); ++i) {
+            String itemMimeType = description.getMimeType(i);
+            if (itemMimeType.equals(mimeType))
+                return true;
         }
         return false;
+    }
+
+    public static boolean hasClipboardHtml()
+    {
+       return hasClipboardMimeType("text/html");
     }
 
     private static String getClipboardHtml()
@@ -1109,17 +1162,7 @@ public class QtNative
 
     public static boolean hasClipboardUri()
     {
-        try {
-            if (m_clipboardManager != null && m_clipboardManager.hasPrimaryClip()) {
-                ClipData primaryClip = m_clipboardManager.getPrimaryClip();
-                for (int i = 0; i < primaryClip.getItemCount(); ++i)
-                    if (primaryClip.getItemAt(i).getUri() != null)
-                        return true;
-            }
-        } catch (Exception e) {
-            Log.e(QtTAG, "Failed to get clipboard data", e);
-        }
-        return false;
+       return hasClipboardMimeType("text/uri-list");
     }
 
     private static String[] getClipboardUris()
@@ -1298,6 +1341,12 @@ public class QtNative
         });
     }
 
+    public static void keyboardVisibilityUpdated(boolean visibility)
+    {
+        m_isKeyboardHiding = false;
+        keyboardVisibilityChanged(visibility);
+    }
+
     private static String[] listAssetContent(android.content.res.AssetManager asset, String path) {
         String [] list;
         ArrayList<String> res = new ArrayList<String>();
@@ -1321,19 +1370,50 @@ public class QtNative
         return res.toArray(new String[res.size()]);
     }
 
+    /**
+     *Sets a single environment variable
+     *
+     * returns true if the value was set, false otherwise.
+     * in case it cannot set value will log the exception
+     **/
+    public static void setEnvironmentVariable(String key, String value)
+    {
+        try {
+            android.system.Os.setenv(key, value, true);
+        } catch (Exception e) {
+            Log.e(QtNative.QtTAG, "Could not set environment variable:" + key + "=" + value);
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     *Sets multiple environment variables
+     *
+     * Uses '\t' as divider between variables and '=' between key/value
+     * Ex: key1=val1\tkey2=val2\tkey3=val3
+     * Note: it assumed that the key cannot have '=' but the value can
+     **/
+    public static void setEnvironmentVariables(String environmentVariables)
+    {
+        for (String variable : environmentVariables.split("\t")) {
+            String[] keyvalue = variable.split("=", 2);
+            if (keyvalue.length < 2 || keyvalue[0].isEmpty())
+                continue;
+
+            setEnvironmentVariable(keyvalue[0], keyvalue[1]);
+        }
+    }
+
     // screen methods
-    public static native void setDisplayMetrics(int screenWidthPixels,
-                                                int screenHeightPixels,
-                                                int availableLeftPixels,
-                                                int availableTopPixels,
-                                                int availableWidthPixels,
-                                                int availableHeightPixels,
-                                                double XDpi,
-                                                double YDpi,
-                                                double scaledDensity,
-                                                double density);
+    public static native void setDisplayMetrics(int screenWidthPixels, int screenHeightPixels,
+                                                int availableLeftPixels, int availableTopPixels,
+                                                int availableWidthPixels, int availableHeightPixels,
+                                                double XDpi, double YDpi, double scaledDensity,
+                                                double density, float refreshRate);
     public static native void handleOrientationChanged(int newRotation, int nativeOrientation);
+    public static native void handleRefreshRateChanged(float refreshRate);
     // screen methods
+    public static native void handleUiDarkModeChanged(int newUiMode);
 
     // pointer methods
     public static native void mouseDown(int winId, int x, int y);
@@ -1343,6 +1423,7 @@ public class QtNative
     public static native void touchBegin(int winId);
     public static native void touchAdd(int winId, int pointerId, int action, boolean primary, int x, int y, float major, float minor, float rotation, float pressure);
     public static native void touchEnd(int winId, int action);
+    public static native void touchCancel(int winId);
     public static native void longPress(int winId, int x, int y);
     // pointer methods
 
@@ -1403,9 +1484,6 @@ public class QtNative
     public static native void runPendingCppRunnables();
 
     public static native void sendRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults);
-
-    private static native void setNativeActivity(Activity activity);
-    private static native void setNativeService(Service service);
     // activity methods
 
     // service methods

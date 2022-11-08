@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from odbc.pro.
 
 #####################################################################
@@ -8,14 +11,14 @@ qt_find_package(ODBC) # special case
 
 qt_internal_add_plugin(QODBCDriverPlugin
     OUTPUT_NAME qsqlodbc
-    TYPE sqldrivers
+    PLUGIN_TYPE sqldrivers
     SOURCES
         main.cpp
         qsql_odbc.cpp qsql_odbc_p.h
     DEFINES
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ODBC::ODBC
         Qt::Core
         Qt::CorePrivate

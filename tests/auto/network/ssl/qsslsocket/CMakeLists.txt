@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qsslsocket.pro.
 
 if(NOT QT_FEATURE_private_tests)
@@ -14,11 +17,10 @@ list(APPEND test_data "certs")
 qt_internal_add_test(tst_qsslsocket
     SOURCES
         tst_qsslsocket.cpp
-    DEFINES
-        SRCDIR=\\\"${CMAKE_CURRENT_SOURCE_DIR}/\\\"
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
+        Qt::TestPrivate
     TESTDATA ${test_data}
     QT_TEST_SERVER_LIST "squid" "danted" "cyrus" "apache2" "echo" # special case
 )

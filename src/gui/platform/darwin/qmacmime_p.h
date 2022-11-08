@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QMACMIME_H
 #define QMACMIME_H
@@ -58,40 +22,38 @@
 
 QT_BEGIN_NAMESPACE
 
-// Duplicate of QMacPasteboardMime in QtMacExtras. Keep in sync!
-class Q_GUI_EXPORT QMacInternalPasteboardMime {
-    char type;
+class Q_GUI_EXPORT QMacMime
+{
 public:
-    enum QMacPasteboardMimeType { MIME_DND=0x01,
-        MIME_CLIP=0x02,
-        MIME_QT_CONVERTOR=0x04,
-        MIME_QT3_CONVERTOR=0x08,
-        MIME_ALL=MIME_DND|MIME_CLIP
+    enum class HandlerScope : uchar
+    {
+        DnD            = 0x01,
+        Clipboard      = 0x02,
+        Qt_compatible  = 0x04,
+        Qt3_compatible = 0x08,
+        All            = DnD|Clipboard,
+        AllCompatible  = All|Qt_compatible
     };
-    explicit QMacInternalPasteboardMime(char);
-    virtual ~QMacInternalPasteboardMime();
 
-    static void initializeMimeTypes();
-    static void destroyMimeTypes();
+    QMacMime();
+    explicit QMacMime(HandlerScope scope); // internal
+    virtual ~QMacMime();
 
-    static QList<QMacInternalPasteboardMime*> all(uchar);
-    static QMacInternalPasteboardMime *convertor(uchar, const QString &mime, QString flav);
-    static QString flavorToMime(uchar, QString flav);
+    HandlerScope scope() const { return m_scope; }
 
-    virtual QString convertorName() = 0;
+    virtual bool canConvert(const QString &mime, const QString &uti) const = 0;
+    // for converting from Qt
+    virtual QList<QByteArray> convertFromMime(const QString &mime, const QVariant &data, const QString &uti) const = 0;
+    virtual QString utiForMime(const QString &mime) const = 0;
 
-    virtual bool canConvert(const QString &mime, QString flav) = 0;
-    virtual QString mimeFor(QString flav) = 0;
-    virtual QString flavorFor(const QString &mime) = 0;
-    virtual QVariant convertToMime(const QString &mime, QList<QByteArray> data, QString flav) = 0;
-    virtual QList<QByteArray> convertFromMime(const QString &mime, QVariant data, QString flav) = 0;
-    virtual int count(QMimeData *mimeData);
+    // for converting to Qt
+    virtual QString mimeForUti(const QString &uti) const = 0;
+    virtual QVariant convertToMime(const QString &mime, const QList<QByteArray> &data, const QString &uti) const = 0;
+    virtual int count(const QMimeData *mimeData) const;
+
+private:
+    const HandlerScope m_scope;
 };
-
-Q_GUI_EXPORT void qt_mac_addToGlobalMimeList(QMacInternalPasteboardMime *macMime);
-Q_GUI_EXPORT void qt_mac_removeFromGlobalMimeList(QMacInternalPasteboardMime *macMime);
-Q_GUI_EXPORT void qt_mac_registerDraggedTypes(const QStringList &types);
-Q_GUI_EXPORT const QStringList& qt_mac_enabledDraggedTypes();
 
 QT_END_NAMESPACE
 

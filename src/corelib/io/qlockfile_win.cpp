@@ -1,47 +1,12 @@
-/****************************************************************************
-**
-** Copyright (C) 2013 David Faure <faure+bluesystems@kde.org>
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2017 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2013 David Faure <faure+bluesystems@kde.org>
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2017 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "private/qlockfile_p.h"
 #include "private/qfilesystementry_p.h"
 #include <qt_windows.h>
+#include <psapi.h>
 
 #include "QtCore/qfileinfo.h"
 #include "QtCore/qdatetime.h"
@@ -131,34 +96,20 @@ bool QLockFilePrivate::isProcessRunning(qint64 pid, const QString &appname)
 
 QString QLockFilePrivate::processNameByPid(qint64 pid)
 {
-    typedef DWORD (WINAPI *GetModuleFileNameExFunc)(HANDLE, HMODULE, LPTSTR, DWORD);
-
-    HMODULE hPsapi = LoadLibraryA("psapi");
-    if (!hPsapi)
-        return QString();
-    GetModuleFileNameExFunc qGetModuleFileNameEx = reinterpret_cast<GetModuleFileNameExFunc>(
-        reinterpret_cast<QFunctionPointer>(GetProcAddress(hPsapi, "GetModuleFileNameExW")));
-    if (!qGetModuleFileNameEx) {
-        FreeLibrary(hPsapi);
-        return QString();
-    }
-
     HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, DWORD(pid));
     if (!hProcess) {
-        FreeLibrary(hPsapi);
         return QString();
     }
     wchar_t buf[MAX_PATH];
-    const DWORD length = qGetModuleFileNameEx(hProcess, NULL, buf, sizeof(buf) / sizeof(wchar_t));
+    const DWORD length = GetModuleFileNameExW(hProcess, NULL, buf, sizeof(buf) / sizeof(wchar_t));
     CloseHandle(hProcess);
-    FreeLibrary(hPsapi);
     if (!length)
         return QString();
     QString name = QString::fromWCharArray(buf, length);
-    int i = name.lastIndexOf(QLatin1Char('\\'));
+    int i = name.lastIndexOf(u'\\');
     if (i >= 0)
         name.remove(0, i + 1);
-    i = name.lastIndexOf(QLatin1Char('.'));
+    i = name.lastIndexOf(u'.');
     if (i >= 0)
         name.truncate(i);
     return name;

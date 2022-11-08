@@ -35,24 +35,12 @@ using namespace OT;
 
 struct blend_arg_t : number_t
 {
-  void init ()
-  {
-    number_t::init ();
-    deltas.init ();
-  }
-
-  void fini ()
-  {
-    number_t::fini ();
-    deltas.fini_deep ();
-  }
-
   void set_int (int v) { reset_blends (); number_t::set_int (v); }
   void set_fixed (int32_t v) { reset_blends (); number_t::set_fixed (v); }
   void set_real (double v) { reset_blends (); number_t::set_real (v); }
 
   void set_blends (unsigned int numValues_, unsigned int valueIndex_,
-			  unsigned int numBlends, hb_array_t<const blend_arg_t> blends_)
+		   unsigned int numBlends, hb_array_t<const blend_arg_t> blends_)
   {
     numValues = numValues_;
     valueIndex = valueIndex_;
@@ -80,7 +68,7 @@ struct cff2_cs_interp_env_t : cs_interp_env_t<blend_arg_t, CFF2Subrs>
 {
   template <typename ACC>
   void init (const byte_str_t &str, ACC &acc, unsigned int fd,
-		    const int *coords_=nullptr, unsigned int num_coords_=0)
+	     const int *coords_=nullptr, unsigned int num_coords_=0)
   {
     SUPER::init (str, acc.globalSubrs, acc.privateDicts[fd].localSubrs);
 
@@ -90,7 +78,7 @@ struct cff2_cs_interp_env_t : cs_interp_env_t<blend_arg_t, CFF2Subrs>
     seen_blend = false;
     seen_vsindex_ = false;
     scalars.init ();
-    do_blend = (coords != nullptr) && num_coords && (varStore != &Null(CFF2VariationStore));
+    do_blend = num_coords && coords && varStore->size;
     set_ivs (acc.privateDicts[fd].ivs);
   }
 
@@ -133,10 +121,11 @@ struct cff2_cs_interp_env_t : cs_interp_env_t<blend_arg_t, CFF2Subrs>
       region_count = varStore->varStore.get_region_index_count (get_ivs ());
       if (do_blend)
       {
-	scalars.resize (region_count);
-	varStore->varStore.get_scalars (get_ivs (),
-					(int *)coords, num_coords,
-					&scalars[0], region_count);
+	if (unlikely (!scalars.resize (region_count)))
+	  set_error ();
+	else
+	  varStore->varStore.get_region_scalars (get_ivs (), coords, num_coords,
+						 &scalars[0], region_count);
       }
       seen_blend = true;
     }
@@ -201,7 +190,7 @@ struct cff2_cs_opset_t : cs_opset_t<blend_arg_t, OPSET, cff2_cs_interp_env_t, PA
     switch (op) {
       case OpCode_callsubr:
       case OpCode_callgsubr:
-	/* a subroutine number shoudln't be a blended value */
+	/* a subroutine number shouldn't be a blended value */
 	if (unlikely (env.argStack.peek ().blending ()))
 	{
 	  env.set_error ();

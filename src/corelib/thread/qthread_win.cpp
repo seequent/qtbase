@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qthread.h"
 #include "qthread_p.h"
@@ -67,7 +31,7 @@ void qt_create_tls()
 {
     if (qt_current_thread_data_tls_index != TLS_OUT_OF_INDEXES)
         return;
-    static QBasicMutex mutex;
+    Q_CONSTINIT static QBasicMutex mutex;
     QMutexLocker locker(&mutex);
     if (qt_current_thread_data_tls_index != TLS_OUT_OF_INDEXES)
         return;
@@ -137,7 +101,7 @@ void QAdoptedThread::init()
 
 static QList<HANDLE> qt_adopted_thread_handles;
 static QList<QThread *> qt_adopted_qthreads;
-static QBasicMutex qt_adopted_thread_watcher_mutex;
+Q_CONSTINIT static QBasicMutex qt_adopted_thread_watcher_mutex;
 static DWORD qt_adopted_thread_watcher_id = 0;
 static HANDLE qt_adopted_thread_wakeup = 0;
 
@@ -316,10 +280,9 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
 
 #if !defined(QT_NO_DEBUG) && defined(Q_CC_MSVC)
     // sets the name of the current thread.
-    QByteArray objectName = thr->objectName().toLocal8Bit();
-    qt_set_thread_name(HANDLE(-1),
-                       objectName.isEmpty() ?
-                       thr->metaObject()->className() : objectName.constData());
+    qt_set_thread_name(HANDLE(-1), thr->d_func()->objectName.isEmpty()
+                        ? thr->metaObject()->className()
+                        : std::exchange(thr->d_func()->objectName, {}).toLocal8Bit().constData());
 #endif
 
     emit thr->started(QThread::QPrivateSignal());
@@ -330,28 +293,43 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
     return 0;
 }
 
+/*
+    For regularly terminating threads, this will be called and executed by the thread as the
+    last code before the thread exits. In that case, \a arg is the current QThread.
+
+    However, this function will also be called by QThread::terminate (as well as wait() and
+    setTerminationEnabled) to give Qt a chance to update the terminated thread's state and
+    process pending DeleteLater events for objects that live in the terminated thread. And for
+    adopted thread, this method is called by the thread watcher.
+
+    In those cases, \a arg will not be the current thread.
+*/
 void QThreadPrivate::finish(void *arg, bool lockAnyway) noexcept
 {
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadPrivate *d = thr->d_func();
 
-    QMutexLocker locker(lockAnyway ? &d->mutex : 0);
+    QMutexLocker locker(lockAnyway ? &d->mutex : nullptr);
     d->isInFinish = true;
     d->priority = QThread::InheritPriority;
     void **tls_data = reinterpret_cast<void **>(&d->data->tls);
-    locker.unlock();
+    if (lockAnyway)
+        locker.unlock();
     emit thr->finished(QThread::QPrivateSignal());
-    QCoreApplication::sendPostedEvents(0, QEvent::DeferredDelete);
+    QCoreApplicationPrivate::sendPostedEvents(nullptr, QEvent::DeferredDelete, d->data);
     QThreadStorageData::finish(tls_data);
-    locker.relock();
+    if (lockAnyway)
+        locker.relock();
 
     QAbstractEventDispatcher *eventDispatcher = d->data->eventDispatcher.loadRelaxed();
     if (eventDispatcher) {
         d->data->eventDispatcher = 0;
-        locker.unlock();
+        if (lockAnyway)
+            locker.unlock();
         eventDispatcher->closingDown();
         delete eventDispatcher;
-        locker.relock();
+        if (lockAnyway)
+            locker.relock();
     }
 
     d->running = false;
@@ -421,6 +399,9 @@ void QThread::start(Priority priority)
     if (d->running)
         return;
 
+    // avoid interacting with the binding system
+    d->objectName = d->extraData ? d->extraData->objectName.valueBypassingBindings()
+                                 : QString();
     d->running = true;
     d->finished = false;
     d->exited = false;
@@ -457,7 +438,7 @@ void QThread::start(Priority priority)
 
     int prio;
     d->priority = priority;
-    switch (d->priority) {
+    switch (priority) {
     case IdlePriority:
         prio = THREAD_PRIORITY_IDLE;
         break;
@@ -584,7 +565,7 @@ void QThreadPrivate::setPriority(QThread::Priority threadPriority)
 
     int prio;
     priority = threadPriority;
-    switch (priority) {
+    switch (threadPriority) {
     case QThread::IdlePriority:
         prio = THREAD_PRIORITY_IDLE;
         break;

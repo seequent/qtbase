@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from other.pro.
 
 if(NOT CMAKE_CROSSCOMPILING)
@@ -11,7 +14,6 @@ if(TARGET Qt::Widgets)
     # add_subdirectory(windowsmobile) <- does not exist # special case
 endif()
 if(TARGET Qt::Network AND TARGET Qt::Widgets)
-    add_subdirectory(lancelot)
     add_subdirectory(qnetworkaccessmanager_and_qprogressdialog)
 endif()
 if(MACOS AND TARGET Qt::Gui AND TARGET Qt::Widgets)
@@ -22,8 +24,7 @@ endif()
 if(TARGET Qt::Network)
     add_subdirectory(networkselftest)
 endif()
-# QTBUG-87674 # special case
-if(QT_FEATURE_accessibility AND TARGET Qt::Gui AND TARGET Qt::Widgets AND NOT ANDROID)
+if(QT_FEATURE_accessibility AND TARGET Qt::Gui AND TARGET Qt::Widgets)
     add_subdirectory(qaccessibility)
 endif()
 if(TARGET Qt::Gui)
@@ -43,9 +44,6 @@ if(MACOS AND TARGET Qt::Gui)
 endif()
 if(embedded)
     add_subdirectory(qdirectpainter)
-endif()
-if(ANDROID)
-    add_subdirectory(android)
 endif()
 if(QT_FEATURE_xkbcommon AND TARGET Qt::Gui)
     add_subdirectory(xkbkeyboard)

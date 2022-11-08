@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qtextedit_p.h"
 #if QT_CONFIG(lineedit)
@@ -58,7 +22,7 @@
 #endif
 #include <qstyle.h>
 #include <qtimer.h>
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
 #include <qaccessible.h>
 #endif
 #include "private/qtextdocumentlayout_p.h"
@@ -79,7 +43,11 @@ QT_BEGIN_NAMESPACE
 
 static inline bool shouldEnableInputMethod(QTextEdit *textedit)
 {
+#if defined (Q_OS_ANDROID)
+    return !textedit->isReadOnly() || (textedit->textInteractionFlags() & Qt::TextSelectableByMouse);
+#else
     return !textedit->isReadOnly();
+#endif
 }
 
 class QTextEditControl : public QWidgetTextControl
@@ -224,7 +192,7 @@ void QTextEditPrivate::_q_cursorPositionChanged()
 {
     Q_Q(QTextEdit);
     emit q->cursorPositionChanged();
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
     QAccessibleTextCursorEvent event(q, q->textCursor().position());
     QAccessible::updateAccessibility(&event);
 #endif
@@ -270,7 +238,7 @@ void QTextEditPrivate::pageUpDown(QTextCursor::MoveOperation op, QTextCursor::Mo
             vbar->triggerAction(QAbstractSlider::SliderPageStepAdd);
         }
     }
-    control->setTextCursor(cursor);
+    control->setTextCursor(cursor, moveMode == QTextCursor::KeepAnchor);
 }
 
 #if QT_CONFIG(scrollbar)
@@ -1403,8 +1371,8 @@ void QTextEdit::keyPressEvent(QKeyEvent *e)
         const QString text = e->text();
         if (cursor.atBlockStart()
             && (d->autoFormatting & AutoBulletList)
-            && (text.length() == 1)
-            && (text.at(0) == QLatin1Char('-') || text.at(0) == QLatin1Char('*'))
+            && (text.size() == 1)
+            && (text.at(0) == u'-' || text.at(0) == u'*')
             && (!cursor.currentList())) {
 
             d->createAutoBulletList();
@@ -1452,8 +1420,10 @@ void QTextEdit::keyPressEvent(QKeyEvent *e)
 */
 void QTextEdit::keyReleaseEvent(QKeyEvent *e)
 {
-#ifdef QT_KEYPAD_NAVIGATION
     Q_D(QTextEdit);
+    if (!isReadOnly())
+        d->handleSoftwareInputPanel();
+#ifdef QT_KEYPAD_NAVIGATION
     if (QApplicationPrivate::keypadNavigationEnabled()) {
         if (!e->isAutoRepeat() && e->key() == Qt::Key_Back
             && d->deleteAllTimer.isActive()) {
@@ -1802,6 +1772,10 @@ void QTextEdit::inputMethodEvent(QInputMethodEvent *e)
         setEditFocus(true);
 #endif
     d->sendControlEvent(e);
+    const bool emptyEvent = e->preeditString().isEmpty() && e->commitString().isEmpty()
+                         && e->attributes().isEmpty();
+    if (emptyEvent)
+        return;
     ensureCursorVisible();
 }
 
@@ -1829,9 +1803,13 @@ QVariant QTextEdit::inputMethodQuery(Qt::InputMethodQuery query, QVariant argume
 {
     Q_D(const QTextEdit);
     switch (query) {
-        case Qt::ImHints:
-        case Qt::ImInputItemClipRectangle:
+    case Qt::ImEnabled:
+        return isEnabled();
+    case Qt::ImHints:
+    case Qt::ImInputItemClipRectangle:
         return QWidget::inputMethodQuery(query);
+    case Qt::ImReadOnly:
+        return isReadOnly();
     default:
         break;
     }
@@ -2060,6 +2038,12 @@ void QTextEdit::setOverwriteMode(bool overwrite)
     \since 5.10
 
     By default, this property contains a value of 80 pixels.
+
+    Do not set a value less than the \l {QFontMetrics::}{horizontalAdvance()}
+    of the QChar::VisualTabCharacter character, otherwise the tab-character
+    will be drawn incompletely.
+
+    \sa QTextOption::ShowTabsAndSpaces, QTextDocument::defaultTextOption
 */
 
 qreal QTextEdit::tabStopDistance() const
@@ -2101,7 +2085,7 @@ void QTextEdit::setCursorWidth(int width)
     \brief whether the text edit accepts rich text insertions by the user
     \since 4.1
 
-    When this propery is set to false text edit will accept only
+    When this property is set to false text edit will accept only
     plain text input from the user. For example through clipboard or drag and drop.
 
     This property's default is true.

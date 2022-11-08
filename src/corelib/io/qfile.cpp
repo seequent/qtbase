@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2017 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// Copyright (C) 2017 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qplatformdefs.h"
 #include "qdebug.h"
@@ -61,6 +25,8 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 Q_DECL_COLD_FUNCTION
 static bool file_already_open(QFile &file, const char *where = nullptr)
 {
@@ -78,7 +44,7 @@ QFilePrivate::~QFilePrivate()
 }
 
 bool
-QFilePrivate::openExternalFile(int flags, int fd, QFile::FileHandleFlags handleFlags)
+QFilePrivate::openExternalFile(QIODevice::OpenMode flags, int fd, QFile::FileHandleFlags handleFlags)
 {
 #ifdef QT_NO_FSFILEENGINE
     Q_UNUSED(flags);
@@ -88,12 +54,12 @@ QFilePrivate::openExternalFile(int flags, int fd, QFile::FileHandleFlags handleF
     auto fs = std::make_unique<QFSFileEngine>();
     auto fe = fs.get();
     fileEngine = std::move(fs);
-    return fe->open(QIODevice::OpenMode(flags), fd, handleFlags);
+    return fe->open(flags, fd, handleFlags);
 #endif
 }
 
 bool
-QFilePrivate::openExternalFile(int flags, FILE *fh, QFile::FileHandleFlags handleFlags)
+QFilePrivate::openExternalFile(QIODevice::OpenMode flags, FILE *fh, QFile::FileHandleFlags handleFlags)
 {
 #ifdef QT_NO_FSFILEENGINE
     Q_UNUSED(flags);
@@ -103,7 +69,7 @@ QFilePrivate::openExternalFile(int flags, FILE *fh, QFile::FileHandleFlags handl
     auto fs = std::make_unique<QFSFileEngine>();
     auto fe = fs.get();
     fileEngine = std::move(fs);
-    return fe->open(QIODevice::OpenMode(flags), fh, handleFlags);
+    return fe->open(flags, fh, handleFlags);
 #endif
 }
 
@@ -260,6 +226,15 @@ QFile::QFile(QObject *parent)
 }
 /*!
     Constructs a new file object to represent the file with the given \a name.
+
+//! [qfile-explicit-constructor-note]
+    \note In versions up to and including Qt 6.8, this constructor is
+    implicit, for backward compatibility. Starting from Qt 6.9 this
+    constructor is unconditionally \c{explicit}. Users can force this
+    constructor to be \c{explicit} even in earlier versions of Qt by
+    defining the \c{QT_EXPLICIT_QFILE_CONSTRUCTION_FROM_PATH} macro
+    before including any Qt header.
+//! [qfile-explicit-constructor-note]
 */
 QFile::QFile(const QString &name)
     : QFileDevice(*new QFilePrivate, nullptr)
@@ -377,8 +352,8 @@ QFile::exists() const
 {
     Q_D(const QFile);
     // 0x1000000 = QAbstractFileEngine::Refresh, forcing an update
-    return (d->engine()->fileFlags(QAbstractFileEngine::FlagsMask
-                                    | QAbstractFileEngine::Refresh) & QAbstractFileEngine::ExistsFlag);
+    return d->engine()->fileFlags(QAbstractFileEngine::FlagsMask
+                                    | QAbstractFileEngine::Refresh).testAnyFlag(QAbstractFileEngine::ExistsFlag);
 }
 
 /*!
@@ -412,7 +387,7 @@ QFile::exists(const QString &fileName)
 QString QFile::symLinkTarget() const
 {
     Q_D(const QFile);
-    return d->engine()->fileName(QAbstractFileEngine::LinkName);
+    return d->engine()->fileName(QAbstractFileEngine::AbsoluteLinkTarget);
 }
 
 /*!
@@ -616,7 +591,7 @@ QFile::rename(const QString &newName)
             // report both errors
             d->setError(QFile::RenameError,
                         tr("Error while renaming: %1").arg(error.toString())
-                        + QLatin1Char('\n')
+                        + u'\n'
                         + tr("Unable to restore from %1: %2").
                         arg(QDir::toNativeSeparators(tmp.filePath()), error2.toString()));
             return false;
@@ -755,13 +730,9 @@ QFile::link(const QString &fileName, const QString &linkName)
 }
 
 /*!
-    Copies the file currently specified by fileName() to a file called
-    \a newName.  Returns \c true if successful; otherwise returns \c false.
+    Copies the file named fileName() to \a newName.
 
-    Note that if a file with the name \a newName already exists,
-    copy() returns \c false (i.e. QFile will not overwrite it).
-
-    The source file is closed before it is copied.
+    \include qfile-copy.qdocinc
 
     \sa setFileName()
 */
@@ -793,7 +764,7 @@ QFile::copy(const QString &newName)
                 error = true;
                 d->setError(QFile::CopyError, tr("Cannot open %1 for input").arg(d->fileName));
             } else {
-                const auto fileTemplate = QLatin1String("%1/qt_temp.XXXXXX");
+                const auto fileTemplate = "%1/qt_temp.XXXXXX"_L1;
 #ifdef QT_NO_TEMPORARYFILE
                 QFile out(fileTemplate.arg(QFileInfo(newName).path()));
                 if (!out.open(QIODevice::ReadWrite))
@@ -821,7 +792,8 @@ QFile::copy(const QString &newName)
                             totalRead += in;
                             if (in != out.write(block, in)) {
                                 close();
-                                d->setError(QFile::CopyError, tr("Failure to write block"));
+                                d->setError(QFile::CopyError, tr("Failure to write block: %1")
+                                            .arg(out.errorString()));
                                 error = true;
                                 break;
                             }
@@ -841,7 +813,8 @@ QFile::copy(const QString &newName)
                         if (!out.rename(newName)) {
                             error = true;
                             close();
-                            d->setError(QFile::CopyError, tr("Cannot create %1 for output").arg(newName));
+                            d->setError(QFile::CopyError, tr("Cannot create %1 for output: %2")
+                                        .arg(newName, out.errorString()));
                         }
                     }
 #ifdef QT_NO_TEMPORARYFILE
@@ -867,11 +840,9 @@ QFile::copy(const QString &newName)
 /*!
     \overload
 
-    Copies the file \a fileName to \a newName. Returns \c true if successful;
-    otherwise returns \c false.
+    Copies the file named \a fileName to \a newName.
 
-    If a file with the name \a newName already exists, copy() returns \c false
-    (i.e., QFile will not overwrite it).
+    \include qfile-copy.qdocinc
 
     \sa rename()
 */
@@ -892,7 +863,9 @@ QFile::copy(const QString &fileName, const QString &newName)
 
     \note In \l{QIODevice::}{WriteOnly} or \l{QIODevice::}{ReadWrite}
     mode, if the relevant file does not already exist, this function
-    will try to create a new file before opening it.
+    will try to create a new file before opening it. The file will be
+    created with mode 0666 masked by the umask on POSIX systems, and
+    with permissions inherited from the parent directory on Windows.
 
     \sa QIODevice::OpenMode, setFileName()
 */
@@ -912,6 +885,51 @@ bool QFile::open(OpenMode mode)
 
     // QIODevice provides the buffering, so there's no need to request it from the file engine.
     if (d->engine()->open(mode | QIODevice::Unbuffered)) {
+        QIODevice::open(mode);
+        if (mode & Append)
+            seek(size());
+        return true;
+    }
+    QFile::FileError err = d->fileEngine->error();
+    if (err == QFile::UnspecifiedError)
+        err = QFile::OpenError;
+    d->setError(err, d->fileEngine->errorString());
+    return false;
+}
+
+/*!
+    \overload
+
+    If the file does not exist and \a mode implies creating it, it is created
+    with the specified \a permissions.
+
+    On POSIX systems the actual permissions are influenced by the
+    value of \c umask.
+
+    On Windows the permissions are emulated using ACLs. These ACLs may be in non-canonical
+    order when the group is granted less permissions than others. Files and directories with
+    such permissions will generate warnings when the Security tab of the Properties dialog
+    is opened. Granting the group all permissions granted to others avoids such warnings.
+
+    \sa QIODevice::OpenMode, setFileName()
+    \since 6.3
+*/
+bool QFile::open(OpenMode mode, QFile::Permissions permissions)
+{
+    Q_D(QFile);
+    if (isOpen())
+        return file_already_open(*this);
+    // Either Append or NewOnly implies WriteOnly
+    if (mode & (Append | NewOnly))
+        mode |= WriteOnly;
+    unsetError();
+    if ((mode & (ReadOnly | WriteOnly)) == 0) {
+        qWarning("QIODevice::open: File access not specified");
+        return false;
+    }
+
+    // QIODevice provides the buffering, so there's no need to request it from the file engine.
+    if (d->engine()->open(mode | QIODevice::Unbuffered, permissions)) {
         QIODevice::open(mode);
         if (mode & Append)
             seek(size());
@@ -1136,6 +1154,8 @@ qint64 QFile::size() const
     \since 6.0
 
     Constructs a new file object to represent the file with the given \a name.
+
+    \include qfile.cpp qfile-explicit-constructor-note
 */
 /*!
     \fn QFile::QFile(const std::filesystem::path &name, QObject *parent)
@@ -1177,6 +1197,46 @@ qint64 QFile::size() const
 /*!
     \fn bool QFile::setPermissions(const std::filesystem::path &filename, Permissions permissionSpec)
     \since 6.0
+    \overload
+*/
+/*!
+    \fn bool exists(const std::filesystem::path &fileName)
+    \since 6.3
+    \overload
+*/
+/*!
+    \fn std::filesystem::path QFile::filesystemSymLinkTarget() const
+    \since 6.3
+    Returns symLinkTarget() as \c{std::filesystem::path}.
+*/
+/*!
+    \fn std::filesystem::path QFile::filesystemSymLinkTarget(const std::filesystem::path &fileName)
+    \since 6.3
+    Returns symLinkTarget() as \c{std::filesystem::path} of \a fileName.
+*/
+/*!
+    \fn bool remove(const std::filesystem::path &fileName)
+    \since 6.3
+    \overload
+*/
+/*!
+    \fn bool moveToTrash(const std::filesystem::path &fileName, QString *pathInTrash)
+    \since 6.3
+    \overload
+*/
+/*!
+    \fn bool rename(const std::filesystem::path &oldName, const std::filesystem::path &newName)
+    \since 6.3
+    \overload
+*/
+/*!
+    \fn bool link(const std::filesystem::path &fileName, const std::filesystem::path &newName);
+    \since 6.3
+    \overload
+*/
+/*!
+    \fn bool copy(const std::filesystem::path &fileName, const std::filesystem::path &newName);
+    \since 6.3
     \overload
 */
 

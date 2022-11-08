@@ -1,15 +1,16 @@
-# Generated from graphicsview.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-add_subdirectory(chip)
-add_subdirectory(elasticnodes)
-add_subdirectory(embeddeddialogs)
-add_subdirectory(collidingmice)
-add_subdirectory(basicgraphicslayouts)
-add_subdirectory(diagramscene)
-add_subdirectory(flowlayout)
-add_subdirectory(anchorlayout)
-add_subdirectory(simpleanchorlayout)
-add_subdirectory(weatheranchorlayout)
+qt_internal_add_example(chip)
+qt_internal_add_example(elasticnodes)
+qt_internal_add_example(embeddeddialogs)
+qt_internal_add_example(collidingmice)
+qt_internal_add_example(basicgraphicslayouts)
+qt_internal_add_example(diagramscene)
+qt_internal_add_example(flowlayout)
+qt_internal_add_example(anchorlayout)
+qt_internal_add_example(simpleanchorlayout)
+qt_internal_add_example(weatheranchorlayout)
 if(QT_FEATURE_cursor AND QT_FEATURE_draganddrop)
-    add_subdirectory(dragdroprobot)
+    qt_internal_add_example(dragdroprobot)
 endif()

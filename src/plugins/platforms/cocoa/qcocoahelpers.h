@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QCOCOAHELPERS_H
 #define QCOCOAHELPERS_H
@@ -71,8 +35,12 @@ QT_BEGIN_NAMESPACE
 Q_DECLARE_LOGGING_CATEGORY(lcQpaWindow)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaDrawing)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaMouse)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaKeys)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaInputMethods)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaScreen)
 Q_DECLARE_LOGGING_CATEGORY(lcQpaApplication)
+Q_DECLARE_LOGGING_CATEGORY(lcQpaClipboard)
+Q_DECLARE_LOGGING_CATEGORY(lcInputDevices)
 
 class QPixmap;
 class QString;
@@ -222,19 +190,6 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSPanelContentsWrapper);
 
 // -------------------------------------------------------------------------
 
-// QAppleRefCounted expects the retain function to return the object
-io_object_t q_IOObjectRetain(io_object_t obj);
-// QAppleRefCounted expects the release function to return void
-void q_IOObjectRelease(io_object_t obj);
-
-template <typename T>
-class QIOType : public QAppleRefCounted<T, io_object_t, q_IOObjectRetain, q_IOObjectRelease>
-{
-    using QAppleRefCounted<T, io_object_t, q_IOObjectRetain, q_IOObjectRelease>::QAppleRefCounted;
-};
-
-// -------------------------------------------------------------------------
-
 // Depending on the ABI of the platform, we may need to use objc_msgSendSuper_stret:
 // - http://www.sealiesoftware.com/blog/archive/2008/10/30/objc_explain_objc_msgSend_stret.html
 // - https://lists.apple.com/archives/cocoa-dev/2008/Feb/msg02338.html
@@ -355,6 +310,45 @@ QSendSuperHelper<Args...> qt_objcDynamicSuperHelper(id receiver, SEL selector, A
 
 // Same as calling super, but the super_class field resolved at runtime instead of compile time
 #define qt_objcDynamicSuper(...) qt_objcDynamicSuperHelper(self, _cmd, ##__VA_ARGS__)
+
+// -------------------------------------------------------------------------
+
+struct InputMethodQueryResult : public QHash<int, QVariant>
+{
+    operator bool() { return !isEmpty(); }
+};
+
+InputMethodQueryResult queryInputMethod(QObject *object, Qt::InputMethodQueries queries = Qt::ImEnabled);
+
+// -------------------------------------------------------------------------
+
+struct KeyEvent
+{
+    ulong timestamp = 0;
+    QEvent::Type type = QEvent::None;
+
+    Qt::Key key = Qt::Key_unknown;
+    Qt::KeyboardModifiers modifiers = Qt::NoModifier;
+    QString text;
+    bool isRepeat = false;
+
+    // Scan codes are hardware dependent codes for each key. There is no way to get these
+    // from Carbon or Cocoa, so leave it 0, as documented in QKeyEvent::nativeScanCode().
+    static const quint32 nativeScanCode = 0;
+
+    quint32 nativeVirtualKey = 0;
+    NSEventModifierFlags nativeModifiers = 0;
+
+    KeyEvent(NSEvent *nsevent);
+    bool sendWindowSystemEvent(QWindow *window) const;
+};
+
+QDebug operator<<(QDebug debug, const KeyEvent &e);
+
+// -------------------------------------------------------------------------
+
+QDebug operator<<(QDebug, const NSRange &);
+QDebug operator<<(QDebug, SEL);
 
 #endif // __OBJC__
 

@@ -1,15 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qfileselector.pro.
 
 #####################################################################
 ## tst_qfileselectors Test:
 #####################################################################
-
-qt_internal_add_test(tst_qfileselectors
-    SOURCES
-        tst_qfileselector.cpp
-    PUBLIC_LIBRARIES
-        Qt::CorePrivate
-)
 
 # Resources:
 set(qfileselector_resource_files
@@ -62,10 +58,12 @@ set(qfileselector_resource_files
     "platforms/test5"
 )
 
-qt_internal_add_resource(tst_qfileselectors "qfileselector"
-    PREFIX
-        "/"
-    FILES
-        ${qfileselector_resource_files}
+qt_internal_add_test(tst_qfileselectors
+    SOURCES
+        tst_qfileselector.cpp
+    LIBRARIES
+        Qt::CorePrivate
+    TESTDATA ${qfileselector_resource_files}
+    BUILTIN_TESTDATA
 )
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qnetconmonitor.pro.
 
 #####################################################################
@@ -13,7 +16,7 @@ endif()
 qt_internal_add_manual_test(qnetconmonitor
     SOURCES
         tst_qnetconmonitor.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::NetworkPrivate
         Qt::Test
 )

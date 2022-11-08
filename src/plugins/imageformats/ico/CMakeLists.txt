@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from ico.pro.
 
 #####################################################################
@@ -6,11 +9,11 @@
 
 qt_internal_add_plugin(QICOPlugin
     OUTPUT_NAME qico
-    TYPE imageformats
+    PLUGIN_TYPE imageformats
     SOURCES
-        main.cpp main.h
+        main.cpp
         qicohandler.cpp qicohandler.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui

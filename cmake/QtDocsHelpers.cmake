@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # This function adds a dependency between a doc-generating target like 'generate_docs_Gui'
 # and the necessary tool target like 'qdoc'.
 #
@@ -25,21 +28,28 @@ function(qt_internal_add_docs)
     set(target ${ARGV0})
     set(doc_project ${ARGV1})
 
-    # If a target is not built (which can happen for tools when crosscompiling, we shouldn't try
+    # If a target is not built (which can happen for tools when crosscompiling), we shouldn't try
     # to generate docs.
     if(NOT TARGET "${target}")
         return()
     endif()
 
-    if(QT_SUPERBUILD)
-        set(doc_tools_dir "${QtBase_BINARY_DIR}/${INSTALL_BINDIR}")
+    set(tool_dependencies_enabled TRUE)
+    if(NOT "${QT_HOST_PATH}" STREQUAL "")
+        set(tool_dependencies_enabled FALSE)
+        set(doc_tools_bin "${QT_HOST_PATH}/${QT${PROJECT_VERSION_MAJOR}_HOST_INFO_BINDIR}")
+        set(doc_tools_libexec "${QT_HOST_PATH}/${QT${PROJECT_VERSION_MAJOR}_HOST_INFO_LIBEXECDIR}")
+    elseif(QT_SUPERBUILD)
+        set(doc_tools_bin "${QtBase_BINARY_DIR}/${INSTALL_BINDIR}")
+        set(doc_tools_libexec "${QtBase_BINARY_DIR}/${INSTALL_LIBEXECDIR}")
     else()
-        set(doc_tools_dir "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
+        set(doc_tools_bin "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_BINDIR}")
+        set(doc_tools_libexec "${QT_BUILD_INTERNALS_RELOCATABLE_INSTALL_PREFIX}/${INSTALL_LIBEXECDIR}")
     endif()
 
-    set(qdoc_bin "${doc_tools_dir}/qdoc${CMAKE_EXECUTABLE_SUFFIX}")
-    set(qtattributionsscanner_bin "${doc_tools_dir}/qtattributionsscanner${CMAKE_EXECUTABLE_SUFFIX}")
-    set(qhelpgenerator_bin "${doc_tools_dir}/qhelpgenerator${CMAKE_EXECUTABLE_SUFFIX}")
+    set(qdoc_bin "${doc_tools_bin}/qdoc${CMAKE_EXECUTABLE_SUFFIX}")
+    set(qtattributionsscanner_bin "${doc_tools_libexec}/qtattributionsscanner${CMAKE_EXECUTABLE_SUFFIX}")
+    set(qhelpgenerator_bin "${doc_tools_libexec}/qhelpgenerator${CMAKE_EXECUTABLE_SUFFIX}")
 
     get_target_property(target_type ${target} TYPE)
     if (NOT target_type STREQUAL "INTERFACE_LIBRARY")
@@ -85,9 +95,9 @@ function(qt_internal_add_docs)
 
     # qtattributionsscanner
     add_custom_target(qattributionsscanner_${target}
-        DEPENDS ${qattributionsscanner_bin}
         COMMAND ${qtattributionsscanner_bin}
         ${PROJECT_SOURCE_DIR}
+        --basedir "${PROJECT_SOURCE_DIR}/.."
         --filter "QDocModule=${doc_target}"
         -o "${target_bin_dir}/codeattributions.qdoc"
     )
@@ -95,13 +105,17 @@ function(qt_internal_add_docs)
     # prepare docs target
     set(prepare_qdoc_args
         -outputdir "${qdoc_output_dir}"
-        -installdir "${QT_INSTALL_DIR}/${INSTALL_DOCDIR}"
         "${target_source_dir}/${doc_project}"
         -prepare
         -indexdir "${index_dir}"
         -no-link-errors
         "${include_path_args}"
     )
+    if(NOT QT_BUILD_ONLINE_DOCS)
+        list(PREPEND prepare_qdoc_args
+            -installdir "${QT_INSTALL_DIR}/${INSTALL_DOCDIR}"
+        )
+    endif()
 
     if(QT_SUPERBUILD)
         set(qt_install_docs_env "${QtBase_BINARY_DIR}/${INSTALL_DOCDIR}")
@@ -120,28 +134,41 @@ function(qt_internal_add_docs)
     )
 
     add_custom_target(prepare_docs_${target}
-        DEPENDS ${qdoc_bin}
         COMMAND ${CMAKE_COMMAND} -E env ${qdoc_env_args}
         ${qdoc_bin}
         ${prepare_qdoc_args}
     )
 
     add_dependencies(prepare_docs_${target} qattributionsscanner_${target})
+    if(QT_USE_SYNCQT_CPP)
+        if(NOT TARGET sync_all_public_headers)
+            add_custom_target(sync_all_public_headers)
+        endif()
+        add_dependencies(prepare_docs_${target} sync_all_public_headers)
+    endif()
 
     # generate docs target
-    set(generate_qdocs_args
+    set(generate_qdoc_args
         -outputdir "${qdoc_output_dir}"
-        -installdir "${INSTALL_DOCDIR}"
         "${target_source_dir}/${doc_project}"
         -generate
         -indexdir "${index_dir}"
         "${include_path_args}"
     )
+    if(NOT QT_BUILD_ONLINE_DOCS)
+        list(PREPEND generate_qdoc_args
+            -installdir "${QT_INSTALL_DIR}/${INSTALL_DOCDIR}"
+        )
+    endif()
 
     foreach(target_prefix generate_top_level_docs generate_repo_docs generate_docs)
+        set(depends_arg "")
+        if(tool_dependencies_enabled)
+            set(depends_arg DEPENDS ${qdoc_bin})
+        endif()
         add_custom_target(${target_prefix}_${target}
-            DEPENDS ${qdoc_bin}
-            COMMAND ${CMAKE_COMMAND} -E env ${qdoc_env_args} ${qdoc_bin} ${generate_qdocs_args})
+            ${depends_arg}
+            COMMAND ${CMAKE_COMMAND} -E env ${qdoc_env_args} ${qdoc_bin} ${generate_qdoc_args})
     endforeach()
 
     add_dependencies(generate_docs_${target} prepare_docs_${target})
@@ -158,8 +185,12 @@ function(qt_internal_add_docs)
     set(qch_file_path ${qdoc_qch_output_dir}/${qch_file_name})
 
     foreach(target_prefix qch_top_level_docs qch_repo_docs qch_docs)
+        set(depends_arg "")
+        if(tool_dependencies_enabled)
+            set(depends_arg DEPENDS ${qhelpgenerator_bin})
+        endif()
         add_custom_target(${target_prefix}_${target}
-            DEPENDS ${qhelpgenerator_bin}
+            ${depends_arg}
             COMMAND ${qhelpgenerator_bin}
             "${qdoc_output_dir}/${doc_target}.qhp"
             -o "${qch_file_path}"
@@ -218,7 +249,9 @@ function(qt_internal_add_docs)
 
     # Make sure that the necessary tools are built when running,
     # for example 'cmake --build . --target generate_docs'.
-    qt_internal_add_doc_tool_dependency(qattributionsscanner_${target} qtattributionsscanner)
-    qt_internal_add_doc_tool_dependency(prepare_docs_${target} qdoc)
-    qt_internal_add_doc_tool_dependency(qch_docs_${target} qhelpgenerator)
+    if(tool_dependencies_enabled)
+        qt_internal_add_doc_tool_dependency(qattributionsscanner_${target} qtattributionsscanner)
+        qt_internal_add_doc_tool_dependency(prepare_docs_${target} qdoc)
+        qt_internal_add_doc_tool_dependency(qch_docs_${target} qhelpgenerator)
+    endif()
 endfunction()

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qlayout.h"
 
@@ -570,12 +534,14 @@ void QLayout::widgetEvent(QEvent *e)
     case QEvent::ChildRemoved:
         {
             QChildEvent *c = (QChildEvent *)e;
-            if (c->child()->isWidgetType()) {
+            QObject *child = c->child();
+            QObjectPrivate *op = QObjectPrivate::get(child);
+            if (op->wasWidget) {
 #if QT_CONFIG(menubar)
-                if (c->child() == d->menubar)
+                if (child == d->menubar)
                     d->menubar = nullptr;
 #endif
-                removeWidgetRecursively(this, c->child());
+                removeWidgetRecursively(this, child);
             }
         }
         break;
@@ -602,6 +568,28 @@ void QLayout::childEvent(QChildEvent *e)
 
     if (QLayout *childLayout = qobject_cast<QLayout *>(e->child()))
         removeItem(childLayout);
+}
+
+/*!
+  \internal
+  Also takes contentsMargins and menu bar into account.
+*/
+int QLayout::totalMinimumHeightForWidth(int w) const
+{
+    Q_D(const QLayout);
+    int side=0, top=0;
+    if (d->topLevel) {
+        QWidget *parent = parentWidget();
+        parent->ensurePolished();
+        QWidgetPrivate *wd = parent->d_func();
+        side += wd->leftmargin + wd->rightmargin;
+        top += wd->topmargin + wd->bottommargin;
+    }
+    int h = minimumHeightForWidth(w - side) + top;
+#if QT_CONFIG(menubar)
+    h += menuBarHeightForWidth(d->menubar, w);
+#endif
+    return h;
 }
 
 /*!
@@ -721,24 +709,24 @@ QLayout::~QLayout()
 
 /*!
     This function is called from \c addLayout() or \c insertLayout() functions in
-    subclasses to add layout \a l as a sub-layout.
+    subclasses to add layout \a childLayout as a sub-layout.
 
     The only scenario in which you need to call it directly is if you
     implement a custom layout that supports nested layouts.
 
     \sa QBoxLayout::addLayout(), QBoxLayout::insertLayout(), QGridLayout::addLayout()
 */
-void QLayout::addChildLayout(QLayout *l)
+void QLayout::addChildLayout(QLayout *childLayout)
 {
-    if (Q_UNLIKELY(l->parent())) {
-        qWarning("QLayout::addChildLayout: layout \"%ls\" already has a parent",
-                 qUtf16Printable(l->objectName()));
+    if (Q_UNLIKELY(childLayout->parent())) {
+        qWarning("QLayout::addChildLayout: layout %s \"%ls\" already has a parent",
+                 childLayout->metaObject()->className(), qUtf16Printable(childLayout->objectName()));
         return;
     }
-    l->setParent(this);
+    childLayout->setParent(this);
 
     if (QWidget *mw = parentWidget()) {
-        l->d_func()->reparentChildWidgets(mw);
+        childLayout->d_func()->reparentChildWidgets(mw);
     }
 
 }
@@ -841,9 +829,10 @@ bool QLayoutPrivate::checkLayout(QLayout *otherLayout) const
     This function is called from \c addWidget() functions in
     subclasses to add \a w as a managed widget of a layout.
 
-    If \a w is already managed by a layout, this function will give a warning
-    and remove \a w from that layout. This function must therefore be
-    called before adding \a w to the layout's data structure.
+    If \a w is already managed by a layout, this function will produce
+    a warning, and remove \a w from that layout. This function must
+    therefore be called before adding \a w to the layout's data
+    structure.
 */
 void QLayout::addChildWidget(QWidget *w)
 {
@@ -1333,6 +1322,11 @@ QRect QLayout::alignmentRect(const QRect &r) const
 */
 void QLayout::removeWidget(QWidget *widget)
 {
+    if (Q_UNLIKELY(!widget)) {
+        qWarning("QLayout::removeWidget: Cannot remove a null widget.");
+        return;
+    }
+
     int i = 0;
     QLayoutItem *child;
     while ((child = itemAt(i))) {

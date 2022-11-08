@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from cocoa.pro.
 
 # special case:
@@ -9,24 +12,20 @@
 qt_internal_add_plugin(QCocoaIntegrationPlugin
     OUTPUT_NAME qcocoa
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES cocoa # special case
-    TYPE platforms
+    PLUGIN_TYPE platforms
     SOURCES
         main.mm
         qcocoaapplication.h qcocoaapplication.mm
         qcocoaapplicationdelegate.h qcocoaapplicationdelegate.mm
         qcocoabackingstore.h qcocoabackingstore.mm
         qcocoaclipboard.h qcocoaclipboard.mm
-        qcocoacolordialoghelper.h qcocoacolordialoghelper.mm
         qcocoacursor.h qcocoacursor.mm
         qcocoadrag.h qcocoadrag.mm
         qcocoaeventdispatcher.h qcocoaeventdispatcher.mm
-        qcocoafiledialoghelper.h qcocoafiledialoghelper.mm
-        qcocoafontdialoghelper.h qcocoafontdialoghelper.mm
         qcocoahelpers.h qcocoahelpers.mm
         qcocoainputcontext.h qcocoainputcontext.mm
         qcocoaintegration.h qcocoaintegration.mm
         qcocoaintrospection.h qcocoaintrospection.mm
-        qcocoakeymapper.h qcocoakeymapper.mm
         qcocoamenu.h qcocoamenu.mm
         qcocoamenubar.h qcocoamenubar.mm
         qcocoamenuitem.h qcocoamenuitem.mm
@@ -51,7 +50,7 @@ qt_internal_add_plugin(QCocoaIntegrationPlugin
         qcocoafontdialoghelper.h qcocoafontdialoghelper.mm
     DEFINES
         QT_NO_FOREACH
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ${FWAppKit}
         ${FWCarbon}
         ${FWCoreServices}

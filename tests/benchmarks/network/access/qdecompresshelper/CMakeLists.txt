@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdecompresshelper.pro.
 
 #####################################################################
@@ -9,7 +12,7 @@ qt_internal_add_benchmark(qdecompresshelper
         main.cpp
     DEFINES
         SRC_DIR=${CMAKE_CURRENT_SOURCE_DIR} # special case
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::NetworkPrivate
         Qt::Test
 )

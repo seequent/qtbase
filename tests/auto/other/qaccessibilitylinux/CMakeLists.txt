@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qaccessibilitylinux.pro.
 # special case begin
 if (NOT QT_FEATURE_accessibility OR NOT TARGET Qt::LinuxAccessibilitySupportPrivate
@@ -15,7 +18,7 @@ qt_internal_add_test(tst_qaccessibilitylinux
         tst_qaccessibilitylinux.cpp
     DBUS_INTERFACE_SOURCES
         ../../../../src/platformsupport/linuxaccessibility/dbusxml/Bus.xml
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::DBus
         Qt::Gui
         Qt::GuiPrivate

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from printsupport.pro.
 
 #####################################################################
@@ -11,10 +14,10 @@ qt_internal_add_module(PrintSupport
         kernel/qplatformprintdevice.cpp kernel/qplatformprintdevice.h
         kernel/qplatformprintersupport.cpp kernel/qplatformprintersupport.h
         kernel/qplatformprintplugin.cpp kernel/qplatformprintplugin.h
-        kernel/qprint_p.h
+        kernel/qprint.cpp kernel/qprint_p.h
         kernel/qprintdevice.cpp kernel/qprintdevice_p.h
         kernel/qprintengine.h
-        kernel/qprintengine_pdf.cpp
+        kernel/qprintengine_pdf.cpp kernel/qprintengine_pdf_p.h
         kernel/qprinter.cpp kernel/qprinter.h kernel/qprinter_p.h
         kernel/qprinterinfo.cpp kernel/qprinterinfo.h kernel/qprinterinfo_p.h
         kernel/qtprintsupportglobal.h kernel/qtprintsupportglobal_p.h
@@ -36,6 +39,9 @@ qt_internal_add_module(PrintSupport
         Qt::CorePrivate
         Qt::GuiPrivate
         Qt::WidgetsPrivate
+    GENERATE_CPP_EXPORTS
+    QPA_HEADER_FILTERS
+        "(^|/)qplatform.+\\.h$"
 )
 
 #### Keys ignored in scope 1:.:.:printsupport.pro:<TRUE>:
@@ -103,36 +109,36 @@ qt_internal_extend_target(PrintSupport CONDITION QT_FEATURE_printdialog
 if(QT_FEATURE_printdialog)
     # Resources:
     set(qprintdialog_resource_files
-        "images/fit-page-24.png"
-        "images/fit-page-32.png"
-        "images/fit-width-24.png"
-        "images/fit-width-32.png"
-        "images/go-first-24.png"
-        "images/go-first-32.png"
-        "images/go-last-24.png"
-        "images/go-last-32.png"
-        "images/go-next-24.png"
-        "images/go-next-32.png"
-        "images/go-previous-24.png"
-        "images/go-previous-32.png"
-        "images/layout-landscape-24.png"
-        "images/layout-landscape-32.png"
-        "images/layout-portrait-24.png"
-        "images/layout-portrait-32.png"
-        "images/page-setup-24.png"
-        "images/page-setup-32.png"
-        "images/print-24.png"
-        "images/print-32.png"
-        "images/view-page-multi-24.png"
-        "images/view-page-multi-32.png"
-        "images/view-page-one-24.png"
-        "images/view-page-one-32.png"
-        "images/view-page-sided-24.png"
-        "images/view-page-sided-32.png"
-        "images/zoom-in-24.png"
-        "images/zoom-in-32.png"
-        "images/zoom-out-24.png"
-        "images/zoom-out-32.png"
+        "dialogs/images/zoom-fit-page-24.png"
+        "dialogs/images/zoom-fit-page-32.png"
+        "dialogs/images/zoom-fit-width-24.png"
+        "dialogs/images/zoom-fit-width-32.png"
+        "dialogs/images/go-first-24.png"
+        "dialogs/images/go-first-32.png"
+        "dialogs/images/go-last-24.png"
+        "dialogs/images/go-last-32.png"
+        "dialogs/images/go-next-24.png"
+        "dialogs/images/go-next-32.png"
+        "dialogs/images/go-previous-24.png"
+        "dialogs/images/go-previous-32.png"
+        "dialogs/images/layout-landscape-24.png"
+        "dialogs/images/layout-landscape-32.png"
+        "dialogs/images/layout-portrait-24.png"
+        "dialogs/images/layout-portrait-32.png"
+        "dialogs/images/page-setup-24.png"
+        "dialogs/images/page-setup-32.png"
+        "dialogs/images/printer-24.png"
+        "dialogs/images/printer-32.png"
+        "dialogs/images/view-pages-overview-24.png"
+        "dialogs/images/view-pages-overview-32.png"
+        "dialogs/images/view-pages-single-24.png"
+        "dialogs/images/view-pages-single-32.png"
+        "dialogs/images/view-pages-facing-24.png"
+        "dialogs/images/view-pages-facing-32.png"
+        "dialogs/images/zoom-in-24.png"
+        "dialogs/images/zoom-in-32.png"
+        "dialogs/images/zoom-out-24.png"
+        "dialogs/images/zoom-out-32.png"
     )
 
     qt_internal_add_resource(PrintSupport "qprintdialog"
@@ -144,8 +150,8 @@ if(QT_FEATURE_printdialog)
             ${qprintdialog_resource_files}
     )
     set(qprintdialog1_resource_files
-        "images/status-color.png"
-        "images/status-gray-scale.png"
+        "dialogs/images/status-color.png"
+        "dialogs/images/status-gray-scale.png"
     )
 
     qt_internal_add_resource(PrintSupport "qprintdialog1"
@@ -180,7 +186,7 @@ qt_internal_extend_target(PrintSupport CONDITION QT_FEATURE_printdialog AND UNIX
         dialogs/qprintsettingsoutput.ui
         dialogs/qprintwidget.ui
     INCLUDE_DIRECTORIES
-        ${QT_SOURCE_TREE}/src/plugins/printsupport/cups
+        ${QtBase_SOURCE_DIR}/src/plugins/printsupport/cups
     ENABLE_AUTOGEN_TOOLS
         uic
 )
@@ -192,4 +198,3 @@ qt_internal_extend_target(PrintSupport CONDITION QT_FEATURE_printpreviewdialog
 qt_internal_add_docs(PrintSupport
     doc/qtprintsupport.qdocconf
 )
-

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qsizegrip.pro.
 
 #####################################################################
@@ -7,9 +10,7 @@
 qt_internal_add_test(tst_qsizegrip
     SOURCES
         tst_qsizegrip.cpp
-    INCLUDE_DIRECTORIES
-        .
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

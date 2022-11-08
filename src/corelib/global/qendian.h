@@ -1,48 +1,18 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2021 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QENDIAN_H
 #define QENDIAN_H
 
+#if 0
+#pragma qt_class(QtEndian)
+#endif
+
 #include <QtCore/qfloat16.h>
 #include <QtCore/qglobal.h>
+
+#include <limits>
 
 // include stdlib.h and hope that it defines __GLIBC__ for glibc-based systems
 #include <stdlib.h>
@@ -125,7 +95,7 @@ inline constexpr quint8 qbswap_helper(quint8 source)
 
 /*
  * T qbswap(T source).
- * Changes the byte order of a value from big endian to little endian or vice versa.
+ * Changes the byte order of a value from big-endian to little-endian or vice versa.
  * This function can be used if you are not concerned about alignment issues,
  * and it is therefore a bit more convenient and in most cases more efficient.
 */
@@ -162,7 +132,7 @@ inline double qbswap(double source)
 
 /*
  * qbswap(const T src, const void *dest);
- * Changes the byte order of \a src from big endian to little endian or vice versa
+ * Changes the byte order of \a src from big-endian to little-endian or vice versa
  * and stores the result in \a dest.
  * There is no alignment requirements for \a dest.
 */
@@ -311,9 +281,9 @@ public:
     }
 
     static constexpr QSpecialInteger max()
-    { return QSpecialInteger(std::numeric_limits<T>::max()); }
+    { return QSpecialInteger((std::numeric_limits<T>::max)()); }
     static constexpr QSpecialInteger min()
-    { return QSpecialInteger(std::numeric_limits<T>::min()); }
+    { return QSpecialInteger((std::numeric_limits<T>::min)()); }
 };
 
 template<typename T>
@@ -332,7 +302,7 @@ public:
     static constexpr T fromSpecial(T source) { return qFromBigEndian(source); }
 };
 
-#ifdef Q_CLANG_QDOC
+#ifdef Q_QDOC
 template<typename T>
 class QLEInteger {
 public:
@@ -353,8 +323,8 @@ public:
     QLEInteger &operator ^=(T i);
     QLEInteger &operator ++();
     QLEInteger &operator --();
-    QLEInteger &operator ++(int);
-    QLEInteger &operator --(int);
+    QLEInteger operator ++(int);
+    QLEInteger operator --(int);
 
     static constexpr QLEInteger max();
     static constexpr QLEInteger min();
@@ -380,8 +350,8 @@ public:
     QBEInteger &operator ^=(T i);
     QBEInteger &operator ++();
     QBEInteger &operator --();
-    QBEInteger &operator ++(int);
-    QBEInteger &operator --(int);
+    QBEInteger operator ++(int);
+    QBEInteger operator --(int);
 
     static constexpr QBEInteger max();
     static constexpr QBEInteger min();

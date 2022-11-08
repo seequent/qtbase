@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2013 John Layt <jlayt@kde.org>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2013 John Layt <jlayt@kde.org>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 
 #ifndef QTIMEZONE_H
@@ -44,6 +8,8 @@
 #include <QtCore/qshareddata.h>
 #include <QtCore/qlocale.h>
 #include <QtCore/qdatetime.h>
+
+#include <chrono>
 
 QT_REQUIRE_CONFIG(timezone);
 
@@ -93,9 +59,10 @@ public:
     explicit QTimeZone(const QByteArray &ianaId);
     explicit QTimeZone(int offsetSeconds);
     QTimeZone(const QByteArray &zoneId, int offsetSeconds, const QString &name,
-              const QString &abbreviation, QLocale::Country country = QLocale::AnyCountry,
+              const QString &abbreviation, QLocale::Territory territory = QLocale::AnyTerritory,
               const QString &comment = QString());
-    QTimeZone(const QTimeZone &other);
+    QTimeZone(const QTimeZone &other) noexcept;
+    QTimeZone(QTimeZone &&other) noexcept;
     ~QTimeZone();
 
     QTimeZone &operator=(const QTimeZone &other);
@@ -110,7 +77,11 @@ public:
     bool isValid() const;
 
     QByteArray id() const;
+    QLocale::Territory territory() const;
+#if QT_DEPRECATED_SINCE(6, 6)
+    QT_DEPRECATED_VERSION_X_6_6("Use territory() instead")
     QLocale::Country country() const;
+#endif
     QString comment() const;
 
     QString displayName(const QDateTime &atDateTime,
@@ -142,22 +113,33 @@ public:
     static bool isTimeZoneIdAvailable(const QByteArray &ianaId);
 
     static QList<QByteArray> availableTimeZoneIds();
-    static QList<QByteArray> availableTimeZoneIds(QLocale::Country country);
+    static QList<QByteArray> availableTimeZoneIds(QLocale::Territory territory);
     static QList<QByteArray> availableTimeZoneIds(int offsetSeconds);
 
     static QByteArray ianaIdToWindowsId(const QByteArray &ianaId);
     static QByteArray windowsIdToDefaultIanaId(const QByteArray &windowsId);
     static QByteArray windowsIdToDefaultIanaId(const QByteArray &windowsId,
-                                                QLocale::Country country);
+                                               QLocale::Territory territory);
     static QList<QByteArray> windowsIdToIanaIds(const QByteArray &windowsId);
     static QList<QByteArray> windowsIdToIanaIds(const QByteArray &windowsId,
-                                                 QLocale::Country country);
+                                                QLocale::Territory territory);
 
 #if (defined(Q_OS_DARWIN) || defined(Q_QDOC)) && !defined(QT_NO_SYSTEMLOCALE)
     static QTimeZone fromCFTimeZone(CFTimeZoneRef timeZone);
     CFTimeZoneRef toCFTimeZone() const Q_DECL_CF_RETURNS_RETAINED;
     static QTimeZone fromNSTimeZone(const NSTimeZone *timeZone);
     NSTimeZone *toNSTimeZone() const Q_DECL_NS_RETURNS_AUTORELEASED;
+#endif
+
+#if __cpp_lib_chrono >= 201907L || defined(Q_QDOC)
+    QT_POST_CXX17_API_IN_EXPORTED_CLASS
+    static QTimeZone fromStdTimeZonePtr(const std::chrono::time_zone *timeZone)
+    {
+        if (!timeZone)
+            return QTimeZone();
+        const std::string_view timeZoneName = timeZone->name();
+        return QTimeZone(QByteArrayView(timeZoneName).toByteArray());
+    }
 #endif
 
 private:
@@ -181,6 +163,20 @@ Q_CORE_EXPORT QDataStream &operator>>(QDataStream &ds, QTimeZone &tz);
 
 #ifndef QT_NO_DEBUG_STREAM
 Q_CORE_EXPORT QDebug operator<<(QDebug dbg, const QTimeZone &tz);
+#endif
+
+#if __cpp_lib_chrono >= 201907L
+// zoned_time
+template <typename> // QT_POST_CXX17_API_IN_EXPORTED_CLASS
+inline QDateTime QDateTime::fromStdZonedTime(const std::chrono::zoned_time<
+                                                std::chrono::milliseconds,
+                                                const std::chrono::time_zone *
+                                             > &time)
+{
+    const auto sysTime = time.get_sys_time();
+    const QTimeZone timeZone = QTimeZone::fromStdTimeZonePtr(time.get_time_zone());
+    return fromMSecsSinceEpoch(sysTime.time_since_epoch().count(), timeZone);
+}
 #endif
 
 QT_END_NAMESPACE

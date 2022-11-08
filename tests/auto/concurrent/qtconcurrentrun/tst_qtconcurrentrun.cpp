@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 #include <qtconcurrentrun.h>
 #include <QFuture>
 #include <QMutex>
@@ -64,6 +39,9 @@ private slots:
     void moveOnlyType();
     void crefFunction();
     void customPromise();
+    void nonDefaultConstructibleValue();
+    void nullThreadPool();
+    void nullThreadPoolNoLeak();
 };
 
 void light()
@@ -1405,7 +1383,7 @@ void tst_QtConcurrentRun::withPromiseAndThen()
         setFlag(syncEnd);
 
         future.waitForFinished();
-        QCOMPARE(future.results().count(), 0);
+        QCOMPARE(future.results().size(), 0);
         QVERIFY(runExecuted);
         QVERIFY(!cancelReceivedBeforeSync);
         QVERIFY(cancelReceivedAfterSync);
@@ -1425,7 +1403,7 @@ void tst_QtConcurrentRun::withPromiseAndThen()
         setFlag(syncEnd);
 
         resultFuture.waitForFinished();
-        QCOMPARE(future.results().count(), 1);
+        QCOMPARE(future.results().size(), 1);
         QCOMPARE(future.result(), 1);
         QVERIFY(runExecuted);
         QVERIFY(thenExecuted);
@@ -1448,7 +1426,7 @@ void tst_QtConcurrentRun::withPromiseAndThen()
         setFlag(syncEnd);
 
         resultFuture.waitForFinished();
-        QCOMPARE(future.results().count(), 0);
+        QCOMPARE(future.results().size(), 0);
         QVERIFY(runExecuted);
         QVERIFY(!thenExecuted);
         QVERIFY(cancelExecuted);
@@ -1564,6 +1542,50 @@ void tst_QtConcurrentRun::customPromise()
     QCOMPARE(p.future().progressMaximum(), 10);
 }
 
+void tst_QtConcurrentRun::nonDefaultConstructibleValue()
+{
+    struct NonDefaultConstructible
+    {
+        explicit NonDefaultConstructible(int v) : value(v) { }
+        int value = 0;
+    };
+
+    auto future = QtConcurrent::run([] { return NonDefaultConstructible(42); });
+    QCOMPARE(future.result().value, 42);
+}
+
+// QTBUG-98901
+void tst_QtConcurrentRun::nullThreadPool()
+{
+    QThreadPool *pool = nullptr;
+    std::atomic<bool> isInvoked = false;
+    auto future = run(pool, [&] { isInvoked = true; });
+    future.waitForFinished();
+    QVERIFY(future.isCanceled());
+    QVERIFY(!isInvoked);
+}
+
+struct LifetimeChecker
+{
+    LifetimeChecker() { ++count; }
+    LifetimeChecker(const LifetimeChecker &) { ++count; }
+    ~LifetimeChecker() { --count; }
+
+    void operator()() { }
+
+    static std::atomic<int> count;
+};
+std::atomic<int> LifetimeChecker::count = 0;
+
+void tst_QtConcurrentRun::nullThreadPoolNoLeak()
+{
+    {
+        QThreadPool *pool = nullptr;
+        auto future = run(pool, LifetimeChecker());
+        future.waitForFinished();
+    }
+    QCOMPARE(LifetimeChecker::count, 0);
+}
 
 QTEST_MAIN(tst_QtConcurrentRun)
 #include "tst_qtconcurrentrun.moc"

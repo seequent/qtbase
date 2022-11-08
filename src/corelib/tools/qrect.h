@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QRECT_H
 #define QRECT_H
@@ -52,8 +16,15 @@
 #if defined(Q_OS_DARWIN) || defined(Q_QDOC)
 struct CGRect;
 #endif
+#if defined(Q_OS_WASM) || defined(Q_QDOC)
+namespace emscripten {
+class val;
+}
+#endif
 
 QT_BEGIN_NAMESPACE
+
+class QRectF;
 
 class Q_CORE_EXPORT QRect
 {
@@ -157,6 +128,7 @@ public:
 #if defined(Q_OS_DARWIN) || defined(Q_QDOC)
     [[nodiscard]] CGRect toCGRect() const noexcept;
 #endif
+    [[nodiscard]] constexpr inline QRectF toRectF() const noexcept;
 
 private:
     int x1;
@@ -619,6 +591,11 @@ public:
     [[nodiscard]] CGRect toCGRect() const noexcept;
 #endif
 
+#if defined(Q_OS_WASM) || defined(Q_QDOC)
+    [[nodiscard]] static QRectF fromDOMRect(emscripten::val domRect);
+    [[nodiscard]] emscripten::val toDOMRect() const;
+#endif
+
 private:
     qreal xp;
     qreal yp;
@@ -769,7 +746,9 @@ constexpr inline void QRectF::moveTo(const QPointF &p) noexcept
 }
 
 constexpr inline QRectF QRectF::translated(qreal dx, qreal dy) const noexcept
-{ return QRectF(xp + dx, yp + dy, w, h); }
+{
+    return QRectF(xp + dx, yp + dy, w, h);
+}
 
 constexpr inline QRectF QRectF::translated(const QPointF &p) const noexcept
 { return QRectF(xp + p.x(), yp + p.y(), w, h); }
@@ -810,10 +789,17 @@ constexpr inline void QRectF::setCoords(qreal xp1, qreal yp1, qreal xp2, qreal y
 }
 
 constexpr inline void QRectF::adjust(qreal xp1, qreal yp1, qreal xp2, qreal yp2) noexcept
-{ xp += xp1; yp += yp1; w += xp2 - xp1; h += yp2 - yp1; }
+{
+    xp += xp1;
+    yp += yp1;
+    w += xp2 - xp1;
+    h += yp2 - yp1;
+}
 
 constexpr inline QRectF QRectF::adjusted(qreal xp1, qreal yp1, qreal xp2, qreal yp2) const noexcept
-{ return QRectF(xp + xp1, yp + yp1, w + xp2 - xp1, h + yp2 - yp1); }
+{
+    return QRectF(xp + xp1, yp + yp1, w + xp2 - xp1, h + yp2 - yp1);
+}
 
 constexpr inline void QRectF::setWidth(qreal aw) noexcept
 { this->w = aw; }
@@ -853,6 +839,8 @@ inline QRectF QRectF::united(const QRectF &r) const noexcept
 {
     return *this | r;
 }
+
+constexpr QRectF QRect::toRectF() const noexcept { return *this; }
 
 constexpr inline QRect QRectF::toRect() const noexcept
 {

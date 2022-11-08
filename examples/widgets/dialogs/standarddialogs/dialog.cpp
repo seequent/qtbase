@@ -1,52 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the examples of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:BSD$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** BSD License Usage
-** Alternatively, you may use this file under the terms of the BSD license
-** as follows:
-**
-** "Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are
-** met:
-**   * Redistributions of source code must retain the above copyright
-**     notice, this list of conditions and the following disclaimer.
-**   * Redistributions in binary form must reproduce the above copyright
-**     notice, this list of conditions and the following disclaimer in
-**     the documentation and/or other materials provided with the
-**     distribution.
-**   * Neither the name of The Qt Company Ltd nor the names of its
-**     contributors may be used to endorse or promote products derived
-**     from this software without specific prior written permission.
-**
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 #include <QtWidgets>
 
@@ -54,8 +7,9 @@
 
 #define MESSAGE \
     Dialog::tr("<p>Message boxes have a caption, a text, " \
-               "and any number of buttons, each with standard or custom texts." \
-               "<p>Click a button to close the message box. Pressing the Esc button " \
+               "and any number of buttons, each with standard or custom texts.")
+#define INFORMATIVE_TEXT \
+    Dialog::tr("<p>Click a button to close the message box. Pressing the Escape key " \
                "will activate the detected escape button (if any).")
 #define MESSAGE_DETAILS \
     Dialog::tr("If a message box has detailed text, the user can reveal it " \
@@ -99,7 +53,7 @@ void DialogOptionsWidget::addSpacer()
 int DialogOptionsWidget::value() const
 {
     int result = 0;
-    for (const CheckBoxEntry &checkboxEntry : qAsConst(checkBoxEntries)) {
+    for (const CheckBoxEntry &checkboxEntry : std::as_const(checkBoxEntries)) {
         if (checkboxEntry.first->isChecked())
             result |= checkboxEntry.second;
     }
@@ -388,8 +342,14 @@ void Dialog::setColor()
 void Dialog::setFont()
 {
     const QFontDialog::FontDialogOptions options = QFlag(fontDialogOptionsWidget->value());
+
+    const QString &description = fontLabel->text();
+    QFont defaultFont;
+    if (!description.isEmpty())
+        defaultFont.fromString(description);
+
     bool ok;
-    QFont font = QFontDialog::getFont(&ok, QFont(fontLabel->text()), this, "Select Font", options);
+    QFont font = QFontDialog::getFont(&ok, defaultFont, this, "Select Font", options);
     if (ok) {
         fontLabel->setText(font.key());
         fontLabel->setFont(font);
@@ -454,10 +414,13 @@ void Dialog::setSaveFileName()
 
 void Dialog::criticalMessage()
 {
-    QMessageBox::StandardButton reply;
-    reply = QMessageBox::critical(this, tr("QMessageBox::critical()"),
-                                    MESSAGE,
-                                    QMessageBox::Abort | QMessageBox::Retry | QMessageBox::Ignore);
+    QMessageBox msgBox(QMessageBox::Critical, tr("QMessageBox::critical()"),
+                       MESSAGE, { }, this);
+    msgBox.setInformativeText(INFORMATIVE_TEXT);
+    msgBox.addButton(QMessageBox::Abort);
+    msgBox.addButton(QMessageBox::Retry);
+    msgBox.addButton(QMessageBox::Ignore);
+    int reply = msgBox.exec();
     if (reply == QMessageBox::Abort)
         criticalLabel->setText(tr("Abort"));
     else if (reply == QMessageBox::Retry)
@@ -468,9 +431,10 @@ void Dialog::criticalMessage()
 
 void Dialog::informationMessage()
 {
-    QMessageBox::StandardButton reply;
-    reply = QMessageBox::information(this, tr("QMessageBox::information()"), MESSAGE);
-    if (reply == QMessageBox::Ok)
+    QMessageBox msgBox(QMessageBox::Information, tr("QMessageBox::information()"),
+                       MESSAGE, { }, this);
+    msgBox.setInformativeText(INFORMATIVE_TEXT);
+    if (msgBox.exec() == QMessageBox::Ok)
         informationLabel->setText(tr("OK"));
     else
         informationLabel->setText(tr("Escape"));
@@ -478,10 +442,13 @@ void Dialog::informationMessage()
 
 void Dialog::questionMessage()
 {
-    QMessageBox::StandardButton reply;
-    reply = QMessageBox::question(this, tr("QMessageBox::question()"),
-                                    MESSAGE,
-                                    QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    QMessageBox msgBox(QMessageBox::Question, tr("QMessageBox::question()"),
+                       MESSAGE, { }, this);
+    msgBox.setInformativeText(INFORMATIVE_TEXT);
+    msgBox.addButton(QMessageBox::Yes);
+    msgBox.addButton(QMessageBox::No);
+    msgBox.addButton(QMessageBox::Cancel);
+    int reply = msgBox.exec();
     if (reply == QMessageBox::Yes)
         questionLabel->setText(tr("Yes"));
     else if (reply == QMessageBox::No)
@@ -494,6 +461,7 @@ void Dialog::warningMessage()
 {
     QMessageBox msgBox(QMessageBox::Warning, tr("QMessageBox::warning()"),
                        MESSAGE, { }, this);
+    msgBox.setInformativeText(INFORMATIVE_TEXT);
     msgBox.setDetailedText(MESSAGE_DETAILS);
     msgBox.addButton(tr("Save &Again"), QMessageBox::AcceptRole);
     msgBox.addButton(tr("&Continue"), QMessageBox::RejectRole);

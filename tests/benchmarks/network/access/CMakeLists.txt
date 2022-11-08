@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from access.pro.
 
 add_subdirectory(qfile_vs_qnetworkaccessmanager)

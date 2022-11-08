@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from eglfs_x11.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QEglFSX11IntegrationPlugin
     OUTPUT_NAME qeglfs-x11-integration
-    TYPE egldeviceintegrations
+    PLUGIN_TYPE egldeviceintegrations
     SOURCES
         qeglfsx11integration.cpp qeglfsx11integration.h
         qeglfsx11main.cpp
@@ -14,7 +17,7 @@ qt_internal_add_plugin(QEglFSX11IntegrationPlugin
         QT_EGL_NO_X11
     INCLUDE_DIRECTORIES
         ../../api
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::EglFSDeviceIntegrationPrivate

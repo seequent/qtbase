@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qtemporarydir.pro.
 
 #####################################################################
@@ -6,10 +9,12 @@
 
 qt_internal_add_test(tst_qtemporarydir
     SOURCES
-        ../../../../shared/emulationdetector.h
         tst_qtemporarydir.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../shared
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::TestPrivate
+)
+
+qt_internal_extend_target(tst_qtemporarydir CONDITION WIN32
+    LIBRARIES
+        shlwapi
 )

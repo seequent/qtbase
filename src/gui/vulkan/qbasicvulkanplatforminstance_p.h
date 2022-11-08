@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2017 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QBASICVULKANPLATFORMINSTANCE_P_H
 #define QBASICVULKANPLATFORMINSTANCE_P_H
@@ -55,10 +19,9 @@
 
 #include <QtCore/QLibrary>
 #include <qpa/qplatformvulkaninstance.h>
+#include <private/qglobal_p.h>
 
 QT_BEGIN_NAMESPACE
-
-class QLibrary;
 
 class Q_GUI_EXPORT QBasicPlatformVulkanInstance : public QPlatformVulkanInstance
 {
@@ -77,27 +40,29 @@ public:
     PFN_vkVoidFunction getInstanceProcAddr(const char *name) override;
     bool supportsPresent(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, QWindow *window) override;
     void setDebugFilters(const QList<QVulkanInstance::DebugFilter> &filters) override;
+    void setDebugUtilsFilters(const QList<QVulkanInstance::DebugUtilsFilter> &filters) override;
 
     void destroySurface(VkSurfaceKHR surface) const;
     const QList<QVulkanInstance::DebugFilter> *debugFilters() const { return &m_debugFilters; }
+    const QList<QVulkanInstance::DebugUtilsFilter> *debugUtilsFilters() const { return &m_debugUtilsFilters; }
 
 protected:
-    void loadVulkanLibrary(const QString &defaultLibraryName);
+    void loadVulkanLibrary(const QString &defaultLibraryName, int defaultLibraryVersion = -1);
     void init(QLibrary *lib);
     void initInstance(QVulkanInstance *instance, const QByteArrayList &extraExts);
 
-    VkInstance m_vkInst;
-    PFN_vkGetInstanceProcAddr m_vkGetInstanceProcAddr;
+    VkInstance m_vkInst = VK_NULL_HANDLE;
+    PFN_vkGetInstanceProcAddr m_vkGetInstanceProcAddr = nullptr;
     PFN_vkGetPhysicalDeviceSurfaceSupportKHR m_getPhysDevSurfaceSupport;
     PFN_vkDestroySurfaceKHR m_destroySurface;
 
 private:
     void setupDebugOutput();
 
-    QLibrary m_vulkanLib;
+    std::unique_ptr<QLibrary> m_vulkanLib;
 
-    bool m_ownsVkInst;
-    VkResult m_errorCode;
+    bool m_ownsVkInst = false;
+    VkResult m_errorCode = VK_SUCCESS;
     QVulkanInfoVector<QVulkanLayer> m_supportedLayers;
     QVulkanInfoVector<QVulkanExtension> m_supportedExtensions;
     QVersionNumber m_supportedApiVersion;
@@ -110,9 +75,12 @@ private:
 
     PFN_vkDestroyInstance m_vkDestroyInstance;
 
-    VkDebugReportCallbackEXT m_debugCallback;
-    PFN_vkDestroyDebugReportCallbackEXT m_vkDestroyDebugReportCallbackEXT;
+#ifdef VK_EXT_debug_utils
+    VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
+    PFN_vkDestroyDebugUtilsMessengerEXT m_vkDestroyDebugUtilsMessengerEXT;
+#endif
     QList<QVulkanInstance::DebugFilter> m_debugFilters;
+    QList<QVulkanInstance::DebugUtilsFilter> m_debugUtilsFilters;
 };
 
 QT_END_NAMESPACE

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qxmlstream.pro.
 
 #####################################################################
@@ -5,14 +8,16 @@
 #####################################################################
 
 # Collect test data
-list(APPEND test_data "data")
-list(APPEND test_data "XML-Test-Suite")
+file(GLOB_RECURSE test_data
+        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+        data/* XML-Test-Suite/*)
 
 qt_internal_add_test(tst_qxmlstream
     SOURCES
         tst_qxmlstream.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Network
         Qt::Xml
+        Qt::GuiPrivate
     TESTDATA ${test_data}
 )

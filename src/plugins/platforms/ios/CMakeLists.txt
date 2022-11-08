@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from ios.pro.
 
 #####################################################################
@@ -7,12 +10,11 @@
 qt_internal_add_plugin(QIOSIntegrationPlugin
     OUTPUT_NAME qios
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES ios # special case
-    TYPE platforms
+    PLUGIN_TYPE platforms
     SOURCES
         plugin.mm
         qiosapplicationdelegate.h qiosapplicationdelegate.mm
         qiosapplicationstate.h qiosapplicationstate.mm
-        qiosbackingstore.h qiosbackingstore.mm
         qioscontext.h qioscontext.mm
         qioseventdispatcher.h qioseventdispatcher.mm
         qiosglobal.h qiosglobal.mm
@@ -27,7 +29,8 @@ qt_internal_add_plugin(QIOSIntegrationPlugin
         qioswindow.h qioswindow.mm
         quiaccessibilityelement.h quiaccessibilityelement.mm
         quiview.h quiview.mm
-    PUBLIC_LIBRARIES
+        uistrings_p.h uistrings.cpp
+    LIBRARIES
         ${FWAudioToolbox}
         ${FWFoundation}
         ${FWMetal}
@@ -47,7 +50,7 @@ qt_disable_apple_app_extension_api_only(QIOSIntegrationPlugin)
 #####################################################################
 
 qt_internal_extend_target(QIOSIntegrationPlugin CONDITION QT_FEATURE_opengl
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::OpenGLPrivate
 )
 
@@ -59,7 +62,7 @@ qt_internal_extend_target(QIOSIntegrationPlugin CONDITION NOT TVOS
         qiosmenu.h qiosmenu.mm
         qiosmessagedialog.h qiosmessagedialog.mm
         qiostextinputoverlay.h qiostextinputoverlay.mm
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ${FWAssetsLibrary}
 )
 

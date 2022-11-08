@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtXml module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <qplatformdefs.h>
 #include <qdom.h>
@@ -58,13 +22,15 @@
 #include <qdebug.h>
 #include <qxmlstream.h>
 #include <private/qduplicatetracker_p.h>
-
+#include <private/qstringiterator_p.h>
 
 #include <stdio.h>
 #include <limits>
 #include <memory>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 /*
   ### old todo comments -- I don't know if they still apply...
@@ -80,7 +46,7 @@ QT_BEGIN_NAMESPACE
 
 /* ##### new TODOs:
 
-  Remove emtpy emthods in the *Private classes
+  Remove empty emthods in the *Private classes
 
   Make a lot of the (mostly empty) methods in the public classes inline.
   Specially constructors assignment operators and comparison operators are candidates.
@@ -105,10 +71,10 @@ QT_BEGIN_NAMESPACE
 */
 static void qt_split_namespace(QString& prefix, QString& name, const QString& qName, bool hasURI)
 {
-    int i = qName.indexOf(QLatin1Char(':'));
+    qsizetype i = qName.indexOf(u':');
     if (i == -1) {
         if (hasURI)
-            prefix = QLatin1String("");
+            prefix = u""_s;
         else
             prefix.clear();
         name = qName;
@@ -175,7 +141,7 @@ static QString fixedXmlName(const QString &_name, bool *ok, bool namespaces = fa
 
     *ok = true;
     if (namespaces && !prefix.isEmpty())
-        return prefix + QLatin1Char(':') + result;
+        return prefix + u':' + result;
     return result;
 }
 
@@ -190,10 +156,11 @@ static QString fixedCharData(const QString &data, bool *ok)
     }
 
     QString result;
-    for (int i = 0; i < data.size(); ++i) {
-        QChar c = data.at(i);
+    QStringIterator it(data);
+    while (it.hasNext()) {
+        const char32_t c = it.next(QChar::Null);
         if (QXmlUtils::isChar(c)) {
-            result.append(c);
+            result.append(QChar::fromUcs4(c));
         } else if (QDomImplementationPrivate::invalidDataPolicy == QDomImplementation::ReturnNullNode) {
             *ok = false;
             return QString();
@@ -219,7 +186,7 @@ static QString fixedComment(const QString &data, bool *ok)
         return QString();
 
     for (;;) {
-        int idx = fixedData.indexOf(QLatin1String("--"));
+        qsizetype idx = fixedData.indexOf("--"_L1);
         if (idx == -1)
             break;
         if (QDomImplementationPrivate::invalidDataPolicy == QDomImplementation::ReturnNullNode) {
@@ -248,7 +215,7 @@ static QString fixedCDataSection(const QString &data, bool *ok)
         return QString();
 
     for (;;) {
-        int idx = fixedData.indexOf(QLatin1String("]]>"));
+        qsizetype idx = fixedData.indexOf("]]>"_L1);
         if (idx == -1)
             break;
         if (QDomImplementationPrivate::invalidDataPolicy == QDomImplementation::ReturnNullNode) {
@@ -276,7 +243,7 @@ static QString fixedPIData(const QString &data, bool *ok)
         return QString();
 
     for (;;) {
-        int idx = fixedData.indexOf(QLatin1String("?>"));
+        qsizetype idx = fixedData.indexOf("?>"_L1);
         if (idx == -1)
             break;
         if (QDomImplementationPrivate::invalidDataPolicy == QDomImplementation::ReturnNullNode) {
@@ -309,13 +276,12 @@ static QString fixedPubidLiteral(const QString &data, bool *ok)
         return QString();
     }
 
-    if (result.indexOf(QLatin1Char('\'')) != -1
-        && result.indexOf(QLatin1Char('"')) != -1) {
+    if (result.indexOf(u'\'') != -1 && result.indexOf(u'"') != -1) {
         if (QDomImplementationPrivate::invalidDataPolicy == QDomImplementation::ReturnNullNode) {
             *ok = false;
             return QString();
         } else {
-            result.remove(QLatin1Char('\''));
+            result.remove(u'\'');
         }
     }
 
@@ -335,13 +301,12 @@ static QString fixedSystemLiteral(const QString &data, bool *ok)
 
     QString result = data;
 
-    if (result.indexOf(QLatin1Char('\'')) != -1
-        && result.indexOf(QLatin1Char('"')) != -1) {
+    if (result.indexOf(u'\'') != -1 && result.indexOf(u'"') != -1) {
         if (QDomImplementationPrivate::invalidDataPolicy == QDomImplementation::ReturnNullNode) {
             *ok = false;
             return QString();
         } else {
-            result.remove(QLatin1Char('\''));
+            result.remove(u'\'');
         }
     }
 
@@ -477,10 +442,9 @@ QDomImplementation::~QDomImplementation()
 */
 bool QDomImplementation::hasFeature(const QString& feature, const QString& version) const
 {
-    if (feature == QLatin1String("XML")) {
-        if (version.isEmpty() || version == QLatin1String("1.0")) {
+    if (feature == "XML"_L1) {
+        if (version.isEmpty() || version == "1.0"_L1)
             return true;
-        }
     }
     // ### add DOM level 2 features
     return false;
@@ -764,7 +728,7 @@ int QDomNodeListPrivate::length() const
         that->createList();
     }
 
-    return list.count();
+    return list.size();
 }
 
 /**************************************************************
@@ -1261,8 +1225,7 @@ QDomNodePrivate* QDomNodePrivate::replaceChild(QDomNodePrivate* newChild, QDomNo
         newChild->last = nullptr;
 
         // We are no longer interested in the old node
-        if (oldChild)
-            oldChild->ref.deref();
+        oldChild->ref.deref();
 
         return oldChild;
     }
@@ -1295,8 +1258,7 @@ QDomNodePrivate* QDomNodePrivate::replaceChild(QDomNodePrivate* newChild, QDomNo
     oldChild->prev = nullptr;
 
     // We are no longer interested in the old node
-    if (oldChild)
-        oldChild->ref.deref();
+    oldChild->ref.deref();
 
     return oldChild;
 }
@@ -1348,7 +1310,7 @@ QDomDocumentPrivate* QDomNodePrivate::ownerDocument()
     QDomNodePrivate* p = this;
     while (p && !p->isDocument()) {
         if (!p->hasParent)
-            return (QDomDocumentPrivate*)p->ownerNode;
+            return static_cast<QDomDocumentPrivate *>(p->ownerNode);
         p = p->parent();
     }
 
@@ -1376,7 +1338,7 @@ static void qNormalizeNode(QDomNodePrivate* n)
                 n->removeChild(p);
                 p = tmp;
             } else {
-                t = (QDomTextPrivate*)p;
+                t = static_cast<QDomTextPrivate *>(p);
                 p = p->next;
             }
         } else {
@@ -1416,7 +1378,7 @@ void QDomNodePrivate::setLocation(int lineNumber, int columnNumber)
  *
  **************************************************************/
 
-#define IMPL ((QDomNodePrivate*)impl)
+#define IMPL static_cast<QDomNodePrivate *>(impl)
 
 /*!
     \class QDomNode
@@ -1629,7 +1591,7 @@ QString QDomNode::nodeName() const
         return QString();
 
     if (!IMPL->prefix.isEmpty())
-        return IMPL->prefix + QLatin1Char(':') + IMPL->name;
+        return IMPL->prefix + u':' + IMPL->name;
     return IMPL->name;
 }
 
@@ -2666,7 +2628,7 @@ QDomNodePrivate* QDomNamedNodeMapPrivate::item(int index) const
 
 int QDomNamedNodeMapPrivate::length() const
 {
-    return map.count();
+    return map.size();
 }
 
 bool QDomNamedNodeMapPrivate::contains(const QString& name) const
@@ -2685,7 +2647,7 @@ bool QDomNamedNodeMapPrivate::containsNS(const QString& nsURI, const QString & l
  *
  **************************************************************/
 
-#define IMPL ((QDomNamedNodeMapPrivate*)impl)
+#define IMPL static_cast<QDomNamedNodeMapPrivate *>(impl)
 
 /*!
     \class QDomNamedNodeMap
@@ -2820,7 +2782,7 @@ QDomNode QDomNamedNodeMap::setNamedItem(const QDomNode& newNode)
 {
     if (!impl)
         return QDomNode();
-    return QDomNode(IMPL->setNamedItem((QDomNodePrivate*)newNode.impl));
+    return QDomNode(IMPL->setNamedItem(static_cast<QDomNodePrivate *>(newNode.impl)));
 }
 
 /*!
@@ -2882,7 +2844,7 @@ QDomNode QDomNamedNodeMap::setNamedItemNS(const QDomNode& newNode)
 {
     if (!impl)
         return QDomNode();
-    return QDomNode(IMPL->setNamedItemNS((QDomNodePrivate*)newNode.impl));
+    return QDomNode(IMPL->setNamedItemNS(static_cast<QDomNodePrivate *>(newNode.impl)));
 }
 
 /*!
@@ -3018,7 +2980,7 @@ QDomNodePrivate* QDomDocumentTypePrivate::cloneNode(bool deep)
 
 QDomNodePrivate* QDomDocumentTypePrivate::insertBefore(QDomNodePrivate* newChild, QDomNodePrivate* refChild)
 {
-    // Call the origianl implementation
+    // Call the original implementation
     QDomNodePrivate* p = QDomNodePrivate::insertBefore(newChild, refChild);
     // Update the maps
     if (p && p->isEntity())
@@ -3031,7 +2993,7 @@ QDomNodePrivate* QDomDocumentTypePrivate::insertBefore(QDomNodePrivate* newChild
 
 QDomNodePrivate* QDomDocumentTypePrivate::insertAfter(QDomNodePrivate* newChild, QDomNodePrivate* refChild)
 {
-    // Call the origianl implementation
+    // Call the original implementation
     QDomNodePrivate* p = QDomNodePrivate::insertAfter(newChild, refChild);
     // Update the maps
     if (p && p->isEntity())
@@ -3044,7 +3006,7 @@ QDomNodePrivate* QDomDocumentTypePrivate::insertAfter(QDomNodePrivate* newChild,
 
 QDomNodePrivate* QDomDocumentTypePrivate::replaceChild(QDomNodePrivate* newChild, QDomNodePrivate* oldChild)
 {
-    // Call the origianl implementation
+    // Call the original implementation
     QDomNodePrivate* p = QDomNodePrivate::replaceChild(newChild, oldChild);
     // Update the maps
     if (p) {
@@ -3064,7 +3026,7 @@ QDomNodePrivate* QDomDocumentTypePrivate::replaceChild(QDomNodePrivate* newChild
 
 QDomNodePrivate* QDomDocumentTypePrivate::removeChild(QDomNodePrivate* oldChild)
 {
-    // Call the origianl implementation
+    // Call the original implementation
     QDomNodePrivate* p = QDomNodePrivate::removeChild( oldChild);
     // Update the maps
     if (p && p->isEntity())
@@ -3082,9 +3044,7 @@ QDomNodePrivate* QDomDocumentTypePrivate::appendChild(QDomNodePrivate* newChild)
 
 static QString quotedValue(const QString &data)
 {
-    QChar quote = data.indexOf(QLatin1Char('\'')) == -1
-                    ? QLatin1Char('\'')
-                    : QLatin1Char('"');
+    QChar quote = data.indexOf(u'\'') == -1 ? u'\'' : u'"';
     return quote + data + quote;
 }
 
@@ -3127,7 +3087,7 @@ void QDomDocumentTypePrivate::save(QTextStream& s, int, int indent) const
  *
  **************************************************************/
 
-#define IMPL ((QDomDocumentTypePrivate*)impl)
+#define IMPL static_cast<QDomDocumentTypePrivate *>(impl)
 
 /*!
     \class QDomDocumentType
@@ -3179,11 +3139,7 @@ QDomDocumentType::QDomDocumentType(QDomDocumentTypePrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomDocumentType& QDomDocumentType::operator= (const QDomDocumentType& n)
-{
-    return (QDomDocumentType&) QDomNode::operator=(n);
-}
-
+QDomDocumentType &QDomDocumentType::operator=(const QDomDocumentType &n) = default;
 /*!
     Returns the name of the document type as specified in the
     &lt;!DOCTYPE name&gt; tag.
@@ -3281,7 +3237,7 @@ QString QDomDocumentType::internalSubset() const
 QDomDocumentFragmentPrivate::QDomDocumentFragmentPrivate(QDomDocumentPrivate* doc, QDomNodePrivate* parent)
     : QDomNodePrivate(doc, parent)
 {
-    name = QLatin1String("#document-fragment");
+    name = u"#document-fragment"_s;
 }
 
 QDomDocumentFragmentPrivate::QDomDocumentFragmentPrivate(QDomNodePrivate* n, bool deep)
@@ -3359,10 +3315,7 @@ QDomDocumentFragment::QDomDocumentFragment(const QDomDocumentFragment& x)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomDocumentFragment& QDomDocumentFragment::operator= (const QDomDocumentFragment& x)
-{
-    return (QDomDocumentFragment&) QDomNode::operator=(x);
-}
+QDomDocumentFragment &QDomDocumentFragment::operator=(const QDomDocumentFragment &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomDocumentFragment::nodeType() const
@@ -3383,7 +3336,7 @@ QDomCharacterDataPrivate::QDomCharacterDataPrivate(QDomDocumentPrivate* d, QDomN
     : QDomNodePrivate(d, p)
 {
     value = data;
-    name = QLatin1String("#character-data");
+    name = u"#character-data"_s;
 }
 
 QDomCharacterDataPrivate::QDomCharacterDataPrivate(QDomCharacterDataPrivate* n, bool deep)
@@ -3401,7 +3354,7 @@ QDomNodePrivate* QDomCharacterDataPrivate::cloneNode(bool deep)
 
 int QDomCharacterDataPrivate::dataLength() const
 {
-    return value.length();
+    return value.size();
 }
 
 QString QDomCharacterDataPrivate::substringData(unsigned long offset, unsigned long n) const
@@ -3435,7 +3388,7 @@ void QDomCharacterDataPrivate::appendData(const QString& arg)
  *
  **************************************************************/
 
-#define IMPL ((QDomCharacterDataPrivate*)impl)
+#define IMPL static_cast<QDomCharacterDataPrivate *>(impl)
 
 /*!
     \class QDomCharacterData
@@ -3493,10 +3446,7 @@ QDomCharacterData::QDomCharacterData(QDomCharacterDataPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomCharacterData& QDomCharacterData::operator= (const QDomCharacterData& x)
-{
-    return (QDomCharacterData&) QDomNode::operator=(x);
-}
+QDomCharacterData &QDomCharacterData::operator=(const QDomCharacterData &x) = default;
 
 /*!
     Returns the string stored in this object.
@@ -3627,7 +3577,7 @@ void QDomAttrPrivate::setNodeValue(const QString& v)
     t->ref.deref();
     if (first) {
         auto removed = removeChild(first);
-        if (removed && !removed->ref)
+        if (removed && !removed->ref.loadRelaxed()) // removeChild() already deref()ed
             delete removed;
     }
     appendChild(t);
@@ -3662,38 +3612,38 @@ static QString encodeText(const QString &str,
                           const bool encodeEOLs = false)
 {
     QString retval(str);
-    int len = retval.length();
+    int len = retval.size();
     int i = 0;
 
     while (i < len) {
         const QChar ati(retval.at(i));
 
-        if (ati == QLatin1Char('<')) {
-            retval.replace(i, 1, QLatin1String("&lt;"));
+        if (ati == u'<') {
+            retval.replace(i, 1, "&lt;"_L1);
             len += 3;
             i += 4;
-        } else if (encodeQuotes && (ati == QLatin1Char('"'))) {
-            retval.replace(i, 1, QLatin1String("&quot;"));
+        } else if (encodeQuotes && (ati == u'"')) {
+            retval.replace(i, 1, "&quot;"_L1);
             len += 5;
             i += 6;
-        } else if (ati == QLatin1Char('&')) {
-            retval.replace(i, 1, QLatin1String("&amp;"));
+        } else if (ati == u'&') {
+            retval.replace(i, 1, "&amp;"_L1);
             len += 4;
             i += 5;
-        } else if (ati == QLatin1Char('>') && i >= 2 && retval[i - 1] == QLatin1Char(']') && retval[i - 2] == QLatin1Char(']')) {
-            retval.replace(i, 1, QLatin1String("&gt;"));
+        } else if (ati == u'>' && i >= 2 && retval[i - 1] == u']' && retval[i - 2] == u']') {
+            retval.replace(i, 1, "&gt;"_L1);
             len += 3;
             i += 4;
         } else if (performAVN &&
                    (ati == QChar(0xA) ||
                     ati == QChar(0xD) ||
                     ati == QChar(0x9))) {
-            const QString replacement(QLatin1String("&#x") + QString::number(ati.unicode(), 16) + QLatin1Char(';'));
+            const QString replacement(u"&#x"_s + QString::number(ati.unicode(), 16) + u';');
             retval.replace(i, 1, replacement);
-            i += replacement.length();
-            len += replacement.length() - 1;
+            i += replacement.size();
+            len += replacement.size() - 1;
         } else if (encodeEOLs && ati == QChar(0xD)) {
-            retval.replace(i, 1, QLatin1String("&#xd;")); // Replace a single 0xD with a ref for 0xD
+            retval.replace(i, 1, "&#xd;"_L1); // Replace a single 0xD with a ref for 0xD
             len += 4;
             i += 5;
         } else {
@@ -3734,7 +3684,7 @@ void QDomAttrPrivate::save(QTextStream& s, int, int) const
  *
  **************************************************************/
 
-#define IMPL ((QDomAttrPrivate*)impl)
+#define IMPL static_cast<QDomAttrPrivate *>(impl)
 
 /*!
     \class QDomAttr
@@ -3802,10 +3752,7 @@ QDomAttr::QDomAttr(QDomAttrPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomAttr& QDomAttr::operator= (const QDomAttr& x)
-{
-    return (QDomAttr&) QDomNode::operator=(x);
-}
+QDomAttr &QDomAttr::operator=(const QDomAttr &x) = default;
 
 /*!
     Returns the attribute's name.
@@ -3840,7 +3787,7 @@ QDomElement QDomAttr::ownerElement() const
     Q_ASSERT(impl->parent());
     if (!impl->parent()->isElement())
         return QDomElement();
-    return QDomElement((QDomElementPrivate*)(impl->parent()));
+    return QDomElement(static_cast<QDomElementPrivate *>(impl->parent()));
 }
 
 /*!
@@ -3985,12 +3932,12 @@ void QDomElementPrivate::removeAttribute(const QString& aname)
 
 QDomAttrPrivate* QDomElementPrivate::attributeNode(const QString& aname)
 {
-    return (QDomAttrPrivate*)m_attr->namedItem(aname);
+    return static_cast<QDomAttrPrivate *>(m_attr->namedItem(aname));
 }
 
 QDomAttrPrivate* QDomElementPrivate::attributeNodeNS(const QString& nsURI, const QString& localName)
 {
-    return (QDomAttrPrivate*)m_attr->namedItemNS(nsURI, localName);
+    return static_cast<QDomAttrPrivate *>(m_attr->namedItemNS(nsURI, localName));
 }
 
 QDomAttrPrivate* QDomElementPrivate::setAttributeNode(QDomAttrPrivate* newAttr)
@@ -4002,7 +3949,7 @@ QDomAttrPrivate* QDomElementPrivate::setAttributeNode(QDomAttrPrivate* newAttr)
 
     newAttr->setParent(this);
 
-    return (QDomAttrPrivate*)n;
+    return static_cast<QDomAttrPrivate *>(n);
 }
 
 QDomAttrPrivate* QDomElementPrivate::setAttributeNodeNS(QDomAttrPrivate* newAttr)
@@ -4014,12 +3961,12 @@ QDomAttrPrivate* QDomElementPrivate::setAttributeNodeNS(QDomAttrPrivate* newAttr
     // Referencing is done by the maps
     m_attr->setNamedItem(newAttr);
 
-    return (QDomAttrPrivate*)n;
+    return static_cast<QDomAttrPrivate *>(n);
 }
 
 QDomAttrPrivate* QDomElementPrivate::removeAttributeNode(QDomAttrPrivate* oldAttr)
 {
-    return (QDomAttrPrivate*)m_attr->removeNamedItem(oldAttr->nodeName());
+    return static_cast<QDomAttrPrivate *>(m_attr->removeNamedItem(oldAttr->nodeName()));
 }
 
 bool QDomElementPrivate::hasAttribute(const QString& aname)
@@ -4034,14 +3981,14 @@ bool QDomElementPrivate::hasAttributeNS(const QString& nsURI, const QString& loc
 
 QString QDomElementPrivate::text()
 {
-    QString t(QLatin1String(""));
+    QString t(u""_s);
 
     QDomNodePrivate* p = first;
     while (p) {
         if (p->isText() || p->isCDATASection())
             t += p->nodeValue();
         else if (p->isElement())
-            t += ((QDomElementPrivate*)p)->text();
+            t += static_cast<QDomElementPrivate *>(p)->text();
         p = p->next;
     }
 
@@ -4051,10 +3998,10 @@ QString QDomElementPrivate::text()
 void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
 {
     if (!(prev && prev->isText()))
-        s << QString(indent < 1 ? 0 : depth * indent, QLatin1Char(' '));
+        s << QString(indent < 1 ? 0 : depth * indent, u' ');
 
     QString qName(name);
-    QString nsDecl(QLatin1String(""));
+    QString nsDecl(u""_s);
     if (!namespaceURI.isNull()) {
         /** ###
          *
@@ -4067,12 +4014,12 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
          * hence possibly behavioral changes.
          */
         if (prefix.isEmpty()) {
-            nsDecl = QLatin1String(" xmlns");
+            nsDecl = u" xmlns"_s;
         } else {
-            qName = prefix + QLatin1Char(':') + name;
-            nsDecl = QLatin1String(" xmlns:") + prefix;
+            qName = prefix + u':' + name;
+            nsDecl = u" xmlns:"_s + prefix;
         }
-        nsDecl += QLatin1String("=\"") + encodeText(namespaceURI) + QLatin1Char('\"');
+        nsDecl += u"=\""_s + encodeText(namespaceURI) + u'\"';
     }
     s << '<' << qName << nsDecl;
 
@@ -4119,7 +4066,7 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
                 s << Qt::endl;
         }
         QDomNodePrivate::save(s, depth + 1, indent); if (!last->isText())
-            s << QString(indent < 1 ? 0 : depth * indent, QLatin1Char(' '));
+            s << QString(indent < 1 ? 0 : depth * indent, u' ');
 
         s << "</" << qName << '>';
     } else {
@@ -4138,7 +4085,7 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
  *
  **************************************************************/
 
-#define IMPL ((QDomElementPrivate*)impl)
+#define IMPL static_cast<QDomElementPrivate *>(impl)
 
 /*!
     \class QDomElement
@@ -4175,7 +4122,7 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
     n.toText().data() directly on the node, because the node may not
     be a text element.
 
-    You can get a list of all the decendents of an element which have
+    You can get a list of all the descendents of an element which have
     a specified tag name with elementsByTagName() or
     elementsByTagNameNS().
 
@@ -4225,10 +4172,7 @@ QDomElement::QDomElement(QDomElementPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomElement& QDomElement::operator= (const QDomElement& x)
-{
-    return (QDomElement&) QDomNode::operator=(x);
-}
+QDomElement &QDomElement::operator=(const QDomElement &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomElement::nodeType() const
@@ -4413,7 +4357,7 @@ QDomAttr QDomElement::setAttributeNode(const QDomAttr& newAttr)
 {
     if (!impl)
         return QDomAttr();
-    return QDomAttr(IMPL->setAttributeNode(((QDomAttrPrivate*)newAttr.impl)));
+    return QDomAttr(IMPL->setAttributeNode(static_cast<QDomAttrPrivate *>(newAttr.impl)));
 }
 
 /*!
@@ -4425,7 +4369,7 @@ QDomAttr QDomElement::removeAttributeNode(const QDomAttr& oldAttr)
 {
     if (!impl)
         return QDomAttr(); // ### should this return oldAttr?
-    return QDomAttr(IMPL->removeAttributeNode(((QDomAttrPrivate*)oldAttr.impl)));
+    return QDomAttr(IMPL->removeAttributeNode(static_cast<QDomAttrPrivate *>(oldAttr.impl)));
 }
 
 /*!
@@ -4479,7 +4423,7 @@ QString QDomElement::attributeNS(const QString& nsURI, const QString& localName,
     Adds an attribute with the qualified name \a qName and the
     namespace URI \a nsURI with the value \a value. If an attribute
     with the same local name and namespace URI exists, its prefix is
-    replaced by the prefix of \a qName and its value is repaced by \a
+    replaced by the prefix of \a qName and its value is replaced by \a
     value.
 
     Although \a qName is the qualified name, the local name is used to
@@ -4587,7 +4531,7 @@ QDomAttr QDomElement::setAttributeNodeNS(const QDomAttr& newAttr)
 {
     if (!impl)
         return QDomAttr();
-    return QDomAttr(IMPL->setAttributeNodeNS(((QDomAttrPrivate*)newAttr.impl)));
+    return QDomAttr(IMPL->setAttributeNodeNS(static_cast<QDomAttrPrivate *>(newAttr.impl)));
 }
 
 /*!
@@ -4648,7 +4592,7 @@ QString QDomElement::text() const
 QDomTextPrivate::QDomTextPrivate(QDomDocumentPrivate* d, QDomNodePrivate* parent, const QString& val)
     : QDomCharacterDataPrivate(d, parent, val)
 {
-    name = QLatin1String("#text");
+    name = u"#text"_s;
 }
 
 QDomTextPrivate::QDomTextPrivate(QDomTextPrivate* n, bool deep)
@@ -4691,7 +4635,7 @@ void QDomTextPrivate::save(QTextStream& s, int, int) const
  *
  **************************************************************/
 
-#define IMPL ((QDomTextPrivate*)impl)
+#define IMPL static_cast<QDomTextPrivate *>(impl)
 
 /*!
     \class QDomText
@@ -4702,7 +4646,7 @@ void QDomTextPrivate::save(QTextStream& s, int, int) const
     \ingroup xml-tools
 
     You can split the text in a QDomText object over two QDomText
-    objecs with splitText().
+    objects with splitText().
 
    For further information about the Document Object Model see
     \l{http://www.w3.org/TR/REC-DOM-Level-1/}{Level 1} and
@@ -4745,10 +4689,7 @@ QDomText::QDomText(QDomTextPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomText& QDomText::operator= (const QDomText& x)
-{
-    return (QDomText&) QDomNode::operator=(x);
-}
+QDomText &QDomText::operator=(const QDomText &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomText::nodeType() const
@@ -4784,7 +4725,7 @@ QDomText QDomText::splitText(int offset)
 QDomCommentPrivate::QDomCommentPrivate(QDomDocumentPrivate* d, QDomNodePrivate* parent, const QString& val)
     : QDomCharacterDataPrivate(d, parent, val)
 {
-    name = QLatin1String("#comment");
+    name = u"#comment"_s;
 }
 
 QDomCommentPrivate::QDomCommentPrivate(QDomCommentPrivate* n, bool deep)
@@ -4805,10 +4746,10 @@ void QDomCommentPrivate::save(QTextStream& s, int depth, int indent) const
 {
     /* We don't output whitespace if we would pollute a text node. */
     if (!(prev && prev->isText()))
-        s << QString(indent < 1 ? 0 : depth * indent, QLatin1Char(' '));
+        s << QString(indent < 1 ? 0 : depth * indent, u' ');
 
     s << "<!--" << value;
-    if (value.endsWith(QLatin1Char('-')))
+    if (value.endsWith(u'-'))
         s << ' '; // Ensures that XML comment doesn't end with --->
     s << "-->";
 
@@ -4876,10 +4817,7 @@ QDomComment::QDomComment(QDomCommentPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomComment& QDomComment::operator= (const QDomComment& x)
-{
-    return (QDomComment&) QDomNode::operator=(x);
-}
+QDomComment &QDomComment::operator=(const QDomComment &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomComment::nodeType() const
@@ -4897,7 +4835,7 @@ QDomCDATASectionPrivate::QDomCDATASectionPrivate(QDomDocumentPrivate* d, QDomNod
                                                     const QString& val)
     : QDomTextPrivate(d, parent, val)
 {
-    name = QLatin1String("#cdata-section");
+    name = u"#cdata-section"_s;
 }
 
 QDomCDATASectionPrivate::QDomCDATASectionPrivate(QDomCDATASectionPrivate* n, bool deep)
@@ -4984,10 +4922,7 @@ QDomCDATASection::QDomCDATASection(QDomCDATASectionPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomCDATASection& QDomCDATASection::operator= (const QDomCDATASection& x)
-{
-    return (QDomCDATASection&) QDomNode::operator=(x);
-}
+QDomCDATASection &QDomCDATASection::operator=(const QDomCDATASection &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomCDATASection::nodeType() const
@@ -5045,7 +4980,7 @@ void QDomNotationPrivate::save(QTextStream& s, int, int) const
  *
  **************************************************************/
 
-#define IMPL ((QDomNotationPrivate*)impl)
+#define IMPL static_cast<QDomNotationPrivate *>(impl)
 
 /*!
     \class QDomNotation
@@ -5108,10 +5043,7 @@ QDomNotation::QDomNotation(QDomNotationPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomNotation& QDomNotation::operator= (const QDomNotation& x)
-{
-    return (QDomNotation&) QDomNode::operator=(x);
-}
+QDomNotation &QDomNotation::operator=(const QDomNotation &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomNotation::nodeType() const
@@ -5213,8 +5145,8 @@ static QByteArray encodeEntity(const QByteArray& str)
 void QDomEntityPrivate::save(QTextStream& s, int, int) const
 {
     QString _name = name;
-    if (_name.startsWith(QLatin1Char('%')))
-        _name = QLatin1String("% ") + _name.mid(1);
+    if (_name.startsWith(u'%'))
+        _name = u"% "_s + _name.mid(1);
 
     if (m_sys.isNull() && m_pub.isNull()) {
         s << "<!ENTITY " << _name << " \"" << encodeEntity(value.toUtf8()) << "\">" << Qt::endl;
@@ -5238,7 +5170,7 @@ void QDomEntityPrivate::save(QTextStream& s, int, int) const
  *
  **************************************************************/
 
-#define IMPL ((QDomEntityPrivate*)impl)
+#define IMPL static_cast<QDomEntityPrivate *>(impl)
 
 /*!
     \class QDomEntity
@@ -5305,10 +5237,7 @@ QDomEntity::QDomEntity(QDomEntityPrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomEntity& QDomEntity::operator= (const QDomEntity& x)
-{
-    return (QDomEntity&) QDomNode::operator=(x);
-}
+QDomEntity &QDomEntity::operator=(const QDomEntity &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomEntity::nodeType() const
@@ -5457,10 +5386,7 @@ QDomEntityReference::QDomEntityReference(QDomEntityReferencePrivate* n)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomEntityReference& QDomEntityReference::operator= (const QDomEntityReference& x)
-{
-    return (QDomEntityReference&) QDomNode::operator=(x);
-}
+QDomEntityReference &QDomEntityReference::operator=(const QDomEntityReference &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomEntityReference::nodeType() const
@@ -5574,10 +5500,8 @@ QDomProcessingInstruction::QDomProcessingInstruction(QDomProcessingInstructionPr
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomProcessingInstruction& QDomProcessingInstruction::operator= (const QDomProcessingInstruction& x)
-{
-    return (QDomProcessingInstruction&) QDomNode::operator=(x);
-}
+QDomProcessingInstruction &
+QDomProcessingInstruction::operator=(const QDomProcessingInstruction &x) = default;
 
 /*!
     \fn QDomNode::NodeType QDomProcessingInstruction::nodeType() const
@@ -5635,7 +5559,7 @@ QDomDocumentPrivate::QDomDocumentPrivate()
     type = new QDomDocumentTypePrivate(this, this);
     type->ref.deref();
 
-    name = QLatin1String("#document");
+    name = u"#document"_s;
 }
 
 QDomDocumentPrivate::QDomDocumentPrivate(const QString& aname)
@@ -5647,7 +5571,7 @@ QDomDocumentPrivate::QDomDocumentPrivate(const QString& aname)
     type->ref.deref();
     type->name = aname;
 
-    name = QLatin1String("#document");
+    name = u"#document"_s;
 }
 
 QDomDocumentPrivate::QDomDocumentPrivate(QDomDocumentTypePrivate* dt)
@@ -5662,7 +5586,7 @@ QDomDocumentPrivate::QDomDocumentPrivate(QDomDocumentTypePrivate* dt)
         type->ref.deref();
     }
 
-    name = QLatin1String("#document");
+    name = u"#document"_s;
 }
 
 QDomDocumentPrivate::QDomDocumentPrivate(QDomDocumentPrivate* n, bool deep)
@@ -5685,8 +5609,8 @@ void QDomDocumentPrivate::clear()
     QDomNodePrivate::clear();
 }
 
-bool QDomDocumentPrivate::setContent(QXmlStreamReader *reader, bool namespaceProcessing,
-                                     QString *errorMsg, int *errorLine, int *errorColumn)
+QDomDocument::ParseResult QDomDocumentPrivate::setContent(QXmlStreamReader *reader,
+                                                          QDomDocument::ParseOptions options)
 {
     clear();
     impl = new QDomImplementationPrivate;
@@ -5694,23 +5618,16 @@ bool QDomDocumentPrivate::setContent(QXmlStreamReader *reader, bool namespacePro
     type->ref.deref();
 
     if (!reader) {
-        qWarning("Failed to set content, XML reader is not initialized");
-        return false;
+        const auto error = u"Failed to set content, XML reader is not initialized"_s;
+        qWarning("%s", qPrintable(error));
+        return { error };
     }
 
-    QDomParser domParser(this, reader, namespaceProcessing);
+    QDomParser domParser(this, reader, options);
 
-    if (!domParser.parse()) {
-        if (errorMsg)
-            *errorMsg = std::get<0>(domParser.errorInfo());
-        if (errorLine)
-            *errorLine = std::get<1>(domParser.errorInfo());
-        if (errorColumn)
-            *errorColumn = std::get<2>(domParser.errorInfo());
-        return false;
-    }
-
-    return true;
+    if (!domParser.parse())
+        return domParser.result();
+    return {};
 }
 
 QDomNodePrivate* QDomDocumentPrivate::cloneNode(bool deep)
@@ -5756,7 +5673,7 @@ QDomElementPrivate* QDomDocumentPrivate::createElementNS(const QString &nsURI, c
 
 QDomDocumentFragmentPrivate* QDomDocumentPrivate::createDocumentFragment()
 {
-    QDomDocumentFragmentPrivate *f = new QDomDocumentFragmentPrivate(this, (QDomNodePrivate*)nullptr);
+    QDomDocumentFragmentPrivate *f = new QDomDocumentFragmentPrivate(this, nullptr);
     f->ref.deref();
     return f;
 }
@@ -5854,34 +5771,38 @@ QDomNodePrivate* QDomDocumentPrivate::importNode(QDomNodePrivate *importedNode, 
     QDomNodePrivate *node = nullptr;
     switch (importedNode->nodeType()) {
         case QDomNode::AttributeNode:
-            node = new QDomAttrPrivate((QDomAttrPrivate*)importedNode, true);
+            node = new QDomAttrPrivate(static_cast<QDomAttrPrivate *>(importedNode), true);
             break;
         case QDomNode::DocumentFragmentNode:
-            node = new QDomDocumentFragmentPrivate((QDomDocumentFragmentPrivate*)importedNode, deep);
+            node = new QDomDocumentFragmentPrivate(
+                    static_cast<QDomDocumentFragmentPrivate *>(importedNode), deep);
             break;
         case QDomNode::ElementNode:
-            node = new QDomElementPrivate((QDomElementPrivate*)importedNode, deep);
+            node = new QDomElementPrivate(static_cast<QDomElementPrivate *>(importedNode), deep);
             break;
         case QDomNode::EntityNode:
-            node = new QDomEntityPrivate((QDomEntityPrivate*)importedNode, deep);
+            node = new QDomEntityPrivate(static_cast<QDomEntityPrivate *>(importedNode), deep);
             break;
         case QDomNode::EntityReferenceNode:
-            node = new QDomEntityReferencePrivate((QDomEntityReferencePrivate*)importedNode, false);
+            node = new QDomEntityReferencePrivate(
+                    static_cast<QDomEntityReferencePrivate *>(importedNode), false);
             break;
         case QDomNode::NotationNode:
-            node = new QDomNotationPrivate((QDomNotationPrivate*)importedNode, deep);
+            node = new QDomNotationPrivate(static_cast<QDomNotationPrivate *>(importedNode), deep);
             break;
         case QDomNode::ProcessingInstructionNode:
-            node = new QDomProcessingInstructionPrivate((QDomProcessingInstructionPrivate*)importedNode, deep);
+            node = new QDomProcessingInstructionPrivate(
+                    static_cast<QDomProcessingInstructionPrivate *>(importedNode), deep);
             break;
         case QDomNode::TextNode:
-            node = new QDomTextPrivate((QDomTextPrivate*)importedNode, deep);
+            node = new QDomTextPrivate(static_cast<QDomTextPrivate *>(importedNode), deep);
             break;
         case QDomNode::CDATASectionNode:
-            node = new QDomCDATASectionPrivate((QDomCDATASectionPrivate*)importedNode, deep);
+            node = new QDomCDATASectionPrivate(static_cast<QDomCDATASectionPrivate *>(importedNode),
+                                               deep);
             break;
         case QDomNode::CommentNode:
-            node = new QDomCommentPrivate((QDomCommentPrivate*)importedNode, deep);
+            node = new QDomCommentPrivate(static_cast<QDomCommentPrivate *>(importedNode), deep);
             break;
         default:
             break;
@@ -5903,7 +5824,7 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
 #if QT_CONFIG(regularexpression)
         const QDomNodePrivate* n = first;
 
-        if (n && n->isProcessingInstruction() && n->nodeName() == QLatin1String("xml")) {
+        if (n && n->isProcessingInstruction() && n->nodeName() == "xml"_L1) {
             // we have an XML declaration
             QString data = n->nodeValue();
             QRegularExpression encoding(QString::fromLatin1("encoding\\s*=\\s*((\"([^\"]*)\")|('([^']*)'))"));
@@ -5923,7 +5844,7 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
         bool doc = false;
 
         while (n) {
-            if (!doc && !(n->isProcessingInstruction() && n->nodeName() == QLatin1String("xml"))) {
+            if (!doc && !(n->isProcessingInstruction() && n->nodeName() == "xml"_L1)) {
                 // save doctype after XML declaration
                 type->save(s, 0, indent);
                 doc = true;
@@ -5946,7 +5867,7 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
 
         // First, we try to find the PI and sets the startNode to the one appearing after it.
         while (n) {
-            if (n->isProcessingInstruction() && n->nodeName() == QLatin1String("xml")) {
+            if (n->isProcessingInstruction() && n->nodeName() == "xml"_L1) {
                 startNode = n->next;
                 break;
             }
@@ -5968,7 +5889,7 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
  *
  **************************************************************/
 
-#define IMPL ((QDomDocumentPrivate*)impl)
+#define IMPL static_cast<QDomDocumentPrivate *>(impl)
 
 /*!
     \class QDomDocument
@@ -6074,7 +5995,7 @@ QDomDocument::QDomDocument(const QString& name)
 */
 QDomDocument::QDomDocument(const QDomDocumentType& doctype)
 {
-    impl = new QDomDocumentPrivate((QDomDocumentTypePrivate*)(doctype.impl));
+    impl = new QDomDocumentPrivate(static_cast<QDomDocumentTypePrivate *>(doctype.impl));
 }
 
 /*!
@@ -6101,10 +6022,7 @@ QDomDocument::QDomDocument(QDomDocumentPrivate* x)
     will also change the other. If you want to make a deep copy, use
     cloneNode().
 */
-QDomDocument& QDomDocument::operator= (const QDomDocument& x)
-{
-    return (QDomDocument&) QDomNode::operator=(x);
-}
+QDomDocument &QDomDocument::operator=(const QDomDocument &x) = default;
 
 /*!
     Destroys the object and frees its resources.
@@ -6113,25 +6031,29 @@ QDomDocument::~QDomDocument()
 {
 }
 
+#if QT_DEPRECATED_SINCE(6, 8)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
 /*!
     \overload
+    \deprecated [6.8] Use the overloads taking ParseOptions instead.
 
     This function reads the XML document from the string \a text, returning
     true if the content was successfully parsed; otherwise returns \c false.
     Since \a text is already a Unicode string, no encoding detection
     is done.
 */
-bool QDomDocument::setContent(const QString& text, bool namespaceProcessing, QString *errorMsg, int *errorLine, int *errorColumn)
+bool QDomDocument::setContent(const QString& text, bool namespaceProcessing,
+                              QString *errorMsg, int *errorLine, int *errorColumn)
 {
-    if (!impl)
-        impl = new QDomDocumentPrivate();
-
-    QXmlStreamReader streamReader(text);
-    streamReader.setNamespaceProcessing(namespaceProcessing);
-    return IMPL->setContent(&streamReader, namespaceProcessing, errorMsg, errorLine, errorColumn);
+    QXmlStreamReader reader(text);
+    reader.setNamespaceProcessing(namespaceProcessing);
+    return setContent(&reader, namespaceProcessing, errorMsg, errorLine, errorColumn);
 }
 
 /*!
+    \deprecated [6.8] Use the overload taking ParseOptions instead.
+
     This function parses the XML document from the byte array \a
     data and sets it as the content of the document. It tries to
     detect the encoding of the document as required by the XML
@@ -6146,26 +6068,21 @@ bool QDomDocument::setContent(const QString& text, bool namespaceProcessing, QSt
     If a parse error occurs, this function returns \c false and the error
     message is placed in \c{*}\a{errorMsg}, the line number in
     \c{*}\a{errorLine} and the column number in \c{*}\a{errorColumn}
-    (unless the associated pointer is set to 0); otherwise this
-    function returns \c true. The various error messages are described in
-    the QXmlParseException class documentation. Note that, if you
-    want to display these error messages to your application's users,
-    they will be displayed in English unless they are explicitly
-    translated.
+    (unless the associated pointer is set to \c nullptr); otherwise this
+    function returns \c true.
 
     If \a namespaceProcessing is true, the function QDomNode::prefix()
     returns a string for all elements and attributes. It returns an
     empty string if the element or attribute has no prefix.
 
     Text nodes consisting only of whitespace are stripped and won't
-    appear in the QDomDocument. If this behavior is not desired,
-    one can use the setContent() overload that allows a QXmlReader to be
-    supplied.
+    appear in the QDomDocument.
 
     If \a namespaceProcessing is false, the functions
     QDomNode::prefix(), QDomNode::localName() and
     QDomNode::namespaceURI() return an empty string.
 
+//! [entity-refs]
     Entity references are handled as follows:
     \list
     \li References to internal general entities and character entities occurring in the
@@ -6180,38 +6097,61 @@ bool QDomDocument::setContent(const QString& text, bool namespaceProcessing, QSt
         occurs outside of the content is replaced with an empty string.
     \li Any unparsed entity reference is replaced with an empty string.
     \endlist
+//! [entity-refs]
 
     \sa QDomNode::namespaceURI(), QDomNode::localName(),
         QDomNode::prefix(), QString::isNull(), QString::isEmpty()
 */
-bool QDomDocument::setContent(const QByteArray &data, bool namespaceProcessing, QString *errorMsg, int *errorLine, int *errorColumn)
+bool QDomDocument::setContent(const QByteArray &data, bool namespaceProcessing,
+                              QString *errorMsg, int *errorLine, int *errorColumn)
 {
-    if (!impl)
-        impl = new QDomDocumentPrivate();
+    QXmlStreamReader reader(data);
+    reader.setNamespaceProcessing(namespaceProcessing);
+    return setContent(&reader, namespaceProcessing, errorMsg, errorLine, errorColumn);
+}
 
-    QXmlStreamReader streamReader(data);
-    streamReader.setNamespaceProcessing(namespaceProcessing);
-    return IMPL->setContent(&streamReader, namespaceProcessing, errorMsg, errorLine, errorColumn);
+static inline QDomDocument::ParseOptions toParseOptions(bool namespaceProcessing)
+{
+    return namespaceProcessing ? QDomDocument::ParseOption::UseNamespaceProcessing
+                               : QDomDocument::ParseOption::Default;
+}
+
+static inline void unpackParseResult(const QDomDocument::ParseResult &parseResult,
+                                     QString *errorMsg, int *errorLine, int *errorColumn)
+{
+    if (!parseResult) {
+        if (errorMsg)
+            *errorMsg = parseResult.errorMessage;
+        if (errorLine)
+            *errorLine = static_cast<int>(parseResult.errorLine);
+        if (errorColumn)
+            *errorColumn = static_cast<int>(parseResult.errorLine);
+    }
 }
 
 /*!
     \overload
+    \deprecated [6.8] Use the overload taking ParseOptions instead.
 
     This function reads the XML document from the IO device \a dev, returning
     true if the content was successfully parsed; otherwise returns \c false.
-*/
-bool QDomDocument::setContent(QIODevice* dev, bool namespaceProcessing, QString *errorMsg, int *errorLine, int *errorColumn)
-{
-    if (!impl)
-        impl = new QDomDocumentPrivate();
 
-    QXmlStreamReader streamReader(dev);
-    streamReader.setNamespaceProcessing(namespaceProcessing);
-    return IMPL->setContent(&streamReader, namespaceProcessing, errorMsg, errorLine, errorColumn);
+    \note This method will try to open \a dev in read-only mode if it is not
+    already open. In that case, the caller is responsible for calling close.
+    This will change in Qt 7, which will no longer open \a dev. Applications
+    should therefore open the device themselves before calling setContent.
+*/
+bool QDomDocument::setContent(QIODevice* dev, bool namespaceProcessing,
+                              QString *errorMsg, int *errorLine, int *errorColumn)
+{
+    ParseResult result = setContent(dev, toParseOptions(namespaceProcessing));
+    unpackParseResult(result, errorMsg, errorLine, errorColumn);
+    return bool(result);
 }
 
 /*!
     \overload
+    \deprecated [6.8] Use the overload returning ParseResult instead.
 
     This function reads the XML document from the string \a text, returning
     true if the content was successfully parsed; otherwise returns \c false.
@@ -6227,6 +6167,7 @@ bool QDomDocument::setContent(const QString& text, QString *errorMsg, int *error
 
 /*!
     \overload
+    \deprecated [6.8] Use the overload returning ParseResult instead.
 
     This function reads the XML document from the byte array \a buffer,
     returning true if the content was successfully parsed; otherwise returns
@@ -6241,7 +6182,7 @@ bool QDomDocument::setContent(const QByteArray& buffer, QString *errorMsg, int *
 
 /*!
     \overload
-    \obsolete
+    \deprecated [6.8] Use the overload returning ParseResult instead.
 
     This function reads the XML document from the IO device \a dev, returning
     true if the content was successfully parsed; otherwise returns \c false.
@@ -6256,6 +6197,7 @@ bool QDomDocument::setContent(QIODevice* dev, QString *errorMsg, int *errorLine,
 /*!
     \overload
     \since 5.15
+    \deprecated [6.8] Use the overload taking ParseOptions instead.
 
     This function reads the XML document from the QXmlStreamReader \a reader
     and parses it. Returns \c true if the content was successfully parsed;
@@ -6268,16 +6210,169 @@ bool QDomDocument::setContent(QIODevice* dev, QString *errorMsg, int *errorLine,
 
     If a parse error occurs, the error message is placed in \c{*}\a{errorMsg}, the line
     number in \c{*}\a{errorLine} and the column number in \c{*}\a{errorColumn} (unless
-    the associated pointer is set to 0).
+    the associated pointer is set to \c nullptr).
 
     \sa QXmlStreamReader
 */
-bool QDomDocument::setContent(QXmlStreamReader *reader, bool namespaceProcessing, QString *errorMsg,
-                              int *errorLine, int *errorColumn)
+bool QDomDocument::setContent(QXmlStreamReader *reader, bool namespaceProcessing,
+                              QString *errorMsg, int *errorLine, int *errorColumn)
+{
+    ParseResult result = setContent(reader, toParseOptions(namespaceProcessing));
+    unpackParseResult(result, errorMsg, errorLine, errorColumn);
+    return bool(result);
+}
+QT_WARNING_POP
+#endif // QT_DEPRECATED_SINCE(6, 8)
+
+/*!
+    \enum QDomDocument::ParseOption
+    \since 6.5
+
+    This enum describes the possible options that can be used when
+    parsing an XML document using the setContent() method.
+
+    \value Default No parse options are set.
+    \value UseNamespaceProcessing Namespace processing is enabled.
+    \value PreserveSpacingOnlyNodes Text nodes containing only spacing
+           characters are preserved.
+
+    \sa setContent()
+*/
+
+/*!
+    \struct QDomDocument::ParseResult
+    \since 6.5
+    \inmodule QtXml
+    \ingroup xml-tools
+    \brief The struct is used to store the result of QDomDocument::setContent().
+
+    The QDomDocument::ParseResult struct is used for storing the result of
+    QDomDocument::setContent(). If an error is found while parsing an XML
+    document, the message, line and column number of an error are stored in
+    \c ParseResult.
+
+    \sa QDomDocument::setContent()
+*/
+
+/*!
+    \variable QDomDocument::ParseResult::errorMessage
+
+    The field contains the text message of an error found by
+    QDomDocument::setContent() while parsing an XML document.
+
+    \sa QDomDocument::setContent()
+*/
+
+/*!
+    \variable QDomDocument::ParseResult::errorLine
+
+    The field contains the line number of an error found by
+    QDomDocument::setContent() while parsing an XML document.
+
+    \sa QDomDocument::setContent()
+*/
+
+/*!
+    \variable QDomDocument::ParseResult::errorColumn
+
+    The field contains the column number of an error found by
+    QDomDocument::setContent() while parsing an XML document.
+
+    \sa QDomDocument::setContent()
+*/
+
+/*!
+    \fn QDomDocument::ParseResult::operator bool() const
+
+    Returns \c true if an error is found by QDomDocument::setContent();
+    otherwise returns \c false.
+
+    \sa QDomDocument::setContent()
+*/
+
+/*!
+    \fn ParseResult QDomDocument::setContent(const QByteArray &data, ParseOptions options)
+    \fn ParseResult QDomDocument::setContent(QAnyStringView text, ParseOptions options)
+    \fn ParseResult QDomDocument::setContent(QIODevice *device, ParseOptions options)
+    \fn ParseResult QDomDocument::setContent(QXmlStreamReader *reader, ParseOptions options)
+
+    \since 6.5
+
+    This function parses the XML document from the byte array \a
+    data, string view \a text, IO \a device, or stream \a reader
+    and sets it as the content of the document. It tries to
+    detect the encoding of the document, in accordance with the
+    XML specification. Returns the result of parsing in ParseResult,
+    which explicitly converts to \c bool.
+
+    You can use the \a options parameter to specify different parsing
+    options, for example, to enable namespace processing, etc.
+
+    By default, namespace processing is disabled. If it's disabled, the
+    parser does no namespace processing when it reads the XML file. The
+    functions QDomNode::prefix(), QDomNode::localName() and
+    QDomNode::namespaceURI() return an empty string.
+
+    If namespace processing is enabled via the parse \a options, the parser
+    recognizes namespaces in the XML file and sets the prefix name, local
+    name and namespace URI to appropriate values. The functions
+    QDomNode::prefix(), QDomNode::localName() and QDomNode::namespaceURI()
+    return a string for all elements and attributes and return an empty
+    string if the element or attribute has no prefix.
+
+    Text nodes consisting only of whitespace are stripped and won't
+    appear in the QDomDocument. Since Qt 6.5, one can pass
+    QDomDocument::ParseOption::PreserveSpacingOnlyNodes as a parse
+    option, to specify that spacing-only text nodes must be preserved.
+
+    \include qdom.cpp entity-refs
+
+    \note The overload taking IO \a device will try to open it in read-only
+    mode if it is not already open. In that case, the caller is responsible
+    for calling close. This will change in Qt 7, which will no longer open
+    the IO \a device. Applications should therefore open the device themselves
+    before calling setContent().
+
+    \sa ParseResult, ParseOptions
+*/
+QDomDocument::ParseResult QDomDocument::setContentImpl(const QByteArray &data, ParseOptions options)
+{
+    QXmlStreamReader reader(data);
+    reader.setNamespaceProcessing(options.testFlag(ParseOption::UseNamespaceProcessing));
+    return setContent(&reader, options);
+}
+
+QDomDocument::ParseResult QDomDocument::setContent(QAnyStringView data, ParseOptions options)
+{
+    QXmlStreamReader reader(data);
+    reader.setNamespaceProcessing(options.testFlag(ParseOption::UseNamespaceProcessing));
+    return setContent(&reader, options);
+}
+
+QDomDocument::ParseResult QDomDocument::setContent(QIODevice *device, ParseOptions options)
+{
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    if (!device->isOpen()) {
+        qWarning("QDomDocument called with unopened QIODevice. "
+                 "This will not be supported in future Qt versions.");
+        if (!device->open(QIODevice::ReadOnly)) {
+            const auto error = u"QDomDocument::setContent: Failed to open device."_s;
+            qWarning("%s", qPrintable(error));
+            return { error };
+        }
+    }
+#endif
+
+    QXmlStreamReader reader(device);
+    reader.setNamespaceProcessing(options.testFlag(ParseOption::UseNamespaceProcessing));
+    return setContent(&reader, options);
+}
+
+QDomDocument::ParseResult QDomDocument::setContent(QXmlStreamReader *reader, ParseOptions options)
 {
     if (!impl)
         impl = new QDomDocumentPrivate();
-    return IMPL->setContent(reader, namespaceProcessing, errorMsg, errorLine, errorColumn);
+    return IMPL->setContent(reader, options);
 }
 
 /*!
@@ -6656,7 +6751,7 @@ QDomElement QDomDocument::elementById(const QString& /*elementId*/)
 QDomAttr QDomNode::toAttr() const
 {
     if (impl && impl->isAttr())
-        return QDomAttr(((QDomAttrPrivate*)impl));
+        return QDomAttr(static_cast<QDomAttrPrivate *>(impl));
     return QDomAttr();
 }
 
@@ -6669,7 +6764,7 @@ QDomAttr QDomNode::toAttr() const
 QDomCDATASection QDomNode::toCDATASection() const
 {
     if (impl && impl->isCDATASection())
-        return QDomCDATASection(((QDomCDATASectionPrivate*)impl));
+        return QDomCDATASection(static_cast<QDomCDATASectionPrivate *>(impl));
     return QDomCDATASection();
 }
 
@@ -6682,7 +6777,7 @@ QDomCDATASection QDomNode::toCDATASection() const
 QDomDocumentFragment QDomNode::toDocumentFragment() const
 {
     if (impl && impl->isDocumentFragment())
-        return QDomDocumentFragment(((QDomDocumentFragmentPrivate*)impl));
+        return QDomDocumentFragment(static_cast<QDomDocumentFragmentPrivate *>(impl));
     return QDomDocumentFragment();
 }
 
@@ -6695,7 +6790,7 @@ QDomDocumentFragment QDomNode::toDocumentFragment() const
 QDomDocument QDomNode::toDocument() const
 {
     if (impl && impl->isDocument())
-        return QDomDocument(((QDomDocumentPrivate*)impl));
+        return QDomDocument(static_cast<QDomDocumentPrivate *>(impl));
     return QDomDocument();
 }
 
@@ -6708,7 +6803,7 @@ QDomDocument QDomNode::toDocument() const
 QDomDocumentType QDomNode::toDocumentType() const
 {
     if (impl && impl->isDocumentType())
-        return QDomDocumentType(((QDomDocumentTypePrivate*)impl));
+        return QDomDocumentType(static_cast<QDomDocumentTypePrivate *>(impl));
     return QDomDocumentType();
 }
 
@@ -6721,7 +6816,7 @@ QDomDocumentType QDomNode::toDocumentType() const
 QDomElement QDomNode::toElement() const
 {
     if (impl && impl->isElement())
-        return QDomElement(((QDomElementPrivate*)impl));
+        return QDomElement(static_cast<QDomElementPrivate *>(impl));
     return QDomElement();
 }
 
@@ -6734,7 +6829,7 @@ QDomElement QDomNode::toElement() const
 QDomEntityReference QDomNode::toEntityReference() const
 {
     if (impl && impl->isEntityReference())
-        return QDomEntityReference(((QDomEntityReferencePrivate*)impl));
+        return QDomEntityReference(static_cast<QDomEntityReferencePrivate *>(impl));
     return QDomEntityReference();
 }
 
@@ -6747,7 +6842,7 @@ QDomEntityReference QDomNode::toEntityReference() const
 QDomText QDomNode::toText() const
 {
     if (impl && impl->isText())
-        return QDomText(((QDomTextPrivate*)impl));
+        return QDomText(static_cast<QDomTextPrivate *>(impl));
     return QDomText();
 }
 
@@ -6760,7 +6855,7 @@ QDomText QDomNode::toText() const
 QDomEntity QDomNode::toEntity() const
 {
     if (impl && impl->isEntity())
-        return QDomEntity(((QDomEntityPrivate*)impl));
+        return QDomEntity(static_cast<QDomEntityPrivate *>(impl));
     return QDomEntity();
 }
 
@@ -6773,7 +6868,7 @@ QDomEntity QDomNode::toEntity() const
 QDomNotation QDomNode::toNotation() const
 {
     if (impl && impl->isNotation())
-        return QDomNotation(((QDomNotationPrivate*)impl));
+        return QDomNotation(static_cast<QDomNotationPrivate *>(impl));
     return QDomNotation();
 }
 
@@ -6786,7 +6881,7 @@ QDomNotation QDomNode::toNotation() const
 QDomProcessingInstruction QDomNode::toProcessingInstruction() const
 {
     if (impl && impl->isProcessingInstruction())
-        return QDomProcessingInstruction(((QDomProcessingInstructionPrivate*)impl));
+        return QDomProcessingInstruction(static_cast<QDomProcessingInstructionPrivate *>(impl));
     return QDomProcessingInstruction();
 }
 
@@ -6799,7 +6894,7 @@ QDomProcessingInstruction QDomNode::toProcessingInstruction() const
 QDomCharacterData QDomNode::toCharacterData() const
 {
     if (impl && impl->isCharacterData())
-        return QDomCharacterData(((QDomCharacterDataPrivate*)impl));
+        return QDomCharacterData(static_cast<QDomCharacterDataPrivate *>(impl));
     return QDomCharacterData();
 }
 
@@ -6812,9 +6907,15 @@ QDomCharacterData QDomNode::toCharacterData() const
 QDomComment QDomNode::toComment() const
 {
     if (impl && impl->isComment())
-        return QDomComment(((QDomCommentPrivate*)impl));
+        return QDomComment(static_cast<QDomCommentPrivate *>(impl));
     return QDomComment();
 }
+
+/*!
+    \variable QDomNode::impl
+    \internal
+    Pointer to private data structure.
+*/
 
 QT_END_NAMESPACE
 

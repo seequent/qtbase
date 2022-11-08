@@ -1,10 +1,13 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from eglfs_kms_support.pro.
 
 #####################################################################
-## EglFsKmsSupport Module:
+## EglFsKmsSupportPrivate Module:
 #####################################################################
 
-qt_internal_add_module(EglFsKmsSupport
+qt_internal_add_module(EglFsKmsSupportPrivate
     CONFIG_MODULE_NAME eglfs_kms_support
     INTERNAL_MODULE
     SOURCES
@@ -24,10 +27,3 @@ qt_internal_add_module(EglFsKmsSupport
         Qt::GuiPrivate
         Qt::KmsSupportPrivate
 )
-
-# begin special case
-qt_internal_extend_target(EglFsKmsSupport
-      CONDITION QNX
-      COMPILE_OPTIONS -fpermissive
-)
-# end special case

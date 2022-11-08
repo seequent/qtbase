@@ -1,6 +1,9 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from platforms.pro.
 
-if(ANDROID AND NOT ANDROID_EMBEDDED)
+if(ANDROID)
     add_subdirectory(android)
 endif()
 if(NOT ANDROID AND NOT WASM)
@@ -25,7 +28,7 @@ if(QT_FEATURE_direct2d1_1 AND QT_FEATURE_directwrite)
     add_subdirectory(direct2d)
 endif()
 if(QNX)
-    # add_subdirectory(qnx) # special case TODO
+    add_subdirectory(qnx)
 endif()
 if(QT_FEATURE_eglfs)
     add_subdirectory(eglfs)
@@ -47,8 +50,11 @@ if(HAIKU)
     # add_subdirectory(haiku) # special case TODO
 endif()
 if(WASM)
-    # add_subdirectory(wasm) # special case TODO
+     add_subdirectory(wasm)
 endif()
 if(QT_FEATURE_integrityfb)
     # add_subdirectory(integrity) # special case TODO
+endif()
+if(QT_FEATURE_vkkhrdisplay)
+    add_subdirectory(vkkhrdisplay)
 endif()

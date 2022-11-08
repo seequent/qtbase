@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qfreetypefontdatabase_p.h"
 
@@ -56,6 +20,8 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 void QFreeTypeFontDatabase::populateFontDatabase()
 {
     QString fontpath = fontDir();
@@ -68,14 +34,14 @@ void QFreeTypeFontDatabase::populateFontDatabase()
         return;
     }
 
-    QStringList nameFilters;
-    nameFilters << QLatin1String("*.ttf")
-                << QLatin1String("*.ttc")
-                << QLatin1String("*.pfa")
-                << QLatin1String("*.pfb")
-                << QLatin1String("*.otf");
+    static const QString nameFilters[] = {
+        u"*.ttf"_s,
+        u"*.pfa"_s,
+        u"*.pfb"_s,
+        u"*.otf"_s,
+    };
 
-    const auto fis = dir.entryInfoList(nameFilters, QDir::Files);
+    const auto fis = dir.entryInfoList(QStringList::fromReadOnlyData(nameFilters), QDir::Files);
     for (const QFileInfo &fi : fis) {
         const QByteArray file = QFile::encodeName(fi.absoluteFilePath());
         QFreeTypeFontDatabase::addTTFile(QByteArray(), file);
@@ -89,7 +55,7 @@ QFontEngine *QFreeTypeFontDatabase::fontEngine(const QFontDef &fontDef, void *us
     faceId.filename = QFile::encodeName(fontfile->fileName);
     faceId.index = fontfile->indexValue;
 
-    return QFontEngineFT::create(fontDef, faceId);
+    return QFontEngineFT::create(fontDef, faceId, fontfile->data);
 }
 
 QFontEngine *QFreeTypeFontDatabase::fontEngine(const QByteArray &fontData, qreal pixelSize,
@@ -153,6 +119,7 @@ QStringList QFreeTypeFontDatabase::addTTFile(const QByteArray &fontData, const Q
             }
         }
 
+        QFont::Stretch stretch = QFont::Unstretched;
         TT_OS2 *os2 = (TT_OS2 *)FT_Get_Sfnt_Table(face, ft_sfnt_os2);
         if (os2) {
             quint32 unicodeRange[4] = {
@@ -191,14 +158,45 @@ QStringList QFreeTypeFontDatabase::addTTFile(const QByteArray &fontData, const Q
                 else if (w <= 10)
                     weight = QFont::Black;
             }
+
+            switch (os2->usWidthClass) {
+            case 1:
+                stretch = QFont::UltraCondensed;
+                break;
+            case 2:
+                stretch = QFont::ExtraCondensed;
+                break;
+            case 3:
+                stretch = QFont::Condensed;
+                break;
+            case 4:
+                stretch = QFont::SemiCondensed;
+                break;
+            case 5:
+                stretch = QFont::Unstretched;
+                break;
+            case 6:
+                stretch = QFont::SemiExpanded;
+                break;
+            case 7:
+                stretch = QFont::Expanded;
+                break;
+            case 8:
+                stretch = QFont::ExtraExpanded;
+                break;
+            case 9:
+                stretch = QFont::UltraExpanded;
+                break;
+            }
         }
 
         QString family = QString::fromLatin1(face->family_name);
-        FontFile *fontFile = new FontFile;
-        fontFile->fileName = QFile::decodeName(file);
-        fontFile->indexValue = index;
+        FontFile *fontFile = new FontFile{
+            QFile::decodeName(file),
+            index,
+            fontData
+        };
 
-        QFont::Stretch stretch = QFont::Unstretched;
         QString styleName = QString::fromLatin1(face->style_name);
 
         if (applicationFont != nullptr) {

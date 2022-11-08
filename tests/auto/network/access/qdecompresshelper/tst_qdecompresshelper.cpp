@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 
@@ -64,9 +39,10 @@ private Q_SLOTS:
     void decompressBigData_data();
     void decompressBigData();
 
-#if QT_POINTER_SIZE >= 8
+    void archiveBomb_data();
+    void archiveBomb();
+
     void bigZlib();
-#endif
 };
 
 void tst_QDecompressHelper::initTestCase()
@@ -346,20 +322,24 @@ void tst_QDecompressHelper::decompressBigData_data()
     QTest::addColumn<QByteArray>("encoding");
     QTest::addColumn<QString>("path");
     QTest::addColumn<qint64>("size");
+    QTest::addColumn<bool>("countAhead");
 
     qint64 fourGiB = 4ll * 1024ll * 1024ll * 1024ll;
     qint64 fiveGiB = 5ll * 1024ll * 1024ll * 1024ll;
 
-    QTest::newRow("gzip-4G") << QByteArray("gzip") << QString(":/4G.gz") << fourGiB;
+    // Only use countAhead on one of these since they share codepath anyway
+    QTest::newRow("gzip-counted-4G") << QByteArray("gzip") << QString(":/4G.gz") << fourGiB << true;
     QTest::newRow("deflate-5G") << QByteArray("deflate") << QString(":/5GiB.txt.inflate")
-                                << fiveGiB;
+                                << fiveGiB << false;
 
 #if QT_CONFIG(brotli)
-    QTest::newRow("brotli-4G") << QByteArray("br") << (srcDir + "/4G.br") << fourGiB;
+    QTest::newRow("brotli-4G") << QByteArray("br") << (srcDir + "/4G.br") << fourGiB << false;
+    QTest::newRow("brotli-counted-4G") << QByteArray("br") << (srcDir + "/4G.br") << fourGiB << true;
 #endif
 
 #if QT_CONFIG(zstd)
-    QTest::newRow("zstandard-4G") << QByteArray("zstd") << (":/4G.zst") << fourGiB;
+    QTest::newRow("zstandard-4G") << QByteArray("zstd") << (":/4G.zst") << fourGiB << false;
+    QTest::newRow("zstandard-counted-4G") << QByteArray("zstd") << (":/4G.zst") << fourGiB << true;
 #endif
 }
 
@@ -372,16 +352,20 @@ void tst_QDecompressHelper::decompressBigData()
     const qint64 third = file.bytesAvailable() / 3;
 
     QDecompressHelper helper;
-    helper.setArchiveBombDetectionEnabled(false);
+    QFETCH(bool, countAhead);
+    helper.setCountingBytesEnabled(countAhead);
+    helper.setDecompressedSafetyCheckThreshold(-1);
     QFETCH(QByteArray, encoding);
     helper.setEncoding(encoding);
 
-    QByteArray output(32 * 1024, Qt::Uninitialized);
+    // The size of 'output' should be at least QDecompressHelper::MaxDecompressedDataBufferSize + 1
+    QByteArray output(10 * 1024 * 1024 + 1, Qt::Uninitialized);
     qint64 totalSize = 0;
     while (!file.atEnd()) {
         helper.feed(file.read(third));
         while (helper.hasData()) {
             qsizetype bytesRead = helper.read(output.data(), output.size());
+            QVERIFY(bytesRead >= 0);
             QVERIFY(bytesRead <= output.size());
             totalSize += bytesRead;
             const auto isZero = [](char c) { return c == '\0'; };
@@ -392,9 +376,54 @@ void tst_QDecompressHelper::decompressBigData()
     QTEST(totalSize, "size");
 }
 
-#if QT_POINTER_SIZE >= 8
+void tst_QDecompressHelper::archiveBomb_data()
+{
+    QTest::addColumn<QByteArray>("encoding");
+    QTest::addColumn<QString>("path");
+    QTest::addColumn<bool>("shouldFail");
+
+    QTest::newRow("gzip-10K") << QByteArray("gzip") << (srcDir + "/10K.gz") << false;
+    QTest::newRow("gzip-4G") << QByteArray("gzip") << QString(":/4G.gz") << true;
+}
+
+void tst_QDecompressHelper::archiveBomb()
+{
+    QFETCH(bool, shouldFail);
+    QFETCH(QString, path);
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+
+    QDecompressHelper helper;
+    QFETCH(QByteArray, encoding);
+    helper.setEncoding(encoding);
+    QVERIFY(helper.isValid());
+
+    constexpr qint64 SafeSizeLimit = 10 * 1024 * 1024;
+    constexpr qint64 RatioLimit = 40;
+    qint64 bytesToRead = std::min(SafeSizeLimit / RatioLimit, file.bytesAvailable());
+    QByteArray output(1 + bytesToRead * RatioLimit, Qt::Uninitialized);
+    helper.feed(file.read(bytesToRead));
+    qsizetype bytesRead = helper.read(output.data(), output.size());
+    QVERIFY(bytesRead <= output.size());
+    QVERIFY(helper.isValid());
+
+    if (shouldFail) {
+        QCOMPARE(bytesRead, -1);
+        QVERIFY(!helper.errorString().isEmpty());
+    } else {
+        QVERIFY(bytesRead > 0);
+        QVERIFY(helper.errorString().isEmpty());
+    }
+}
+
 void tst_QDecompressHelper::bigZlib()
 {
+#if QT_POINTER_SIZE < 8
+    QSKIP("This cannot be tested on 32-bit systems");
+#else
+#ifndef QT_NO_EXCEPTIONS
+    try {
+#endif
     // ZLib uses unsigned integers as their size type internally which creates some special
     // cases in the internal code that should be tested!
     QFile file(":/5GiB.txt.inflate");
@@ -402,20 +431,25 @@ void tst_QDecompressHelper::bigZlib()
     QByteArray compressedData = file.readAll();
 
     QDecompressHelper helper;
-    helper.setArchiveBombDetectionEnabled(false);
+    helper.setDecompressedSafetyCheckThreshold(-1);
     helper.setEncoding("deflate");
     auto firstHalf = compressedData.left(compressedData.size() - 2);
     helper.feed(firstHalf);
     helper.feed(compressedData.mid(firstHalf.size()));
 
     // We need the whole thing in one go... which is why this test is not available for 32-bit
-    qint64 expected = 5ll * 1024ll * 1024ll * 1024ll;
-    // This can be replaced with QByteArray after the qsizetype change is merged
-    std::unique_ptr<char[]> output(new char[expected]);
-    qsizetype size = helper.read(output.get(), expected);
+    const qint64 expected = 5ll * 1024ll * 1024ll * 1024ll;
+    // Request a few more byte than what is available, to verify exact size
+    QByteArray output(expected + 42, Qt::Uninitialized);
+    const qsizetype size = helper.read(output.data(), output.size());
     QCOMPARE(size, expected);
-}
+#ifndef QT_NO_EXCEPTIONS
+    } catch (const std::bad_alloc &) {
+        QSKIP("Encountered most likely OOM.");
+    }
 #endif
+#endif
+}
 
 QTEST_MAIN(tst_QDecompressHelper)
 

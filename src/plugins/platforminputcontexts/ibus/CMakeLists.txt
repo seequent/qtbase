@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from ibus.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QIbusPlatformInputContextPlugin
     OUTPUT_NAME ibusplatforminputcontextplugin
-    TYPE platforminputcontexts
+    PLUGIN_TYPE platforminputcontexts
     DEFAULT_IF FALSE
     SOURCES
         main.cpp
@@ -16,12 +19,11 @@ qt_internal_add_plugin(QIbusPlatformInputContextPlugin
         qibusproxyportal.cpp qibusproxyportal.h
         qibustypes.cpp qibustypes.h
     LIBRARIES
-        XKB::XKB
-    PUBLIC_LIBRARIES
         Qt::Core
         Qt::DBus
         Qt::Gui
         Qt::GuiPrivate
+        XKB::XKB
 )
 
 #### Keys ignored in scope 1:.:.:ibus.pro:<TRUE>:

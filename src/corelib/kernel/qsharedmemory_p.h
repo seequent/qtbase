@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QSHAREDMEMORY_P_H
 #define QSHAREDMEMORY_P_H
@@ -55,22 +19,25 @@
 
 #include <QtCore/qstring.h>
 
-#ifdef QT_NO_SHAREDMEMORY
-# ifndef QT_NO_SYSTEMSEMAPHORE
+#if !QT_CONFIG(sharedmemory)
+#    if QT_CONFIG(systemsemaphore)
+
+QT_BEGIN_NAMESPACE
+
 namespace QSharedMemoryPrivate
 {
     int createUnixKeyFile(const QString &fileName);
     QString makePlatformSafeKey(const QString &key,
-            const QString &prefix = QLatin1String("qipc_sharedmemory_"));
+            const QString &prefix = QStringLiteral("qipc_sharedmemory_"));
 }
-#endif
+
+QT_END_NAMESPACE
+
+#    endif
 #else
 
 #include "qsystemsemaphore.h"
-
-#ifndef QT_NO_QOBJECT
-# include "private/qobject_p.h"
-#endif
+#include "private/qobject_p.h"
 
 #if !defined(Q_OS_WIN) && !defined(Q_OS_ANDROID) && !defined(Q_OS_INTEGRITY) && !defined(Q_OS_RTEMS)
 #  include <sys/sem.h>
@@ -78,7 +45,7 @@ namespace QSharedMemoryPrivate
 
 QT_BEGIN_NAMESPACE
 
-#ifndef QT_NO_SYSTEMSEMAPHORE
+#if QT_CONFIG(systemsemaphore)
 /*!
   Helper class
   */
@@ -108,34 +75,27 @@ public:
 private:
     QSharedMemory *q_sm;
 };
-#endif // QT_NO_SYSTEMSEMAPHORE
+#endif // QT_CONFIG(systemsemaphore)
 
-class Q_AUTOTEST_EXPORT QSharedMemoryPrivate
-#ifndef QT_NO_QOBJECT
-        : public QObjectPrivate
-#endif
+class Q_AUTOTEST_EXPORT QSharedMemoryPrivate : public QObjectPrivate
 {
-#ifndef QT_NO_QOBJECT
     Q_DECLARE_PUBLIC(QSharedMemory)
-#endif
 
 public:
-    QSharedMemoryPrivate();
-
-    void *memory;
-    qsizetype size;
+    void *memory = nullptr;
+    qsizetype size = 0;
     QString key;
     QString nativeKey;
-    QSharedMemory::SharedMemoryError error;
+    QSharedMemory::SharedMemoryError error = QSharedMemory::NoError;
     QString errorString;
-#ifndef QT_NO_SYSTEMSEMAPHORE
-    QSystemSemaphore systemSemaphore;
-    bool lockedByMe;
+#if QT_CONFIG(systemsemaphore)
+    QSystemSemaphore systemSemaphore{QString()};
+    bool lockedByMe = false;
 #endif
 
     static int createUnixKeyFile(const QString &fileName);
     static QString makePlatformSafeKey(const QString &key,
-            const QString &prefix = QLatin1String("qipc_sharedmemory_"));
+            const QString &prefix = QStringLiteral("qipc_sharedmemory_"));
 #ifdef Q_OS_WIN
     Qt::HANDLE handle();
 #elif defined(QT_POSIX_IPC)
@@ -149,9 +109,9 @@ public:
     bool attach(QSharedMemory::AccessMode mode);
     bool detach();
 
-    void setErrorString(QLatin1String function);
+    void setErrorString(QLatin1StringView function);
 
-#ifndef QT_NO_SYSTEMSEMAPHORE
+#if QT_CONFIG(systemsemaphore)
     bool tryLocker(QSharedMemoryLocker *locker, const QString &function) {
         if (!locker->lock()) {
             errorString = QSharedMemory::tr("%1: unable to lock").arg(function);
@@ -160,21 +120,21 @@ public:
         }
         return true;
     }
-#endif // QT_NO_SYSTEMSEMAPHORE
+#endif // QT_CONFIG(systemsemaphore)
 
 private:
 #ifdef Q_OS_WIN
-    Qt::HANDLE hand;
+    Qt::HANDLE hand = nullptr;
 #elif defined(QT_POSIX_IPC)
-    int hand;
+    int hand = -1;
 #else
-    key_t unix_key;
+    key_t unix_key = 0;
 #endif
 };
 
 QT_END_NAMESPACE
 
-#endif // QT_NO_SHAREDMEMORY
+#endif // QT_CONFIG(sharedmemory)
 
 #endif // QSHAREDMEMORY_P_H
 

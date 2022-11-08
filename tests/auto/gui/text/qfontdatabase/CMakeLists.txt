@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qfontdatabase.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ list(APPEND test_data "LED_REAL.TTF")
 qt_internal_add_test(tst_qfontdatabase
     SOURCES
         tst_qfontdatabase.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate

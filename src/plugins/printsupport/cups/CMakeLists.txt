@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from cups.pro.
 
 qt_find_package(Cups PROVIDED_TARGETS Cups::Cups) # special case
@@ -8,7 +11,7 @@ qt_find_package(Cups PROVIDED_TARGETS Cups::Cups) # special case
 
 qt_internal_add_plugin(QCupsPrinterSupportPlugin
     OUTPUT_NAME cupsprintersupport
-    TYPE printsupport
+    PLUGIN_TYPE printsupport
     SOURCES
         main.cpp
         qcupsprintengine.cpp qcupsprintengine_p.h
@@ -18,7 +21,6 @@ qt_internal_add_plugin(QCupsPrinterSupportPlugin
         ../../../printsupport/kernel
     LIBRARIES
         Cups::Cups
-    PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui

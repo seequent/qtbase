@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Blake2 contains a reference implementation, libb2 is a more efficient
 # implementation of a subset of Blake2 functions and should be preferred.
 # This Find module only searches for libb2 for that reason.

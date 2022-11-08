@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from compressedtexture_bc1.pro.
 
 #####################################################################
@@ -8,7 +11,7 @@ qt_internal_add_manual_test(compressedtexture_bc1
     GUI
     SOURCES
         compressedtexture_bc1.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::GuiPrivate
 )

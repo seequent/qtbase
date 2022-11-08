@@ -20,10 +20,12 @@ qt_internal_add_3rdparty_library(BundledHarfbuzz
         src/hb-buffer-deserialize-json.hh
         src/hb-buffer-deserialize-text.hh
         src/hb-buffer-serialize.cc
+        src/hb-buffer-verify.cc
         src/hb-cache.hh
         src/hb-common.h
         src/hb-debug.hh
         src/hb-deprecated.h
+        src/hb-draw.cc src/hb-draw.h src/hb-draw.hh
         src/hb-face.cc src/hb-face.h src/hb-face.hh
         src/hb-fallback-shape.cc
         src/hb-font.cc src/hb-font.h src/hb-font.hh
@@ -33,6 +35,8 @@ qt_internal_add_3rdparty_library(BundledHarfbuzz
         src/hb-object.hh
         src/hb-open-file.hh
         src/hb-open-type.hh
+        src/hb-priority-queue.hh
+        src/hb-repacker.hh
         src/hb-set.cc src/hb-set.h src/hb-set.hh
         src/hb-set-digest.hh
         src/hb-shape.cc src/hb-shape.h
@@ -41,12 +45,14 @@ qt_internal_add_3rdparty_library(BundledHarfbuzz
         src/hb-shaper-impl.hh
         src/hb-shaper-list.hh
         src/hb-string-array.hh
+        src/hb-style.cc src/hb-style.h
         src/hb-subset.cc
         src/hb-subset-cff-common.cc
         src/hb-subset-cff1.cc
         src/hb-subset-cff2.cc
         src/hb-subset-input.cc
         src/hb-subset-plan.cc
+        src/hb-subset-repacker.cc src/hb-subset-repacker.h
         src/hb-unicode.cc src/hb-unicode.h src/hb-unicode.hh
         src/hb-utf.hh
         src/hb-version.h
@@ -63,6 +69,14 @@ qt_internal_add_3rdparty_library(BundledHarfbuzz
     PUBLIC_INCLUDE_DIRECTORIES
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/harfbuzz>
 )
+
+qt_internal_add_sync_header_dependencies(BundledHarfbuzz Core)
+
+# GHS compiler doesn't support the __restrict keyword
+if(INTEGRITY)
+    target_compile_definitions(BundledHarfbuzz PRIVATE __restrict=)
+endif()
+
 qt_disable_warnings(BundledHarfbuzz)
 qt_set_symbol_visibility_hidden(BundledHarfbuzz)
 
@@ -91,11 +105,13 @@ qt_internal_extend_target(BundledHarfbuzz CONDITION WIN32
 qt_internal_extend_target(BundledHarfbuzz CONDITION TRUE # special case
     SOURCES
         src/hb-ot.h
+        src/hb-ot-cff1-std-str.hh
         src/hb-ot-cff1-table.cc
         src/hb-ot-cff2-table.cc
         src/hb-ot-cmap-table.hh
         src/hb-ot-color.cc
         src/hb-ot-color-cbdt-table.hh
+        src/hb-ot-color-colrv1-closure.hh
         src/hb-ot-face.cc
         src/hb-ot-font.cc src/hb-ot-font.h
         src/hb-ot-glyf-table.hh
@@ -119,9 +135,11 @@ qt_internal_extend_target(BundledHarfbuzz CONDITION TRUE # special case
         src/hb-ot-os2-table.hh
         src/hb-ot-post-macroman.hh
         src/hb-ot-post-table.hh
+        src/hb-ot-post-table-v2subset.hh
         src/hb-ot-shape.cc src/hb-ot-shape.h src/hb-ot-shape.hh
         src/hb-ot-shape-complex-arabic.cc src/hb-ot-shape-complex-arabic.hh
         src/hb-ot-shape-complex-arabic-fallback.hh
+        src/hb-ot-shape-complex-arabic-joining-list.hh
         src/hb-ot-shape-complex-arabic-table.hh
         src/hb-ot-shape-complex-default.cc
         src/hb-ot-shape-complex-hangul.cc
@@ -132,15 +150,17 @@ qt_internal_extend_target(BundledHarfbuzz CONDITION TRUE # special case
         src/hb-ot-shape-complex-khmer.cc
         src/hb-ot-shape-complex-myanmar.cc
         src/hb-ot-shape-complex-myanmar-machine.hh
+        src/hb-ot-shape-complex-syllabic.cc src/hb-ot-shape-complex-syllabic.hh
         src/hb-ot-shape-complex-thai.cc
-        src/hb-ot-shape-complex-use.cc src/hb-ot-shape-complex-use.hh
+        src/hb-ot-shape-complex-use.cc
         src/hb-ot-shape-complex-use-machine.hh
-        src/hb-ot-shape-complex-use-table.cc
+        src/hb-ot-shape-complex-use-table.hh
         src/hb-ot-shape-complex-vowel-constraints.cc
         src/hb-ot-shape-fallback.cc src/hb-ot-shape-fallback.hh
         src/hb-ot-shape-normalize.cc src/hb-ot-shape-normalize.hh
         src/hb-ot-tag.cc
         src/hb-ot-var.cc src/hb-ot-var.h
+        src/hb-ot-var-common.hh
         src/hb-ot-var-avar-table.hh
         src/hb-ot-var-fvar-table.hh
         src/hb-ot-var-hvar-table.hh
@@ -154,4 +174,8 @@ qt_internal_extend_target(BundledHarfbuzz CONDITION SHAPERS_ISEMPTY OR SHAPERS__
         src/hb-fallback-shape.cc
     DEFINES
         HAVE_FALLBACK
+)
+
+qt_internal_add_3rdparty_header_module(HarfbuzzPrivate
+    EXTERNAL_HEADERS_DIR include
 )

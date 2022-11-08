@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from testtable2.pro.
 
 #####################################################################
@@ -8,7 +11,7 @@ qt_internal_add_manual_test(testtable2
     GUI
     SOURCES
         testtable2.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

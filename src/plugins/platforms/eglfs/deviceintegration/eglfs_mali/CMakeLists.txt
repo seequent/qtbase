@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from eglfs_mali.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QEglFSMaliIntegrationPlugin
     OUTPUT_NAME qeglfs-mali-integration
-    TYPE egldeviceintegrations
+    PLUGIN_TYPE egldeviceintegrations
     SOURCES
         qeglfsmaliintegration.cpp qeglfsmaliintegration.h
         qeglfsmalimain.cpp
@@ -14,7 +17,7 @@ qt_internal_add_plugin(QEglFSMaliIntegrationPlugin
         QT_EGL_NO_X11
     INCLUDE_DIRECTORIES
         ../../api
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::EglFSDeviceIntegrationPrivate

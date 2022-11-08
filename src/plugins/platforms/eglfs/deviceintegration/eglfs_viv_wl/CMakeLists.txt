@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from eglfs_viv_wl.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QEglFSVivWaylandIntegrationPlugin
     OUTPUT_NAME qeglfs-viv-wl-integration
-    TYPE egldeviceintegrations
+    PLUGIN_TYPE egldeviceintegrations
     SOURCES
         qeglfsvivwlintegration.cpp qeglfsvivwlintegration.h
         qeglfsvivwlmain.cpp
@@ -17,7 +20,6 @@ qt_internal_add_plugin(QEglFSVivWaylandIntegrationPlugin
         ../../api
     LIBRARIES
         Wayland::Server
-    PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::EglFSDeviceIntegrationPrivate

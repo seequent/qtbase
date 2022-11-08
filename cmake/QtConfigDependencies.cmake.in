@@ -1,44 +1,24 @@
-set(@INSTALL_CMAKE_NAMESPACE@_DEPENDENCIES_FOUND FALSE)
+set(@INSTALL_CMAKE_NAMESPACE@_FOUND FALSE)
+
+set(__qt_platform_requires_host_info_package "@platform_requires_host_info_package@")
+set(__qt_platform_initial_qt_host_path "@qt_host_path_absolute@")
+set(__qt_platform_initial_qt_host_path_cmake_dir "@qt_host_path_cmake_dir_absolute@")
+
+_qt_internal_setup_qt_host_path(
+    "${__qt_platform_requires_host_info_package}"
+    "${__qt_platform_initial_qt_host_path}"
+    "${__qt_platform_initial_qt_host_path_cmake_dir}")
+_qt_internal_find_host_info_package(${__qt_platform_requires_host_info_package})
 
 # note: _third_party_deps example: "ICU\\;FALSE\\;1.0\\;i18n uc data;ZLIB\\;FALSE\\;\\;"
-set(_third_party_deps "@third_party_deps@")
+set(__qt_third_party_deps "@third_party_deps@")
 
 @third_party_extra@
 
-foreach(_target_dep ${_third_party_deps})
-    list(GET _target_dep 0 pkg)
-    list(GET _target_dep 1 is_optional)
-    list(GET _target_dep 2 version)
-    list(GET _target_dep 3 components)
-    set(find_package_args "${pkg}")
-    if(version)
-        list(APPEND find_package_args "${version}")
-    endif()
-    if(components)
-        string(REPLACE " " ";" components "${components}")
-        list(APPEND find_package_args COMPONENTS ${components})
-    endif()
+# Don't propagate REQUIRED so we don't immediately FATAL_ERROR, rather let the find_dependency calls
+# set _NOT_FOUND_MESSAGE which will be displayed by the includer of the Dependencies file.
+set(${CMAKE_FIND_PACKAGE_NAME}_FIND_REQUIRED FALSE)
 
-    # Already build an error message, because find_dependency calls return() on failure.
-    set(__@INSTALL_CMAKE_NAMESPACE@_message "\nPackage: ${pkg}")
-    if(version)
-        string(APPEND __@INSTALL_CMAKE_NAMESPACE@_message "\nVersion: ${version}")
-    endif()
-    if(components)
-        string(APPEND __@INSTALL_CMAKE_NAMESPACE@_message "\nComponents: ${components}")
-    endif()
-    set(@INSTALL_CMAKE_NAMESPACE@_DEPENDENCY_NOT_FOUND_MESSAGE
-        "${__@INSTALL_CMAKE_NAMESPACE@_message}")
+_qt_internal_find_third_party_dependencies(@INSTALL_CMAKE_NAMESPACE@ __qt_third_party_deps)
 
-    if(is_optional)
-        if(${CMAKE_FIND_PACKAGE_NAME}_FIND_QUIETLY)
-            list(APPEND find_package_args QUIET)
-        endif()
-        find_package(${find_package_args})
-    else()
-        find_dependency(${find_package_args})
-    endif()
-endforeach()
-
-set(@INSTALL_CMAKE_NAMESPACE@_DEPENDENCIES_FOUND TRUE)
-unset(@INSTALL_CMAKE_NAMESPACE@_DEPENDENCY_NOT_FOUND_MESSAGE)
+set(@INSTALL_CMAKE_NAMESPACE@_FOUND TRUE)

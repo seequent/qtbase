@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QtWidgets/qmessagebox.h>
 
@@ -72,6 +36,8 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 #if defined(Q_OS_WIN)
 HMENU qt_getWindowsSystemMenu(const QWidget *w)
 {
@@ -99,9 +65,10 @@ public:
 #ifndef QT_NO_CONTEXTMENU
         void contextMenuEvent(QContextMenuEvent * e) override
         {
-            QMenu *menu = createStandardContextMenu();
-            menu->setAttribute(Qt::WA_DeleteOnClose);
-            menu->popup(e->globalPos());
+            if (QMenu *menu = createStandardContextMenu()) {
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                menu->popup(e->globalPos());
+            }
         }
 #endif // QT_NO_CONTEXTMENU
     };
@@ -269,16 +236,16 @@ void QMessageBoxPrivate::init(const QString &title, const QString &text)
     Q_Q(QMessageBox);
 
     label = new QLabel;
-    label->setObjectName(QLatin1String("qt_msgbox_label"));
+    label->setObjectName("qt_msgbox_label"_L1);
     label->setTextInteractionFlags(Qt::TextInteractionFlags(q->style()->styleHint(QStyle::SH_MessageBox_TextInteractionFlags, nullptr, q)));
     label->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     label->setOpenExternalLinks(true);
     iconLabel = new QLabel(q);
-    iconLabel->setObjectName(QLatin1String("qt_msgboxex_icon_label"));
+    iconLabel->setObjectName("qt_msgboxex_icon_label"_L1);
     iconLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     buttonBox = new QDialogButtonBox;
-    buttonBox->setObjectName(QLatin1String("qt_msgbox_buttonbox"));
+    buttonBox->setObjectName("qt_msgbox_buttonbox"_L1);
     buttonBox->setCenterButtons(q->style()->styleHint(QStyle::SH_MessageBox_CenterButtons, nullptr, q));
     QObject::connect(buttonBox, SIGNAL(clicked(QAbstractButton*)),
                      q, SLOT(_q_buttonClicked(QAbstractButton*)));
@@ -362,7 +329,7 @@ void QMessageBoxPrivate::updateSize()
     if (!q->isVisible())
         return;
 
-    const QSize screenSize = QGuiApplication::screenAt(QCursor::pos())->availableGeometry().size();
+    const QSize screenSize = q->screen()->availableGeometry().size();
     int hardLimit = qMin(screenSize.width() - 480, 1000); // can never get bigger than this
     // on small screens allows the messagebox be the same size as the screen
     if (screenSize.width() <= 1024)
@@ -517,7 +484,7 @@ void QMessageBoxPrivate::setClickedButton(QAbstractButton *button)
     emit q->buttonClicked(clickedButton);
 
     auto resultCode = execReturnCode(button);
-    hide(resultCode);
+    close(resultCode);
     finalize(resultCode, dialogCodeForButton(button));
 }
 
@@ -748,8 +715,7 @@ void QMessageBoxPrivate::_q_clicked(QPlatformDialogHelper::StandardButton button
     When an escape button can't be determined using these rules,
     pressing \uicontrol Esc has no effect.
 
-    \sa QDialogButtonBox, {fowler}{GUI Design Handbook: Message Box}, {Standard Dialogs Example},
-        {Qt Widgets - Application Example}
+    \sa QDialogButtonBox, {Standard Dialogs Example}, {Qt Widgets - Application Example}
 */
 
 /*!
@@ -1065,14 +1031,14 @@ void QMessageBoxPrivate::detectEscapeButton()
 
     // If there is only one button, make it the escape button
     const QList<QAbstractButton *> buttons = buttonBox->buttons();
-    if (buttons.count() == 1) {
+    if (buttons.size() == 1) {
         detectedEscapeButton = buttons.first();
         return;
     }
 
     // If there are two buttons and one of them is the "Show Details..."
     // button, then make the other one the escape button
-    if (buttons.count() == 2 && detailsButton) {
+    if (buttons.size() == 2 && detailsButton) {
         auto idx = buttons.indexOf(detailsButton);
         if (idx != -1) {
             detectedEscapeButton = buttons.at(1 - idx);
@@ -1419,8 +1385,10 @@ void QMessageBox::closeEvent(QCloseEvent *e)
         return;
     }
     QDialog::closeEvent(e);
-    d->clickedButton = d->detectedEscapeButton;
-    setResult(d->execReturnCode(d->detectedEscapeButton));
+    if (!d->clickedButton) {
+        d->clickedButton = d->detectedEscapeButton;
+        setResult(d->execReturnCode(d->detectedEscapeButton));
+    }
 }
 
 /*!
@@ -1493,21 +1461,21 @@ void QMessageBox::keyPressEvent(QKeyEvent *e)
 
 #if defined(Q_OS_WIN)
         if (e == QKeySequence::Copy) {
-            const QLatin1String separator("---------------------------\n");
+            const auto separator = "---------------------------\n"_L1;
             QString textToCopy;
-            textToCopy += separator + windowTitle() + QLatin1Char('\n') + separator // title
-                          + d->label->text() + QLatin1Char('\n') + separator;       // text
+            textToCopy += separator + windowTitle() + u'\n' + separator // title
+                          + d->label->text() + u'\n' + separator;       // text
 
             if (d->informativeLabel)
-                textToCopy += d->informativeLabel->text() + QLatin1Char('\n') + separator;
+                textToCopy += d->informativeLabel->text() + u'\n' + separator;
 
             const QList<QAbstractButton *> buttons = d->buttonBox->buttons();
             for (const auto *button : buttons)
-                textToCopy += button->text() + QLatin1String("   ");
-            textToCopy += QLatin1Char('\n') + separator;
+                textToCopy += button->text() + "   "_L1;
+            textToCopy += u'\n' + separator;
 #if QT_CONFIG(textedit)
             if (d->detailsText)
-                textToCopy += d->detailsText->text() + QLatin1Char('\n') + separator;
+                textToCopy += d->detailsText->text() + u'\n' + separator;
 #endif
             QGuiApplication::clipboard()->setText(textToCopy);
             return;
@@ -1592,10 +1560,11 @@ void QMessageBox::showEvent(QShowEvent *e)
     }
     if (d->detailsButton)
         addButton(d->detailsButton, QMessageBox::ActionRole);
+    d->clickedButton = nullptr;
     d->detectEscapeButton();
     d->updateSize();
 
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
     QAccessibleEvent event(this, QAccessible::Alert);
     QAccessible::updateAccessibility(&event);
 #endif
@@ -1809,7 +1778,7 @@ void QMessageBox::about(QWidget *parent, const QString &title, const QString &te
     }
 #endif
 
-    QMessageBox *msgBox = new QMessageBox(title, text, Information, 0, 0, 0, parent
+    QMessageBox *msgBox = new QMessageBox(Information, title, text, NoButton, parent
 #ifdef Q_OS_MAC
                                           , Qt::WindowTitleHint | Qt::WindowSystemMenuHint
 #endif
@@ -1828,6 +1797,7 @@ void QMessageBox::about(QWidget *parent, const QString &title, const QString &te
 #else
     msgBox->d_func()->buttonBox->setCenterButtons(true);
 #endif
+    msgBox->setModal(false);
     msgBox->show();
 #else
     msgBox->exec();
@@ -1866,7 +1836,7 @@ void QMessageBox::aboutQt(QWidget *parent, const QString &title)
     translatedTextAboutQtCaption = QMessageBox::tr(
         "<h3>About Qt</h3>"
         "<p>This program uses Qt version %1.</p>"
-        ).arg(QLatin1String(QT_VERSION_STR));
+        ).arg(QT_VERSION_STR ""_L1);
     //: Leave this text untranslated or include a verbatim copy of it below
     //: and note that it is the authoritative version in case of doubt.
     const QString translatedTextAboutQtText = QMessageBox::tr(
@@ -1891,7 +1861,7 @@ void QMessageBox::aboutQt(QWidget *parent, const QString &title)
         "<p>Qt and the Qt logo are trademarks of The Qt Company Ltd.</p>"
         "<p>Qt is The Qt Company Ltd product developed as an open source "
         "project. See <a href=\"http://%3/\">%3</a> for more information.</p>"
-        ).arg(QStringLiteral("2020"),
+        ).arg(QStringLiteral("2022"),
               QStringLiteral("qt.io/licensing"),
               QStringLiteral("qt.io"));
     QMessageBox *msgBox = new QMessageBox(parent);
@@ -1900,7 +1870,7 @@ void QMessageBox::aboutQt(QWidget *parent, const QString &title)
     msgBox->setText(translatedTextAboutQtCaption);
     msgBox->setInformativeText(translatedTextAboutQtText);
 
-    QPixmap pm(QLatin1String(":/qt-project.org/qmessagebox/images/qtlogo-64.png"));
+    QPixmap pm(":/qt-project.org/qmessagebox/images/qtlogo-64.png"_L1);
     if (!pm.isNull())
         msgBox->setIconPixmap(pm);
 
@@ -1913,6 +1883,7 @@ void QMessageBox::aboutQt(QWidget *parent, const QString &title)
 #else
     msgBox->d_func()->buttonBox->setCenterButtons(true);
 #endif
+    msgBox->setModal(false);
     msgBox->show();
 #else
     msgBox->exec();
@@ -1928,33 +1899,7 @@ static QMessageBox::StandardButton newButton(int button)
     if (button == QMessageBox::NoButton || (button & NewButtonMask))
         return QMessageBox::StandardButton(button & QMessageBox::ButtonMask);
 
-#if QT_VERSION < 0x050000
-    // this is needed for binary compatibility with Qt 4.0 and 4.1
-    switch (button & Old_ButtonMask) {
-    case Old_Ok:
-        return QMessageBox::Ok;
-    case Old_Cancel:
-        return QMessageBox::Cancel;
-    case Old_Yes:
-        return QMessageBox::Yes;
-    case Old_No:
-        return QMessageBox::No;
-    case Old_Abort:
-        return QMessageBox::Abort;
-    case Old_Retry:
-        return QMessageBox::Retry;
-    case Old_Ignore:
-        return QMessageBox::Ignore;
-    case Old_YesAll:
-        return QMessageBox::YesToAll;
-    case Old_NoAll:
-        return QMessageBox::NoToAll;
-    default:
-        return QMessageBox::NoButton;
-    }
-#else
     return QMessageBox::NoButton;
-#endif
 }
 
 static bool detectedCompat(int button0, int button1, int button2)
@@ -2043,13 +1988,14 @@ int QMessageBoxPrivate::showOldMessageBox(QWidget *parent, QMessageBox::Icon ico
 void QMessageBoxPrivate::retranslateStrings()
 {
 #if QT_CONFIG(textedit)
-    if (detailsButton)
+    if (detailsButton && detailsText)
         detailsButton->setLabel(detailsText->isHidden() ? ShowLabel : HideLabel);
 #endif
 }
 
+#if QT_DEPRECATED_SINCE(6,2)
 /*!
-    \obsolete
+    \deprecated
 
     Constructs a message box with a \a title, a \a text, an \a icon,
     and up to three buttons.
@@ -2113,7 +2059,7 @@ QMessageBox::QMessageBox(const QString &title, const QString &text, Icon icon,
 }
 
 /*!
-    \obsolete
+    \deprecated [6.2]. Use the overload taking StandardButtons instead.
 
     Opens an information message box with the given \a title and the
     \a text. The dialog may have up to three buttons. Each of the
@@ -2159,7 +2105,7 @@ int QMessageBox::information(QWidget *parent, const QString &title, const QStrin
 }
 
 /*!
-    \obsolete
+    \deprecated since 6.2. Use the overload taking StandardButtons instead.
     \overload
 
     Displays an information message box with the given \a title and
@@ -2199,7 +2145,8 @@ int QMessageBox::information(QWidget *parent, const QString &title, const QStrin
 }
 
 /*!
-    \obsolete
+    \deprecated [6.2]. Use the overload taking StandardButtons
+    instead.
 
     Opens a question message box with the given \a title and \a text.
     The dialog may have up to three buttons. Each of the buttons, \a
@@ -2245,7 +2192,7 @@ int QMessageBox::question(QWidget *parent, const QString &title, const QString& 
 }
 
 /*!
-    \obsolete
+    \deprecated [6.2]. Use the overload taking StandardButtons instead.
     \overload
 
     Displays a question message box with the given \a title and \a
@@ -2285,7 +2232,7 @@ int QMessageBox::question(QWidget *parent, const QString &title, const QString& 
 
 
 /*!
-    \obsolete
+    \deprecated [6.2]. Use the overload taking StandardButtons instead.
 
     Opens a warning message box with the given \a title and \a text.
     The dialog may have up to three buttons. Each of the button
@@ -2331,7 +2278,7 @@ int QMessageBox::warning(QWidget *parent, const QString &title, const QString& t
 }
 
 /*!
-    \obsolete
+    \deprecated [6.2]. Use the overload taking StandardButtons instead.
     \overload
 
     Displays a warning message box with the given \a title and \a
@@ -2370,7 +2317,7 @@ int QMessageBox::warning(QWidget *parent, const QString &title, const QString& t
 }
 
 /*!
-    \obsolete
+    \deprecated [6.2]. Use the overload taking StandardButtons instead.
 
     Opens a critical message box with the given \a title and \a text.
     The dialog may have up to three buttons. Each of the button
@@ -2417,7 +2364,7 @@ int QMessageBox::critical(QWidget *parent, const QString &title, const QString& 
 }
 
 /*!
-    \obsolete
+    \deprecated [6.2]. Use the overload taking StandardButtons instead.
     \overload
 
     Displays a critical error message box with the given \a title and
@@ -2457,7 +2404,7 @@ int QMessageBox::critical(QWidget *parent, const QString &title, const QString& 
 
 
 /*!
-    \obsolete
+    \deprecated
 
     Returns the text of the message box button \a button, or
     an empty string if the message box does not contain the button.
@@ -2478,7 +2425,7 @@ QString QMessageBox::buttonText(int button) const
 }
 
 /*!
-    \obsolete
+    \deprecated
 
     Sets the text of the message box button \a button to \a text.
     Setting the text of a button that is not in the message box is
@@ -2496,6 +2443,8 @@ void QMessageBox::setButtonText(int button, const QString &text)
         addButton(QMessageBox::Ok)->setText(text);
     }
 }
+#endif // QT_DEPRECATED_SINCE(6,2)
+
 
 #if QT_CONFIG(textedit)
 /*!
@@ -2582,7 +2531,7 @@ void QMessageBox::setInformativeText(const QString &text)
     } else {
         if (!d->informativeLabel) {
             QLabel *label = new QLabel;
-            label->setObjectName(QLatin1String("qt_msgbox_informativelabel"));
+            label->setObjectName("qt_msgbox_informativelabel"_L1);
             label->setTextInteractionFlags(Qt::TextInteractionFlags(style()->styleHint(QStyle::SH_MessageBox_TextInteractionFlags, nullptr, this)));
             label->setAlignment(Qt::AlignTop | Qt::AlignLeft);
             label->setOpenExternalLinks(true);
@@ -2723,8 +2672,9 @@ void QMessageBoxPrivate::helperDone(QDialog::DialogCode code, QPlatformDialogHel
         clickedButton = button;
 }
 
+#if QT_DEPRECATED_SINCE(6,2)
 /*!
-    \obsolete
+    \deprecated
 
     Returns the pixmap used for a standard icon. This allows the
     pixmaps to be used in more complex message boxes. \a icon
@@ -2740,10 +2690,11 @@ QPixmap QMessageBox::standardIcon(Icon icon)
 {
     return QMessageBoxPrivate::standardIcon(icon, nullptr);
 }
+#endif
 
 /*!
     \typedef QMessageBox::Button
-    \obsolete
+    \deprecated
 
     Use QMessageBox::StandardButton instead.
 */
@@ -2785,6 +2736,25 @@ QPixmap QMessageBox::standardIcon(Icon icon)
   button or by using a mechanism provided by the window system.
 
   \sa show(), result()
+*/
+
+/*!
+    \macro QT_REQUIRE_VERSION(int argc, char **argv, const char *version)
+    \relates <QMessageBox>
+
+    This macro can be used to ensure that the application is run
+    with a recent enough version of Qt. This is especially useful
+    if your application depends on a specific bug fix introduced in a
+    bug-fix release (for example, 6.1.2).
+
+    The \a argc and \a argv parameters are the \c main() function's
+    \c argc and \c argv parameters. The \a version parameter is a
+    string literal that specifies which version of Qt the application
+    requires (for example, "6.1.2").
+
+    Example:
+
+    \snippet code/src_gui_dialogs_qmessagebox.cpp 4
 */
 
 QT_END_NAMESPACE

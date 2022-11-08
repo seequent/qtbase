@@ -1,13 +1,8 @@
-# Generated from testProcessLoopback.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 #####################################################################
 ## testProcessLoopback Binary:
 #####################################################################
 
-qt_internal_add_benchmark(testProcessLoopback
-    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/"
-    SOURCES
-        main.cpp
-    PUBLIC_LIBRARIES
-        Qt::Gui
-)
+add_executable(testProcessLoopback loopback.cpp)

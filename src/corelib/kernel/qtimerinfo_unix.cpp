@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <qelapsedtimer.h>
 #include <qcoreapplication.h>
@@ -197,15 +161,22 @@ inline timespec operator+(const timespec &t1, int ms)
     return t2 += ms;
 }
 
-static timespec roundToMillisecond(timespec val)
+static constexpr timespec roundToMillisecond(timespec val)
 {
     // always round up
     // worst case scenario is that the first trigger of a 1-ms timer is 0.999 ms late
 
     int ns = val.tv_nsec % (1000 * 1000);
-    val.tv_nsec += 1000 * 1000 - ns;
+    if (ns)
+        val.tv_nsec += 1000 * 1000 - ns;
     return normalizedTimespec(val);
 }
+static_assert(roundToMillisecond({0, 0}) == timespec{0, 0});
+static_assert(roundToMillisecond({0, 1}) == timespec{0, 1'000'000});
+static_assert(roundToMillisecond({0, 999'999}) == timespec{0, 1'000'000});
+static_assert(roundToMillisecond({0, 1'000'000}) == timespec{0, 1'000'000});
+static_assert(roundToMillisecond({0, 999'999'999}) == timespec{1, 0});
+static_assert(roundToMillisecond({1, 0}) == timespec{1, 0});
 
 #ifdef QTIMERINFO_DEBUG
 QDebug operator<<(QDebug s, timeval tv)
@@ -409,18 +380,17 @@ bool QTimerInfoList::timerWait(timespec &tm)
 }
 
 /*
-  Returns the timer's remaining time in milliseconds with the given timerId, or
-  null if there is nothing left. If the timer id is not found in the list, the
-  returned value will be -1. If the timer is overdue, the returned value will be 0.
+  Returns the timer's remaining time in milliseconds with the given timerId.
+  If the timer id is not found in the list, the returned value will be -1.
+  If the timer is overdue, the returned value will be 0.
 */
-int QTimerInfoList::timerRemainingTime(int timerId)
+qint64 QTimerInfoList::timerRemainingTime(int timerId)
 {
     timespec currentTime = updateCurrentTime();
     repairTimersIfNeeded();
     timespec tm = {0, 0};
 
-    for (int i = 0; i < count(); ++i) {
-        QTimerInfo *t = at(i);
+    for (const auto *t : std::as_const(*this)) {
         if (t->id == timerId) {
             if (currentTime < t->timeout) {
                 // time to wait
@@ -504,7 +474,7 @@ void QTimerInfoList::registerTimer(int timerId, qint64 interval, Qt::TimerType t
 bool QTimerInfoList::unregisterTimer(int timerId)
 {
     // set timer inactive
-    for (int i = 0; i < count(); ++i) {
+    for (int i = 0; i < size(); ++i) {
         QTimerInfo *t = at(i);
         if (t->id == timerId) {
             // found it
@@ -525,7 +495,7 @@ bool QTimerInfoList::unregisterTimers(QObject *object)
 {
     if (isEmpty())
         return false;
-    for (int i = 0; i < count(); ++i) {
+    for (int i = 0; i < size(); ++i) {
         QTimerInfo *t = at(i);
         if (t->obj == object) {
             // object found
@@ -545,7 +515,7 @@ bool QTimerInfoList::unregisterTimers(QObject *object)
 QList<QAbstractEventDispatcher::TimerInfo> QTimerInfoList::registeredTimers(QObject *object) const
 {
     QList<QAbstractEventDispatcher::TimerInfo> list;
-    for (int i = 0; i < count(); ++i) {
+    for (int i = 0; i < size(); ++i) {
         const QTimerInfo * const t = at(i);
         if (t->obj == object) {
             list << QAbstractEventDispatcher::TimerInfo(t->id,
@@ -631,13 +601,16 @@ int QTimerInfoList::activateTimers()
         if (currentTimerInfo->interval > 0)
             n_act++;
 
+        // Send event, but don't allow it to recurse:
         if (!currentTimerInfo->activateRef) {
-            // send event, but don't allow it to recurse
             currentTimerInfo->activateRef = &currentTimerInfo;
 
             QTimerEvent e(currentTimerInfo->id);
             QCoreApplication::sendEvent(currentTimerInfo->obj, &e);
 
+            // Storing currentTimerInfo's address in its activateRef allows the
+            // handling of that event to clear this local variable on deletion
+            // of the object it points to - if it didn't, clear activateRef:
             if (currentTimerInfo)
                 currentTimerInfo->activateRef = nullptr;
         }

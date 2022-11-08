@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qmargins.h"
 #include "qdatastream.h"
@@ -52,7 +16,7 @@ QT_BEGIN_NAMESPACE
 
     \brief The QMargins class defines the four margins of a rectangle.
 
-    QMargin defines a set of four margins; left, top, right and bottom,
+    QMargin defines a set of four margins; left, top, right, and bottom,
     that describe the size of the borders surrounding a rectangle.
 
     The isNull() function returns \c true only if all margins are set to zero.
@@ -76,7 +40,7 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn QMargins::QMargins(int left, int top, int right, int bottom)
 
-    Constructs margins with the given \a left, \a top, \a right, \a bottom
+    Constructs margins with the given \a left, \a top, \a right, and \a bottom
 
     \sa setLeft(), setRight(), setTop(), setBottom()
 */
@@ -406,6 +370,15 @@ QT_BEGIN_NAMESPACE
     \since 5.1
 */
 
+/*!
+    \fn QMargins::toMarginsF() const
+    \since 6.4
+
+    Returns these margins as margins with floating point accuracy.
+
+    \sa QMarginsF::toMargins()
+*/
+
 /*****************************************************************************
   QMargins stream functions
  *****************************************************************************/
@@ -467,8 +440,8 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 
     \brief The QMarginsF class defines the four margins of a rectangle.
 
-    QMarginsF defines a set of four margins; left, top, right and bottom,
-    that describe the size of the borders surrounding a rectangle.
+    QMarginsF defines a set of four margins; left, top, right, and bottom,
+    that describe the finite size of the borders surrounding a rectangle.
 
     The isNull() function returns \c true only if all margins are very close to zero.
 
@@ -491,7 +464,8 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 /*!
     \fn QMarginsF::QMarginsF(qreal left, qreal top, qreal right, qreal bottom)
 
-    Constructs margins with the given \a left, \a top, \a right, \a bottom
+    Constructs margins with the given \a left, \a top, \a right, and \a bottom.
+    All parameters must be finite.
 
     \sa setLeft(), setRight(), setTop(), setBottom()
 */
@@ -499,7 +473,9 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 /*!
     \fn QMarginsF::QMarginsF(const QMargins &margins)
 
-    Constructs margins copied from the given \a margins
+    Constructs margins copied from the given \a margins.
+
+    \sa QMargins::toMarginsF()
 */
 
 /*!
@@ -508,7 +484,7 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     Returns \c true if all margins are very close to 0; otherwise returns
     false.
 
-    \sa qFuzzyIsNull
+    \sa {<QtGlobal>::}{qFuzzyIsNull}
 */
 
 
@@ -542,27 +518,27 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 
 
 /*!
-    \fn void QMarginsF::setLeft(qreal left)
+    \fn void QMarginsF::setLeft(qreal aleft)
 
-    Sets the left margin to \a left.
+    Sets the left margin to \a aleft (which must be finite).
 */
 
 /*!
-    \fn void QMarginsF::setTop(qreal Top)
+    \fn void QMarginsF::setTop(qreal atop)
 
-    Sets the Top margin to \a Top.
+    Sets the top margin to \a atop (which must be finite).
 */
 
 /*!
-    \fn void QMarginsF::setRight(qreal right)
+    \fn void QMarginsF::setRight(qreal aright)
 
-    Sets the right margin to \a right.
+    Sets the right margin to \a aright (which must be finite).
 */
 
 /*!
-    \fn void QMarginsF::setBottom(qreal bottom)
+    \fn void QMarginsF::setBottom(qreal abottom)
 
-    Sets the bottom margin to \a bottom.
+    Sets the bottom margin to \a abottom (which must be finite).
 */
 
 /*!
@@ -613,8 +589,8 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     \fn const QMarginsF operator+(const QMarginsF &lhs, qreal rhs)
     \relates QMarginsF
 
-    Returns a QMarginsF object that is formed by adding \a rhs to
-    \a lhs.
+    Returns a QMarginsF object that is formed by adding \a rhs (which must be
+    finite) to each component of \a lhs.
 
     \sa QMarginsF::operator+=(), QMarginsF::operator-=()
 */
@@ -623,8 +599,8 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     \fn const QMarginsF operator+(qreal lhs, const QMarginsF &rhs)
     \relates QMarginsF
 
-    Returns a QMarginsF object that is formed by adding \a lhs to
-    \a rhs.
+    Returns a QMarginsF object that is formed by adding \a lhs (which must be
+    finite) to each component of \a rhs.
 
     \sa QMarginsF::operator+=(), QMarginsF::operator-=()
 */
@@ -633,8 +609,8 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     \fn const QMarginsF operator-(const QMarginsF &lhs, qreal rhs)
     \relates QMarginsF
 
-    Returns a QMarginsF object that is formed by subtracting \a rhs from
-    \a lhs.
+    Returns a QMarginsF object that is formed by subtracting \a rhs (which must
+    be finite) from each component of \a lhs.
 
     \sa QMarginsF::operator+=(), QMarginsF::operator-=()
 */
@@ -645,7 +621,7 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     \overload
 
     Returns a QMarginsF object that is formed by multiplying each component
-    of the given \a lhs margins by \a rhs factor.
+    of the given \a lhs margins by finite factor \a rhs.
 
     \sa QMarginsF::operator*=(), QMarginsF::operator/=()
 */
@@ -656,7 +632,7 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     \overload
 
     Returns a QMarginsF object that is formed by multiplying each component
-    of the given \a lhs margins by \a rhs factor.
+    of the given \a lhs margins by finite factor \a rhs.
 
     \sa QMarginsF::operator*=(), QMarginsF::operator/=()
 */
@@ -668,6 +644,8 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 
     Returns a QMarginsF object that is formed by dividing the components of
     the given \a lhs margins by the given \a rhs divisor.
+
+    The divisor must not be either zero or NaN.
 
     \sa QMarginsF::operator*=(), QMarginsF::operator/=()
 */
@@ -721,7 +699,7 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     \fn QMarginsF &QMarginsF::operator+=(qreal addend)
     \overload
 
-    Adds the \a addend to each component of this object
+    Adds the given finite \a addend to each component of this object
     and returns a reference to it.
 
     \sa operator-=()
@@ -731,7 +709,7 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
     \fn QMarginsF &QMarginsF::operator-=(qreal subtrahend)
     \overload
 
-    Subtracts the \a subtrahend from each component of this object
+    Subtracts the given finite \a subtrahend from each component of this object
     and returns a reference to it.
 
     \sa operator+=()
@@ -740,8 +718,8 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 /*!
     \fn QMarginsF &QMarginsF::operator*=(qreal factor)
 
-    Multiplies each component of this object by \a factor
-    and returns a reference to it.
+    Multiplies each component of this object by the given finite \a factor
+    and returns a reference to this object.
 
     \sa operator/=()
 */
@@ -749,8 +727,10 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 /*!
     \fn QMarginsF &QMarginsF::operator/=(qreal divisor)
 
-    Divides each component of this object by \a divisor
-    and returns a reference to it.
+    Divides each component of this object by \a divisor and returns a reference
+    to this object.
+
+    The \a divisor must not be either zero or NaN.
 
     \sa operator*=()
 */
@@ -758,12 +738,12 @@ QDebug operator<<(QDebug dbg, const QMargins &m)
 /*!
     \fn QMargins QMarginsF::toMargins() const
 
-    Returns an integer based copy of this margins object.
+    Returns an integer-based copy of this margins object.
 
     Note that the components in the returned margins will be rounded to
     the nearest integer.
 
-    \sa QMarginsF()
+    \sa QMarginsF(), QMargins::toMarginsF()
 */
 
 /*****************************************************************************

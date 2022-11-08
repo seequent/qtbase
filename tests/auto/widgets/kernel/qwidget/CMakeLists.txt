@@ -1,20 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qwidget.pro.
 
 #####################################################################
 ## tst_qwidget Test:
 #####################################################################
-
-qt_internal_add_test(tst_qwidget
-    SOURCES
-        tst_qwidget.cpp
-    PUBLIC_LIBRARIES
-        Qt::CorePrivate
-        Qt::Gui
-        Qt::GuiPrivate
-        Qt::TestPrivate
-        Qt::Widgets
-        Qt::WidgetsPrivate
-)
 
 # Resources:
 set(qwidget_resource_files
@@ -24,13 +15,19 @@ set(qwidget_resource_files
     "hellotr_la.qm"
 )
 
-qt_internal_add_resource(tst_qwidget "qwidget"
-    PREFIX
-        "/"
-    FILES
-        ${qwidget_resource_files}
+qt_internal_add_test(tst_qwidget
+    SOURCES
+        tst_qwidget.cpp
+    LIBRARIES
+        Qt::CorePrivate
+        Qt::Gui
+        Qt::GuiPrivate
+        Qt::TestPrivate
+        Qt::Widgets
+        Qt::WidgetsPrivate
+    TESTDATA ${qwidget_resource_files}
+    BUILTIN_TESTDATA
 )
-
 
 #### Keys ignored in scope 1:.:.:qwidget.pro:<TRUE>:
 # testcase.timeout = "600"
@@ -46,13 +43,13 @@ qt_internal_extend_target(tst_qwidget CONDITION AIX
 qt_internal_extend_target(tst_qwidget CONDITION APPLE
     SOURCES
         tst_qwidget_mac_helpers.mm
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ${FWAppKit}
         ${FWSecurity}
 )
 
 qt_internal_extend_target(tst_qwidget CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         gdi32
         user32
 )

@@ -1,10 +1,23 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # special case begin
 # Order by dependency [*], then alphabetic. [*] If bugs in part A of
 # our source would break tests of part B, then test A before B.
 
-# Build only corelib and gui tests when targeting uikit (iOS),
-# because the script can't handle the SUBDIRS assignment well.
-if (UIKIT)
+if(UIKIT)
+    # For now, only build CMake auto tests when QT_BUILD_MINIMAL_STATIC_TEST
+    # is a requested (which is basically what CI will build).
+    # The reason is that qt_internal_add_test doesn't use qt_add_executable
+    # at the moment, which means none of the required iOS specific finalizers
+    # are run.
+    if(QT_BUILD_MINIMAL_STATIC_TESTS)
+        add_subdirectory(cmake)
+        return()
+    endif()
+
+    # Build only corelib and gui tests when targeting uikit (iOS),
+    # because the script can't handle the SUBDIRS assignment well.
     add_subdirectory(corelib)
     if (TARGET Qt::Gui)
         add_subdirectory(gui)
@@ -12,8 +25,23 @@ if (UIKIT)
     return()
 endif()
 
+# Limit set of tests to run for Android multi-ABI Qt builds.
+if(QT_BUILD_MINIMAL_ANDROID_MULTI_ABI_TESTS)
+    add_subdirectory(corelib/kernel/qmath)
+    add_subdirectory(widgets/effects/qpixmapfilter)
+    add_subdirectory(corelib/platform)
+    return()
+endif()
+
+# Only configure a single auto test for wasm for now
+# Since the linking step at this point is prohibitively long (static linking)
+if(WASM)
+    add_subdirectory(corelib/text/qchar)
+    return()
+endif()
+
 add_subdirectory(testlib)
-if (NOT CMAKE_CROSSCOMPILE AND QT_FEATURE_process)
+if(NOT CMAKE_CROSSCOMPILING AND QT_FEATURE_process)
      add_subdirectory(tools)
 endif()
 add_subdirectory(corelib)
@@ -22,6 +50,12 @@ if (TARGET Qt::Xml AND TARGET Qt::Sql AND TARGET Qt::Network)
     add_subdirectory(cmake)
 endif()
 # special case end
+
+# Limit set of tests to run for static Qt builds.
+if(QT_BUILD_MINIMAL_STATIC_TESTS)
+    return()
+endif()
+
 if (TARGET Qt::Concurrent)
      add_subdirectory(concurrent)
 endif()

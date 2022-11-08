@@ -1,12 +1,15 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from kmsconvenience.pro.
 
 qt_find_package(Libdrm) # special case
 
 #####################################################################
-## KmsSupport Module:
+## KmsSupportPrivate Module:
 #####################################################################
 
-qt_internal_add_module(KmsSupport
+qt_internal_add_module(KmsSupportPrivate
     CONFIG_MODULE_NAME kms_support
     STATIC
     INTERNAL_MODULE

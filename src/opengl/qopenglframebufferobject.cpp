@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtOpenGL module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qopenglframebufferobject.h"
 #include "qopenglframebufferobject_p.h"
@@ -152,6 +116,25 @@ QT_BEGIN_NAMESPACE
 #define GL_DEPTH_STENCIL                  0x84F9
 #endif
 
+#ifndef GL_HALF_FLOAT
+#define GL_HALF_FLOAT                     0x140B
+#endif
+
+#ifndef GL_RGBA32F
+#define GL_RGBA32F                        0x8814
+#endif
+
+#ifndef GL_RGB32F
+#define GL_RGB32F                         0x8815
+#endif
+
+#ifndef GL_RGBA16F
+#define GL_RGBA16F                        0x881A
+#endif
+
+#ifndef GL_RGB16F
+#define GL_RGB16F                         0x881B
+#endif
 
 
 /*!
@@ -554,6 +537,8 @@ void QOpenGLFramebufferObjectPrivate::initTexture(int idx)
         pixelType = GL_UNSIGNED_INT_2_10_10_10_REV;
     else if (color.internalFormat == GL_RGB16  || color.internalFormat == GL_RGBA16)
         pixelType = GL_UNSIGNED_SHORT;
+    else if (color.internalFormat == GL_RGB16F  || color.internalFormat == GL_RGBA16F)
+        pixelType = GL_HALF_FLOAT;
 
     funcs.glTexImage2D(target, 0, color.internalFormat, color.size.width(), color.size.height(), 0,
                        GL_RGBA, pixelType, nullptr);
@@ -1008,7 +993,7 @@ QOpenGLFramebufferObject::~QOpenGLFramebufferObject()
     if (isBound())
         release();
 
-    for (const auto &color : qAsConst(d->colorAttachments)) {
+    for (const auto &color : std::as_const(d->colorAttachments)) {
         if (color.guard)
             color.guard->free();
     }
@@ -1068,7 +1053,7 @@ void QOpenGLFramebufferObject::addColorAttachment(const QSize &size, GLenum inte
 
     QOpenGLFramebufferObjectPrivate::ColorAttachment color(size, effectiveInternalFormat(internalFormat));
     d->colorAttachments.append(color);
-    const int idx = d->colorAttachments.count() - 1;
+    const int idx = d->colorAttachments.size() - 1;
 
     if (d->requestedSamples == 0) {
         d->initTexture(idx);
@@ -1149,7 +1134,7 @@ bool QOpenGLFramebufferObject::bind()
 
     if (d->format.samples() == 0) {
         // Create new textures to replace the ones stolen via takeTexture().
-        for (int i = 0; i < d->colorAttachments.count(); ++i) {
+        for (int i = 0; i < d->colorAttachments.size(); ++i) {
             if (!d->colorAttachments.at(i).guard)
                 d->initTexture(i);
         }
@@ -1229,7 +1214,7 @@ QList<GLuint> QOpenGLFramebufferObject::textures() const
     QList<GLuint> ids;
     if (d->format.samples() != 0)
         return ids;
-    ids.reserve(d->colorAttachments.count());
+    ids.reserve(d->colorAttachments.size());
     for (const auto &color : d->colorAttachments)
         ids.append(color.guard ? color.guard->id() : 0);
     return ids;
@@ -1281,7 +1266,7 @@ GLuint QOpenGLFramebufferObject::takeTexture(int colorAttachmentIndex)
 {
     Q_D(QOpenGLFramebufferObject);
     GLuint id = 0;
-    if (isValid() && d->format.samples() == 0 && d->colorAttachments.count() > colorAttachmentIndex) {
+    if (isValid() && d->format.samples() == 0 && d->colorAttachments.size() > colorAttachmentIndex) {
         QOpenGLContext *current = QOpenGLContext::currentContext();
         if (current && current->shareGroup() == d->fbo_guard->group() && isBound())
             release();
@@ -1379,6 +1364,21 @@ static inline QImage qt_gl_read_framebuffer_rgba16(const QSize &size, bool inclu
     return img;
 }
 
+static inline QImage qt_gl_read_framebuffer_rgba16f(const QSize &size, bool include_alpha, QOpenGLContext *context)
+{
+    // We assume OpenGL (ES) 3.0+ here.
+    QImage img(size, include_alpha ? QImage::Format_RGBA16FPx4_Premultiplied : QImage::Format_RGBX16FPx4);
+    context->functions()->glReadPixels(0, 0, size.width(), size.height(), GL_RGBA, GL_HALF_FLOAT, img.bits());
+    return img;
+}
+
+static inline QImage qt_gl_read_framebuffer_rgba32f(const QSize &size, bool include_alpha, QOpenGLContext *context)
+{
+    QImage img(size, include_alpha ? QImage::Format_RGBA32FPx4_Premultiplied : QImage::Format_RGBX32FPx4);
+    context->functions()->glReadPixels(0, 0, size.width(), size.height(), GL_RGBA, GL_FLOAT, img.bits());
+    return img;
+}
+
 static QImage qt_gl_read_framebuffer(const QSize &size, GLenum internal_format, bool include_alpha, bool flip)
 {
     QOpenGLContext *ctx = QOpenGLContext::currentContext();
@@ -1400,14 +1400,21 @@ static QImage qt_gl_read_framebuffer(const QSize &size, GLenum internal_format, 
         return qt_gl_read_framebuffer_rgba16(size, false, ctx).mirrored(false, flip);
     case GL_RGBA16:
         return qt_gl_read_framebuffer_rgba16(size, include_alpha, ctx).mirrored(false, flip);
+    case GL_RGB16F:
+        return qt_gl_read_framebuffer_rgba16f(size, false, ctx).mirrored(false, flip);
+    case GL_RGBA16F:
+        return qt_gl_read_framebuffer_rgba16f(size, include_alpha, ctx).mirrored(false, flip);
+    case GL_RGB32F:
+        return qt_gl_read_framebuffer_rgba32f(size, false, ctx).mirrored(false, flip);
+    case GL_RGBA32F:
+        return qt_gl_read_framebuffer_rgba32f(size, include_alpha, ctx).mirrored(false, flip);
     case GL_RGBA:
     case GL_RGBA8:
     default:
         return qt_gl_read_framebuffer_rgba8(size, include_alpha, ctx).mirrored(false, flip);
     }
 
-    Q_UNREACHABLE();
-    return QImage();
+    Q_UNREACHABLE_RETURN(QImage());
 }
 
 Q_OPENGL_EXPORT QImage qt_gl_read_framebuffer(const QSize &size, bool alpha_format, bool include_alpha)
@@ -1483,7 +1490,7 @@ QImage QOpenGLFramebufferObject::toImage(bool flipped, int colorAttachmentIndex)
         return QImage();
     }
 
-    if (d->colorAttachments.count() <= colorAttachmentIndex) {
+    if (d->colorAttachments.size() <= colorAttachmentIndex) {
         qWarning("QOpenGLFramebufferObject::toImage() called for missing color attachment");
         return QImage();
     }

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QHIGHDPISCALING_P_H
 #define QHIGHDPISCALING_P_H
@@ -64,7 +28,7 @@
 
 QT_BEGIN_NAMESPACE
 
-Q_DECLARE_LOGGING_CATEGORY(lcScaling);
+Q_DECLARE_LOGGING_CATEGORY(lcHighDpi);
 
 class QScreen;
 class QPlatformScreen;
@@ -124,13 +88,21 @@ public:
     static QPoint mapPositionFromNative(const QPoint &pos, const QPlatformScreen *platformScreen);
     static QPoint mapPositionToNative(const QPoint &pos, const QPlatformScreen *platformScreen);
     static QDpi logicalDpi(const QScreen *screen);
+    static qreal roundScaleFactor(qreal rawFactor);
 
 private:
+    struct ScreenFactor {
+        ScreenFactor(QString name, qreal factor)
+            :name(name), factor(factor) { }
+        QString name;
+        qreal factor;
+    };
+
     static qreal rawScaleFactor(const QPlatformScreen *screen);
-    static qreal roundScaleFactor(qreal rawFactor);
     static QDpi effectiveLogicalDpi(const QPlatformScreen *screen, qreal rawFactor, qreal roundedFactor);
     static qreal screenSubfactor(const QPlatformScreen *screen);
     static QScreen *screenForPosition(Point position, QScreen *guess);
+    static QVector<QHighDpiScaling::ScreenFactor> parseScreenScaleFactorsSpec(const QStringView &screenScaleFactors);
 
     static qreal m_factor;
     static bool m_active;
@@ -138,6 +110,14 @@ private:
     static bool m_platformPluginDpiScalingActive;
     static bool m_globalScalingActive;
     static bool m_screenFactorSet;
+    static bool m_usePhysicalDpi;
+    static QVector<ScreenFactor> m_screenFactors;
+    static DpiAdjustmentPolicy m_dpiAdjustmentPolicy;
+    static QHash<QString, qreal> m_namedScreenScaleFactors;
+
+#ifndef QT_NO_DEBUG_STREAM
+    friend Q_GUI_EXPORT QDebug operator<<(QDebug, const ScreenFactor &);
+#endif
 };
 
 namespace QHighDpi {
@@ -207,10 +187,9 @@ inline QRegion scale(const QRegion &region, qreal scaleFactor, QPoint origin = Q
     if (!QHighDpiScaling::isActive())
         return region;
 
-    QRegion scaled;
-    for (const QRect &rect : region)
-        scaled += scale(QRectF(rect), scaleFactor, origin).toRect();
-    return scaled;
+    QRegion scaled = region.translated(-origin);
+    scaled = QTransform::fromScale(scaleFactor, scaleFactor).map(scaled);
+    return scaled.translated(origin);
 }
 
 template <typename T>
@@ -362,12 +341,15 @@ public:
     static inline QPoint origin(const QPlatformScreen *) { return QPoint(); }
     static inline QPoint mapPositionFromNative(const QPoint &pos, const QPlatformScreen *) { return pos; }
     static inline QPoint mapPositionToNative(const QPoint &pos, const QPlatformScreen *) { return pos; }
-    static inline QPointF mapPositionToGlobal(const QPointF &pos, const QPoint &windowGlobalPosition, const QWindow *window) { return pos; }
-    static inline QPointF mapPositionFromGlobal(const QPointF &pos, const QPoint &windowGlobalPosition, const QWindow *window) { return pos; }
-    static inline QDpi logicalDpi(const QScreen *screen) { return QDpi(-1,-1); }
+    static inline QPointF mapPositionToGlobal(const QPointF &pos, const QPoint &, const QWindow *) { return pos; }
+    static inline QPointF mapPositionFromGlobal(const QPointF &pos, const QPoint &, const QWindow *) { return pos; }
+    static inline QDpi logicalDpi(const QScreen *) { return QDpi(-1,-1); }
 };
 
 namespace QHighDpi {
+    template <typename T> inline
+    T scale(const T &value, ...) { return value; }
+
     template <typename T> inline
     T toNative(const T &value, ...) { return value; }
     template <typename T> inline
@@ -377,6 +359,14 @@ namespace QHighDpi {
     T fromNativeLocalPosition(const T &value, ...) { return value; }
     template <typename T> inline
     T toNativeLocalPosition(const T &value, ...) { return value; }
+    template <typename T, typename C> inline
+    T fromNativeGlobalPosition(const T &value, const C *) { return value; }
+    template <typename T, typename C> inline
+    T toNativeGlobalPosition(const T &value, const C *) { return value; }
+    template <typename T, typename C> inline
+    T fromNativeWindowGeometry(const T &value, const C *) { return value; }
+    template <typename T, typename C> inline
+    T toNativeWindowGeometry(const T &value, const C *) { return value; }
 
     template <typename T> inline
     T fromNativeLocalRegion(const T &value, ...) { return value; }

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <QtGui/QFontDatabase>
@@ -121,7 +96,7 @@ void tst_QRawFont::initTestCase()
     if (testFont.isEmpty() || testFontBoldItalic.isEmpty())
         QFAIL("qrawfont unittest font files not found!");
 
-    if (QFontDatabase::families().count() == 0)
+    if (QFontDatabase::families().size() == 0)
         QSKIP("No fonts available!!!");
 }
 
@@ -652,6 +627,7 @@ void tst_QRawFont::fromFont_data()
     QTest::addColumn<QFont::HintingPreference>("hintingPreference");
     QTest::addColumn<QString>("familyName");
     QTest::addColumn<QFontDatabase::WritingSystem>("writingSystem");
+    QTest::addColumn<QFont::StyleStrategy>("styleStrategy");
 
     for (int i=QFont::PreferDefaultHinting; i<=QFont::PreferFullHinting; ++i) {
         QString titleBase = QString::fromLatin1("%2, hintingPreference=%1, writingSystem=%3")
@@ -665,7 +641,8 @@ void tst_QRawFont::fromFont_data()
                     << fileName
                     << QFont::HintingPreference(i)
                     << "QtBidiTestFont"
-                    << writingSystem;
+                    << writingSystem
+                    << QFont::PreferDefault;
         }
 
         {
@@ -677,7 +654,8 @@ void tst_QRawFont::fromFont_data()
                     << fileName
                     << QFont::HintingPreference(i)
                     << "QtBidiTestFont"
-                    << writingSystem;
+                    << writingSystem
+                    << QFont::PreferDefault;
         }
 
         {
@@ -689,9 +667,24 @@ void tst_QRawFont::fromFont_data()
                     << fileName
                     << QFont::HintingPreference(i)
                     << "QtBidiTestFont"
-                    << writingSystem;
+                    << writingSystem
+                    << QFont::PreferDefault;
         }
     }
+
+    {
+        QString fileName = testFont;
+        QFontDatabase::WritingSystem writingSystem = QFontDatabase::Arabic;
+
+        QString title = QStringLiteral("No font merging + unsupported script");
+        QTest::newRow(qPrintable(title))
+                << fileName
+                << QFont::PreferDefaultHinting
+                << "QtBidiTestFont"
+                << writingSystem
+                << QFont::NoFontMerging;
+    }
+
 }
 
 void tst_QRawFont::fromFont()
@@ -700,6 +693,7 @@ void tst_QRawFont::fromFont()
     QFETCH(QFont::HintingPreference, hintingPreference);
     QFETCH(QString, familyName);
     QFETCH(QFontDatabase::WritingSystem, writingSystem);
+    QFETCH(QFont::StyleStrategy, styleStrategy);
 
     int id = QFontDatabase::addApplicationFont(fileName);
     QVERIFY(id >= 0);
@@ -707,6 +701,8 @@ void tst_QRawFont::fromFont()
     QFont font(familyName);
     font.setHintingPreference(hintingPreference);
     font.setPixelSize(26.0);
+    if (styleStrategy != QFont::PreferDefault)
+        font.setStyleStrategy(styleStrategy);
 
     QRawFont rawFont = QRawFont::fromFont(font, writingSystem);
     QVERIFY(rawFont.isValid());

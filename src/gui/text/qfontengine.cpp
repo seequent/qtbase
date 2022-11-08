@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2018 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <qdebug.h>
 #include <private/qfontengine_p.h>
@@ -89,17 +53,6 @@ static inline bool qSafeFromBigEndian(const uchar *source, const uchar *end, T *
     *output = qFromBigEndian<T>(source);
     return true;
 }
-
-// Harfbuzz helper functions
-
-#if QT_CONFIG(harfbuzz)
-Q_GLOBAL_STATIC_WITH_ARGS(bool, useHarfbuzzNG,(qgetenv("QT_HARFBUZZ") != "old"))
-
-bool qt_useHarfbuzzNG()
-{
-    return *useHarfbuzzNG();
-}
-#endif
 
 int QFontEngine::getPointInOutline(glyph_t glyph, int flags, quint32 point, QFixed *xpos, QFixed *ypos, quint32 *nPoints)
 {
@@ -180,7 +133,7 @@ QFontEngine::~QFontEngine()
 QFixed QFontEngine::lineThickness() const
 {
     // ad hoc algorithm
-    int score = fontDef.weight * fontDef.pixelSize;
+    int score = fontDef.weight * fontDef.pixelSize / 10;
     int lw = score / 700;
 
     // looks better with thicker line for small pointsizes
@@ -199,20 +152,20 @@ void *QFontEngine::harfbuzzFont() const
 {
     Q_ASSERT(type() != QFontEngine::Multi);
 #if QT_CONFIG(harfbuzz)
-    if (qt_useHarfbuzzNG())
-        return hb_qt_font_get_for_engine(const_cast<QFontEngine *>(this));
-#endif
+    return hb_qt_font_get_for_engine(const_cast<QFontEngine *>(this));
+#else
     return nullptr;
+#endif
 }
 
 void *QFontEngine::harfbuzzFace() const
 {
     Q_ASSERT(type() != QFontEngine::Multi);
 #if QT_CONFIG(harfbuzz)
-    if (qt_useHarfbuzzNG())
-        return hb_qt_face_get_for_engine(const_cast<QFontEngine *>(this));
-#endif
+     return hb_qt_face_get_for_engine(const_cast<QFontEngine *>(this));
+#else
     return nullptr;
+#endif
 }
 
 bool QFontEngine::supportsScript(QChar::Script script) const
@@ -227,23 +180,21 @@ bool QFontEngine::supportsScript(QChar::Script script) const
         return true;
 
 #if QT_CONFIG(harfbuzz)
-    if (qt_useHarfbuzzNG()) {
-        // in AAT fonts, 'gsub' table is effectively replaced by 'mort'/'morx' table
-        uint lenMort = 0, lenMorx = 0;
-        if (getSfntTableData(MAKE_TAG('m','o','r','t'), nullptr, &lenMort) || getSfntTableData(MAKE_TAG('m','o','r','x'), nullptr, &lenMorx))
+    // in AAT fonts, 'gsub' table is effectively replaced by 'mort'/'morx' table
+    uint lenMort = 0, lenMorx = 0;
+    if (getSfntTableData(MAKE_TAG('m','o','r','t'), nullptr, &lenMort) || getSfntTableData(MAKE_TAG('m','o','r','x'), nullptr, &lenMorx))
+        return true;
+
+    if (hb_face_t *face = hb_qt_face_get_for_engine(const_cast<QFontEngine *>(this))) {
+        unsigned int script_count = HB_OT_MAX_TAGS_PER_SCRIPT;
+        hb_tag_t script_tags[HB_OT_MAX_TAGS_PER_SCRIPT];
+
+        hb_ot_tags_from_script_and_language(hb_qt_script_to_script(script), HB_LANGUAGE_INVALID,
+                                            &script_count, script_tags,
+                                            nullptr, nullptr);
+
+        if (hb_ot_layout_table_select_script(face, HB_OT_TAG_GSUB, script_count, script_tags, nullptr, nullptr))
             return true;
-
-        if (hb_face_t *face = hb_qt_face_get_for_engine(const_cast<QFontEngine *>(this))) {
-            unsigned int script_count = HB_OT_MAX_TAGS_PER_SCRIPT;
-            hb_tag_t script_tags[HB_OT_MAX_TAGS_PER_SCRIPT];
-
-            hb_ot_tags_from_script_and_language(hb_qt_script_to_script(script), HB_LANGUAGE_INVALID,
-                                                &script_count, script_tags,
-                                                nullptr, nullptr);
-
-            if (hb_ot_layout_table_select_script(face, HB_OT_TAG_GSUB, script_count, script_tags, nullptr, nullptr))
-                return true;
-        }
     }
 #endif
     return false;
@@ -432,9 +383,14 @@ bool QFontEngine::processHheaTable() const
 {
     QByteArray hhea = getSfntTable(MAKE_TAG('h', 'h', 'e', 'a'));
     if (hhea.size() >= 10) {
-        qint16 ascent = qFromBigEndian<qint16>(hhea.constData() + 4);
-        qint16 descent = qFromBigEndian<qint16>(hhea.constData() + 6);
-        qint16 leading = qFromBigEndian<qint16>(hhea.constData() + 8);
+        auto ptr = hhea.constData();
+        qint16 ascent = qFromBigEndian<qint16>(ptr + 4);
+        qint16 descent = qFromBigEndian<qint16>(ptr + 6);
+        qint16 leading = qFromBigEndian<qint16>(ptr + 8);
+
+        // Some fonts may have invalid HHEA data. We detect this and bail out.
+        if (ascent == 0 && descent == 0)
+            return false;
 
         QFixed unitsPerEm = emSquareSize();
         m_ascent = QFixed::fromReal(ascent * fontDef.pixelSize) / unitsPerEm;
@@ -450,7 +406,10 @@ bool QFontEngine::processHheaTable() const
 
 void QFontEngine::initializeHeightMetrics() const
 {
-    bool hasEmbeddedBitmaps = !getSfntTable(MAKE_TAG('E', 'B', 'L', 'C')).isEmpty() || !getSfntTable(MAKE_TAG('C', 'B', 'L', 'C')).isEmpty();
+    bool hasEmbeddedBitmaps =
+            !getSfntTable(MAKE_TAG('E', 'B', 'L', 'C')).isEmpty()
+            || !getSfntTable(MAKE_TAG('C', 'B', 'L', 'C')).isEmpty()
+            || !getSfntTable(MAKE_TAG('b', 'd', 'a', 't')).isEmpty();
     if (!hasEmbeddedBitmaps) {
         // Get HHEA table values if available
         processHheaTable();
@@ -466,20 +425,27 @@ bool QFontEngine::processOS2Table() const
 {
     QByteArray os2 = getSfntTable(MAKE_TAG('O', 'S', '/', '2'));
     if (os2.size() >= 78) {
-        quint16 fsSelection = qFromBigEndian<quint16>(os2.constData() + 62);
-        qint16 typoAscent = qFromBigEndian<qint16>(os2.constData() + 68);
-        qint16 typoDescent = qFromBigEndian<qint16>(os2.constData() + 70);
-        qint16 typoLineGap = qFromBigEndian<qint16>(os2.constData() + 72);
-        quint16 winAscent = qFromBigEndian<quint16>(os2.constData() + 74);
-        quint16 winDescent = qFromBigEndian<quint16>(os2.constData() + 76);
+        auto ptr = os2.constData();
+        quint16 fsSelection = qFromBigEndian<quint16>(ptr + 62);
+        qint16 typoAscent = qFromBigEndian<qint16>(ptr + 68);
+        qint16 typoDescent = qFromBigEndian<qint16>(ptr + 70);
+        qint16 typoLineGap = qFromBigEndian<qint16>(ptr + 72);
+        quint16 winAscent = qFromBigEndian<quint16>(ptr + 74);
+        quint16 winDescent = qFromBigEndian<quint16>(ptr + 76);
 
         enum { USE_TYPO_METRICS = 0x80 };
         QFixed unitsPerEm = emSquareSize();
         if (fsSelection & USE_TYPO_METRICS) {
+            // Some fonts may have invalid OS/2 data. We detect this and bail out.
+            if (typoAscent == 0 && typoDescent == 0)
+                return false;
             m_ascent = QFixed::fromReal(typoAscent * fontDef.pixelSize) / unitsPerEm;
             m_descent = -QFixed::fromReal(typoDescent * fontDef.pixelSize) / unitsPerEm;
             m_leading = QFixed::fromReal(typoLineGap * fontDef.pixelSize) / unitsPerEm;
         } else {
+            // Some fonts may have invalid OS/2 data. We detect this and bail out.
+            if (winAscent == 0 && winDescent == 0)
+                return false;
             m_ascent = QFixed::fromReal(winAscent * fontDef.pixelSize) / unitsPerEm;
             m_descent = QFixed::fromReal(winDescent * fontDef.pixelSize) / unitsPerEm;
         }
@@ -596,6 +562,16 @@ qreal QFontEngine::minRightBearing() const
     return m_minRightBearing;
 }
 
+glyph_metrics_t QFontEngine::boundingBox(const QGlyphLayout &glyphs)
+{
+    QFixed w;
+    for (int i = 0; i < glyphs.numGlyphs; ++i)
+        w += glyphs.effectiveAdvance(i);
+    const QFixed leftBearing = firstLeftBearing(glyphs);
+    const QFixed rightBearing = lastRightBearing(glyphs);
+    return glyph_metrics_t(leftBearing, -(ascent()), w - leftBearing - rightBearing, ascent() + descent(), w, 0);
+}
+
 glyph_metrics_t QFontEngine::tightBoundingBox(const QGlyphLayout &glyphs)
 {
     glyph_metrics_t overall;
@@ -611,9 +587,9 @@ glyph_metrics_t QFontEngine::tightBoundingBox(const QGlyphLayout &glyphs)
         QFixed y = overall.yoff + glyphs.offsets[i].y + bb.y;
         overall.x = qMin(overall.x, x);
         overall.y = qMin(overall.y, y);
-        xmax = qMax(xmax, x + bb.width);
-        ymax = qMax(ymax, y + bb.height);
-        overall.xoff += bb.xoff;
+        xmax = qMax(xmax, x.ceil() + bb.width);
+        ymax = qMax(ymax, y.ceil() + bb.height);
+        overall.xoff += glyphs.effectiveAdvance(i);
         overall.yoff += bb.yoff;
     }
     overall.height = qMax(overall.height, ymax - overall.y);
@@ -796,7 +772,7 @@ void QFontEngine::addGlyphsToPath(glyph_t *glyphs, QFixedPoint *positions, int n
     addBitmapFontToPath(x, y, g, path, flags);
 }
 
-QImage QFontEngine::alphaMapForGlyph(glyph_t glyph, QFixed /*subPixelPosition*/)
+QImage QFontEngine::alphaMapForGlyph(glyph_t glyph, const QFixedPoint &/*subPixelPosition*/)
 {
     // For font engines don't support subpixel positioning
     return alphaMapForGlyph(glyph);
@@ -812,9 +788,9 @@ QImage QFontEngine::alphaMapForGlyph(glyph_t glyph, const QTransform &t)
     return i;
 }
 
-QImage QFontEngine::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t)
+QImage QFontEngine::alphaMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition, const QTransform &t)
 {
-    if (! supportsSubPixelPositions())
+    if (!supportsHorizontalSubPixelPositions() && !supportsVerticalSubPixelPositions())
         return alphaMapForGlyph(glyph, t);
 
     QImage i = alphaMapForGlyph(glyph, subPixelPosition);
@@ -825,7 +801,7 @@ QImage QFontEngine::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, con
     return i;
 }
 
-QImage QFontEngine::alphaRGBMapForGlyph(glyph_t glyph, QFixed /*subPixelPosition*/, const QTransform &t)
+QImage QFontEngine::alphaRGBMapForGlyph(glyph_t glyph, const QFixedPoint &/*subPixelPosition*/, const QTransform &t)
 {
     const QImage alphaMask = alphaMapForGlyph(glyph, t);
     QImage rgbMask(alphaMask.width(), alphaMask.height(), QImage::Format_RGB32);
@@ -842,32 +818,37 @@ QImage QFontEngine::alphaRGBMapForGlyph(glyph_t glyph, QFixed /*subPixelPosition
     return rgbMask;
 }
 
-QImage QFontEngine::bitmapForGlyph(glyph_t, QFixed subPixelPosition, const QTransform&, const QColor &)
+QImage QFontEngine::bitmapForGlyph(glyph_t, const QFixedPoint &subPixelPosition, const QTransform&, const QColor &)
 {
     Q_UNUSED(subPixelPosition);
 
     return QImage();
 }
 
-QFixed QFontEngine::subPixelPositionForX(QFixed x) const
+QFixedPoint QFontEngine::subPixelPositionFor(const QFixedPoint &position) const
 {
-    if (m_subPixelPositionCount <= 1 || !supportsSubPixelPositions())
-        return QFixed();
-
-    QFixed subPixelPosition;
-    if (x != 0) {
-        subPixelPosition = x - x.floor();
-        QFixed fraction = (subPixelPosition / QFixed::fromReal(1.0 / m_subPixelPositionCount)).floor();
-
-        // Compensate for precision loss in fixed point to make sure we are always drawing at a subpixel position over
-        // the lower boundary for the selected rasterization by adding 1/64.
-        subPixelPosition = fraction / QFixed(m_subPixelPositionCount) + QFixed::fromReal(0.015625);
+    if (m_subPixelPositionCount <= 1
+            || (!supportsHorizontalSubPixelPositions()
+                && !supportsVerticalSubPixelPositions())) {
+        return QFixedPoint();
     }
-    return subPixelPosition;
+
+    auto f = [&](QFixed v) {
+        if (v != 0) {
+            v = v - v.floor() + QFixed::fromFixed(1);
+            QFixed fraction = (v * m_subPixelPositionCount).floor();
+            v = fraction / QFixed(m_subPixelPositionCount);
+        }
+        return v;
+    };
+
+    return QFixedPoint(f(position.x), f(position.y));
 }
 
-QFontEngine::Glyph *QFontEngine::glyphData(glyph_t, QFixed,
-                                           QFontEngine::GlyphFormat, const QTransform &)
+QFontEngine::Glyph *QFontEngine::glyphData(glyph_t,
+                                           const QFixedPoint &,
+                                           QFontEngine::GlyphFormat,
+                                           const QTransform &)
 {
     return nullptr;
 }
@@ -1479,6 +1460,17 @@ bool QFontEngine::hasUnreliableGlyphOutline() const
 {
     // Color glyphs (Emoji) are generally not suited for outlining
     return glyphFormat == QFontEngine::Format_ARGB;
+}
+
+QFixed QFontEngine::firstLeftBearing(const QGlyphLayout &glyphs)
+{
+    if (glyphs.numGlyphs >= 1) {
+        glyph_t glyph = glyphs.glyphs[0];
+        glyph_metrics_t gi = boundingBox(glyph);
+        if (gi.isValid())
+            return gi.leftBearing();
+    }
+    return 0;
 }
 
 QFixed QFontEngine::lastRightBearing(const QGlyphLayout &glyphs)
@@ -2215,7 +2207,7 @@ QImage QFontEngineMulti::alphaMapForGlyph(glyph_t glyph)
     return engine(which)->alphaMapForGlyph(stripped(glyph));
 }
 
-QImage QFontEngineMulti::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition)
+QImage QFontEngineMulti::alphaMapForGlyph(glyph_t glyph, const QFixedPoint &subPixelPosition)
 {
     const int which = highByte(glyph);
     return engine(which)->alphaMapForGlyph(stripped(glyph), subPixelPosition);
@@ -2227,13 +2219,17 @@ QImage QFontEngineMulti::alphaMapForGlyph(glyph_t glyph, const QTransform &t)
     return engine(which)->alphaMapForGlyph(stripped(glyph), t);
 }
 
-QImage QFontEngineMulti::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t)
+QImage QFontEngineMulti::alphaMapForGlyph(glyph_t glyph,
+                                          const QFixedPoint &subPixelPosition,
+                                          const QTransform &t)
 {
     const int which = highByte(glyph);
     return engine(which)->alphaMapForGlyph(stripped(glyph), subPixelPosition, t);
 }
 
-QImage QFontEngineMulti::alphaRGBMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t)
+QImage QFontEngineMulti::alphaRGBMapForGlyph(glyph_t glyph,
+                                             const QFixedPoint &subPixelPosition,
+                                             const QTransform &t)
 {
     const int which = highByte(glyph);
     return engine(which)->alphaRGBMapForGlyph(stripped(glyph), subPixelPosition, t);

@@ -1,15 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qglyphrun.pro.
 
 #####################################################################
 ## tst_qglyphrun Test:
 #####################################################################
-
-qt_internal_add_test(tst_qglyphrun
-    SOURCES
-        tst_qglyphrun.cpp
-    PUBLIC_LIBRARIES
-        Qt::Gui
-)
 
 # Resources:
 set_source_files_properties("../../../shared/resources/test.ttf"
@@ -17,12 +13,15 @@ set_source_files_properties("../../../shared/resources/test.ttf"
 )
 set(testdata_resource_files
     "../../../shared/resources/test.ttf"
+    "Ligatures.otf"
 )
 
-qt_internal_add_resource(tst_qglyphrun "testdata"
-    PREFIX
-        "/"
-    FILES
-        ${testdata_resource_files}
+qt_internal_add_test(tst_qglyphrun
+    SOURCES
+        tst_qglyphrun.cpp
+    LIBRARIES
+        Qt::Gui
+    TESTDATA ${testdata_resource_files}
+    BUILTIN_TESTDATA
 )
 

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <qjsonobject.h>
 #include <qjsonvalue.h>
@@ -155,7 +119,6 @@ QJsonArray::QJsonArray() = default;
 QJsonArray::QJsonArray(QCborContainerPrivate *array)
     : a(array)
 {
-    Q_ASSERT(array);
 }
 
 /*!
@@ -175,11 +138,13 @@ QJsonArray::QJsonArray(std::initializer_list<QJsonValue> args)
     Since QJsonArray is implicitly shared, the copy is shallow
     as long as the object doesn't get modified.
  */
-QJsonArray::QJsonArray(const QJsonArray &other)
-{
-    a = other.a;
-}
+QJsonArray::QJsonArray(const QJsonArray &other) noexcept = default;
 
+/*!
+    \since 5.10
+
+    Move-constructs a QJsonArray from \a other.
+*/
 QJsonArray::QJsonArray(QJsonArray &&other) noexcept
     : a(other.a)
 {
@@ -189,18 +154,7 @@ QJsonArray::QJsonArray(QJsonArray &&other) noexcept
 /*!
     Assigns \a other to this array.
  */
-QJsonArray &QJsonArray::operator =(const QJsonArray &other)
-{
-    a = other.a;
-    return *this;
-}
-
-/*!
-    \fn QJsonArray::QJsonArray(QJsonArray &&other)
-    \since 5.10
-
-    Move-constructs a QJsonArray from \a other.
-*/
+QJsonArray &QJsonArray::operator =(const QJsonArray &other) noexcept = default;
 
 /*!
     \fn QJsonArray &QJsonArray::operator =(QJsonArray &&other)
@@ -376,7 +330,7 @@ void QJsonArray::append(const QJsonValue &value)
  */
 void QJsonArray::removeAt(qsizetype i)
 {
-    if (!a || i < 0 || i >= a->elements.length())
+    if (!a || i < 0 || i >= a->elements.size())
         return;
     detach();
     a->removeAt(i);
@@ -412,7 +366,7 @@ void QJsonArray::removeAt(qsizetype i)
  */
 QJsonValue QJsonArray::takeAt(qsizetype i)
 {
-    if (!a || i < 0 || i >= a->elements.length())
+    if (!a || i < 0 || i >= a->elements.size())
         return QJsonValue(QJsonValue::Undefined);
 
     detach();
@@ -431,11 +385,11 @@ QJsonValue QJsonArray::takeAt(qsizetype i)
 void QJsonArray::insert(qsizetype i, const QJsonValue &value)
 {
     if (a)
-        detach(a->elements.length() + 1);
+        detach(a->elements.size() + 1);
     else
         a = new QCborContainerPrivate;
 
-    Q_ASSERT (i >= 0 && i <= a->elements.length());
+    Q_ASSERT (i >= 0 && i <= a->elements.size());
     a->insertAt(i, value.type() == QJsonValue::Undefined ? QCborValue(nullptr)
                                                          : QCborValue::fromJsonValue(value));
 }
@@ -466,7 +420,7 @@ void QJsonArray::insert(qsizetype i, const QJsonValue &value)
  */
 void QJsonArray::replace(qsizetype i, const QJsonValue &value)
 {
-    Q_ASSERT (a && i >= 0 && i < a->elements.length());
+    Q_ASSERT (a && i >= 0 && i < a->elements.size());
     detach();
     a->replaceAt(i, QCborValue::fromJsonValue(value));
 }
@@ -500,7 +454,7 @@ bool QJsonArray::contains(const QJsonValue &value) const
  */
 QJsonValueRef QJsonArray::operator [](qsizetype i)
 {
-    Q_ASSERT(a && i >= 0 && i < a->elements.length());
+    Q_ASSERT(a && i >= 0 && i < a->elements.size());
     return QJsonValueRef(this, i);
 }
 
@@ -523,13 +477,13 @@ bool QJsonArray::operator==(const QJsonArray &other) const
         return true;
 
     if (!a)
-        return !other.a->elements.length();
+        return !other.a->elements.size();
     if (!other.a)
-        return !a->elements.length();
-    if (a->elements.length() != other.a->elements.length())
+        return !a->elements.size();
+    if (a->elements.size() != other.a->elements.size())
         return false;
 
-    for (qsizetype i = 0; i < a->elements.length(); ++i) {
+    for (qsizetype i = 0; i < a->elements.size(); ++i) {
         if (a->valueAt(i) != other.a->valueAt(i))
             return false;
     }
@@ -795,7 +749,7 @@ bool QJsonArray::operator!=(const QJsonArray &other) const
 
 /*! \fn QJsonArray::iterator &QJsonArray::iterator::operator++()
 
-    The prefix ++ operator, \c{++it}, advances the iterator to the
+    The prefix \c{++} operator, \c{++it}, advances the iterator to the
     next item in the array and returns an iterator to the new current
     item.
 
@@ -808,14 +762,14 @@ bool QJsonArray::operator!=(const QJsonArray &other) const
 
     \overload
 
-    The postfix ++ operator, \c{it++}, advances the iterator to the
+    The postfix \c{++} operator, \c{it++}, advances the iterator to the
     next item in the array and returns an iterator to the previously
     current item.
 */
 
 /*! \fn QJsonArray::iterator &QJsonArray::iterator::operator--()
 
-    The prefix -- operator, \c{--it}, makes the preceding item
+    The prefix \c{--} operator, \c{--it}, makes the preceding item
     current and returns an iterator to the new current item.
 
     Calling this function on QJsonArray::begin() leads to undefined results.
@@ -827,7 +781,7 @@ bool QJsonArray::operator!=(const QJsonArray &other) const
 
     \overload
 
-    The postfix -- operator, \c{it--}, makes the preceding item
+    The postfix \c{--} operator, \c{it--}, makes the preceding item
     current and returns an iterator to the previously current item.
 */
 
@@ -1011,7 +965,7 @@ bool QJsonArray::operator!=(const QJsonArray &other) const
 
 /*! \fn QJsonArray::const_iterator &QJsonArray::const_iterator::operator++()
 
-    The prefix ++ operator, \c{++it}, advances the iterator to the
+    The prefix \c{++} operator, \c{++it}, advances the iterator to the
     next item in the array and returns an iterator to the new current
     item.
 
@@ -1024,14 +978,14 @@ bool QJsonArray::operator!=(const QJsonArray &other) const
 
     \overload
 
-    The postfix ++ operator, \c{it++}, advances the iterator to the
+    The postfix \c{++} operator, \c{it++}, advances the iterator to the
     next item in the array and returns an iterator to the previously
     current item.
 */
 
 /*! \fn QJsonArray::const_iterator &QJsonArray::const_iterator::operator--()
 
-    The prefix -- operator, \c{--it}, makes the preceding item
+    The prefix \c{--} operator, \c{--it}, makes the preceding item
     current and returns an iterator to the new current item.
 
     Calling this function on QJsonArray::begin() leads to undefined results.
@@ -1043,7 +997,7 @@ bool QJsonArray::operator!=(const QJsonArray &other) const
 
     \overload
 
-    The postfix -- operator, \c{it--}, makes the preceding item
+    The postfix \c{--} operator, \c{it--}, makes the preceding item
     current and returns an iterator to the previously current item.
 */
 

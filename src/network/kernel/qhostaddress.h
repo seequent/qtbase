@@ -1,42 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2016 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtNetwork module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2016 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QHOSTADDRESS_H
 #define QHOSTADDRESS_H
@@ -45,7 +9,9 @@
 #include <QtCore/qpair.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qshareddata.h>
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
 #include <QtNetwork/qabstractsocket.h>
+#endif
 
 struct sockaddr;
 
@@ -70,6 +36,7 @@ Q_NETWORK_EXPORT size_t qHash(const QHostAddress &key, size_t seed = 0) noexcept
 
 class Q_NETWORK_EXPORT QHostAddress
 {
+    Q_GADGET
 public:
     enum SpecialAddress {
         Null,
@@ -90,6 +57,22 @@ public:
         StrictConversion = 0
     };
     Q_DECLARE_FLAGS(ConversionMode, ConversionModeFlag)
+
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
+    using NetworkLayerProtocol = QAbstractSocket::NetworkLayerProtocol;
+    static constexpr auto IPv4Protocol = QAbstractSocket::IPv4Protocol;
+    static constexpr auto IPv6Protocol = QAbstractSocket::IPv6Protocol;
+    static constexpr auto AnyIPProtocol = QAbstractSocket::AnyIPProtocol;
+    static constexpr auto UnknownNetworkLayerProtocol = QAbstractSocket::UnknownNetworkLayerProtocol;
+#else
+    enum NetworkLayerProtocol {
+        IPv4Protocol,
+        IPv6Protocol,
+        AnyIPProtocol,
+        UnknownNetworkLayerProtocol = -1
+    };
+    Q_ENUM(NetworkLayerProtocol)
+#endif
 
     QHostAddress();
     explicit QHostAddress(quint32 ip4Addr);
@@ -115,7 +98,7 @@ public:
     bool setAddress(const QString &address);
     void setAddress(SpecialAddress address);
 
-    QAbstractSocket::NetworkLayerProtocol protocol() const;
+    NetworkLayerProtocol protocol() const;
     quint32 toIPv4Address(bool *ok = nullptr) const;
     Q_IPV6ADDR toIPv6Address() const;
 

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <AppKit/AppKit.h>
 
@@ -43,6 +7,8 @@
 #include "qcocoawindow.h"
 #include "qcocoahelpers.h"
 #include "qcocoascreen.h"
+
+#include <QtCore/private/qcore_mac_p.h>
 
 #include <qdebug.h>
 #include <dlfcn.h>
@@ -393,6 +359,14 @@ bool QCocoaGLContext::setDrawable(QPlatformSurface *surface)
     if (view == QT_IGNORE_DEPRECATIONS(m_context.view))
         return true;
 
+    // We generally want high-DPI GL surfaces, unless the user has explicitly disabled them.
+    // According to the documentation, layer-backed views ignore wantsBestResolutionOpenGLSurface
+    // and configure their own backing surface at an appropriate resolution, but in some cases
+    // we've seen this fail (plugin views embedded in surface-backed hosts), so we do it anyways.
+    QT_IGNORE_DEPRECATIONS(view.wantsBestResolutionOpenGLSurface) = qt_mac_resolveOption(YES,
+        cocoaWindow->window(), "_q_mac_wantsBestResolutionOpenGLSurface",
+        "QT_MAC_WANTS_BEST_RESOLUTION_OPENGL_SURFACE");
+
     // Setting the drawable may happen on a separate thread as a result of
     // a call to makeCurrent, so we need to set up the observers before we
     // associate the view with the context. That way we will guarantee that
@@ -414,6 +388,15 @@ bool QCocoaGLContext::setDrawable(QPlatformSurface *surface)
     m_updateObservers.append(QMacNotificationObserver([NSApplication sharedApplication],
         NSApplicationDidChangeScreenParametersNotification, updateCallback));
 
+    m_updateObservers.append(QMacNotificationObserver(view,
+        QCocoaWindowWillReleaseQNSViewNotification, [this, view] {
+            if (QT_IGNORE_DEPRECATIONS(m_context.view) != view)
+                return;
+            qCDebug(lcQpaOpenGLContext) << view << "about to be released."
+                << "Clearing current drawable for" << m_context;
+            [m_context clearDrawable];
+        }));
+
     // If any of the observers fire at this point it's fine. We check the
     // view association (atomically) in the update callback, and skip the
     // update if we haven't associated yet. Setting the drawable below will
@@ -434,7 +417,7 @@ bool QCocoaGLContext::setDrawable(QPlatformSurface *surface)
 // NSOpenGLContext is not re-entrant. Even when using separate contexts per thread,
 // view, and window, calls into the API will still deadlock. For more information
 // see https://openradar.appspot.com/37064579
-static QMutex s_reentrancyMutex;
+Q_CONSTINIT static QMutex s_reentrancyMutex;
 
 void QCocoaGLContext::update()
 {

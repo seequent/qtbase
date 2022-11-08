@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Initial autogen setup for a target to specify certain CMake properties which are common
 # to all autogen tools. Also enable AUTOMOC by default.
 function(qt_autogen_tools_initial_setup target)
@@ -36,7 +39,7 @@ function(qt_enable_autogen_tool target tool enable)
     # that the moc scanner has to look for. Inform the CMake moc scanner about it.
     if(tool STREQUAL "moc" AND enable)
         set_target_properties("${target}" PROPERTIES
-            AUTOMOC_MACRO_NAMES "Q_OBJECT;Q_GADGET;Q_NAMESPACE;Q_NAMESPACE_EXPORT;Q_ENUM_NS")
+            AUTOMOC_MACRO_NAMES "Q_OBJECT;Q_GADGET;Q_GADGET_EXPORT;Q_NAMESPACE;Q_NAMESPACE_EXPORT;Q_ENUM_NS")
 
         if (TARGET Qt::Platform)
             get_target_property(_abi_tag Qt::Platform qt_libcpp_abi_tag)
@@ -75,8 +78,15 @@ endfunction()
 
 # Complete manual moc invocation with full control.
 # Use AUTOMOC whenever possible.
+# INCLUDE_DIRECTORIES specifies a list of include directories used by 'moc'.
+# INCLUDE_DIRECTORY_TARGETS specifies a list of targets to extract the INTERFACE_INCLUDE_DIRECTORIES
+# property and use it as the 'moc' include directories.
 function(qt_manual_moc result)
-    cmake_parse_arguments(arg "" "OUTPUT_MOC_JSON_FILES" "FLAGS" ${ARGN})
+    cmake_parse_arguments(arg
+                          ""
+                          "OUTPUT_MOC_JSON_FILES"
+                          "FLAGS;INCLUDE_DIRECTORIES;INCLUDE_DIRECTORY_TARGETS"
+                          ${ARGN})
     set(moc_files)
     set(metatypes_json_list)
     foreach(infile ${arg_UNPARSED_ARGUMENTS})
@@ -86,6 +96,37 @@ function(qt_manual_moc result)
 
         set(moc_parameters_file "${outfile}_parameters$<$<BOOL:$<CONFIGURATION>>:_$<CONFIGURATION>>")
         set(moc_parameters ${arg_FLAGS} -o "${outfile}" "${infile}")
+
+        foreach(dir IN ITEMS ${arg_INCLUDE_DIRECTORIES})
+            list(APPEND moc_parameters
+                "-I\n${dir}")
+        endforeach()
+
+        foreach(dep IN ITEMS ${arg_INCLUDE_DIRECTORY_TARGETS})
+            set(include_expr "$<TARGET_PROPERTY:${dep},INTERFACE_INCLUDE_DIRECTORIES>")
+            list(APPEND moc_parameters
+                "$<$<BOOL:${include_expr}>:-I\n$<JOIN:${include_expr},\n-I\n>>")
+
+            if(APPLE AND TARGET ${dep})
+                get_target_property(is_versionless ${dep} _qt_is_versionless_target)
+                if(is_versionless)
+                    string(REGEX REPLACE "^Qt::(.*)" "\\1" dep "${dep}")
+                    set(dep "${QT_CMAKE_EXPORT_NAMESPACE}::${dep}")
+                endif()
+
+                get_target_property(alias_dep ${dep} ALIASED_TARGET)
+                if(alias_dep)
+                    set(dep ${alias_dep})
+                endif()
+
+                get_target_property(loc ${dep} IMPORTED_LOCATION)
+                string(REGEX REPLACE "(.*)/Qt[^/]+\\.framework.*" "\\1" loc "${loc}")
+
+                if(loc)
+                    list(APPEND moc_parameters "\n-F\n${loc}\n")
+                endif()
+            endif()
+        endforeach()
 
         set(metatypes_byproducts)
         if (arg_OUTPUT_MOC_JSON_FILES)

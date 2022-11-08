@@ -1,32 +1,7 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Copyright (C) 2020 Intel Corporation.
-** Copyright (C) 2019 Klarälvdalens Datakonsult AB.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// Copyright (C) 2022 Intel Corporation.
+// Copyright (C) 2021 Klarälvdalens Datakonsult AB.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #define QT_SHAREDPOINTER_TRACK_POINTERS
 #include "qsharedpointer.h"
@@ -37,8 +12,8 @@
 #include <QtCore/QList>
 #include <QtCore/QMap>
 #include <QtCore/QThread>
+#include <QtCore/private/qvolatile_p.h>
 
-#include "externaltests.h"
 #include "forwarddeclared.h"
 #include "nontracked.h"
 #include "wrapper.h"
@@ -48,7 +23,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#ifdef Q_OS_UNIX
+#if defined(Q_OS_UNIX) && !defined(Q_OS_INTEGRITY)
 #include <sys/resource.h>
 #endif
 
@@ -112,9 +87,10 @@ private slots:
     void threadStressTest_data();
     void threadStressTest();
     void validConstructs();
+#if 0
     void invalidConstructs_data();
     void invalidConstructs();
-
+#endif
 
     // let invalidConstructs be the last test, because it's the slowest;
     // add new tests above this block
@@ -132,7 +108,7 @@ public:
 
 void tst_QSharedPointer::initTestCase()
 {
-#if defined(Q_OS_UNIX)
+#if defined(Q_OS_UNIX) && !defined(Q_OS_INTEGRITY)
     // The tests create a lot of threads, which require file descriptors. On systems like
     // OS X low defaults such as 256 as the limit for the number of simultaneously
     // open files is not sufficient.
@@ -341,6 +317,11 @@ void tst_QSharedPointer::basics()
         QCOMPARE(!weak, isNull);
         QCOMPARE(bool(weak), !isNull);
 
+        QCOMPARE(weak.isNull(), (weak == nullptr));
+        QCOMPARE(weak.isNull(), (nullptr == weak));
+        QCOMPARE(!weak.isNull(), (weak != nullptr));
+        QCOMPARE(!weak.isNull(), (nullptr != weak));
+
         QVERIFY(ptr == weak);
         QVERIFY(weak == ptr);
         QVERIFY(! (ptr != weak));
@@ -426,6 +407,12 @@ void tst_QSharedPointer::nullptrOps()
     QVERIFY(!p2.get());
     QVERIFY(p1 == p2);
 
+    QWeakPointer<char> wp1 = p1;
+    QVERIFY(wp1 == nullptr);
+    QVERIFY(nullptr == wp1);
+    QCOMPARE(wp1, nullptr);
+    QCOMPARE(nullptr, wp1);
+
     QSharedPointer<char> p3 = p1;
     QVERIFY(p3 == p1);
     QVERIFY(p3 == null);
@@ -452,6 +439,10 @@ void tst_QSharedPointer::nullptrOps()
     QVERIFY(p4 != p2);
     QVERIFY(p4 != null);
     QVERIFY(p4 != p3);
+
+    QWeakPointer<char> wp2 = p4;
+    QVERIFY(wp2 != nullptr);
+    QVERIFY(nullptr != wp2);
 }
 
 void tst_QSharedPointer::swap()
@@ -594,6 +585,9 @@ void tst_QSharedPointer::useOfForwardDeclared()
 
 void tst_QSharedPointer::memoryManagement()
 {
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wself-assign-overloaded")
+
     int generation = Data::generationCounter + 1;
     int destructorCounter = Data::destructorCounter;
 
@@ -655,6 +649,7 @@ void tst_QSharedPointer::memoryManagement()
     QVERIFY(ptr.isNull());
     QVERIFY(ptr == 0);
     QCOMPARE(ptr.data(), (Data*)0);
+QT_WARNING_POP
 }
 
 void tst_QSharedPointer::dropLastReferenceOfForwardDeclared()
@@ -740,12 +735,12 @@ public:
     DerivedData() : moreData(0) { }
     ~DerivedData() { ++derivedDestructorCounter; }
 
-    virtual void virtualDelete()
+    void virtualDelete() override
     {
         delete this;
     }
 
-    virtual int classLevel() { return 2; }
+    int classLevel() override { return 2; }
 };
 int DerivedData::derivedDestructorCounter = 0;
 
@@ -760,7 +755,7 @@ public:
 class DiffPtrDerivedData: public Stuffing, public Data
 {
 public:
-    virtual int classLevel() { return 3; }
+    int classLevel() override { return 3; }
 };
 
 class VirtualDerived: virtual public Data
@@ -769,15 +764,20 @@ public:
     int moreData;
 
     VirtualDerived() : moreData(0xc0ffee) { }
-    virtual int classLevel() { return 4; }
+    int classLevel() override { return 4; }
 };
 
 void tst_QSharedPointer::downCast()
 {
     {
+        // copy construction
         QSharedPointer<DerivedData> ptr = QSharedPointer<DerivedData>(new DerivedData);
+        QSharedPointer<DerivedData> copy = ptr;
         QSharedPointer<Data> baseptr = qSharedPointerCast<Data>(ptr);
         QSharedPointer<Data> other;
+        QWeakPointer<DerivedData> weak = ptr;
+        QWeakPointer<Data> baseweak = qSharedPointerCast<Data>(ptr);
+        QWeakPointer<Data> baseweak2 = qSharedPointerCast<Data>(weak);
 
         QVERIFY(ptr == baseptr);
         QVERIFY(baseptr == ptr);
@@ -788,11 +788,55 @@ void tst_QSharedPointer::downCast()
         QVERIFY(other != ptr);
         QVERIFY(! (ptr == other));
         QVERIFY(! (other == ptr));
+
+        // copy assignments
+        baseptr = qSharedPointerCast<Data>(ptr);
+        baseweak = qSharedPointerCast<Data>(ptr);
+        baseweak2 = baseweak;
+
+        // move assignments (these don't actually move)
+        baseptr = qSharedPointerCast<Data>(std::move(ptr));
+        ptr = copy;
+        baseweak = qSharedPointerCast<Data>(std::move(ptr));
+        ptr = copy;
+        baseweak2 = qSharedPointerCast<Data>(std::move(baseweak));
+
+        // move construction (these don't actually move)
+        ptr = copy;
+        QSharedPointer<Data> ptr3(qSharedPointerCast<Data>(std::move(ptr)));
+        ptr = copy;
+        QWeakPointer<Data> baseweak3(qSharedPointerCast<Data>(std::move(ptr)));
+        ptr = copy;
+        QWeakPointer<Data> baseweak4(qSharedPointerCast<Data>(std::move(weak)));
     }
 
     {
+        // copy construction
         QSharedPointer<DerivedData> ptr = QSharedPointer<DerivedData>(new DerivedData);
+        QSharedPointer<DerivedData> copy = ptr;
         QSharedPointer<Data> baseptr = ptr;
+        QWeakPointer<DerivedData> weak = ptr;
+        QWeakPointer<Data> baseweak = ptr;
+        QWeakPointer<Data> baseweak2 = weak;
+
+        // copy assignments
+        baseptr = ptr;
+        baseweak = ptr;
+        baseweak2 = weak;
+
+        // move assignments (only the QSharedPointer-QSharedPointer actually moves)
+        baseweak = std::move(ptr);
+        baseweak2 = std::move(weak);
+        ptr = copy;
+        baseptr = std::move(ptr);
+
+        // move construction (only the QSharedPointer-QSharedPointer actually moves)
+        ptr = copy;
+        QWeakPointer<Data> baseweak3(std::move(ptr));
+        ptr = copy;
+        QWeakPointer<Data> baseweak4(std::move(weak));
+        ptr = copy;
+        QSharedPointer<Data> baseptr2(std::move(ptr));
     }
 
     int destructorCount;
@@ -1925,7 +1969,7 @@ class ThreadData
     QAtomicInt * volatile ptr;
 public:
     ThreadData(QAtomicInt *p) : ptr(p) { }
-    ~ThreadData() { ++ptr; }
+    ~ThreadData() { QtPrivate::volatilePreIncrement(ptr); }
     void ref()
     {
         // if we're called after the destructor, we'll crash
@@ -1936,7 +1980,7 @@ public:
 class StrongThread: public QThread
 {
 protected:
-    void run()
+    void run() override
     {
         usleep(QRandomGenerator::global()->bounded(2000));
         ptr->ref();
@@ -1949,7 +1993,7 @@ public:
 class WeakThread: public QThread
 {
 protected:
-    void run()
+    void run() override
     {
         usleep(QRandomGenerator::global()->bounded(2000));
         QSharedPointer<ThreadData> ptr = weak;
@@ -2014,11 +2058,11 @@ void tst_QSharedPointer::threadStressTest()
         base.clear();
 
         // start threads
-        for (int i = 0; i < allThreads.count(); ++i)
+        for (int i = 0; i < allThreads.size(); ++i)
             if (allThreads[i]) allThreads[i]->start();
 
         // wait for them to finish
-        for (int i = 0; i < allThreads.count(); ++i)
+        for (int i = 0; i < allThreads.size(); ++i)
             if (allThreads[i]) allThreads[i]->wait();
         qDeleteAll(allThreads);
 
@@ -2113,7 +2157,10 @@ void tst_QSharedPointer::validConstructs()
         Data *aData = new Data;
         QSharedPointer<Data> ptr1 = QSharedPointer<Data>(aData);
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wself-assign-overloaded")
         ptr1 = ptr1;            // valid
+QT_WARNING_POP
 
         QSharedPointer<Data> ptr2(ptr1);
 
@@ -2125,6 +2172,7 @@ void tst_QSharedPointer::validConstructs()
     }
 }
 
+#if 0
 typedef bool (QTest::QExternalTest:: * TestFunction)(const QByteArray &body);
 Q_DECLARE_METATYPE(TestFunction)
 void tst_QSharedPointer::invalidConstructs_data()
@@ -2334,6 +2382,7 @@ void tst_QSharedPointer::invalidConstructs()
         QFAIL("Fail");
     }
 }
+#endif // #if 0
 
 void tst_QSharedPointer::qvariantCast()
 {
@@ -2663,7 +2712,7 @@ void tst_QSharedPointer::constructorThrow()
     int childDestructorCounter = ThrowData::childDestructorCounter;
 
     QSharedPointer<ThrowData> ptr;
-    QVERIFY_EXCEPTION_THROWN(ptr = QSharedPointer<ThrowData>::create(), QString);
+    QVERIFY_THROWS_EXCEPTION(QString, ptr = QSharedPointer<ThrowData>::create());
     QVERIFY(ptr.isNull());
     QCOMPARE(ThrowData::childGenerationCounter, childGeneration + 1);
     // destructor should never be called, if a constructor throws
@@ -2705,7 +2754,7 @@ namespace ReentrancyWhileDestructing {
     {
         QSharedPointer<IB> b;
 
-        virtual QSharedPointer<IB> getB()
+        virtual QSharedPointer<IB> getB() override
         {
             return b;
         }

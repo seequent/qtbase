@@ -1,45 +1,11 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QtGui/private/qtguiglobal_p.h>
 
-#include <QtGui/private/qopenglcontext_p.h>
+#if QT_CONFIG(opengl)
+#  include <QtGui/private/qopenglcontext_p.h>
+#endif
 #include <QtGui/private/qguiapplication_p.h>
 
 #include <qpa/qplatformopenglcontext.h>
@@ -55,7 +21,7 @@ using namespace QNativeInterface::Private;
 
 #ifndef QT_NO_OPENGL
 
-#if defined(Q_OS_LINUX)
+#if QT_CONFIG(xcb_glx_plugin)
 
 /*!
     \class QNativeInterface::QGLXContext
@@ -65,6 +31,7 @@ using namespace QNativeInterface::Private;
     Accessed through QOpenGLContext::nativeInterface().
 
     \inmodule QtGui
+    \inheaderfile QOpenGLContext
     \ingroup native-interfaces
     \ingroup native-interfaces-qopenglcontext
 */
@@ -96,7 +63,7 @@ using namespace QNativeInterface::Private;
     \return the underlying GLXContext.
 */
 
-QT_DEFINE_NATIVE_INTERFACE(QGLXContext, QOpenGLContext);
+QT_DEFINE_NATIVE_INTERFACE(QGLXContext);
 QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QGLXIntegration);
 
 QOpenGLContext *QNativeInterface::QGLXContext::fromNative(GLXContext configBasedContext, QOpenGLContext *shareContext)
@@ -110,7 +77,7 @@ QOpenGLContext *QNativeInterface::QGLXContext::fromNative(GLXContext visualBased
     return QGuiApplicationPrivate::platformIntegration()->call<
         &QGLXIntegration::createOpenGLContext>(visualBasedContext, visualInfo, shareContext);
 }
-#endif // defined(Q_OS_LINUX)
+#endif // QT_CONFIG(xcb_glx_plugin)
 
 #if QT_CONFIG(egl)
 
@@ -122,6 +89,7 @@ QOpenGLContext *QNativeInterface::QGLXContext::fromNative(GLXContext visualBased
     Accessed through QOpenGLContext::nativeInterface().
 
     \inmodule QtGui
+    \inheaderfile QOpenGLContext
     \ingroup native-interfaces
     \ingroup native-interfaces-qopenglcontext
 */
@@ -143,7 +111,19 @@ QOpenGLContext *QNativeInterface::QGLXContext::fromNative(GLXContext visualBased
     \return the underlying EGLContext.
 */
 
-QT_DEFINE_NATIVE_INTERFACE(QEGLContext, QOpenGLContext);
+/*!
+    \fn EGLConfig QNativeInterface::QEGLContext::config() const
+    \since 6.3
+    \return the EGLConfig associated with the underlying EGLContext.
+*/
+
+/*!
+    \fn EGLDisplay QNativeInterface::QEGLContext::display() const
+    \since 6.3
+    \return the EGLDisplay associated with the underlying EGLContext.
+*/
+
+QT_DEFINE_NATIVE_INTERFACE(QEGLContext);
 QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QEGLIntegration);
 
 QOpenGLContext *QNativeInterface::QEGLContext::fromNative(EGLContext context, EGLDisplay display, QOpenGLContext *shareContext)
@@ -179,10 +159,45 @@ QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QXcbScreen);
 
 QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QXcbWindow);
 
+/*!
+    \class QNativeInterface::QX11Application
+    \since 6.2
+    \brief Native interface to an X11 application.
+
+    Accessed through QGuiApplication::nativeInterface().
+
+    \inmodule QtGui
+    \inheaderfile QGuiApplication
+    \ingroup native-interfaces
+    \ingroup native-interfaces-qguiapplication
+*/
+
+/*!
+    \fn Display *QNativeInterface::QX11Application::display() const
+
+    \return the X display of the application, for use with Xlib.
+
+    \sa connection()
+*/
+
+/*!
+    \fn xcb_connection_t *QNativeInterface::QX11Application::connection() const
+
+    \return the X connection of the application, for use with XCB.
+
+    \sa display()
+*/
+
+QT_DEFINE_NATIVE_INTERFACE(QX11Application);
+
 #endif // QT_CONFIG(xcb)
 
 #if QT_CONFIG(vsp2)
 QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QVsp2Screen);
+#endif
+
+#ifdef Q_OS_WEBOS
+QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QWebOSScreen);
 #endif
 
 #if QT_CONFIG(evdev)
@@ -198,11 +213,62 @@ QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QVsp2Screen);
 
 QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QEvdevKeyMapper);
 
-template <>
-QEvdevKeyMapper *QKeyMapper::nativeInterface<QEvdevKeyMapper>() const
-{
-    return dynamic_cast<QEvdevKeyMapper*>(QGuiApplicationPrivate::platformIntegration());
-}
 #endif // QT_CONFIG(evdev)
+
+#if defined(Q_OS_UNIX)
+
+/*!
+    \class QNativeInterface::QWaylandApplication
+    \since 6.5
+    \brief Native interface to a Wayland application.
+
+    Accessed through QGuiApplication::nativeInterface().
+    \inmodule QtGui
+    \ingroup native-interfaces
+    \ingroup native-interfaces-qguiapplication
+*/
+/*!
+    \fn wl_display *QNativeInterface::QWaylandApplication::display() const
+    \return the wl_display that the application is using.
+*/
+/*!
+    \fn wl_compositor *QNativeInterface::QWaylandApplication::compositor() const
+    \return the wl_compositor that the application is using.
+*/
+/*!
+    \fn wl_keyboard *QNativeInterface::QWaylandApplication::keyboard() const
+    \return the wl_keyboard belonging to seat() if available.
+*/
+/*!
+    \fn wl_pointer *QNativeInterface::QWaylandApplication::pointer() const
+    \return the wl_pointer belonging to seat() if available.
+*/
+/*!
+    \fn wl_touch *QNativeInterface::QWaylandApplication::touch() const
+    \return the wl_touch belonging to seat() if available.
+*/
+/*!
+    \fn uint *QNativeInterface::QWaylandApplication::lastInputSerial() const
+    \return the serial of the last input event on any seat.
+*/
+/*!
+    \fn wl_seat *QNativeInterface::QWaylandApplication::lastInputSeat() const
+    \return the seat on which the last input event happened.
+*/
+
+QT_DEFINE_NATIVE_INTERFACE(QWaylandApplication);
+
+/*!
+    \class QNativeInterface::Private::QWaylandScreen
+    \since 6.5
+    \internal
+    \brief Native interface to QPlatformScreen.
+    \inmodule QtGui
+    \ingroup native-interfaces
+*/
+
+QT_DEFINE_PRIVATE_NATIVE_INTERFACE(QWaylandScreen);
+
+#endif // Q_OS_UNIX
 
 QT_END_NAMESPACE

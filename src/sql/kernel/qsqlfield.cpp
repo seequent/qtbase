@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtSql module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qsqlfield.h"
 #include "qatomic.h"
@@ -156,9 +120,9 @@ public:
 
 /*!
     \fn QSqlField::QSqlField(const QString &fieldName, QVariant::Type type, const QString &table)
-    \obsolete Use the constructor using a QMetaType instead
-
+    \deprecated [6.0] Use the constructor taking a QMetaType instead.
     \overload
+
     Constructs an empty field called \a fieldName of variant type \a
     type in \a table.
 
@@ -233,7 +197,7 @@ QSqlField::~QSqlField()
 /*!
     Sets the required status of this field to \a required.
 
-    \sa requiredStatus(), setType(), setLength(), setPrecision(),
+    \sa requiredStatus(), setMetaType(), setLength(), setPrecision(),
         setDefaultValue(), setGenerated(), setReadOnly()
 */
 void QSqlField::setRequiredStatus(RequiredStatus required)
@@ -255,7 +219,7 @@ void QSqlField::setRequiredStatus(RequiredStatus required)
     maximum number of characters the string can hold; the meaning
     varies for other types.
 
-    \sa length(), setType(), setRequiredStatus(), setPrecision(),
+    \sa length(), setMetaType(), setRequiredStatus(), setPrecision(),
         setDefaultValue(), setGenerated(), setReadOnly()
 */
 void QSqlField::setLength(int fieldLength)
@@ -267,7 +231,7 @@ void QSqlField::setLength(int fieldLength)
 /*!
     Sets the field's \a precision. This only affects numeric fields.
 
-    \sa precision(), setType(), setRequiredStatus(), setLength(),
+    \sa precision(), setMetaType(), setRequiredStatus(), setLength(),
         setDefaultValue(), setGenerated(), setReadOnly()
 */
 void QSqlField::setPrecision(int precision)
@@ -279,7 +243,7 @@ void QSqlField::setPrecision(int precision)
 /*!
     Sets the default value used for this field to \a value.
 
-    \sa defaultValue(), value(), setType(), setRequiredStatus(),
+    \sa defaultValue(), value(), setMetaType(), setRequiredStatus(),
         setLength(), setPrecision(), setGenerated(), setReadOnly()
 */
 void QSqlField::setDefaultValue(const QVariant &value)
@@ -303,7 +267,7 @@ void QSqlField::setSqlType(int type)
     QSqlQueryModel and QSqlTableModel will generate SQL for this
     field.
 
-    \sa isGenerated(), setType(), setRequiredStatus(), setLength(),
+    \sa isGenerated(), setMetaType(), setRequiredStatus(), setLength(),
         setPrecision(), setDefaultValue(), setReadOnly()
 */
 void QSqlField::setGenerated(bool gen)
@@ -396,7 +360,7 @@ QString QSqlField::name() const
     int or double are usually stored as strings to prevent
     precision loss.
 
-    \sa setType()
+    \sa setMetaType()
 */
 QMetaType QSqlField::metaType() const
 {
@@ -406,7 +370,7 @@ QMetaType QSqlField::metaType() const
 /*!
     Set's the field's variant type to \a type.
 
-    \sa type(), setRequiredStatus(), setLength(), setPrecision(),
+    \sa metaType(), setRequiredStatus(), setLength(), setPrecision(),
         setDefaultValue(), setGenerated(), setReadOnly()
 */
 void QSqlField::setMetaType(QMetaType type)
@@ -419,7 +383,7 @@ void QSqlField::setMetaType(QMetaType type)
 
 /*!
     \fn QVariant::Type QSqlField::type() const
-    \obsolete Use metaType() instead.
+    \deprecated [6.0] Use metaType() instead.
 
     Returns the field's type as stored in the database.
     Note that the actual value might have a different type,
@@ -432,9 +396,9 @@ void QSqlField::setMetaType(QMetaType type)
 
 /*!
     \fn void QSqlField::setType(QVariant::Type type)
-    \obsolete Use setMetaType() instead.
+    \deprecated [6.0] Use setMetaType() instead.
 
-    Set's the field's variant type to \a type.
+    Sets the field's variant type to \a type.
 
     \sa setMetaType()
 */
@@ -443,7 +407,7 @@ void QSqlField::setMetaType(QMetaType type)
     Returns \c true if the field's value is read-only; otherwise returns
     false.
 
-    \sa setReadOnly(), type(), requiredStatus(), length(), precision(),
+    \sa setReadOnly(), metaType(), requiredStatus(), length(), precision(),
         defaultValue(), isGenerated()
 */
 bool QSqlField::isReadOnly() const
@@ -469,7 +433,7 @@ void QSqlField::detach()
     Returns \c true if this is a required field; otherwise returns \c false.
     An \c INSERT will fail if a required field does not have a value.
 
-    \sa setRequiredStatus(), type(), length(), precision(), defaultValue(),
+    \sa setRequiredStatus(), metaType(), length(), precision(), defaultValue(),
         isGenerated()
 */
 QSqlField::RequiredStatus QSqlField::requiredStatus() const
@@ -483,7 +447,7 @@ QSqlField::RequiredStatus QSqlField::requiredStatus() const
     If the returned value is negative, it means that the information
     is not available from the database.
 
-    \sa setLength(), type(), requiredStatus(), precision(), defaultValue(),
+    \sa setLength(), metaType(), requiredStatus(), precision(), defaultValue(),
         isGenerated()
 */
 int QSqlField::length() const
@@ -498,7 +462,7 @@ int QSqlField::length() const
     If the returned value is negative, it means that the information
     is not available from the database.
 
-    \sa setPrecision(), type(), requiredStatus(), length(), defaultValue(),
+    \sa setPrecision(), metaType(), requiredStatus(), length(), defaultValue(),
         isGenerated()
 */
 int QSqlField::precision() const
@@ -509,7 +473,7 @@ int QSqlField::precision() const
 /*!
     Returns the field's default value (which may be NULL).
 
-    \sa setDefaultValue(), type(), requiredStatus(), length(), precision(),
+    \sa setDefaultValue(), metaType(), requiredStatus(), length(), precision(),
         isGenerated()
 */
 QVariant QSqlField::defaultValue() const
@@ -534,7 +498,7 @@ int QSqlField::typeID() const
     Returns \c true if the field is generated; otherwise returns
     false.
 
-    \sa setGenerated(), type(), requiredStatus(), length(), precision(),
+    \sa setGenerated(), metaType(), requiredStatus(), length(), precision(),
         defaultValue()
 */
 bool QSqlField::isGenerated() const

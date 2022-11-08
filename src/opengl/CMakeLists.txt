@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from opengl.pro.
 
 #####################################################################
@@ -25,12 +28,12 @@ qt_internal_add_module(OpenGL
         qopengltextureglyphcache.cpp qopengltextureglyphcache_p.h
         qopengltexturehelper.cpp qopengltexturehelper_p.h
         qopengltextureuploader.cpp qopengltextureuploader_p.h
+        qopengltimerquery.h
         qopenglversionfunctions.cpp qopenglversionfunctions.h qopenglversionfunctions_p.h
         qopenglversionfunctionsfactory.cpp qopenglversionfunctionsfactory.h
         qopenglversionprofile.cpp qopenglversionprofile.h
-        qopenglvertexarrayobject.cpp qopenglvertexarrayobject.h
+        qopenglvertexarrayobject.cpp qopenglvertexarrayobject.h qopenglvertexarrayobject_p.h
         qopenglwindow.cpp qopenglwindow.h
-        qplatformbackingstoreopenglsupport.cpp qplatformbackingstoreopenglsupport.h
         qtopenglglobal.h
     DEFINES
         QT_NO_FOREACH
@@ -44,6 +47,7 @@ qt_internal_add_module(OpenGL
     PRIVATE_MODULE_INTERFACE
         Qt::CorePrivate
         Qt::GuiPrivate
+    GENERATE_CPP_EXPORTS
 )
 
 ## Scopes:
@@ -83,15 +87,17 @@ qt_internal_extend_target(OpenGL CONDITION NOT QT_FEATURE_opengles2
         qopenglfunctions_4_5_compatibility.cpp qopenglfunctions_4_5_compatibility.h
         qopenglfunctions_4_5_core.cpp qopenglfunctions_4_5_core.h
         qopenglqueryhelper_p.h
-        qopengltimerquery.cpp qopengltimerquery.h
+        qopengltimerquery.cpp
 )
 
 qt_internal_extend_target(OpenGL CONDITION QT_FEATURE_vulkan
     SOURCES
         qvkconvenience.cpp qvkconvenience_p.h
-    PUBLIC_LIBRARIES
-        Vulkan::Vulkan_nolink
 )
+if(QT_FEATURE_vulkan)
+    qt_internal_add_target_include_dirs_and_optionally_propagate(
+        OpenGL WrapVulkanHeaders::WrapVulkanHeaders)
+endif()
 
 qt_internal_extend_target(OpenGL CONDITION QT_FEATURE_egl
     SOURCES

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QPIXELLAYOUT_P_H
 #define QPIXELLAYOUT_P_H
@@ -54,6 +18,8 @@
 #include <QtCore/qlist.h>
 #include <QtGui/qimage.h>
 #include <QtGui/qrgba64.h>
+#include <QtGui/qrgbafloat.h>
+#include <QtCore/private/qglobal_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -217,6 +183,16 @@ inline unsigned int qConvertRgb64ToRgb30<PixelOrderRGB>(QRgba64 c)
     return (a << 30) | (r << 20) | (g << 10) | b;
 }
 
+inline constexpr QRgbaFloat16 qConvertRgb64ToRgbaF16(QRgba64 c)
+{
+    return QRgbaFloat16::fromRgba64(c.red(), c.green(), c.blue(), c.alpha());
+}
+
+inline constexpr QRgbaFloat32 qConvertRgb64ToRgbaF32(QRgba64 c)
+{
+    return QRgbaFloat32::fromRgba64(c.red(), c.green(), c.blue(), c.alpha());
+}
+
 inline uint qRgbSwapRgb30(uint c)
 {
     const uint ag = c & 0xc00ffc00;
@@ -296,10 +272,19 @@ typedef void(QT_FASTCALL *ConvertAndStorePixelsFunc64)(uchar *dest, const QRgba6
                                                        int count, const QList<QRgb> *clut,
                                                        QDitherInfo *dither);
 
-typedef void(QT_FASTCALL *ConvertFunc)(uint *buffer, int count, const QList<QRgb> *clut);
-typedef void(QT_FASTCALL *Convert64Func)(quint64 *buffer, int count, const QList<QRgb> *clut);
+typedef const QRgbaFloat32 *(QT_FASTCALL *FetchAndConvertPixelsFuncFP)(QRgbaFloat32 *buffer, const uchar *src, int index, int count,
+                                                                   const QList<QRgb> *clut, QDitherInfo *dither);
+typedef void (QT_FASTCALL *ConvertAndStorePixelsFuncFP)(uchar *dest, const QRgbaFloat32 *src, int index, int count,
+                                                        const QList<QRgb> *clut, QDitherInfo *dither);
+typedef void (QT_FASTCALL *ConvertFunc)(uint *buffer, int count, const QList<QRgb> *clut);
+typedef void (QT_FASTCALL *Convert64Func)(QRgba64 *buffer, int count);
+typedef void (QT_FASTCALL *ConvertFPFunc)(QRgbaFloat32 *buffer, int count);
+typedef void (QT_FASTCALL *Convert64ToFPFunc)(QRgbaFloat32 *buffer, const quint64 *src, int count);
+
 typedef const QRgba64 *(QT_FASTCALL *ConvertTo64Func)(QRgba64 *buffer, const uint *src, int count,
                                                       const QList<QRgb> *clut, QDitherInfo *dither);
+typedef const QRgbaFloat32 *(QT_FASTCALL *ConvertToFPFunc)(QRgbaFloat32 *buffer, const uint *src, int count,
+                                                       const QList<QRgb> *clut, QDitherInfo *dither);
 typedef void (QT_FASTCALL *RbSwapFunc)(uchar *dst, const uchar *src, int count);
 
 typedef void (*MemRotateFunc)(const uchar *srcPixels, int w, int h, int sbpl, uchar *destPixels, int dbpl);
@@ -316,6 +301,8 @@ struct QPixelLayout
         BPP24,
         BPP32,
         BPP64,
+        BPP16FPx4,
+        BPP32FPx4,
         BPPCount
     };
 
@@ -332,6 +319,12 @@ struct QPixelLayout
 };
 
 extern ConvertAndStorePixelsFunc64 qStoreFromRGBA64PM[QImage::NImageFormats];
+
+#if QT_CONFIG(raster_fp)
+extern ConvertToFPFunc qConvertToRGBA32F[QImage::NImageFormats];
+extern FetchAndConvertPixelsFuncFP qFetchToRGBA32F[QImage::NImageFormats];
+extern ConvertAndStorePixelsFuncFP qStoreFromRGBA32F[QImage::NImageFormats];
+#endif
 
 extern QPixelLayout qPixelLayouts[QImage::NImageFormats];
 

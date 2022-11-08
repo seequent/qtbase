@@ -1,14 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qaccessibility.pro.
 
 if(NOT QT_FEATURE_accessibility)
     return()
 endif()
-
-# special case begin
-if (WIN32 AND NOT TARGET Qt::WindowsUIAutomationSupport)
-    return()
-endif()
-# special case end
 
 #####################################################################
 ## tst_qaccessibility Test:
@@ -18,7 +15,7 @@ qt_internal_add_test(tst_qaccessibility
     SOURCES
         accessiblewidgets.h
         tst_qaccessibility.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -32,13 +29,13 @@ qt_internal_add_test(tst_qaccessibility
 ## Scopes:
 #####################################################################
 
-qt_internal_extend_target(tst_qaccessibility CONDITION UNIX AND NOT APPLE AND NOT HAIKU AND NOT integity
-    PUBLIC_LIBRARIES
+qt_internal_extend_target(tst_qaccessibility CONDITION UNIX AND NOT APPLE AND NOT HAIKU AND NOT INTEGRITY
+    LIBRARIES
         m
 )
 
 qt_internal_extend_target(tst_qaccessibility CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ole32
         oleacc
         oleaut32

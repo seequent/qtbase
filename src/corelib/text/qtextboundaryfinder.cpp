@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 #include <QtCore/qtextboundaryfinder.h>
 #include <QtCore/qvarlengtharray.h>
 
@@ -56,7 +20,7 @@ static void init(QTextBoundaryFinder::BoundaryType type, QStringView str, QCharA
     case QTextBoundaryFinder::Line: options |= QUnicodeTools::LineBreaks; break;
     default: break;
     }
-    QUnicodeTools::initCharAttributes(str, scriptItems.data(), scriptItems.count(), attributes, options);
+    QUnicodeTools::initCharAttributes(str, scriptItems.data(), scriptItems.size(), attributes, options);
 }
 
 /*!
@@ -73,8 +37,8 @@ static void init(QTextBoundaryFinder::BoundaryType type, QStringView str, QCharA
 
     QTextBoundaryFinder allows to find Unicode text boundaries in a
     string, accordingly to the Unicode text boundary specification (see
-    \l{http://www.unicode.org/reports/tr14/}{Unicode Standard Annex #14} and
-    \l{http://www.unicode.org/reports/tr29/}{Unicode Standard Annex #29}).
+    \l{https://www.unicode.org/reports/tr14/}{Unicode Standard Annex #14} and
+    \l{https://www.unicode.org/reports/tr29/}{Unicode Standard Annex #29}).
 
     QTextBoundaryFinder can operate on a QString in four possible
     modes depending on the value of \a BoundaryType.
@@ -85,17 +49,17 @@ static void init(QTextBoundaryFinder::BoundaryType type, QStringView str, QCharA
     for example form one grapheme cluster as the user thinks of them
     as one character, yet it is in this case represented by two
     unicode code points
-    (see \l{http://www.unicode.org/reports/tr29/#Grapheme_Cluster_Boundaries}).
+    (see \l{https://www.unicode.org/reports/tr29/#Grapheme_Cluster_Boundaries}).
 
     Word boundaries are there to locate the start and end of what a
     language considers to be a word
-    (see \l{http://www.unicode.org/reports/tr29/#Word_Boundaries}).
+    (see \l{https://www.unicode.org/reports/tr29/#Word_Boundaries}).
 
     Line break boundaries give possible places where a line break
     might happen and sentence boundaries will show the beginning and
     end of whole sentences
-    (see \l{http://www.unicode.org/reports/tr29/#Sentence_Boundaries} and
-    \l{http://www.unicode.org/reports/tr14/}).
+    (see \l{https://www.unicode.org/reports/tr29/#Sentence_Boundaries} and
+    \l{https://www.unicode.org/reports/tr14/}).
 
     The first position in a string is always a valid boundary and
     refers to the position before the first character. The last
@@ -123,11 +87,11 @@ static void init(QTextBoundaryFinder::BoundaryType type, QStringView str, QCharA
                            Such a break opportunity might also be an item boundary
                            (either StartOfItem, EndOfItem, or combination of both),
                            a mandatory line break, or a soft hyphen.
-  \value StartOfItem  Since 5.0. The boundary finder is at the start of
+  \value [since 5.0] StartOfItem The boundary finder is at the start of
                       a grapheme, a word, a sentence, or a line.
-  \value EndOfItem  Since 5.0. The boundary finder is at the end of
+  \value [since 5.0] EndOfItem The boundary finder is at the end of
                     a grapheme, a word, a sentence, or a line.
-  \value MandatoryBreak  Since 5.0. The boundary finder is at the end of line
+  \value [since 5.0] MandatoryBreak The boundary finder is at the end of line
                          (can occur for a Line boundary type only).
   \value SoftHyphen  The boundary finder is at the soft hyphen
                      (can occur for a Line boundary type only).
@@ -249,7 +213,7 @@ QTextBoundaryFinder::QTextBoundaryFinder(BoundaryType type, QStringView string, 
     , attributes(nullptr)
 {
     if (!sv.isEmpty()) {
-        if (buffer && (uint)bufferSize >= (sv.size() + 1) * sizeof(QCharAttributes)) {
+        if (buffer && bufferSize / int(sizeof(QCharAttributes)) >= sv.size() + 1) {
             attributes = reinterpret_cast<QCharAttributes *>(buffer);
             freeBuffer = false;
         } else {

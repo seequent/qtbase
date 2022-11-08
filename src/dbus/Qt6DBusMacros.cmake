@@ -1,44 +1,20 @@
-#=============================================================================
 # Copyright 2005-2011 Kitware, Inc.
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#
-# * Redistributions of source code must retain the above copyright
-#   notice, this list of conditions and the following disclaimer.
-#
-# * Redistributions in binary form must reproduce the above copyright
-#   notice, this list of conditions and the following disclaimer in the
-#   documentation and/or other materials provided with the distribution.
-#
-# * Neither the name of Kitware, Inc. nor the names of its
-#   contributors may be used to endorse or promote products derived
-#   from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-# HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#=============================================================================
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 include(MacroAddFileDependencies)
 
-include(CMakeParseArguments)
-
-function(qt6_add_dbus_interface _sources _interface _basename)
+function(qt6_add_dbus_interface _sources _interface _relativename)
     get_filename_component(_infile ${_interface} ABSOLUTE)
-    set(_header "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.h")
-    set(_impl   "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.cpp")
-    set(_moc    "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.moc")
+    get_filename_component(_basepath ${_relativename} DIRECTORY)
+    get_filename_component(_basename ${_relativename} NAME)
+    set(_header "${CMAKE_CURRENT_BINARY_DIR}/${_relativename}.h")
+    set(_impl   "${CMAKE_CURRENT_BINARY_DIR}/${_relativename}.cpp")
+    if(_basepath)
+        set(_moc "${CMAKE_CURRENT_BINARY_DIR}/${_basepath}/moc_${_basename}.cpp")
+    else()
+        set(_moc "${CMAKE_CURRENT_BINARY_DIR}/moc_${_basename}.cpp")
+    endif()
 
     get_source_file_property(_nonamespace ${_interface} NO_NAMESPACE)
     if(_nonamespace)
@@ -58,7 +34,7 @@ function(qt6_add_dbus_interface _sources _interface _basename)
     endif()
 
     add_custom_command(OUTPUT "${_impl}" "${_header}"
-        COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::qdbusxml2cpp ${_params} -p ${_basename} ${_infile}
+        COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::qdbusxml2cpp ${_params} -p ${_relativename} ${_infile}
         DEPENDS ${_infile} ${QT_CMAKE_EXPORT_NAMESPACE}::qdbuscpp2xml
         VERBATIM
     )
@@ -70,17 +46,24 @@ function(qt6_add_dbus_interface _sources _interface _basename)
 
     qt6_generate_moc("${_header}" "${_moc}")
 
-    list(APPEND ${_sources} "${_impl}" "${_header}" "${_moc}")
+    list(APPEND ${_sources} "${_impl}" "${_header}")
     macro_add_file_dependencies("${_impl}" "${_moc}")
     set(${_sources} ${${_sources}} PARENT_SCOPE)
 endfunction()
 
 if(NOT QT_NO_CREATE_VERSIONLESS_FUNCTIONS)
-    function(qt_add_dbus_interface sources)
+    # All three positional arguments are mandatory and there are no optional
+    # arguments, so we can preserve them exactly. As an added bonus, if the
+    # caller doesn't provide enough arguments, they will get an error message
+    # for their call site instead of here in the wrapper.
+    function(qt_add_dbus_interface sources interface relativename)
+        if(ARGC GREATER 3)
+            message(FATAL_ERROR "Unexpected arguments: ${ARGN}")
+        endif()
         if(QT_DEFAULT_MAJOR_VERSION EQUAL 5)
-            qt5_add_dbus_interface("${sources}" ${ARGN})
+            qt5_add_dbus_interface("${sources}" "${interface}" "${relativename}")
         elseif(QT_DEFAULT_MAJOR_VERSION EQUAL 6)
-            qt6_add_dbus_interface("${sources}" ${ARGN})
+            qt6_add_dbus_interface("${sources}" "${interface}" "${relativename}")
         endif()
         set("${sources}" "${${sources}}" PARENT_SCOPE)
     endfunction()
@@ -146,6 +129,8 @@ endfunction()
 
 if(NOT QT_NO_CREATE_VERSIONLESS_FUNCTIONS)
     function(qt_generate_dbus_interface)
+        # The versioned function's implementation doesn't preserve empty options,
+        # so we don't need to here either. Using ARGV is fine under those assumptions.
         if(QT_DEFAULT_MAJOR_VERSION EQUAL 5)
             qt5_generate_dbus_interface(${ARGV})
         elseif(QT_DEFAULT_MAJOR_VERSION EQUAL 6)
@@ -155,7 +140,7 @@ if(NOT QT_NO_CREATE_VERSIONLESS_FUNCTIONS)
 endif()
 
 
-function(qt6_add_dbus_adaptor _sources _xml_file _include) # _optionalParentClass _optionalBasename _optionalClassName)
+function(qt6_add_dbus_adaptor _sources _xml_file _include) # _optionalParentClass _optionalRelativename _optionalClassName)
     get_filename_component(_infile ${_xml_file} ABSOLUTE)
 
     set(_optionalParentClass "${ARGV3}")
@@ -164,28 +149,34 @@ function(qt6_add_dbus_adaptor _sources _xml_file _include) # _optionalParentClas
         set(_parentClass "${_optionalParentClass}")
     endif()
 
-    set(_optionalBasename "${ARGV4}")
-    if(_optionalBasename)
-        set(_basename ${_optionalBasename} )
+    set(_optionalRelativename "${ARGV4}")
+    if(_optionalRelativename)
+        set(_relativename ${_optionalRelativename})
     else()
-        string(REGEX REPLACE "(.*[/\\.])?([^\\.]+)\\.xml" "\\2adaptor" _basename ${_infile})
-        string(TOLOWER ${_basename} _basename)
+        string(REGEX REPLACE "(.*[/\\.])?([^\\.]+)\\.xml" "\\2adaptor" _relativename ${_infile})
+        string(TOLOWER ${_relativename} _relativename)
     endif()
+    get_filename_component(_basepath ${_relativename} DIRECTORY)
+    get_filename_component(_basename ${_relativename} NAME)
 
     set(_optionalClassName "${ARGV5}")
-    set(_header "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.h")
-    set(_impl   "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.cpp")
-    set(_moc    "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.moc")
+    set(_header "${CMAKE_CURRENT_BINARY_DIR}/${_relativename}.h")
+    set(_impl   "${CMAKE_CURRENT_BINARY_DIR}/${_relativename}.cpp")
+    if(_basepath)
+        set(_moc "${CMAKE_CURRENT_BINARY_DIR}/${_basepath}/moc_${_basename}.cpp")
+    else()
+        set(_moc "${CMAKE_CURRENT_BINARY_DIR}/moc_${_basename}.cpp")
+    endif()
 
     if(_optionalClassName)
         add_custom_command(OUTPUT "${_impl}" "${_header}"
-          COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::qdbusxml2cpp -m -a ${_basename} -c ${_optionalClassName} -i ${_include} ${_parentClassOption} ${_parentClass} ${_infile}
+          COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::qdbusxml2cpp -m -a ${_relativename} -c ${_optionalClassName} -i ${_include} ${_parentClassOption} ${_parentClass} ${_infile}
           DEPENDS ${_infile} ${QT_CMAKE_EXPORT_NAMESPACE}::qdbuscpp2xml
           VERBATIM
         )
     else()
         add_custom_command(OUTPUT "${_impl}" "${_header}"
-          COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::qdbusxml2cpp -m -a ${_basename} -i ${_include} ${_parentClassOption} ${_parentClass} ${_infile}
+          COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::qdbusxml2cpp -m -a ${_relativename} -i ${_include} ${_parentClassOption} ${_parentClass} ${_infile}
           DEPENDS ${_infile} ${QT_CMAKE_EXPORT_NAMESPACE}::qdbuscpp2xml
           VERBATIM
         )
@@ -198,16 +189,47 @@ function(qt6_add_dbus_adaptor _sources _xml_file _include) # _optionalParentClas
     )
     macro_add_file_dependencies("${_impl}" "${_moc}")
 
-    list(APPEND ${_sources} "${_impl}" "${_header}" "${_moc}")
+    list(APPEND ${_sources} "${_impl}" "${_header}")
     set(${_sources} ${${_sources}} PARENT_SCOPE)
 endfunction()
 
 if(NOT QT_NO_CREATE_VERSIONLESS_FUNCTIONS)
-    function(qt_add_dbus_adaptor sources)
+    function(qt_add_dbus_adaptor sources dbus_spec header)
+        # We need to preserve empty values in both positional and optional arguments.
+        # The following explicit use of ARGVx variables ensures we don't silently
+        # drop any empty values, which is especially important if there are any
+        # non-empty values after empty ones. Note that we must not try to read
+        # ARGVx variables where x >= ARGC, as that is undefined behavior.
+        # Also note that the parent_class argument is required for qt5, but is
+        # optional for qt6.
+        if(ARGC LESS 4)
+            set(parent_class "")
+        else()
+            set(parent_class "${ARGV3}")
+        endif()
+
+        if(ARGC LESS 5)
+            set(basename "")
+        else()
+            set(basename "${ARGV4}")
+        endif()
+
+        if(ARGC LESS 6)
+            set(classname "")
+        else()
+            set(classname "${ARGV5}")
+        endif()
+
         if(QT_DEFAULT_MAJOR_VERSION EQUAL 5)
-            qt5_add_dbus_adaptor("${sources}" ${ARGN})
+            qt5_add_dbus_adaptor(
+                "${sources}" "${dbus_spec}" "${header}"
+                "${parent_class}" "${basename}" "${classname}"
+            )
         elseif(QT_DEFAULT_MAJOR_VERSION EQUAL 6)
-            qt6_add_dbus_adaptor("${sources}" ${ARGN})
+            qt6_add_dbus_adaptor(
+                "${sources}" "${dbus_spec}" "${header}"
+                "${parent_class}" "${basename}" "${classname}"
+            )
         endif()
         set("${sources}" "${${sources}}" PARENT_SCOPE)
     endfunction()

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qthread.pro.
 
 #####################################################################
@@ -6,10 +9,9 @@
 
 qt_internal_add_test(tst_qthread
     SOURCES
-        ../../../../shared/emulationdetector.h
         tst_qthread.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../shared
+    LIBRARIES
+        Qt::TestPrivate
 )
 
 ## Scopes:

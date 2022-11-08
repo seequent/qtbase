@@ -1,52 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the documentation of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:BSD$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** BSD License Usage
-** Alternatively, you may use this file under the terms of the BSD license
-** as follows:
-**
-** "Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are
-** met:
-**   * Redistributions of source code must retain the above copyright
-**     notice, this list of conditions and the following disclaimer.
-**   * Redistributions in binary form must reproduce the above copyright
-**     notice, this list of conditions and the following disclaimer in
-**     the documentation and/or other materials provided with the
-**     distribution.
-**   * Neither the name of The Qt Company Ltd nor the names of its
-**     contributors may be used to endorse or promote products derived
-**     from this software without specific prior written permission.
-**
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 //! [0]
 label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -203,7 +156,7 @@ int boundedValue = qBound(minValue, myValue, maxValue);
 
 
 //! [16]
-#if QT_VERSION >= 0x040100
+#if QT_VERSION >= QT_VERSION_CHECK(4, 1, 0)
     QIcon icon = style()->standardIcon(QStyle::SP_TrashIcon);
 #else
     QPixmap pixmap = style()->standardPixmap(QStyle::SP_TrashIcon);
@@ -339,8 +292,7 @@ void f(int c)
 
 
 //! [27]
-qWarning() << "Brush:" << myQBrush << "Other value:"
-<< i;
+qWarning() << "Brush:" << myQBrush << "Other value:" << i;
 //! [27]
 
 
@@ -355,8 +307,7 @@ void load(const QString &fileName)
 
 
 //! [29]
-qCritical() << "Brush:" << myQBrush << "Other
-value:" << i;
+qCritical() << "Brush:" << myQBrush << "Other value:" << i;
 //! [29]
 
 
@@ -514,16 +465,20 @@ void TheClass::addLabels()
 }
 //! [qttrid_noop]
 
+//! [qttrid_n_noop]
+static const char * const ids[] = {
+    //% "%n foo(s) found."
+    QT_TRID_N_NOOP("qtn_foo"),
+    //% "%n bar(s) found."
+    QT_TRID_N_NOOP("qtn_bar"),
+    0
+};
 
-//! [37]
-qWarning("%s: %s", qUtf8Printable(key), qUtf8Printable(value));
-//! [37]
-
-
-//! [qUtf16Printable]
-qWarning("%ls: %ls", qUtf16Printable(key), qUtf16Printable(value));
-//! [qUtf16Printable]
-
+QString result(int type, int n)
+{
+    return qtTrId(ids[type], n);
+}
+//! [qttrid_n_noop]
 
 //! [38]
 struct Point2D
@@ -656,11 +611,6 @@ template<> class QTypeInfo<A> : public QTypeInfoMerger<A, B, C, D> {};
     ... qOverload<int, const QString &>(&Foo::overloadedFunction)
 //! [52]
 
-//! [53]
-    ... QOverload<>::of(&Foo::overloadedFunction)
-    ... QOverload<int, const QString &>::of(&Foo::overloadedFunction)
-//! [53]
-
 //! [54]
     struct Foo {
         void overloadedFunction(int, const QString &);
@@ -717,10 +667,23 @@ bool readConfiguration(const QFile &file)
    }
 //! [qunreachable-switch]
 
+//! [qunreachable-return]
+   switch (shape) {
+       case Rectangle:
+           return rectangle();
+       case Triangle:
+           return triangle();
+       case Circle:
+           return circle();
+       case NumShapes:
+           Q_UNREACHABLE_RETURN(nullptr);
+   }
+//! [qunreachable-return]
+
 //! [qt-version-check]
 #include <QtGlobal>
 
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #include <QtWidgets>
 #else
 #include <QtGui>

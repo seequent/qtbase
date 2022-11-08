@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qdbuscpp2xml.pro.
 
 #####################################################################
@@ -8,7 +11,7 @@ qt_internal_add_test(tst_qdbuscpp2xml
     SOURCES
         test1.h
         tst_qdbuscpp2xml.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::DBus
 )
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from tostring.pro.
 
 #####################################################################
@@ -7,6 +10,6 @@
 qt_internal_add_benchmark(tst_bench_tostring
     SOURCES
         tst_tostring.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Test
 )

@@ -1,46 +1,15 @@
-/****************************************************************************
-**
-** Copyright (C) 2021 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QNUMERIC_H
 #define QNUMERIC_H
 
+#if 0
+#pragma qt_class(QtNumeric)
+#endif
+
 #include <QtCore/qglobal.h>
+
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -114,9 +83,10 @@ Q_CORE_EXPORT quint64 qFloatDistance(double a, double b);
 // size_t. Implementations for 8- and 16-bit types will work but may not be as
 // efficient. Implementations for 64-bit may be missing on 32-bit platforms.
 
-#if ((defined(Q_CC_INTEL) ? (Q_CC_INTEL >= 1800 && !defined(Q_OS_WIN)) : defined(Q_CC_GNU)) \
-     && Q_CC_GNU >= 500) || __has_builtin(__builtin_add_overflow)
-// GCC 5, ICC 18, and Clang 3.8 have builtins to detect overflows
+#if (Q_CC_GNU >= 500 || __has_builtin(__builtin_add_overflow)) \
+    && !(QT_POINTER_SIZE == 4 && defined(Q_CC_CLANG))
+// GCC 5 and Clang 3.8 have builtins to detect overflows
+// 32 bit Clang has the builtins but tries to link a library which hasn't
 #define Q_INTRINSIC_MUL_OVERFLOW64
 
 template <typename T> inline
@@ -216,7 +186,7 @@ qMulOverflow(T v1, T v2, T *r)
             typename LargerInt::Signed, typename LargerInt::Unsigned>;
     Larger lr = Larger(v1) * Larger(v2);
     *r = T(lr);
-    return lr > std::numeric_limits<T>::max() || lr < std::numeric_limits<T>::min();
+    return lr > (std::numeric_limits<T>::max)() || lr < (std::numeric_limits<T>::min)();
 }
 
 # if defined(Q_INTRINSIC_MUL_OVERFLOW64)
@@ -321,15 +291,15 @@ template <typename T, T V2> bool qMulOverflow(T v1, std::integral_constant<T, V2
     } else if constexpr (V2 == -1) {
         // multiplication by -1 is valid *except* for signed minimum values
         // (necessary to avoid diving min() by -1, which is an overflow)
-        if (v1 < 0 && v1 == std::numeric_limits<T>::min())
+        if (v1 < 0 && v1 == (std::numeric_limits<T>::min)())
             return true;
         *r = -v1;
         return false;
     } else {
         // For 64-bit multiplications on 32-bit platforms, let's instead compare v1
         // against the bounds that would overflow.
-        constexpr T Highest = std::numeric_limits<T>::max() / V2;
-        constexpr T Lowest = std::numeric_limits<T>::min() / V2;
+        constexpr T Highest = (std::numeric_limits<T>::max)() / V2;
+        constexpr T Lowest = (std::numeric_limits<T>::min)() / V2;
         if constexpr (Highest > Lowest) {
             if (v1 > Highest || v1 < Lowest)
                 return true;
@@ -347,8 +317,90 @@ template <typename T, T V2> bool qMulOverflow(T v1, std::integral_constant<T, V2
 
 template <auto V2, typename T> bool qMulOverflow(T v1, T *r)
 {
+    if constexpr (V2 == 2)
+        return qAddOverflow(v1, v1, r);
     return qMulOverflow(v1, std::integral_constant<T, V2>{}, r);
 }
+
+template <typename T>
+constexpr inline T qAbs(const T &t) { return t >= 0 ? t : -t; }
+
+// gcc < 10 doesn't have __has_builtin
+#if defined(Q_PROCESSOR_ARM_64) && (__has_builtin(__builtin_round) || defined(Q_CC_GNU)) && !defined(Q_CC_CLANG)
+// ARM64 has a single instruction that can do C++ rounding with conversion to integer.
+// Note current clang versions have non-constexpr __builtin_round, ### allow clang this path when they fix it.
+constexpr inline int qRound(double d)
+{ return int(__builtin_round(d)); }
+constexpr inline int qRound(float f)
+{ return int(__builtin_roundf(f)); }
+constexpr inline qint64 qRound64(double d)
+{ return qint64(__builtin_round(d)); }
+constexpr inline qint64 qRound64(float f)
+{ return qint64(__builtin_roundf(f)); }
+#elif defined(__SSE2__) && (__has_builtin(__builtin_copysign) || defined(Q_CC_GNU))
+// SSE has binary operations directly on floating point making copysign fast
+constexpr inline int qRound(double d)
+{ return int(d + __builtin_copysign(0.5, d)); }
+constexpr inline int qRound(float f)
+{ return int(f + __builtin_copysignf(0.5f, f)); }
+constexpr inline qint64 qRound64(double d)
+{ return qint64(d + __builtin_copysign(0.5, d)); }
+constexpr inline qint64 qRound64(float f)
+{ return qint64(f + __builtin_copysignf(0.5f, f)); }
+#else
+constexpr inline int qRound(double d)
+{ return d >= 0.0 ? int(d + 0.5) : int(d - 0.5); }
+constexpr inline int qRound(float d)
+{ return d >= 0.0f ? int(d + 0.5f) : int(d - 0.5f); }
+
+constexpr inline qint64 qRound64(double d)
+{ return d >= 0.0 ? qint64(d + 0.5) : qint64(d - 0.5); }
+constexpr inline qint64 qRound64(float d)
+{ return d >= 0.0f ? qint64(d + 0.5f) : qint64(d - 0.5f); }
+#endif
+
+namespace QtPrivate {
+template <typename T>
+constexpr inline const T &min(const T &a, const T &b) { return (a < b) ? a : b; }
+}
+
+[[nodiscard]] constexpr bool qFuzzyCompare(double p1, double p2)
+{
+    return (qAbs(p1 - p2) * 1000000000000. <= QtPrivate::min(qAbs(p1), qAbs(p2)));
+}
+
+[[nodiscard]] constexpr bool qFuzzyCompare(float p1, float p2)
+{
+    return (qAbs(p1 - p2) * 100000.f <= QtPrivate::min(qAbs(p1), qAbs(p2)));
+}
+
+[[nodiscard]] constexpr bool qFuzzyIsNull(double d)
+{
+    return qAbs(d) <= 0.000000000001;
+}
+
+[[nodiscard]] constexpr bool qFuzzyIsNull(float f)
+{
+    return qAbs(f) <= 0.00001f;
+}
+
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_FLOAT_COMPARE
+
+[[nodiscard]] constexpr bool qIsNull(double d) noexcept
+{
+    return d == 0.0;
+}
+
+[[nodiscard]] constexpr bool qIsNull(float f) noexcept
+{
+    return f == 0.0f;
+}
+
+QT_WARNING_POP
+
+inline int qIntCast(double f) { return int(f); }
+inline int qIntCast(float f) { return int(f); }
 
 QT_END_NAMESPACE
 

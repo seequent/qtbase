@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -63,6 +38,10 @@
 #include <QSignalSpy>
 #include <QTimer>
 
+#include <QtGui/private/qeventpoint_p.h>
+
+#include <QtWidgets/private/qapplication_p.h>
+
 using AbstractGraphicsShapeItemPtr = QSharedPointer<QAbstractGraphicsShapeItem>;
 using GraphicsItems = QList<QGraphicsItem *>;
 using GraphicsItemsList = QList<QGraphicsItem *>;
@@ -74,7 +53,7 @@ Q_DECLARE_METATYPE(QSizeF)
 Q_DECLARE_METATYPE(QTransform)
 
 #if defined(Q_OS_WIN)
-#include <windows.h>
+#include <qt_windows.h>
 #define Q_CHECK_PAINTEVENTS \
     if (::SwitchDesktop(::GetThreadDesktop(::GetCurrentThreadId())) == 0) \
         QSKIP("The Graphics View doesn't get the paint events");
@@ -1014,7 +993,7 @@ void tst_QGraphicsItem::inputMethodHints()
     scene.addItem(item);
     scene.addItem(item2);
     QGraphicsView view(&scene);
-    QApplication::setActiveWindow(&view);
+    QApplicationPrivate::setActiveWindow(&view);
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
@@ -1071,7 +1050,7 @@ void tst_QGraphicsItem::toolTip()
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.setFixedSize(200, 200);
     view.show();
-    QApplication::setActiveWindow(&view);
+    QApplicationPrivate::setActiveWindow(&view);
     QVERIFY(QTest::qWaitForWindowExposed(&view));
     QVERIFY(QTest::qWaitForWindowActive(&view));
     {
@@ -2229,7 +2208,7 @@ void tst_QGraphicsItem::setTransform()
     scene.update(scene.sceneRect());
     QCoreApplication::processEvents();
 
-    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.size(), 1);
 
     item.setTransform(QTransform().rotate(qreal(12.34)));
     QRectF rotatedRect = scene.sceneRect();
@@ -2237,14 +2216,14 @@ void tst_QGraphicsItem::setTransform()
     scene.update(scene.sceneRect());
     QCoreApplication::processEvents();
 
-    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.size(), 2);
 
     item.setTransform(QTransform());
 
     scene.update(scene.sceneRect());
     QCoreApplication::processEvents();
 
-    QCOMPARE(spy.count(), 3);
+    QCOMPARE(spy.size(), 3);
     QList<QRectF> rlist = qvariant_cast<QList<QRectF> >(spy.last().at(0));
 
     QCOMPARE(rlist.size(), 2);
@@ -3624,7 +3603,7 @@ void tst_QGraphicsItem::group()
 
     view.fitInView(scene.itemsBoundingRect());
 
-    for (QGraphicsItem *item : qAsConst(newItems)) {
+    for (QGraphicsItem *item : std::as_const(newItems)) {
         group->addToGroup(item);
         QCOMPARE(item->group(), group);
     }
@@ -4967,7 +4946,7 @@ void tst_QGraphicsItem::sceneEventFilter()
     QGraphicsView view(&scene);
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
-    QApplication::setActiveWindow(&view);
+    QApplicationPrivate::setActiveWindow(&view);
     QVERIFY(QTest::qWaitForWindowExposed(&view));
     QVERIFY(QTest::qWaitForWindowActive(&view));
 
@@ -5360,8 +5339,9 @@ void tst_QGraphicsItem::deleteItemInEventHandlers()
 
 #ifndef QT_NO_CONTEXTMENU
         if (!HarakiriItem::dead) {
-            QContextMenuEvent event(QContextMenuEvent::Other,
-                                    view.mapFromScene(item->scenePos()));
+            auto viewPos = view.mapFromScene(item->scenePos());
+            QContextMenuEvent event(QContextMenuEvent::Other, viewPos,
+                                    view.mapToGlobal(viewPos));
             QCoreApplication::sendEvent(view.viewport(), &event);
         }
 #endif // QT_NO_CONTEXTMENU
@@ -5587,7 +5567,7 @@ void tst_QGraphicsItem::itemClipsChildrenToShape4()
     scene.addEllipse( 100, 100, 100, 50 );   // <-- this is important to trigger the right codepath*
     //now the label is shown
     outerWidget->setFlag(QGraphicsItem::ItemClipsChildrenToShape, false );
-    QApplication::setActiveWindow(&view);
+    QApplicationPrivate::setActiveWindow(&view);
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
     QTRY_COMPARE(QApplication::activeWindow(), &view);
@@ -5703,7 +5683,7 @@ void tst_QGraphicsItem::itemClipsChildrenToShape5()
     }
 
     const QList<QGraphicsItem *> children = parent->childItems();
-    const int childrenCount = children.count();
+    const int childrenCount = children.size();
 
     for (int i = 0; i < 5; ++i) {
         QString clipString;
@@ -6931,8 +6911,10 @@ void tst_QGraphicsItem::opacityZeroUpdates()
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
-    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
+    }
     QCoreApplication::processEvents(); // Process all queued paint events
     QTRY_VERIFY(view.repaints > 0);
 
@@ -7288,6 +7270,7 @@ void tst_QGraphicsItem::tabChangesFocus()
     widget.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     widget.setLayout(layout);
     widget.show();
+    view->window()->activateWindow();
     QVERIFY(QTest::qWaitForWindowActive(&widget));
 
     QTRY_VERIFY(scene.isActive());
@@ -7322,7 +7305,7 @@ void tst_QGraphicsItem::cacheMode()
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.resize(150, 150);
     view.show();
-    QApplication::setActiveWindow(&view);
+    view.window()->activateWindow();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
     QVERIFY(QTest::qWaitForWindowActive(&view));
     QCoreApplication::processEvents(); // Process all queued paint events
@@ -7506,7 +7489,7 @@ void tst_QGraphicsItem::cacheMode2()
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.resize(150, 150);
     view.show();
-    QApplication::setActiveWindow(&view);
+    view.window()->activateWindow();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
     QVERIFY(QTest::qWaitForWindowActive(&view));
     QCoreApplication::processEvents(); // Process all queued paint events
@@ -8167,9 +8150,11 @@ void tst_QGraphicsItem::moveLineItem()
     MyGraphicsView view(&scene);
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&view));
-    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
+    }
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
     QCoreApplication::processEvents(); // Process all queued paint events
     view.reset();
 
@@ -8239,11 +8224,11 @@ void tst_QGraphicsItem::sorting()
     view.setFrameStyle(0);
     view.show();
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
-        qApp->setActiveWindow(&view);
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
     }
     QVERIFY(QTest::qWaitForWindowExposed(&view));
-    QTRY_VERIFY(_paintedItems.count() > 0);
+    QTRY_VERIFY(_paintedItems.size() > 0);
 
     _paintedItems.clear();
 
@@ -8273,7 +8258,7 @@ void tst_QGraphicsItem::itemHasNoContents()
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
-        qApp->setActiveWindow(&view);
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
     }
     QVERIFY(QTest::qWaitForWindowExposed(&view));
@@ -9293,7 +9278,7 @@ void tst_QGraphicsItem::ensureDirtySceneTransform()
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
-        QApplication::setActiveWindow(&view);
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
         QCOMPARE(QApplication::activeWindow(), static_cast<QWidget *>(&view));
     }
@@ -9691,7 +9676,7 @@ void tst_QGraphicsItem::QTBUG_4233_updateCachedWithSceneRect()
     QGraphicsView view(&scene);
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
-    QApplication::setActiveWindow(&view);
+    view.window()->activateWindow();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
     QVERIFY(QTest::qWaitForWindowActive(&view));
     QCOMPARE(QApplication::activeWindow(), &view);
@@ -10771,6 +10756,10 @@ void tst_QGraphicsItem::textItem_shortcuts()
     item->setFlag(QGraphicsItem::ItemIsFocusable);
     item->setTextInteractionFlags(Qt::TextEditorInteraction);
     w.show();
+    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
+        view.window()->activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&view));
+    }
     QVERIFY(QTest::qWaitForWindowExposed(&w));
 
     item->setFocus();
@@ -10825,8 +10814,10 @@ void tst_QGraphicsItem::scroll()
     view.setFrameStyle(0);
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
-    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
+    }
     QTRY_VERIFY(view.repaints > 0);
 
     view.reset();
@@ -10940,7 +10931,7 @@ void tst_QGraphicsItem::focusHandling()
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
-    QApplication::setActiveWindow(&view);
+    QApplicationPrivate::setActiveWindow(&view);
     QTRY_COMPARE(QApplication::activeWindow(), static_cast<QWidget *>(&view));
     QVERIFY(itemWithFocus->hasFocus());
 
@@ -11017,13 +11008,13 @@ static QList<QEventPoint>
                       QEventPoint::State state = QEventPoint::State::Pressed)
 {
     const QPointF screenPos = view.viewport()->mapToGlobal(view.mapFromScene(scenePos));
-    QMutableEventPoint tp(0, state, scenePos, screenPos);
-    tp.setState(state);
-    tp.setScenePosition(scenePos);
-    tp.setGlobalPosition(screenPos);
-    tp.setGlobalPressPosition(screenPos);
-    tp.setGlobalLastPosition(screenPos);
-    tp.setEllipseDiameters(ellipseDiameters);
+    QEventPoint tp(0, state, scenePos, screenPos);
+    QMutableEventPoint::setState(tp, state);
+    QMutableEventPoint::setScenePosition(tp, scenePos);
+    QMutableEventPoint::setGlobalPosition(tp, screenPos);
+    QMutableEventPoint::setGlobalPressPosition(tp, screenPos);
+    QMutableEventPoint::setGlobalLastPosition(tp, screenPos);
+    QMutableEventPoint::setEllipseDiameters(tp, ellipseDiameters);
     return QList<QEventPoint>() << tp;
 }
 
@@ -11345,7 +11336,7 @@ void tst_QGraphicsItem::QTBUG_6738_missingUpdateWithSetParent()
     view.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     view.show();
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
-        qApp->setActiveWindow(&view);
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
     }
     QVERIFY(QTest::qWaitForWindowExposed(&view));
@@ -11399,8 +11390,10 @@ void tst_QGraphicsItem::QT_2653_fullUpdateDiscardingOpacityUpdate()
 
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
-    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
+    }
     QCoreApplication::processEvents(); // Process all queued paint events
     view.reset();
 
@@ -11435,8 +11428,10 @@ void tst_QGraphicsItem::QTBUG_7714_fullUpdateDiscardingOpacityUpdate2()
     scene.addItem(parentGreen);
 
     origView.show();
-    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&origView));
+    }
     QVERIFY(QTest::qWaitForWindowExposed(&origView));
     QCoreApplication::processEvents(); // Process all queued paint events
 
@@ -11452,7 +11447,7 @@ void tst_QGraphicsItem::QTBUG_7714_fullUpdateDiscardingOpacityUpdate2()
 
     view.show();
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
-        qApp->setActiveWindow(&view);
+        QApplicationPrivate::setActiveWindow(&view);
         QVERIFY(QTest::qWaitForWindowActive(&view));
     }
     QVERIFY(QTest::qWaitForWindowExposed(&view));
@@ -11593,6 +11588,7 @@ void tst_QGraphicsItem::doNotMarkFullUpdateIfNotInScene()
     item2->setParentItem(item);
     scene.addItem(item);
     view.show();
+    view.window()->activateWindow();
     QVERIFY(QTest::qWaitForWindowExposed(view.windowHandle()));
     QVERIFY(QTest::qWaitForWindowActive(view.windowHandle()));
     QCoreApplication::processEvents(); // Process all queued paint events
@@ -11627,7 +11623,7 @@ void tst_QGraphicsItem::itemDiesDuringDraggingOperation()
     scene.addItem(item);
     view.show();
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
-        QApplication::setActiveWindow(&view);
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
         QCOMPARE(QApplication::activeWindow(), &view);
     }
@@ -11658,7 +11654,7 @@ void tst_QGraphicsItem::QTBUG_12112_focusItem()
 
     view.show();
     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation)) {
-        QApplication::setActiveWindow(&view);
+        view.window()->activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&view));
         QCOMPARE(QApplication::activeWindow(), &view);
     }
@@ -11708,7 +11704,7 @@ public:
         QLatin1String wiseWords("AZ BUKI VEDI");
         QString sentence(wiseWords);
         QStringList words = sentence.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        for (int i = 0; i < words.count(); ++i) {
+        for (int i = 0; i < words.size(); ++i) {
             QGraphicsProxyWidget *proxy = new QGraphicsProxyWidget(this);
             QLabel *label = new QLabel(words.at(i));
             proxy->setWidget(label);

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from windows.pro.
 
 #####################################################################
@@ -6,7 +9,7 @@
 
 qt_internal_add_plugin(QWindowsIntegrationPlugin
     OUTPUT_NAME qwindows
-    TYPE platforms
+    PLUGIN_TYPE platforms
     DEFAULT_IF ${QT_QPA_DEFAULT_PLATFORM} MATCHES windows # special case
     SOURCES
         main.cpp
@@ -26,7 +29,7 @@ qt_internal_add_plugin(QWindowsIntegrationPlugin
         qwindowsinternalmimedata.cpp qwindowsinternalmimedata.h
         qwindowskeymapper.cpp qwindowskeymapper.h
         qwindowsmenu.cpp qwindowsmenu.h
-        qwindowsmime.cpp qwindowsmime.h
+        qwindowsmimeregistry.cpp qwindowsmimeregistry.h
         qwindowsmousehandler.cpp qwindowsmousehandler.h
         qwindowsnativeinterface.cpp qwindowsnativeinterface.h
         qwindowsole.cpp qwindowsole.h
@@ -43,23 +46,26 @@ qt_internal_add_plugin(QWindowsIntegrationPlugin
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_SOURCE_DIR}
     LIBRARIES
-        advapi32
-        gdi32
-        ole32
-        shell32
-        user32
-        winmm
-    PUBLIC_LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
+        advapi32
         dwmapi
+        gdi32
         imm32
+        ole32
         oleaut32
+        shell32
         shlwapi
+        user32
+        winmm
         winspool
         wtsapi32
+        shcore
+        comdlg32
+        d3d9
+        runtimeobject
 )
 
 # Resources:
@@ -88,7 +94,7 @@ qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl
     SOURCES
         qwindowsglcontext.cpp qwindowsglcontext.h
         qwindowsopenglcontext.h
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::OpenGLPrivate
 )
 
@@ -96,12 +102,12 @@ qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl
 # PLUGIN_EXTENDS = "-"
 
 qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_opengl AND NOT QT_FEATURE_dynamicgl
-    PUBLIC_LIBRARIES
+    LIBRARIES
         opengl32
 )
 
 qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION MINGW
-    PUBLIC_LIBRARIES
+    LIBRARIES
         uuid
 )
 
@@ -129,7 +135,7 @@ qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_tablete
     SOURCES
         qwindowstabletsupport.cpp qwindowstabletsupport.h
     INCLUDE_DIRECTORIES
-        ${QT_SOURCE_TREE}/src/3rdparty/wintab
+        ${QtBase_SOURCE_DIR}/src/3rdparty/wintab
 )
 
 qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_sessionmanager
@@ -195,7 +201,7 @@ qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_accessi
 )
 
 qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION MINGW AND QT_FEATURE_accessibility
-    PUBLIC_LIBRARIES
+    LIBRARIES
         uuid
 )
 

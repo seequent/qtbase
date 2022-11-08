@@ -1,36 +1,14 @@
-/****************************************************************************
-**
-** Copyright (C) 2018 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the plugins of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 or (at your option) any later version
-** approved by the KDE Free Qt Foundation. The licenses are as published by
-** the Free Software Foundation and appearing in the file LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2018 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include "qwasmcompositor.h"
 #include "qwasmwindow.h"
-#include "qwasmstylepixmaps_p.h"
+#include "qwasmeventtranslator.h"
+#include "qwasmeventdispatcher.h"
+#include "qwasmclipboard.h"
+#include "qwasmevent.h"
 
+#include <QtOpenGL/qopenglpixeltransferoptions.h>
 #include <QtOpenGL/qopengltexture.h>
 
 #include <QtGui/private/qwindow_p.h>
@@ -38,7 +16,6 @@
 #include <QtGui/qopenglfunctions.h>
 #include <QtGui/qoffscreensurface.h>
 #include <QtGui/qpainter.h>
-#include <private/qpixmapcache_p.h>
 
 #include <private/qguiapplication_p.h>
 
@@ -46,30 +23,80 @@
 #include <QtCore/qcoreapplication.h>
 #include <QtGui/qguiapplication.h>
 
+#include <emscripten/bind.h>
+
+#include <GL/gl.h>
+
+namespace {
+QWasmWindow *asWasmWindow(QWindow *window)
+{
+    return static_cast<QWasmWindow*>(window->handle());
+}
+}  // namespace
+
+using namespace emscripten;
+
 Q_GUI_EXPORT int qt_defaultDpiX();
 
-QWasmCompositedWindow::QWasmCompositedWindow()
-    : window(nullptr)
-    , parentWindow(nullptr)
-    , flushPending(false)
-    , visible(false)
+bool g_scrollingInvertedFromDevice = false;
+
+static void mouseWheelEvent(emscripten::val event)
 {
+    emscripten::val wheelInverted = event["webkitDirectionInvertedFromDevice"];
+    if (wheelInverted.as<bool>())
+        g_scrollingInvertedFromDevice = true;
+}
+
+EMSCRIPTEN_BINDINGS(qtMouseModule) {
+        function("qtMouseWheelEvent", &mouseWheelEvent);
 }
 
 QWasmCompositor::QWasmCompositor(QWasmScreen *screen)
-    :QObject(screen)
-    , m_blitter(new QOpenGLTextureBlitter)
-    , m_needComposit(false)
-    , m_inFlush(false)
-    , m_inResize(false)
-    , m_isEnabled(true)
-    , m_targetDevicePixelRatio(1)
+    : QObject(screen),
+      m_windowManipulation(screen),
+      m_windowStack(std::bind(&QWasmCompositor::onTopWindowChanged, this)),
+      m_blitter(new QOpenGLTextureBlitter),
+      m_eventTranslator(std::make_unique<QWasmEventTranslator>())
 {
+    m_touchDevice = std::make_unique<QPointingDevice>(
+            "touchscreen", 1, QInputDevice::DeviceType::TouchScreen,
+            QPointingDevice::PointerType::Finger,
+            QPointingDevice::Capability::Position | QPointingDevice::Capability::Area
+                | QPointingDevice::Capability::NormalizedPosition,
+            10, 0);
+    QWindowSystemInterface::registerInputDevice(m_touchDevice.get());
 }
 
 QWasmCompositor::~QWasmCompositor()
 {
+    m_windowUnderMouse.clear();
+
+    if (m_requestAnimationFrameId != -1)
+        emscripten_cancel_animation_frame(m_requestAnimationFrameId);
+
+    deregisterEventHandlers();
     destroy();
+}
+
+void QWasmCompositor::deregisterEventHandlers()
+{
+    QByteArray canvasSelector = screen()->canvasTargetId().toUtf8();
+    emscripten_set_keydown_callback(canvasSelector.constData(), 0, 0, NULL);
+    emscripten_set_keyup_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_focus_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_wheel_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    emscripten_set_touchstart_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchend_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchmove_callback(canvasSelector.constData(),  0, 0, NULL);
+    emscripten_set_touchcancel_callback(canvasSelector.constData(),  0, 0, NULL);
+
+    val canvas = screen()->canvas();
+    canvas.call<void>("removeEventListener",
+        std::string("drop"),
+        val::module_property("qtDrop"), val(true));
 }
 
 void QWasmCompositor::destroy()
@@ -93,160 +120,115 @@ void QWasmCompositor::destroy()
     m_isEnabled = false; // prevent frame() from creating a new m_context
 }
 
+void QWasmCompositor::initEventHandlers()
+{
+    QByteArray canvasSelector = screen()->canvasTargetId().toUtf8();
+
+    if (platform() == Platform::MacOS) {
+        if (!emscripten::val::global("window")["safari"].isUndefined()) {
+            val canvas = screen()->canvas();
+            canvas.call<void>("addEventListener",
+                              val("wheel"),
+                              val::module_property("qtMouseWheelEvent"));
+        }
+    }
+
+    constexpr EM_BOOL UseCapture = 1;
+
+    emscripten_set_keydown_callback(canvasSelector.constData(), (void *)this, UseCapture, &keyboard_cb);
+    emscripten_set_keyup_callback(canvasSelector.constData(), (void *)this, UseCapture, &keyboard_cb);
+
+    val canvas = screen()->canvas();
+    const auto callback = std::function([this](emscripten::val event) {
+        if (processPointer(*PointerEvent::fromWeb(event)))
+            event.call<void>("preventDefault");
+    });
+
+    m_pointerDownCallback = std::make_unique<qstdweb::EventCallback>(canvas, "pointerdown", callback);
+    m_pointerMoveCallback = std::make_unique<qstdweb::EventCallback>(canvas, "pointermove", callback);
+    m_pointerUpCallback = std::make_unique<qstdweb::EventCallback>(canvas, "pointerup", callback);
+    m_pointerEnterCallback = std::make_unique<qstdweb::EventCallback>(canvas, "pointerenter", callback);
+    m_pointerLeaveCallback = std::make_unique<qstdweb::EventCallback>(canvas, "pointerleave", callback);
+
+    emscripten_set_focus_callback(canvasSelector.constData(), (void *)this, UseCapture, &focus_cb);
+
+    emscripten_set_wheel_callback(canvasSelector.constData(), (void *)this, UseCapture, &wheel_cb);
+
+    emscripten_set_touchstart_callback(canvasSelector.constData(), (void *)this, UseCapture, &touchCallback);
+    emscripten_set_touchend_callback(canvasSelector.constData(), (void *)this, UseCapture, &touchCallback);
+    emscripten_set_touchmove_callback(canvasSelector.constData(), (void *)this, UseCapture, &touchCallback);
+    emscripten_set_touchcancel_callback(canvasSelector.constData(), (void *)this, UseCapture, &touchCallback);
+
+    canvas.call<void>("addEventListener",
+        std::string("drop"),
+        val::module_property("qtDrop"), val(true));
+    canvas.set("data-qtdropcontext", // ? unique
+                       emscripten::val(quintptr(reinterpret_cast<void *>(screen()))));
+}
+
 void QWasmCompositor::setEnabled(bool enabled)
 {
     m_isEnabled = enabled;
 }
 
-void QWasmCompositor::addWindow(QWasmWindow *window, QWasmWindow *parentWindow)
+void QWasmCompositor::startResize(Qt::Edges edges)
 {
-    QWasmCompositedWindow compositedWindow;
-    compositedWindow.window = window;
-    compositedWindow.parentWindow = parentWindow;
-    m_compositedWindows.insert(window, compositedWindow);
+    m_windowManipulation.startResize(edges);
+}
 
-    if (parentWindow == 0)
-        m_windowStack.append(window);
-    else
-        m_compositedWindows[parentWindow].childWindows.append(window);
-
-    notifyTopWindowChanged(window);
+void QWasmCompositor::addWindow(QWasmWindow *window)
+{
+    m_windowVisibility.insert(window, false);
+    m_windowStack.pushWindow(window);
+    m_windowStack.topWindow()->requestActivateWindow();
 }
 
 void QWasmCompositor::removeWindow(QWasmWindow *window)
 {
-    QWasmWindow *platformWindow = m_compositedWindows[window].parentWindow;
-
-    if (platformWindow) {
-        QWasmWindow *parentWindow = window;
-        m_compositedWindows[parentWindow].childWindows.removeAll(window);
-    }
-
-    m_windowStack.removeAll(window);
-    m_compositedWindows.remove(window);
-
-    notifyTopWindowChanged(window);
+    m_windowVisibility.remove(window);
+    m_requestUpdateWindows.remove(window);
+    m_windowStack.removeWindow(window);
+    if (m_windowStack.topWindow())
+        m_windowStack.topWindow()->requestActivateWindow();
 }
 
 void QWasmCompositor::setVisible(QWasmWindow *window, bool visible)
 {
-    QWasmCompositedWindow &compositedWindow = m_compositedWindows[window];
-    if (compositedWindow.visible == visible)
+    const bool wasVisible = m_windowVisibility[window];
+    if (wasVisible == visible)
         return;
 
-    compositedWindow.visible = visible;
-    compositedWindow.flushPending = true;
-    if (visible)
-        compositedWindow.damage = compositedWindow.window->geometry();
-    else
-        m_globalDamage = compositedWindow.window->geometry(); // repaint previosly covered area.
+    m_windowVisibility[window] = visible;
 
-    requestRedraw();
+    requestUpdateWindow(window, QWasmCompositor::ExposeEventDelivery);
 }
 
 void QWasmCompositor::raise(QWasmWindow *window)
 {
-    if (m_compositedWindows.size() <= 1)
-        return;
-
-    QWasmCompositedWindow &compositedWindow = m_compositedWindows[window];
-    compositedWindow.damage = compositedWindow.window->geometry();
-    m_windowStack.removeAll(window);
-    m_windowStack.append(window);
-
-    notifyTopWindowChanged(window);
+    m_windowStack.raise(window);
 }
 
 void QWasmCompositor::lower(QWasmWindow *window)
 {
-    if (m_compositedWindows.size() <= 1)
-        return;
-
-    m_windowStack.removeAll(window);
-    m_windowStack.prepend(window);
-    QWasmCompositedWindow &compositedWindow = m_compositedWindows[window];
-    m_globalDamage = compositedWindow.window->geometry(); // repaint previosly covered area.
-
-    notifyTopWindowChanged(window);
+    m_windowStack.lower(window);
 }
 
-void QWasmCompositor::setParent(QWasmWindow *window, QWasmWindow *parent)
+QWindow *QWasmCompositor::windowAt(QPoint targetPointInScreenCoords, int padding) const
 {
-    m_compositedWindows[window].parentWindow = parent;
+    const auto found = std::find_if(
+            m_windowStack.begin(), m_windowStack.end(),
+            [this, padding, &targetPointInScreenCoords](const QWasmWindow *window) {
+                const QRect geometry = window->windowFrameGeometry().adjusted(-padding, -padding,
+                                                                              padding, padding);
 
-    requestRedraw();
-}
-
-void QWasmCompositor::flush(QWasmWindow *window, const QRegion &region)
-{
-    QWasmCompositedWindow &compositedWindow = m_compositedWindows[window];
-    compositedWindow.flushPending = true;
-    compositedWindow.damage = region;
-
-    requestRedraw();
-}
-
-int QWasmCompositor::windowCount() const
-{
-    return m_windowStack.count();
-}
-
-
-void QWasmCompositor::redrawWindowContent()
-{
-    // Redraw window content by sending expose events. This redraw
-    // will cause a backing store flush, which will call requestRedraw()
-    // to composit.
-    for (QWasmWindow *platformWindow : m_windowStack) {
-        QWindow *window = platformWindow->window();
-        QWindowSystemInterface::handleExposeEvent<QWindowSystemInterface::SynchronousDelivery>(
-            window, QRect(QPoint(0, 0), window->geometry().size()));
-    }
-}
-
-void QWasmCompositor::requestRedraw()
-{
-    if (m_needComposit)
-        return;
-
-    m_needComposit = true;
-    QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
-}
-
-QWindow *QWasmCompositor::windowAt(QPoint globalPoint, int padding) const
-{
-    int index = m_windowStack.count() - 1;
-    // qDebug() << "window at" << "point" << p << "window count" << index;
-
-    while (index >= 0) {
-        const QWasmCompositedWindow &compositedWindow = m_compositedWindows[m_windowStack.at(index)];
-        //qDebug() << "windwAt testing" << compositedWindow.window <<
-
-        QRect geometry = compositedWindow.window->windowFrameGeometry()
-                         .adjusted(-padding, -padding, padding, padding);
-
-        if (compositedWindow.visible && geometry.contains(globalPoint))
-            return m_windowStack.at(index)->window();
-        --index;
-    }
-
-    return 0;
+                return m_windowVisibility[window] && geometry.contains(targetPointInScreenCoords);
+            });
+    return found != m_windowStack.end() ? (*found)->window() : nullptr;
 }
 
 QWindow *QWasmCompositor::keyWindow() const
 {
-    return m_windowStack.at(m_windowStack.count() - 1)->window();
-}
-
-bool QWasmCompositor::event(QEvent *ev)
-{
-    if (ev->type() == QEvent::UpdateRequest) {
-        if (m_isEnabled)
-            frame();
-        return true;
-    }
-
-    return QObject::event(ev);
+    return m_windowStack.topWindow() ? m_windowStack.topWindow()->window() : nullptr;
 }
 
 void QWasmCompositor::blit(QOpenGLTextureBlitter *blitter, QWasmScreen *screen, const QOpenGLTexture *texture, QRect targetGeometry)
@@ -268,95 +250,107 @@ void QWasmCompositor::blit(QOpenGLTextureBlitter *blitter, QWasmScreen *screen, 
     blitter->blit(texture->textureId(), m, QOpenGLTextureBlitter::OriginTopLeft);
 }
 
-void QWasmCompositor::drawWindowContent(QOpenGLTextureBlitter *blitter, QWasmScreen *screen, QWasmWindow *window)
+void QWasmCompositor::drawWindowContent(QOpenGLTextureBlitter *blitter, QWasmScreen *screen,
+                                        const QWasmWindow *window)
 {
     QWasmBackingStore *backingStore = window->backingStore();
     if (!backingStore)
         return;
 
     QOpenGLTexture const *texture = backingStore->getUpdatedTexture();
-    QPoint windowCanvasPosition = window->geometry().topLeft() - screen->geometry().topLeft();
-    QRect windowCanvasGeometry = QRect(windowCanvasPosition, window->geometry().size());
+    QRect windowCanvasGeometry = window->geometry().translated(-screen->geometry().topLeft());
     blit(blitter, screen, texture, windowCanvasGeometry);
 }
 
-QPalette QWasmCompositor::makeWindowPalette()
+void QWasmCompositor::requestUpdateAllWindows()
 {
-    QPalette palette;
-    palette.setColor(QPalette::Active, QPalette::Highlight,
-                     palette.color(QPalette::Active, QPalette::Highlight));
-    palette.setColor(QPalette::Active, QPalette::Base,
-                     palette.color(QPalette::Active, QPalette::Highlight));
-    palette.setColor(QPalette::Inactive, QPalette::Highlight,
-                     palette.color(QPalette::Inactive, QPalette::Dark));
-    palette.setColor(QPalette::Inactive, QPalette::Base,
-                     palette.color(QPalette::Inactive, QPalette::Dark));
-    palette.setColor(QPalette::Inactive, QPalette::HighlightedText,
-                     palette.color(QPalette::Inactive, QPalette::Window));
-
-    return palette;
+    m_requestUpdateAllWindows = true;
+    requestUpdate();
 }
 
-QRect QWasmCompositor::titlebarRect(QWasmTitleBarOptions tb, QWasmCompositor::SubControls subcontrol)
+void QWasmCompositor::requestUpdateWindow(QWasmWindow *window, UpdateRequestDeliveryType updateType)
 {
-    QRect ret;
-    const int controlMargin = 2;
-    const int controlHeight = tb.rect.height() - controlMargin *2;
-    const int delta = controlHeight + controlMargin;
-    int offset = 0;
-
-    bool isMinimized = tb.state & Qt::WindowMinimized;
-    bool isMaximized = tb.state & Qt::WindowMaximized;
-
-    ret = tb.rect;
-    switch (subcontrol) {
-    case SC_TitleBarLabel:
-        if (tb.flags & Qt::WindowSystemMenuHint)
-            ret.adjust(delta, 0, -delta, 0);
-        break;
-    case SC_TitleBarCloseButton:
-        if (tb.flags & Qt::WindowSystemMenuHint) {
-            ret.adjust(0, 0, -delta, 0);
-            offset += delta;
-        }
-        break;
-    case SC_TitleBarMaxButton:
-        if (!isMaximized && tb.flags & Qt::WindowMaximizeButtonHint) {
-            ret.adjust(0, 0, -delta*2, 0);
-            offset += (delta +delta);
-        }
-        break;
-    case SC_TitleBarNormalButton:
-        if (isMinimized && (tb.flags & Qt::WindowMinimizeButtonHint)) {
-            offset += delta;
-        } else if (isMaximized && (tb.flags & Qt::WindowMaximizeButtonHint)) {
-            ret.adjust(0, 0, -delta*2, 0);
-            offset += (delta +delta);
-        }
-        break;
-    case SC_TitleBarSysMenu:
-        if (tb.flags & Qt::WindowSystemMenuHint) {
-            ret.setRect(tb.rect.left() + controlMargin, tb.rect.top() + controlMargin,
-                        controlHeight, controlHeight);
-        }
-        break;
-    default:
-        break;
-    };
-
-    if (subcontrol != SC_TitleBarLabel && subcontrol != SC_TitleBarSysMenu) {
-        ret.setRect(tb.rect.right() - offset, tb.rect.top() + controlMargin,
-                    controlHeight, controlHeight);
+    auto it = m_requestUpdateWindows.find(window);
+    if (it == m_requestUpdateWindows.end()) {
+        m_requestUpdateWindows.insert(window, updateType);
+    } else {
+        // Already registered, but upgrade ExposeEventDeliveryType to UpdateRequestDeliveryType.
+        // if needed, to make sure QWindow::updateRequest's are matched.
+        if (it.value() == ExposeEventDelivery && updateType == UpdateRequestDelivery)
+            it.value() = UpdateRequestDelivery;
     }
 
-    if (qApp->layoutDirection() == Qt::LeftToRight)
-        return ret;
+    requestUpdate();
+}
 
-    QRect rect = ret;
-    rect.translate(2 * (tb.rect.right() - ret.right()) +
-                   ret.width() - tb.rect.width(), 0);
+// Requests an update/new frame using RequestAnimationFrame
+void QWasmCompositor::requestUpdate()
+{
+    if (m_requestAnimationFrameId != -1)
+        return;
 
-    return rect;
+    static auto frame = [](double frameTime, void *context) -> int {
+        Q_UNUSED(frameTime);
+        QWasmCompositor *compositor = reinterpret_cast<QWasmCompositor *>(context);
+        compositor->m_requestAnimationFrameId = -1;
+        compositor->deliverUpdateRequests();
+        return 0;
+    };
+    m_requestAnimationFrameId = emscripten_request_animation_frame(frame, this);
+}
+
+void QWasmCompositor::deliverUpdateRequests()
+{
+    // We may get new update requests during the window content update below:
+    // prepare for recording the new update set by setting aside the current
+    // update set.
+    auto requestUpdateWindows = m_requestUpdateWindows;
+    m_requestUpdateWindows.clear();
+    bool requestUpdateAllWindows = m_requestUpdateAllWindows;
+    m_requestUpdateAllWindows = false;
+
+    // Update window content, either all windows or a spesific set of windows. Use the correct update
+    // type: QWindow subclasses expect that requested and delivered updateRequests matches exactly.
+    m_inDeliverUpdateRequest = true;
+    if (requestUpdateAllWindows) {
+        for (QWasmWindow *window : m_windowStack) {
+            auto it = requestUpdateWindows.find(window);
+            UpdateRequestDeliveryType updateType =
+                (it == m_requestUpdateWindows.end() ? ExposeEventDelivery : it.value());
+            deliverUpdateRequest(window, updateType);
+        }
+    } else {
+        for (auto it = requestUpdateWindows.constBegin(); it != requestUpdateWindows.constEnd(); ++it) {
+            auto *window = it.key();
+            UpdateRequestDeliveryType updateType = it.value();
+            deliverUpdateRequest(window, updateType);
+        }
+    }
+    m_inDeliverUpdateRequest = false;
+
+    // Compose window content
+    frame();
+}
+
+void QWasmCompositor::deliverUpdateRequest(QWasmWindow *window, UpdateRequestDeliveryType updateType)
+{
+    // update by deliverUpdateRequest and expose event accordingly.
+    if (updateType == UpdateRequestDelivery) {
+        window->QPlatformWindow::deliverUpdateRequest();
+    } else {
+        QWindow *qwindow = window->window();
+        QWindowSystemInterface::handleExposeEvent<QWindowSystemInterface::SynchronousDelivery>(
+            qwindow, QRect(QPoint(0, 0), qwindow->geometry().size()));
+    }
+}
+
+void QWasmCompositor::handleBackingStoreFlush()
+{
+    // Request update to flush the updated backing store content,
+    // unless we are currently processing an update, in which case
+    // the new content will flushed as a part of that update.
+    if (!m_inDeliverUpdateRequest)
+        requestUpdate();
 }
 
 int dpiScaled(qreal value)
@@ -364,63 +358,19 @@ int dpiScaled(qreal value)
     return value * (qreal(qt_defaultDpiX()) / 96.0);
 }
 
-QWasmCompositor::QWasmTitleBarOptions QWasmCompositor::makeTitleBarOptions(const QWasmWindow *window)
-{
-    int width = window->windowFrameGeometry().width();
-    int border = window->borderWidth();
-
-    QWasmTitleBarOptions titleBarOptions;
-
-    titleBarOptions.rect = QRect(border, border, width - 2 * border, window->titleHeight());
-    titleBarOptions.flags = window->window()->flags();
-    titleBarOptions.state = window->window()->windowState();
-
-    bool isMaximized = titleBarOptions.state & Qt::WindowMaximized; // this gets reset when maximized
-
-    if (titleBarOptions.flags & (Qt::WindowTitleHint))
-        titleBarOptions.subControls |= SC_TitleBarLabel;
-    if (titleBarOptions.flags & Qt::WindowMaximizeButtonHint) {
-        if (isMaximized)
-            titleBarOptions.subControls |= SC_TitleBarNormalButton;
-        else
-            titleBarOptions.subControls |= SC_TitleBarMaxButton;
-    }
-    if (titleBarOptions.flags & Qt::WindowSystemMenuHint) {
-        titleBarOptions.subControls |= SC_TitleBarCloseButton;
-        titleBarOptions.subControls |= SC_TitleBarSysMenu;
-    }
-
-
-    titleBarOptions.palette = QWasmCompositor::makeWindowPalette();
-
-    if (window->window()->isActive())
-        titleBarOptions.palette.setCurrentColorGroup(QPalette::Active);
-    else
-        titleBarOptions.palette.setCurrentColorGroup(QPalette::Inactive);
-
-    if (window->activeSubControl() != QWasmCompositor::SC_None)
-        titleBarOptions.subControls = window->activeSubControl();
-
-    if (!window->window()->title().isEmpty())
-        titleBarOptions.titleBarOptionsString = window->window()->title();
-
-    return titleBarOptions;
-}
-
-void QWasmCompositor::drawWindowDecorations(QOpenGLTextureBlitter *blitter, QWasmScreen *screen, QWasmWindow *window)
+void QWasmCompositor::drawWindowDecorations(QOpenGLTextureBlitter *blitter, QWasmScreen *screen,
+                                            const QWasmWindow *window)
 {
     int width = window->windowFrameGeometry().width();
     int height = window->windowFrameGeometry().height();
     qreal dpr = window->devicePixelRatio();
 
-    QImage image(QSize(width * dpr, height * dpr), QImage::Format_RGB32);
+    QImage image(QSize(width * dpr, height * dpr), QImage::Format_ARGB32_Premultiplied);
     image.setDevicePixelRatio(dpr);
     QPainter painter(&image);
     painter.fillRect(QRect(0, 0, width, height), painter.background());
 
-    QWasmTitleBarOptions titleBarOptions = makeTitleBarOptions(window);
-
-    drawTitlebarWindow(titleBarOptions, &painter);
+    window->drawTitleBar(&painter);
 
     QWasmFrameOptions frameOptions;
     frameOptions.rect = QRect(0, 0, width, height);
@@ -434,14 +384,22 @@ void QWasmCompositor::drawWindowDecorations(QOpenGLTextureBlitter *blitter, QWas
     texture.setMinificationFilter(QOpenGLTexture::Nearest);
     texture.setMagnificationFilter(QOpenGLTexture::Nearest);
     texture.setWrapMode(QOpenGLTexture::ClampToEdge);
-    texture.setData(image, QOpenGLTexture::DontGenerateMipMaps);
+    texture.setFormat(QOpenGLTexture::RGBAFormat);
+    texture.setSize(image.width(), image.height());
+    texture.setMipLevels(1);
+    texture.allocateStorage(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8);
+
+    QOpenGLPixelTransferOptions uploadOptions;
+    uploadOptions.setAlignment(1);
+
     texture.create();
     texture.bind();
 
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image.width(), image.height(), GL_RGBA, GL_UNSIGNED_BYTE,
-                    image.constScanLine(0));
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image.width(), image.height(), GL_RGBA,
+                    GL_UNSIGNED_BYTE, image.constScanLine(0));
 
-    blit(blitter, screen, &texture, QRect(window->windowFrameGeometry().topLeft(), QSize(width, height)));
+    QRect windowCanvasGeometry = window->windowFrameGeometry().translated(-screen->geometry().topLeft());
+    blit(blitter, screen, &texture, windowCanvasGeometry);
 }
 
 void QWasmCompositor::drawFrameWindow(QWasmFrameOptions options, QPainter *painter)
@@ -486,181 +444,8 @@ void QWasmCompositor::drawFrameWindow(QWasmFrameOptions options, QPainter *paint
     painter->setPen(oldPen);
 }
 
-//from commonstyle.cpp
-static QPixmap cachedPixmapFromXPM(const char * const *xpm)
-{
-    QPixmap result;
-    const QString tag = QString::asprintf("xpm:0x%p", static_cast<const void*>(xpm));
-    if (!QPixmapCache::find(tag, &result)) {
-        result = QPixmap(xpm);
-        QPixmapCache::insert(tag, result);
-    }
-    return result;
-}
-
-void QWasmCompositor::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
-                                      const QPixmap &pixmap) const
-{
-    qreal scale = pixmap.devicePixelRatio();
-    QSize size =  pixmap.size() / scale;
-    int x = rect.x();
-    int y = rect.y();
-    int w = size.width();
-    int h = size.height();
-    if ((alignment & Qt::AlignVCenter) == Qt::AlignVCenter)
-        y += rect.size().height()/2 - h/2;
-    else if ((alignment & Qt::AlignBottom) == Qt::AlignBottom)
-        y += rect.size().height() - h;
-    if ((alignment & Qt::AlignRight) == Qt::AlignRight)
-        x += rect.size().width() - w;
-    else if ((alignment & Qt::AlignHCenter) == Qt::AlignHCenter)
-        x += rect.size().width()/2 - w/2;
-
-    QRect aligned = QRect(x, y, w, h);
-    QRect inter = aligned.intersected(rect);
-
-    painter->drawPixmap(inter.x(), inter.y(), pixmap, inter.x() - aligned.x(), inter.y() - aligned.y(), inter.width() * scale, inter.height() *scale);
-}
-
-
-void QWasmCompositor::drawTitlebarWindow(QWasmTitleBarOptions tb, QPainter *painter)
-{
-    QRect ir;
-    if (tb.subControls.testFlag(SC_TitleBarLabel)) {
-        QColor left = tb.palette.highlight().color();
-        QColor right = tb.palette.base().color();
-
-        QBrush fillBrush(left);
-        if (left != right) {
-            QPoint p1(tb.rect.x(), tb.rect.top() + tb.rect.height()/2);
-            QPoint p2(tb.rect.right(), tb.rect.top() + tb.rect.height()/2);
-            QLinearGradient lg(p1, p2);
-            lg.setColorAt(0, left);
-            lg.setColorAt(1, right);
-            fillBrush = lg;
-        }
-
-        painter->fillRect(tb.rect, fillBrush);
-        ir = titlebarRect(tb, SC_TitleBarLabel);
-        painter->setPen(tb.palette.highlightedText().color());
-        painter->drawText(ir.x() + 2, ir.y(), ir.width() - 2, ir.height(),
-                          Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, tb.titleBarOptionsString);
-    } // SC_TitleBarLabel
-
-    bool down = false;
-    QPixmap pixmap;
-
-    if (tb.subControls.testFlag(SC_TitleBarCloseButton)
-            && tb.flags & Qt::WindowSystemMenuHint) {
-        ir = titlebarRect(tb, SC_TitleBarCloseButton);
-        down = tb.subControls & SC_TitleBarCloseButton && (tb.state & State_Sunken);
-        pixmap = cachedPixmapFromXPM(qt_close_xpm).scaled(QSize(10, 10));
-        drawItemPixmap(painter, ir, Qt::AlignCenter, pixmap);
-    } //SC_TitleBarCloseButton
-
-    if (tb.subControls.testFlag(SC_TitleBarMaxButton)
-            && tb.flags & Qt::WindowMaximizeButtonHint
-            && !(tb.state & Qt::WindowMaximized)) {
-        ir = titlebarRect(tb, SC_TitleBarMaxButton);
-        down = tb.subControls & SC_TitleBarMaxButton && (tb.state & State_Sunken);
-        pixmap = cachedPixmapFromXPM(qt_maximize_xpm).scaled(QSize(10, 10));
-        drawItemPixmap(painter, ir, Qt::AlignCenter, pixmap);
-    } //SC_TitleBarMaxButton
-
-    bool drawNormalButton = (tb.subControls & SC_TitleBarNormalButton)
-            && (((tb.flags & Qt::WindowMinimizeButtonHint)
-                 && (tb.flags & Qt::WindowMinimized))
-                || ((tb.flags & Qt::WindowMaximizeButtonHint)
-                    && (tb.flags & Qt::WindowMaximized)));
-
-    if (drawNormalButton) {
-        ir = titlebarRect(tb, SC_TitleBarNormalButton);
-        down = tb.subControls & SC_TitleBarNormalButton && (tb.state & State_Sunken);
-        pixmap = cachedPixmapFromXPM(qt_normalizeup_xpm).scaled( QSize(10, 10));
-
-        drawItemPixmap(painter, ir, Qt::AlignCenter, pixmap);
-    } // SC_TitleBarNormalButton
-
-    if (tb.subControls & SC_TitleBarSysMenu && tb.flags & Qt::WindowSystemMenuHint) {
-        ir = titlebarRect(tb, SC_TitleBarSysMenu);
-        pixmap = cachedPixmapFromXPM(qt_menu_xpm).scaled(QSize(10, 10));
-        drawItemPixmap(painter, ir, Qt::AlignCenter, pixmap);
-    }
-}
-
-void QWasmCompositor::drawShadePanel(QWasmTitleBarOptions options, QPainter *painter)
-{
-    int lineWidth = 1;
-    QPalette palette = options.palette;
-    const QBrush *fill = &options.palette.brush(QPalette::Button);
-
-    int x = options.rect.x();
-    int y = options.rect.y();
-    int w = options.rect.width();
-    int h = options.rect.height();
-
-    const qreal devicePixelRatio = painter->device()->devicePixelRatio();
-    if (!qFuzzyCompare(devicePixelRatio, qreal(1))) {
-        const qreal inverseScale = qreal(1) / devicePixelRatio;
-        painter->scale(inverseScale, inverseScale);
-
-        x = qRound(devicePixelRatio * x);
-        y = qRound(devicePixelRatio * y);
-        w = qRound(devicePixelRatio * w);
-        h = qRound(devicePixelRatio * h);
-        lineWidth = qRound(devicePixelRatio * lineWidth);
-    }
-
-    QColor shade = palette.dark().color();
-    QColor light = palette.light().color();
-
-    if (fill) {
-        if (fill->color() == shade)
-            shade = palette.shadow().color();
-        if (fill->color() == light)
-            light = palette.midlight().color();
-    }
-    QPen oldPen = painter->pen();
-    QList<QLineF> lines;
-    lines.reserve(2*lineWidth);
-
-    painter->setPen(light);
-    int x1, y1, x2, y2;
-    int i;
-    x1 = x;
-    y1 = y2 = y;
-    x2 = x + w - 2;
-    for (i = 0; i < lineWidth; i++)                // top shadow
-        lines << QLineF(x1, y1++, x2--, y2++);
-
-    x2 = x1;
-    y1 = y + h - 2;
-    for (i = 0; i < lineWidth; i++)               // left shado
-        lines << QLineF(x1++, y1, x2++, y2--);
-
-    painter->drawLines(lines);
-    lines.clear();
-    painter->setPen(shade);
-    x1 = x;
-    y1 = y2 = y+h-1;
-    x2 = x+w-1;
-    for (i=0; i<lineWidth; i++) {                // bottom shadow
-        lines << QLineF(x1++, y1--, x2, y2--);
-    }
-    x1 = x2;
-    y1 = y;
-    y2 = y + h - lineWidth - 1;
-    for (i = 0; i < lineWidth; i++)                // right shadow
-        lines << QLineF(x1--, y1++, x2--, y2);
-
-    painter->drawLines(lines);
-    if (fill)                                // fill with fill color
-        painter->fillRect(x+lineWidth, y+lineWidth, w-lineWidth*2, h-lineWidth*2, *fill);
-    painter->setPen(oldPen);                        // restore pen
-
-}
-
-void QWasmCompositor::drawWindow(QOpenGLTextureBlitter *blitter, QWasmScreen *screen, QWasmWindow *window)
+void QWasmCompositor::drawWindow(QOpenGLTextureBlitter *blitter, QWasmScreen *screen,
+                                 const QWasmWindow *window)
 {
     if (window->window()->type() != Qt::Popup && !(window->m_windowState & Qt::WindowFullScreen))
         drawWindowDecorations(blitter, screen, window);
@@ -669,19 +454,14 @@ void QWasmCompositor::drawWindow(QOpenGLTextureBlitter *blitter, QWasmScreen *sc
 
 void QWasmCompositor::frame()
 {
-    if (!m_needComposit)
-        return;
-
-    m_needComposit = false;
-
     if (!m_isEnabled || m_windowStack.empty() || !screen())
         return;
 
     QWasmWindow *someWindow = nullptr;
 
-    for (QWasmWindow *window : qAsConst(m_windowStack)) {
+    for (QWasmWindow *window : m_windowStack) {
         if (window->window()->surfaceClass() == QSurface::Window
-                && qt_window_private(static_cast<QWindow *>(window->window()))->receivedExpose) {
+            && qt_window_private(window->window())->receivedExpose) {
             someWindow = window;
             break;
         }
@@ -713,14 +493,10 @@ void QWasmCompositor::frame()
     m_blitter->bind();
     m_blitter->setRedBlueSwizzle(true);
 
-    for (QWasmWindow *window : qAsConst(m_windowStack)) {
-        QWasmCompositedWindow &compositedWindow = m_compositedWindows[window];
-
-        if (!compositedWindow.visible)
-            continue;
-
-        drawWindow(m_blitter.data(), screen(), window);
-    }
+    std::for_each(m_windowStack.rbegin(), m_windowStack.rend(), [this](const QWasmWindow *window) {
+        if (m_windowVisibility[window])
+            drawWindow(m_blitter.data(), screen(), window);
+    });
 
     m_blitter->release();
 
@@ -728,18 +504,36 @@ void QWasmCompositor::frame()
         m_context->swapBuffers(someWindow->window());
 }
 
-void QWasmCompositor::notifyTopWindowChanged(QWasmWindow *window)
+void QWasmCompositor::WindowManipulation::resizeWindow(const QPoint& amount)
 {
-    QWindow *modalWindow;
-    bool blocked = QGuiApplicationPrivate::instance()->isWindowBlocked(window->window(), &modalWindow);
+    const auto& minShrink = std::get<ResizeState>(m_state->operationSpecific).m_minShrink;
+    const auto& maxGrow = std::get<ResizeState>(m_state->operationSpecific).m_maxGrow;
+    const auto &resizeEdges = std::get<ResizeState>(m_state->operationSpecific).m_resizeEdges;
 
-    if (blocked) {
-        raise(static_cast<QWasmWindow*>(modalWindow->handle()));
-        return;
-    }
+    const QPoint cappedGrowVector(
+            std::min(maxGrow.x(),
+                     std::max(minShrink.x(),
+                              (resizeEdges & Qt::Edge::LeftEdge)            ? -amount.x()
+                                      : (resizeEdges & Qt::Edge::RightEdge) ? amount.x()
+                                                                            : 0)),
+            std::min(maxGrow.y(),
+                     std::max(minShrink.y(),
+                              (resizeEdges & Qt::Edge::TopEdge)              ? -amount.y()
+                                      : (resizeEdges & Qt::Edge::BottomEdge) ? amount.y()
+                                                                             : 0)));
 
-    requestRedraw();
-    QWindowSystemInterface::handleWindowActivated(window->window());
+    const auto& initialBounds =
+        std::get<ResizeState>(m_state->operationSpecific).m_initialWindowBounds;
+    m_state->window->setGeometry(initialBounds.adjusted(
+            (resizeEdges & Qt::Edge::LeftEdge) ? -cappedGrowVector.x() : 0,
+            (resizeEdges & Qt::Edge::TopEdge) ? -cappedGrowVector.y() : 0,
+            (resizeEdges & Qt::Edge::RightEdge) ? cappedGrowVector.x() : 0,
+            (resizeEdges & Qt::Edge::BottomEdge) ? cappedGrowVector.y() : 0));
+}
+
+void QWasmCompositor::onTopWindowChanged()
+{
+    requestUpdate();
 }
 
 QWasmScreen *QWasmCompositor::screen()
@@ -750,4 +544,501 @@ QWasmScreen *QWasmCompositor::screen()
 QOpenGLContext *QWasmCompositor::context()
 {
     return m_context.data();
+}
+
+int QWasmCompositor::keyboard_cb(int eventType, const EmscriptenKeyboardEvent *keyEvent, void *userData)
+{
+    QWasmCompositor *wasmCompositor = reinterpret_cast<QWasmCompositor *>(userData);
+    return static_cast<int>(wasmCompositor->processKeyboard(eventType, keyEvent));
+}
+
+int QWasmCompositor::focus_cb(int eventType, const EmscriptenFocusEvent *focusEvent, void *userData)
+{
+    Q_UNUSED(eventType)
+    Q_UNUSED(focusEvent)
+    Q_UNUSED(userData)
+
+    return 0;
+}
+
+int QWasmCompositor::wheel_cb(int eventType, const EmscriptenWheelEvent *wheelEvent, void *userData)
+{
+    QWasmCompositor *compositor = (QWasmCompositor *) userData;
+    return static_cast<int>(compositor->processWheel(eventType, wheelEvent));
+}
+
+int QWasmCompositor::touchCallback(int eventType, const EmscriptenTouchEvent *touchEvent, void *userData)
+{
+    auto compositor = reinterpret_cast<QWasmCompositor*>(userData);
+    return static_cast<int>(compositor->processTouch(eventType, touchEvent));
+}
+
+bool QWasmCompositor::processPointer(const PointerEvent& event)
+{
+    if (event.pointerType != PointerType::Mouse)
+        return false;
+
+    QWindow *const targetWindow = ([this, &event]() -> QWindow * {
+        auto *targetWindow = m_mouseCaptureWindow != nullptr ? m_mouseCaptureWindow.get()
+                : m_windowManipulation.operation() == WindowManipulation::Operation::None
+                ? screen()->compositor()->windowAt(event.point, 5)
+                : nullptr;
+
+        return targetWindow ? targetWindow : m_lastMouseTargetWindow.get();
+    })();
+    if (targetWindow)
+        m_lastMouseTargetWindow = targetWindow;
+
+    const QPoint pointInTargetWindowCoords = targetWindow->mapFromGlobal(event.point);
+    const bool pointerIsWithinTargetWindowBounds = targetWindow->geometry().contains(event.point);
+    const bool isTargetWindowBlocked = QGuiApplicationPrivate::instance()->isWindowBlocked(targetWindow);
+
+    if (m_mouseInCanvas && m_windowUnderMouse != targetWindow && pointerIsWithinTargetWindowBounds) {
+        // delayed mouse enter
+        enterWindow(targetWindow, pointInTargetWindowCoords, event.point);
+        m_windowUnderMouse = targetWindow;
+    }
+
+    QWasmWindow *wasmTargetWindow = asWasmWindow(targetWindow);
+    Qt::WindowStates windowState = targetWindow->windowState();
+    const bool isTargetWindowResizable = !windowState.testFlag(Qt::WindowMaximized) && !windowState.testFlag(Qt::WindowFullScreen);
+
+    switch (event.type) {
+    case EventType::PointerDown:
+    {
+        screen()->canvas().call<void>("setPointerCapture", event.pointerId);
+
+        if (targetWindow)
+            targetWindow->requestActivate();
+
+        m_pressedWindow = targetWindow;
+
+        m_windowManipulation.onPointerDown(event, targetWindow);
+
+        wasmTargetWindow->injectMousePressed(pointInTargetWindowCoords, event.point,
+                                             event.mouseButton, event.modifiers);
+        break;
+    }
+    case EventType::PointerUp:
+    {
+        screen()->canvas().call<void>("releasePointerCapture", event.pointerId);
+
+        m_windowManipulation.onPointerUp(event);
+
+        if (m_pressedWindow) {
+            // Always deliver the released event to the same window that was pressed
+            asWasmWindow(m_pressedWindow)
+                    ->injectMouseReleased(pointInTargetWindowCoords, event.point, event.mouseButton,
+                                          event.modifiers);
+            if (event.mouseButton == Qt::MouseButton::LeftButton)
+                m_pressedWindow = nullptr;
+        } else {
+            wasmTargetWindow->injectMouseReleased(pointInTargetWindowCoords, event.point,
+                                                  event.mouseButton, event.modifiers);
+        }
+        break;
+    }
+    case EventType::PointerMove:
+    {
+        if (wasmTargetWindow && event.mouseButtons.testFlag(Qt::NoButton)) {
+            const bool isOnResizeRegion = wasmTargetWindow->isPointOnResizeRegion(event.point);
+
+            if (isTargetWindowResizable && isOnResizeRegion && !isTargetWindowBlocked) {
+                const QCursor resizingCursor = QWasmEventTranslator::cursorForEdges(
+                        wasmTargetWindow->resizeEdgesAtPoint(event.point));
+
+                if (resizingCursor != targetWindow->cursor()) {
+                    m_isResizeCursorDisplayed = true;
+                    QWasmCursor::setOverrideWasmCursor(resizingCursor, targetWindow->screen());
+                }
+            } else if (m_isResizeCursorDisplayed) {  // off resizing area
+                m_isResizeCursorDisplayed = false;
+                QWasmCursor::clearOverrideWasmCursor(targetWindow->screen());
+            }
+        }
+
+        m_windowManipulation.onPointerMove(event);
+        if (m_windowManipulation.operation() != WindowManipulation::Operation::None)
+            requestUpdate();
+        break;
+    }
+    case EventType::PointerEnter:
+        processMouseEnter(nullptr);
+        break;
+    case EventType::PointerLeave:
+        processMouseLeave();
+        break;
+    default:
+        break;
+    };
+
+    if (!pointerIsWithinTargetWindowBounds && event.mouseButtons.testFlag(Qt::NoButton)) {
+        leaveWindow(m_lastMouseTargetWindow);
+    }
+
+    const bool eventAccepted = deliverEventToTarget(event, targetWindow);
+    if (!eventAccepted && event.type == EventType::PointerDown)
+        QGuiApplicationPrivate::instance()->closeAllPopups();
+    return eventAccepted;
+}
+
+bool QWasmCompositor::deliverEventToTarget(const PointerEvent &event, QWindow *eventTarget)
+{
+    Q_ASSERT(!m_mouseCaptureWindow || m_mouseCaptureWindow.get() == eventTarget);
+
+    const QPoint targetPointClippedToScreen(
+            std::max(screen()->geometry().left(),
+                     std::min(screen()->geometry().right(), event.point.x())),
+            std::max(screen()->geometry().top(),
+                     std::min(screen()->geometry().bottom(), event.point.y())));
+
+    bool deliveringToPreviouslyClickedWindow = false;
+
+    if (!eventTarget) {
+        if (event.type != EventType::PointerUp || !m_lastMouseTargetWindow)
+            return false;
+
+        eventTarget = m_lastMouseTargetWindow;
+        m_lastMouseTargetWindow = nullptr;
+        deliveringToPreviouslyClickedWindow = true;
+    }
+
+    WindowArea windowArea = WindowArea::Client;
+    if (!deliveringToPreviouslyClickedWindow && !m_mouseCaptureWindow
+        && !eventTarget->geometry().contains(targetPointClippedToScreen)) {
+        if (!eventTarget->frameGeometry().contains(targetPointClippedToScreen))
+            return false;
+        windowArea = WindowArea::NonClient;
+    }
+
+    const QEvent::Type eventType =
+        MouseEvent::mouseEventTypeFromEventType(event.type, windowArea);
+
+    return eventType != QEvent::None &&
+           QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
+               eventTarget, QWasmIntegration::getTimestamp(),
+               eventTarget->mapFromGlobal(targetPointClippedToScreen),
+               targetPointClippedToScreen, event.mouseButtons, event.mouseButton,
+               eventType, event.modifiers);
+}
+
+QWasmCompositor::WindowManipulation::WindowManipulation(QWasmScreen *screen)
+    : m_screen(screen)
+{
+    Q_ASSERT(!!screen);
+}
+
+QWasmCompositor::WindowManipulation::Operation QWasmCompositor::WindowManipulation::operation() const
+{
+    if (!m_state)
+        return Operation::None;
+
+    return std::holds_alternative<MoveState>(m_state->operationSpecific)
+        ? Operation::Move : Operation::Resize;
+}
+
+void QWasmCompositor::WindowManipulation::onPointerDown(
+    const PointerEvent& event, QWindow* windowAtPoint)
+{
+    // Only one operation at a time.
+    if (operation() != Operation::None)
+        return;
+
+    if (event.mouseButton != Qt::MouseButton::LeftButton)
+        return;
+
+    const bool isTargetWindowResizable =
+        !windowAtPoint->windowStates().testFlag(Qt::WindowMaximized) &&
+        !windowAtPoint->windowStates().testFlag(Qt::WindowFullScreen);
+    if (!isTargetWindowResizable)
+        return;
+
+    const bool isTargetWindowBlocked =
+        QGuiApplicationPrivate::instance()->isWindowBlocked(windowAtPoint);
+    if (isTargetWindowBlocked)
+        return;
+
+    std::unique_ptr<std::variant<ResizeState, MoveState>> operationSpecific;
+    if (asWasmWindow(windowAtPoint)->isPointOnTitle(event.point)) {
+        operationSpecific = std::make_unique<std::variant<ResizeState, MoveState>>(
+                MoveState{ .m_lastPointInScreenCoords = event.point });
+    } else if (asWasmWindow(windowAtPoint)->isPointOnResizeRegion(event.point)) {
+        operationSpecific = std::make_unique<std::variant<ResizeState, MoveState>>(ResizeState{
+                .m_resizeEdges = asWasmWindow(windowAtPoint)->resizeEdgesAtPoint(event.point),
+                .m_originInScreenCoords = event.point,
+                .m_initialWindowBounds = windowAtPoint->geometry(),
+                .m_minShrink =
+                        QPoint(windowAtPoint->minimumWidth() - windowAtPoint->geometry().width(),
+                               windowAtPoint->minimumHeight() - windowAtPoint->geometry().height()),
+                .m_maxGrow =
+                        QPoint(windowAtPoint->maximumWidth() - windowAtPoint->geometry().width(),
+                               windowAtPoint->maximumHeight() - windowAtPoint->geometry().height()),
+        });
+    } else {
+        return;
+    }
+
+    m_state.reset(new OperationState{
+        .pointerId = event.pointerId,
+        .window = windowAtPoint,
+        .operationSpecific = std::move(*operationSpecific),
+    });
+}
+
+void QWasmCompositor::WindowManipulation::onPointerMove(
+    const PointerEvent& event)
+{
+    m_systemDragInitData = {
+        .lastMouseMovePoint = m_screen->clipPoint(event.point),
+        .lastMousePointerId = event.pointerId,
+    };
+
+    if (operation() == Operation::None || event.pointerId != m_state->pointerId)
+        return;
+
+    switch (operation()) {
+        case Operation::Move: {
+            const QPoint targetPointClippedToScreen = m_screen->clipPoint(event.point);
+            const QPoint difference = targetPointClippedToScreen -
+                std::get<MoveState>(m_state->operationSpecific).m_lastPointInScreenCoords;
+
+            std::get<MoveState>(m_state->operationSpecific).m_lastPointInScreenCoords = targetPointClippedToScreen;
+
+            m_state->window->setPosition(m_state->window->position() + difference);
+            break;
+        }
+        case Operation::Resize: {
+            const auto pointInScreenCoords = m_screen->geometry().topLeft() + event.point;
+            resizeWindow(pointInScreenCoords -
+                std::get<ResizeState>(m_state->operationSpecific).m_originInScreenCoords);
+            break;
+        }
+        case Operation::None:
+            Q_ASSERT(0);
+            break;
+    }
+}
+
+void QWasmCompositor::WindowManipulation::onPointerUp(const PointerEvent& event)
+{
+    if (operation() == Operation::None || event.mouseButtons != 0 || event.pointerId != m_state->pointerId)
+        return;
+
+    m_state.reset();
+}
+
+void QWasmCompositor::WindowManipulation::startResize(Qt::Edges edges)
+{
+    Q_ASSERT_X(operation() == Operation::None, Q_FUNC_INFO,
+               "Resize must not start anew when one is in progress");
+
+    auto *window = m_screen->compositor()->windowAt(m_systemDragInitData.lastMouseMovePoint);
+    if (Q_UNLIKELY(!window))
+        return;
+
+    m_state.reset(new OperationState{
+        .pointerId = m_systemDragInitData.lastMousePointerId,
+        .window = window,
+        .operationSpecific =
+            ResizeState{
+                .m_resizeEdges = edges,
+                .m_originInScreenCoords = m_systemDragInitData.lastMouseMovePoint,
+                .m_initialWindowBounds = window->geometry(),
+                .m_minShrink =
+                    QPoint(window->minimumWidth() - window->geometry().width(),
+                        window->minimumHeight() - window->geometry().height()),
+                .m_maxGrow =
+                    QPoint(window->maximumWidth() - window->geometry().width(),
+                        window->maximumHeight() - window->geometry().height()),
+            },
+    });
+    m_screen->canvas().call<void>("setPointerCapture", m_systemDragInitData.lastMousePointerId);
+}
+
+bool QWasmCompositor::processKeyboard(int eventType, const EmscriptenKeyboardEvent *emKeyEvent)
+{
+    constexpr bool ProceedToNativeEvent = false;
+    Q_ASSERT(eventType == EMSCRIPTEN_EVENT_KEYDOWN || eventType == EMSCRIPTEN_EVENT_KEYUP);
+
+    auto translatedEvent = m_eventTranslator->translateKeyEvent(eventType, emKeyEvent);
+
+    const QFlags<Qt::KeyboardModifier> modifiers = KeyboardModifier::getForEvent(*emKeyEvent);
+
+    const auto clipboardResult = QWasmIntegration::get()->getWasmClipboard()->processKeyboard(
+            translatedEvent, modifiers);
+
+    using ProcessKeyboardResult = QWasmClipboard::ProcessKeyboardResult;
+    if (clipboardResult == ProcessKeyboardResult::NativeClipboardEventNeeded)
+        return ProceedToNativeEvent;
+
+    if (translatedEvent.text.isEmpty())
+        translatedEvent.text = QString(emKeyEvent->key);
+    if (translatedEvent.text.size() > 1)
+        translatedEvent.text.clear();
+    const auto result =
+            QWindowSystemInterface::handleKeyEvent<QWindowSystemInterface::SynchronousDelivery>(
+                    0, translatedEvent.type, translatedEvent.key, modifiers, translatedEvent.text);
+    return clipboardResult == ProcessKeyboardResult::NativeClipboardEventAndCopiedDataNeeded
+            ? ProceedToNativeEvent
+            : result;
+}
+
+bool QWasmCompositor::processWheel(int eventType, const EmscriptenWheelEvent *wheelEvent)
+{
+    Q_UNUSED(eventType);
+
+    const EmscriptenMouseEvent* mouseEvent = &wheelEvent->mouse;
+
+    int scrollFactor = 0;
+    switch (wheelEvent->deltaMode) {
+        case DOM_DELTA_PIXEL:
+            scrollFactor = 1;
+            break;
+        case DOM_DELTA_LINE:
+            scrollFactor = 12;
+            break;
+        case DOM_DELTA_PAGE:
+            scrollFactor = 20;
+            break;
+    };
+
+    scrollFactor = -scrollFactor; // Web scroll deltas are inverted from Qt deltas.
+
+    Qt::KeyboardModifiers modifiers = KeyboardModifier::getForEvent(*mouseEvent);
+    QPoint targetPointInCanvasCoords(mouseEvent->targetX, mouseEvent->targetY);
+    QPoint targetPointInScreenCoords = screen()->geometry().topLeft() + targetPointInCanvasCoords;
+
+    QWindow *targetWindow = screen()->compositor()->windowAt(targetPointInScreenCoords, 5);
+    if (!targetWindow)
+        return 0;
+    QPoint pointInTargetWindowCoords = targetWindow->mapFromGlobal(targetPointInScreenCoords);
+
+    QPoint pixelDelta;
+
+    if (wheelEvent->deltaY != 0) pixelDelta.setY(wheelEvent->deltaY * scrollFactor);
+    if (wheelEvent->deltaX != 0) pixelDelta.setX(wheelEvent->deltaX * scrollFactor);
+
+    QPoint angleDelta = pixelDelta; // FIXME: convert from pixels?
+
+    bool accepted = QWindowSystemInterface::handleWheelEvent(
+            targetWindow, QWasmIntegration::getTimestamp(), pointInTargetWindowCoords,
+            targetPointInScreenCoords, pixelDelta, angleDelta, modifiers,
+            Qt::NoScrollPhase, Qt::MouseEventNotSynthesized,
+            g_scrollingInvertedFromDevice);
+    return accepted;
+}
+
+bool QWasmCompositor::processTouch(int eventType, const EmscriptenTouchEvent *touchEvent)
+{
+    QList<QWindowSystemInterface::TouchPoint> touchPointList;
+    touchPointList.reserve(touchEvent->numTouches);
+    QWindow *targetWindow = nullptr;
+
+    for (int i = 0; i < touchEvent->numTouches; i++) {
+
+        const EmscriptenTouchPoint *touches = &touchEvent->touches[i];
+
+        QPoint targetPointInCanvasCoords(touches->targetX, touches->targetY);
+        QPoint targetPointInScreenCoords = screen()->geometry().topLeft() + targetPointInCanvasCoords;
+
+        targetWindow = screen()->compositor()->windowAt(targetPointInScreenCoords, 5);
+        if (targetWindow == nullptr)
+            continue;
+
+        QWindowSystemInterface::TouchPoint touchPoint;
+
+        touchPoint.area = QRect(0, 0, 8, 8);
+        touchPoint.id = touches->identifier;
+        touchPoint.pressure = 1.0;
+
+        touchPoint.area.moveCenter(targetPointInScreenCoords);
+
+        const auto tp = m_pressedTouchIds.constFind(touchPoint.id);
+        if (tp != m_pressedTouchIds.constEnd())
+            touchPoint.normalPosition = tp.value();
+
+        QPointF pointInTargetWindowCoords = QPointF(targetWindow->mapFromGlobal(targetPointInScreenCoords));
+        QPointF normalPosition(pointInTargetWindowCoords.x() / targetWindow->width(),
+                               pointInTargetWindowCoords.y() / targetWindow->height());
+
+        const bool stationaryTouchPoint = (normalPosition == touchPoint.normalPosition);
+        touchPoint.normalPosition = normalPosition;
+
+        switch (eventType) {
+            case EMSCRIPTEN_EVENT_TOUCHSTART:
+                if (tp != m_pressedTouchIds.constEnd()) {
+                    touchPoint.state = (stationaryTouchPoint
+                                        ? QEventPoint::State::Stationary
+                                        : QEventPoint::State::Updated);
+                } else {
+                    touchPoint.state = QEventPoint::State::Pressed;
+                }
+                m_pressedTouchIds.insert(touchPoint.id, touchPoint.normalPosition);
+
+                break;
+            case EMSCRIPTEN_EVENT_TOUCHEND:
+                touchPoint.state = QEventPoint::State::Released;
+                m_pressedTouchIds.remove(touchPoint.id);
+                break;
+            case EMSCRIPTEN_EVENT_TOUCHMOVE:
+                touchPoint.state = (stationaryTouchPoint
+                                    ? QEventPoint::State::Stationary
+                                    : QEventPoint::State::Updated);
+
+                m_pressedTouchIds.insert(touchPoint.id, touchPoint.normalPosition);
+                break;
+            default:
+                break;
+        }
+
+        touchPointList.append(touchPoint);
+    }
+
+    QFlags<Qt::KeyboardModifier> keyModifier = KeyboardModifier::getForEvent(*touchEvent);
+
+    bool accepted = false;
+
+    if (eventType == EMSCRIPTEN_EVENT_TOUCHCANCEL)
+        accepted = QWindowSystemInterface::handleTouchCancelEvent(targetWindow, QWasmIntegration::getTimestamp(), m_touchDevice.get(), keyModifier);
+    else
+        accepted = QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(
+                targetWindow, QWasmIntegration::getTimestamp(), m_touchDevice.get(), touchPointList, keyModifier);
+
+    return static_cast<int>(accepted);
+}
+
+void QWasmCompositor::setCapture(QWasmWindow *window)
+{
+    Q_ASSERT(std::find(m_windowStack.begin(), m_windowStack.end(), window) != m_windowStack.end());
+    m_mouseCaptureWindow = window->window();
+}
+
+void QWasmCompositor::releaseCapture()
+{
+    m_mouseCaptureWindow = nullptr;
+}
+
+void QWasmCompositor::leaveWindow(QWindow *window)
+{
+    m_windowUnderMouse = nullptr;
+    QWindowSystemInterface::handleLeaveEvent<QWindowSystemInterface::SynchronousDelivery>(window);
+}
+
+void QWasmCompositor::enterWindow(QWindow *window, const QPoint &pointInTargetWindowCoords, const QPoint &targetPointInScreenCoords)
+{
+    QWindowSystemInterface::handleEnterEvent<QWindowSystemInterface::SynchronousDelivery>(window, pointInTargetWindowCoords, targetPointInScreenCoords);
+}
+
+bool QWasmCompositor::processMouseEnter(const EmscriptenMouseEvent *mouseEvent)
+{
+    Q_UNUSED(mouseEvent)
+    // mouse has entered the canvas area
+    m_mouseInCanvas = true;
+    return true;
+}
+
+bool QWasmCompositor::processMouseLeave()
+{
+    m_mouseInCanvas = false;
+    return true;
 }

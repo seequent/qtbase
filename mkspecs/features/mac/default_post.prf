@@ -7,7 +7,12 @@ QMAKE_MAC_SDK_VERSION = $$xcodeSDKInfo(SDKVersion)
 contains(TEMPLATE, .*app) {
     !macx-xcode:if(isEmpty(BUILDS)|build_pass) {
         # Detect changes to the platform SDK
-        QMAKE_EXTRA_VARIABLES += QMAKE_MAC_SDK QMAKE_MAC_SDK_VERSION QMAKE_XCODE_DEVELOPER_PATH
+        QMAKE_EXTRA_VARIABLES += \
+            QMAKE_MAC_SDK \
+            QMAKE_MAC_SDK_VERSION \
+            QMAKE_XCODE_DEVELOPER_PATH \
+            _QMAKE_STASH_ \
+
         QMAKE_EXTRA_INCLUDES += $$shell_quote($$PWD/sdk.mk)
     }
 
@@ -25,11 +30,11 @@ contains(TEMPLATE, .*app) {
         !isEmpty($$list($$(QT_MAC_SDK_NO_VERSION_CHECK))): \
             CONFIG += sdk_no_version_check
 
-        QMAKE_MAC_SDK_MAJOR_MINOR_VERSION = $$replace(QMAKE_MAC_SDK_VERSION, "(\\d+)(\\.\\d+)(\\.\\d+)?", \\1\\2)
+        QMAKE_MAC_SDK_MAJOR_VERSION = $$replace(QMAKE_MAC_SDK_VERSION, "(\\d+)(\\.\\d+)(\\.\\d+)?", \\1)
 
-        !sdk_no_version_check:!versionAtMost(QMAKE_MAC_SDK_MAJOR_MINOR_VERSION, $$QT_MAC_SDK_VERSION_MAX) {
+        !sdk_no_version_check:!versionAtMost(QMAKE_MAC_SDK_MAJOR_VERSION, $$QT_MAC_SDK_VERSION_MAX) {
             warning("Qt has only been tested with version $$QT_MAC_SDK_VERSION_MAX"\
-                    "of the platform SDK, you're using $${QMAKE_MAC_SDK_MAJOR_MINOR_VERSION}.")
+                    "of the platform SDK, you're using $${QMAKE_MAC_SDK_MAJOR_VERSION}.")
             warning("This is an unsupported configuration. You may experience build issues," \
                     "and by using")
             warning("the $$QMAKE_MAC_SDK_VERSION SDK you are opting in to new features" \
@@ -90,10 +95,18 @@ app_extension_api_only {
     QMAKE_LFLAGS              += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
 }
 
-# Non-universal builds do not set QMAKE_APPLE_DEVICE_ARCHS,
-# so we pick it up from what the arch test resolved instead.
-isEmpty(QMAKE_APPLE_DEVICE_ARCHS): \
-    QMAKE_APPLE_DEVICE_ARCHS = $$QT_ARCH
+macos {
+    !isEmpty(QMAKE_APPLE_DEVICE_ARCHS) {
+        # If the user has requested a specific set of architectures,
+        # build all of those by default, but limited to only those.
+        CONFIG -= only_active_arch
+    } else {
+        # Otherwise allow building all of the architectures available
+        # in Qt, but only build the active arch (unless the user has
+        # manually overridden this via CONFIG -= only_active_arch).
+        QMAKE_APPLE_DEVICE_ARCHS = $$QT_ARCHS
+    }
+}
 
 macx-xcode {
     qmake_pkginfo_typeinfo.name = QMAKE_PKGINFO_TYPEINFO
@@ -134,7 +147,7 @@ macx-xcode {
     QMAKE_XCODE_ARCHS += $$QMAKE_APPLE_DEVICE_ARCHS
     QMAKE_MAC_XCODE_SETTINGS += arch_device
 
-    simulator {
+    ios:simulator {
         arch_simulator.name = "ARCHS[sdk=$${simulator.sdk}*]"
         arch_simulator.value = $$QMAKE_APPLE_SIMULATOR_ARCHS
         QMAKE_XCODE_ARCHS += $$QMAKE_APPLE_SIMULATOR_ARCHS
@@ -147,15 +160,23 @@ macx-xcode {
     QMAKE_MAC_XCODE_SETTINGS += only_active_arch
 } else {
     device|!simulator: VALID_DEVICE_ARCHS = $$QMAKE_APPLE_DEVICE_ARCHS
-    simulator: VALID_SIMULATOR_ARCHS = $$QMAKE_APPLE_SIMULATOR_ARCHS
+    ios:simulator: VALID_SIMULATOR_ARCHS = $$QMAKE_APPLE_SIMULATOR_ARCHS
     VALID_ARCHS = $$VALID_DEVICE_ARCHS $$VALID_SIMULATOR_ARCHS
 
     single_arch: VALID_ARCHS = $$first(VALID_ARCHS)
 
-    ACTIVE_ARCHS = $(filter $(EXPORT_VALID_ARCHS), $(ARCHS))
-    ARCH_ARGS = $(foreach arch, $(if $(EXPORT_ACTIVE_ARCHS), $(EXPORT_ACTIVE_ARCHS), $(EXPORT_VALID_ARCHS)), -arch $(arch))
+    macos {
+        only_active_arch: DEFAULT_ARCHS = $$system("uname -m")
+        else: DEFAULT_ARCHS = $$VALID_ARCHS
+    }
 
-    QMAKE_EXTRA_VARIABLES += VALID_ARCHS ACTIVE_ARCHS ARCH_ARGS
+    ARCHS = $(filter $(EXPORT_VALID_ARCHS), \
+        $(if $(ARCHS), $(ARCHS), \
+            $(if $(EXPORT_DEFAULT_ARCHS), $(EXPORT_DEFAULT_ARCHS), \
+        $(EXPORT_VALID_ARCHS))))
+    ARCH_ARGS = $(foreach arch, $(if $(EXPORT_ARCHS), $(EXPORT_ARCHS), $(EXPORT_VALID_ARCHS)), -arch $(arch))
+
+    QMAKE_EXTRA_VARIABLES += VALID_ARCHS DEFAULT_ARCHS ARCHS ARCH_ARGS
 
     arch_flags = $(EXPORT_ARCH_ARGS)
 
@@ -178,7 +199,7 @@ macx-xcode {
     # and makes it easier for people to override EXPORT_VALID_ARCHS to limit
     # individual rules to a different set of architecture(s) from the overall
     # build (such as machtest in QtCore).
-    simulator:device {
+    ios:simulator:device {
         QMAKE_XARCH_CFLAGS =
         QMAKE_XARCH_LFLAGS =
         QMAKE_EXTRA_VARIABLES += QMAKE_XARCH_CFLAGS QMAKE_XARCH_LFLAGS
@@ -187,9 +208,11 @@ macx-xcode {
             contains(VALID_SIMULATOR_ARCHS, $$arch) {
                 sdk = $$simulator.sdk
                 version_identifier = $$simulator.deployment_identifier
+                platform_identifier = $$simulator.sdk
             } else {
                 sdk = $$device.sdk
                 version_identifier = $$device.deployment_identifier
+                platform_identifier = $$device.sdk
             }
 
             version_min_flags = \
@@ -214,11 +237,13 @@ macx-xcode {
         QMAKE_CXXFLAGS += $(EXPORT_QMAKE_XARCH_CFLAGS)
         QMAKE_LFLAGS += $(EXPORT_QMAKE_XARCH_LFLAGS)
     } else {
-        simulator {
+        ios:simulator {
             version_identifier = $$simulator.deployment_identifier
+            platform_identifier = $$simulator.sdk
             sysroot_path  = $$xcodeSDKInfo(Path, $$simulator.sdk)
         } else {
             version_identifier = $$device.deployment_identifier
+            platform_identifier = $$device.sdk
             sysroot_path  = $$xcodeSDKInfo(Path, $$device.sdk)
         }
         version_min_flag = -m$${version_identifier}-version-min=$$deployment_target

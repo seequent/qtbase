@@ -1,57 +1,28 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QLIBRARYINFO_H
 #define QLIBRARYINFO_H
 
+#if defined(__cplusplus)
 #include <QtCore/qstring.h>
 #include <QtCore/qdatetime.h>
 #include <QtCore/qversionnumber.h>
+#else
+#include <QtCore/qglobal.h>
+#endif
 
 QT_BEGIN_NAMESPACE
+
+#if defined(__cplusplus)
 
 class Q_CORE_EXPORT QLibraryInfo
 {
 public:
     static const char *build() noexcept;
 
-    static bool isDebugBuild();
+    [[nodiscard]] static bool isDebugBuild() noexcept Q_DECL_CONST_FUNCTION;
+    [[nodiscard]] static bool isSharedBuild() noexcept Q_DECL_CONST_FUNCTION;
 
 #ifndef QT_BOOTSTRAPPED
     static QVersionNumber version() noexcept Q_DECL_CONST_FUNCTION;
@@ -65,26 +36,15 @@ public:
         LibraryExecutablesPath,
         BinariesPath,
         PluginsPath,
-        Qml2ImportsPath,
+        QmlImportsPath,
+        Qml2ImportsPath = QmlImportsPath,
         ArchDataPath,
         DataPath,
         TranslationsPath,
         ExamplesPath,
         TestsPath,
         // Insert new values above this line
-        // Please read the comments in qlibraryinfo.cpp before adding
-#ifdef QT_BUILD_QMAKE
-        // These are not subject to binary compatibility constraints
-        SysrootPath,
-        SysrootifyPrefixPath,
-        HostBinariesPath,
-        HostLibrariesPath,
-        HostDataPath,
-        TargetSpecPath,
-        HostSpecPath,
-        HostPrefixPath,
-        LastHostPath = HostPrefixPath,
-#endif
+        // Please read the comments in qconfig.cpp.in before adding
         SettingsPath = 100
     };
     static QString path(LibraryPath p);
@@ -94,18 +54,33 @@ public:
     static QString location(LibraryLocation location)
     { return path(location); }
 #endif
-#ifdef QT_BUILD_QMAKE
-    enum PathGroup { FinalPaths, EffectivePaths, EffectiveSourcePaths, DevicePaths };
-    static QString rawLocation(LibraryPath, PathGroup);
-    static void reload();
-    static void sysrootify(QString *path);
-#endif
-
     static QStringList platformPluginArguments(const QString &platformName);
 
 private:
     QLibraryInfo();
 };
+
+#if QT_DEPRECATED_SINCE(6, 9)
+
+QT_DEPRECATED_VERSION_X_6_9("Use QLibraryInfo::isSharedBuild() instead.")
+Q_CORE_EXPORT Q_DECL_CONST_FUNCTION bool qSharedBuild() noexcept;
+
+#endif
+
+#endif // __cplusplus
+
+/*
+ * If we're compiling C++ code:
+ *  - and this is a non-namespace build, declare qVersion as extern "C"
+ *  - and this is a namespace build, declare it as a regular function
+ *    (we're already inside QT_BEGIN_NAMESPACE / QT_END_NAMESPACE)
+ * If we're compiling C code, simply declare the function. If Qt was compiled
+ * in a namespace, qVersion isn't callable anyway.
+ */
+#if !defined(QT_NAMESPACE) && defined(__cplusplus) && !defined(Q_QDOC)
+extern "C"
+#endif
+Q_CORE_EXPORT Q_DECL_CONST_FUNCTION const char *qVersion(void) Q_DECL_NOEXCEPT;
 
 QT_END_NAMESPACE
 

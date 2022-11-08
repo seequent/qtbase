@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qlayout.pro.
 
 #####################################################################
@@ -13,27 +16,10 @@ list(APPEND test_data ${test_data_glob})
 qt_internal_add_test(tst_qlayout
     SOURCES
         tst_qlayout.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::TestPrivate
         Qt::Widgets
         Qt::WidgetsPrivate
     TESTDATA ${test_data}
 )
-
-## Scopes:
-#####################################################################
-
-if(ANDROID AND NOT ANDROID_EMBEDDED)
-    # Resources:
-    set(testdata_resource_files
-        "baseline/smartmaxsize"
-    )
-
-    qt_internal_add_resource(tst_qlayout "testdata"
-        PREFIX
-            "/"
-        FILES
-            ${testdata_resource_files}
-    )
-endif()

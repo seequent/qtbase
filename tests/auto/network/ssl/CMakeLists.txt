@@ -1,10 +1,13 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from ssl.pro.
 
 add_subdirectory(qpassworddigestor)
-add_subdirectory(qsslcertificate)
-add_subdirectory(qsslcipher)
-add_subdirectory(qsslellipticcurve)
 if(QT_FEATURE_ssl)
+    add_subdirectory(qsslcertificate)
+    add_subdirectory(qsslcipher)
+    add_subdirectory(qsslellipticcurve)
     add_subdirectory(qsslkey)
     add_subdirectory(qsslerror)
 endif()
@@ -12,8 +15,9 @@ if(QT_FEATURE_private_tests AND QT_FEATURE_ssl)
     add_subdirectory(qsslsocket)
     add_subdirectory(qsslsocket_onDemandCertificates_member)
     add_subdirectory(qsslsocket_onDemandCertificates_static)
-    add_subdirectory(qasn1element)
+#    add_subdirectory(qasn1element)
     add_subdirectory(qssldiffiehellmanparameters)
+    add_subdirectory(qsslserver)
 endif()
 if(QT_FEATURE_dtls AND QT_FEATURE_private_tests AND QT_FEATURE_ssl)
     add_subdirectory(qdtlscookie)

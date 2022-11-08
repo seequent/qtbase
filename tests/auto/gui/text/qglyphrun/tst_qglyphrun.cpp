@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 
@@ -63,6 +38,10 @@ private slots:
     void boundingRect();
     void mixedScripts();
     void multiLineBoundingRect();
+    void defaultIgnorables();
+    void stringIndexes();
+    void retrievalFlags_data();
+    void retrievalFlags();
 
 private:
     int m_testFontId;
@@ -525,11 +504,7 @@ void tst_QGlyphRun::drawRightToLeft()
     textLayoutDraw.fill(Qt::white);
     drawGlyphs.fill(Qt::white);
 
-    QFont font;
-    font.setUnderline(true);
-
     QTextLayout layout(s);
-    layout.setFont(font);
     layout.setCacheEnabled(true);
     layout.beginLayout();
     layout.createLine();
@@ -629,6 +604,328 @@ void tst_QGlyphRun::multiLineBoundingRect()
     QGlyphRun allGlyphRun = allGlyphRuns.first();
 
     QVERIFY(firstLineGlyphRun.boundingRect().height() < allGlyphRun.boundingRect().height());
+}
+
+void tst_QGlyphRun::defaultIgnorables()
+{
+    QTextLayout layout;
+    layout.setFont(QFont("QtsSpecialTestFont"));
+    layout.setText(QChar(0x200D));
+    layout.beginLayout();
+    layout.createLine();
+    layout.endLayout();
+
+    QList<QGlyphRun> runs = layout.glyphRuns();
+    QCOMPARE(runs.size(), 1);
+    QCOMPARE(runs.at(0).glyphIndexes().size(), 1);
+    QCOMPARE(runs.at(0).glyphIndexes()[0], uint(0));
+}
+
+void tst_QGlyphRun::stringIndexes()
+{
+    int ligatureFontId = QFontDatabase::addApplicationFont(QFINDTESTDATA("Ligatures.otf"));
+    QVERIFY(ligatureFontId >= 0);
+
+    QFont ligatureFont = QFont("QtLigatures");
+    QCOMPARE(QFontInfo(ligatureFont).family(), QString::fromLatin1("QtLigatures"));
+
+    QTextLayout::GlyphRunRetrievalFlags retrievalFlags
+            = QTextLayout::RetrieveGlyphIndexes | QTextLayout::RetrieveStringIndexes;
+
+    // Three characters -> three glyphs
+    {
+        QTextLayout layout;
+        layout.setText("f i");
+        layout.setFont(ligatureFont);
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(-1, -1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 3);
+            QCOMPARE(stringIndexes.at(0), 0);
+            QCOMPARE(stringIndexes.at(1), 1);
+            QCOMPARE(stringIndexes.at(2), 2);
+        }
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(2, -1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 1);
+            QCOMPARE(stringIndexes.at(0), 2);
+        }
+    }
+
+    // Two characters -> one glyph
+    {
+        QTextLayout layout;
+        layout.setText("fi");
+        layout.setFont(ligatureFont);
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(-1, -1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 1);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 233);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 1);
+            QCOMPARE(stringIndexes.at(0), 0);
+        }
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(1, -1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 1);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 233);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 1);
+            QCOMPARE(stringIndexes.at(0), 1);
+        }
+    }
+
+    // Four characters -> three glyphs
+    {
+        QTextLayout layout;
+        layout.setText("ffii");
+        layout.setFont(ligatureFont);
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(-1, -1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 3);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 71);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(1), 233);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(2), 74);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 3);
+            QCOMPARE(stringIndexes.at(0), 0);
+            QCOMPARE(stringIndexes.at(1), 1);
+            QCOMPARE(stringIndexes.at(2), 3);
+        }
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(1, 1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 1);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 233);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 1);
+            QCOMPARE(stringIndexes.at(0), 1);
+        }
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(1, 2, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 1);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 233);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 1);
+            QCOMPARE(stringIndexes.at(0), 1);
+        }
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(1, 3, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 2);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 233);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(1), 74);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 2);
+            QCOMPARE(stringIndexes.at(0), 1);
+            QCOMPARE(stringIndexes.at(1), 3);
+        }
+
+    }
+
+    // One character -> two glyphs
+    {
+        QTextLayout layout;
+        layout.setText(QChar(0xe6)); // LATIN SMALL LETTER AE
+        layout.setFont(ligatureFont);
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        QList<QGlyphRun> glyphRuns = layout.glyphRuns(-1, -1, retrievalFlags);
+        QCOMPARE(glyphRuns.size(), 1);
+
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 2);
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 66);
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().at(1), 70);
+
+        QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+        QCOMPARE(stringIndexes.size(), 2);
+        QCOMPARE(stringIndexes.at(0), 0);
+        QCOMPARE(stringIndexes.at(1), 0);
+    }
+
+    // Three characters -> four glyphs
+    {
+        QTextLayout layout;
+        layout.setText(QString('f') + QChar(0xe6) + QChar('i'));
+        layout.setFont(ligatureFont);
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(-1, -1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 4);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 71);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(1), 66);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(2), 70);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(3), 74);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 4);
+            QCOMPARE(stringIndexes.at(0), 0);
+            QCOMPARE(stringIndexes.at(1), 1);
+            QCOMPARE(stringIndexes.at(2), 1);
+            QCOMPARE(stringIndexes.at(3), 2);
+        }
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(1, -1, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 3);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 66);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(1), 70);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(2), 74);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 3);
+            QCOMPARE(stringIndexes.at(0), 1);
+            QCOMPARE(stringIndexes.at(1), 1);
+            QCOMPARE(stringIndexes.at(2), 2);
+        }
+
+        {
+            QList<QGlyphRun> glyphRuns = layout.glyphRuns(0, 2, retrievalFlags);
+            QCOMPARE(glyphRuns.size(), 1);
+
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 3);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 71);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(1), 66);
+            QCOMPARE(glyphRuns.at(0).glyphIndexes().at(2), 70);
+
+            QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+            QCOMPARE(stringIndexes.size(), 3);
+            QCOMPARE(stringIndexes.at(0), 0);
+            QCOMPARE(stringIndexes.at(1), 1);
+            QCOMPARE(stringIndexes.at(2), 1);
+        }
+
+
+    }
+
+    // Five characters -> five glyphs
+    {
+        QTextLayout layout;
+        layout.setText(QLatin1String("ffi") + QChar(0xe6) + QLatin1Char('i'));
+        layout.setFont(ligatureFont);
+        layout.beginLayout();
+        layout.createLine();
+        layout.endLayout();
+
+        QList<QGlyphRun> glyphRuns = layout.glyphRuns(-1, -1, retrievalFlags);
+        QCOMPARE(glyphRuns.size(), 1);
+
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().size(), 5);
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().at(0), 71);
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().at(1), 233);
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().at(2), 66);
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().at(3), 70);
+        QCOMPARE(glyphRuns.at(0).glyphIndexes().at(4), 74);
+
+        QList<qsizetype> stringIndexes = glyphRuns.at(0).stringIndexes();
+        QCOMPARE(stringIndexes.size(), 5);
+        QCOMPARE(stringIndexes.at(0), 0);
+        QCOMPARE(stringIndexes.at(1), 1);
+        QCOMPARE(stringIndexes.at(2), 3);
+        QCOMPARE(stringIndexes.at(3), 3);
+        QCOMPARE(stringIndexes.at(4), 4);
+    }
+
+}
+
+void tst_QGlyphRun::retrievalFlags_data()
+{
+    QTest::addColumn<QTextLayout::GlyphRunRetrievalFlags>("flags");
+    QTest::addColumn<bool>("expectedGlyphIndexes");
+    QTest::addColumn<bool>("expectedStringIndexes");
+    QTest::addColumn<bool>("expectedString");
+    QTest::addColumn<bool>("expectedGlyphPositions");
+
+    QTest::newRow("Glyph indexes")
+            << QTextLayout::GlyphRunRetrievalFlags(QTextLayout::RetrieveGlyphIndexes)
+            << true << false << false << false;
+    QTest::newRow("Glyph Positions")
+            << QTextLayout::GlyphRunRetrievalFlags(QTextLayout::RetrieveGlyphPositions)
+            << false << false << false << true;
+    QTest::newRow("String indexes")
+            << QTextLayout::GlyphRunRetrievalFlags(QTextLayout::RetrieveStringIndexes)
+            << false << true << false << false;
+    QTest::newRow("String")
+            << QTextLayout::GlyphRunRetrievalFlags(QTextLayout::RetrieveString)
+            << false << false << true << false;
+
+    QTest::newRow("Default")
+            << QTextLayout::GlyphRunRetrievalFlags(QTextLayout::DefaultRetrievalFlags)
+            << true << false << false << true;
+    QTest::newRow("All")
+            << QTextLayout::GlyphRunRetrievalFlags(QTextLayout::RetrieveAll)
+            << true << true << true << true;
+}
+
+void tst_QGlyphRun::retrievalFlags()
+{
+    QFETCH(QTextLayout::GlyphRunRetrievalFlags, flags);
+    QFETCH(bool, expectedGlyphIndexes);
+    QFETCH(bool, expectedStringIndexes);
+    QFETCH(bool, expectedString);
+    QFETCH(bool, expectedGlyphPositions);
+
+    QTextLayout layout;
+    layout.setText(QLatin1String("abc"));
+    layout.beginLayout();
+    layout.createLine();
+    layout.endLayout();
+
+    QList<QGlyphRun> glyphRuns = layout.glyphRuns(-1, -1, flags);
+    QVERIFY(!glyphRuns.isEmpty());
+
+    QGlyphRun firstGlyphRun = glyphRuns.first();
+    QCOMPARE(firstGlyphRun.glyphIndexes().isEmpty(), !expectedGlyphIndexes);
+    QCOMPARE(firstGlyphRun.stringIndexes().isEmpty(), !expectedStringIndexes);
+    QCOMPARE(firstGlyphRun.sourceString().isEmpty(), !expectedString);
+    QCOMPARE(firstGlyphRun.positions().isEmpty(), !expectedGlyphPositions);
 }
 
 #endif // QT_NO_RAWFONT

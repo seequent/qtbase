@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtWidgets module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include <QtWidgets/private/qtwidgetsglobal_p.h>
 #include "private/qstylehelper_p.h"
@@ -748,7 +712,7 @@ QStyleOptionHeader::QStyleOptionHeader(int version)
       section(0), textAlignment(Qt::AlignLeft), iconAlignment(Qt::AlignLeft),
       position(QStyleOptionHeader::Beginning),
       selectedPosition(QStyleOptionHeader::NotAdjacent), sortIndicator(None),
-      orientation(Qt::Horizontal), textElideMode(Qt::ElideNone), unused(0)
+      orientation(Qt::Horizontal)
 {
 }
 
@@ -892,13 +856,46 @@ QStyleOptionHeader::QStyleOptionHeader(int version)
 */
 
 /*!
-    \variable QStyleOptionHeader::textElideMode
+    \class QStyleOptionHeaderV2
+    \brief The QStyleOptionHeaderV2 class is used to describe the
+    parameters for drawing a header.
+
+    \inmodule QtWidgets
+*/
+
+/*!
+    Constructs a QStyleOptionHeaderV2, initializing the members
+    variables to their default values.
+*/
+QStyleOptionHeaderV2::QStyleOptionHeaderV2()
+    : QStyleOptionHeaderV2(QStyleOptionHeaderV2::Version)
+{
+}
+
+/*!
+    \internal
+*/
+QStyleOptionHeaderV2::QStyleOptionHeaderV2(int version)
+: QStyleOptionHeader(version), textElideMode(Qt::ElideNone), isSectionDragTarget(false), unused(0)
+{}
+
+/*!
+    \variable QStyleOptionHeaderV2::textElideMode
     \brief where ellipsis should be added for text that is too long to fit
     into an item
 
     The default value is Qt::ElideNone.
 
     \sa Qt::TextElideMode
+*/
+
+/*!
+    \variable QStyleOptionHeaderV2::isSectionDragTarget
+
+    \brief whether the section is the location at which a dragged section
+    will be inserted
+
+    \sa QHeaderView::setSectionsMovable
 */
 
 /*!
@@ -1502,6 +1499,7 @@ QStyleOptionProgressBar::QStyleOptionProgressBar(int version)
       minimum(0), maximum(0), progress(0), textAlignment(Qt::AlignLeft), textVisible(false),
       invertedAppearance(false), bottomToTop(false)
 {
+    state |= QStyle::State_Horizontal;
 }
 
 /*!
@@ -3387,7 +3385,7 @@ QStyleOptionTabWidgetFrame::QStyleOptionTabWidgetFrame(int version)
 
 /*!
     Construct a QStyleOptionTabBarBase, initializing the members
-    vaiables to their default values.
+    variables to their default values.
 */
 QStyleOptionTabBarBase::QStyleOptionTabBarBase()
     : QStyleOptionTabBarBase(Version)

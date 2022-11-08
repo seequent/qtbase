@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qtextedit.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ list(APPEND test_data "fullWidthSelection")
 qt_internal_add_test(tst_qtextedit
     SOURCES
         tst_qtextedit.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
@@ -23,6 +26,6 @@ qt_internal_add_test(tst_qtextedit
 #####################################################################
 
 qt_internal_extend_target(tst_qtextedit CONDITION MACOS
-    PUBLIC_LIBRARIES
+    LIBRARIES
         ${FWAppKit}
 )

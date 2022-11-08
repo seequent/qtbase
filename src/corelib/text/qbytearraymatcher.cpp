@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qbytearraymatcher.h"
 
@@ -124,14 +88,19 @@ QByteArrayMatcher::QByteArrayMatcher()
 }
 
 /*!
-  Constructs a byte array matcher from \a pattern. \a pattern
-  has the given \a length. \a pattern must remain in scope, but
-  the destructor does not delete \a pattern.
- */
+    Constructs a byte array matcher from \a pattern. \a pattern
+    has the given \a length. Call indexIn() to perform a search.
+
+    \note the data that \a pattern is referencing must remain valid while this
+    object is used.
+*/
 QByteArrayMatcher::QByteArrayMatcher(const char *pattern, qsizetype length) : d(nullptr)
 {
     p.p = reinterpret_cast<const uchar *>(pattern);
-    p.l = length;
+    if (length < 0)
+        p.l = qstrlen(pattern);
+    else
+        p.l = length;
     bm_init_skiptable(p.p, p.l, p.q_skiptable);
 }
 
@@ -146,6 +115,18 @@ QByteArrayMatcher::QByteArrayMatcher(const QByteArray &pattern)
     p.l = pattern.size();
     bm_init_skiptable(p.p, p.l, p.q_skiptable);
 }
+
+/*!
+    \fn QByteArrayMatcher::QByteArrayMatcher(QByteArrayView pattern)
+    \since 6.3
+    \overload
+
+    Constructs a byte array matcher that will search for \a pattern.
+    Call indexIn() to perform a search.
+
+    \note the data that \a pattern is referencing must remain valid while this
+    object is used.
+*/
 
 /*!
     Copies the \a other byte array matcher to this byte array matcher.
@@ -189,21 +170,6 @@ void QByteArrayMatcher::setPattern(const QByteArray &pattern)
 }
 
 /*!
-    Searches the byte array \a ba, from byte position \a from (default
-    0, i.e. from the first byte), for the byte array pattern() that
-    was set in the constructor or in the most recent call to
-    setPattern(). Returns the position where the pattern() matched in
-    \a ba, or -1 if no match was found.
-*/
-qsizetype QByteArrayMatcher::indexIn(const QByteArray &ba, qsizetype from) const
-{
-    if (from < 0)
-        from = 0;
-    return bm_find(reinterpret_cast<const uchar *>(ba.constData()), ba.size(), from,
-                   p.p, p.l, p.q_skiptable);
-}
-
-/*!
     Searches the char string \a str, which has length \a len, from
     byte position \a from (default 0, i.e. from the first byte), for
     the byte array pattern() that was set in the constructor or in the
@@ -215,6 +181,25 @@ qsizetype QByteArrayMatcher::indexIn(const char *str, qsizetype len, qsizetype f
     if (from < 0)
         from = 0;
     return bm_find(reinterpret_cast<const uchar *>(str), len, from,
+                   p.p, p.l, p.q_skiptable);
+}
+
+/*!
+    \fn qsizetype QByteArrayMatcher::indexIn(QByteArrayView data, qsizetype from) const
+    \since 6.3
+    \overload
+
+    Searches the byte array \a data, from byte position \a from (default
+    0, i.e. from the first byte), for the byte array pattern() that
+    was set in the constructor or in the most recent call to
+    setPattern(). Returns the position where the pattern() matched in
+    \a data, or -1 if no match was found.
+*/
+qsizetype QByteArrayMatcher::indexIn(QByteArrayView data, qsizetype from) const
+{
+    if (from < 0)
+        from = 0;
+    return bm_find(reinterpret_cast<const uchar *>(data.data()), data.size(), from,
                    p.p, p.l, p.q_skiptable);
 }
 
@@ -346,8 +331,7 @@ qsizetype qFindByteArray(
     QByteArray::indexOf(), in particular if repeated matching takes place.
 
     Unlike QByteArrayMatcher, this class calculates the internal
-    representation at \e{compile-time}, if your compiler supports
-    C++14-level \c{constexpr} (C++11 is not sufficient), so it can
+    representation at \e{compile-time}, so it can
     even benefit if you are doing one-off byte array matches.
 
     Create the QStaticByteArrayMatcher by calling qMakeStaticByteArrayMatcher(),
@@ -363,16 +347,11 @@ qsizetype qFindByteArray(
     Since this class is designed to do all the up-front calculations at compile-time,
     it does not offer a setPattern() method.
 
-    \note Qt detects the necessary C++14 compiler support by way of the feature
-    test recommendations from
-    \l{https://isocpp.org/std/standing-documents/sd-6-sg10-feature-test-recommendations}
-    {C++ Committee's Standing Document 6}.
-
     \sa QByteArrayMatcher, QStringMatcher
 */
 
 /*!
-    \fn template <uint N> int QStaticByteArrayMatcher<N>::indexIn(const char *haystack, int hlen, int from = 0) const
+    \fn template <size_t N> qsizetype QStaticByteArrayMatcher<N>::indexIn(const char *haystack, qsizetype hlen, qsizetype from = 0) const
 
     Searches the char string \a haystack, which has length \a hlen, from
     byte position \a from (default 0, i.e. from the first byte), for
@@ -382,7 +361,7 @@ qsizetype qFindByteArray(
 */
 
 /*!
-    \fn template <uint N> int QStaticByteArrayMatcher<N>::indexIn(const QByteArray &haystack, int from = 0) const
+    \fn template <size_t N> qsizetype QStaticByteArrayMatcher<N>::indexIn(const QByteArray &haystack, qsizetype from = 0) const
 
     Searches the char string \a haystack, from byte position \a from
     (default 0, i.e. from the first byte), for the byte array pattern()
@@ -392,7 +371,7 @@ qsizetype qFindByteArray(
 */
 
 /*!
-    \fn template <uint N> QByteArray QStaticByteArrayMatcher<N>::pattern() const
+    \fn template <size_t N> QByteArray QStaticByteArrayMatcher<N>::pattern() const
 
     Returns the byte array pattern that this byte array matcher will
     search for.
@@ -403,7 +382,7 @@ qsizetype qFindByteArray(
 /*!
     \internal
 */
-int QStaticByteArrayMatcherBase::indexOfIn(const char *needle, uint nlen, const char *haystack, int hlen, int from) const noexcept
+qsizetype QStaticByteArrayMatcherBase::indexOfIn(const char *needle, size_t nlen, const char *haystack, qsizetype hlen, qsizetype from) const noexcept
 {
     if (from < 0)
         from = 0;
@@ -412,12 +391,12 @@ int QStaticByteArrayMatcherBase::indexOfIn(const char *needle, uint nlen, const 
 }
 
 /*!
-    \fn template <uint N> QStaticByteArrayMatcher<N>::QStaticByteArrayMatcher(const char (&pattern)[N])
+    \fn template <size_t N> QStaticByteArrayMatcher<N>::QStaticByteArrayMatcher(const char (&pattern)[N])
     \internal
 */
 
 /*!
-    \fn template <uint N> QStaticByteArrayMatcher qMakeStaticByteArrayMatcher(const char (&pattern)[N])
+    \fn template <size_t N> QStaticByteArrayMatcher qMakeStaticByteArrayMatcher(const char (&pattern)[N])
     \since 5.9
     \relates QStaticByteArrayMatcher
 

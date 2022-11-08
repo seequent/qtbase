@@ -1,5 +1,6 @@
-# Generated from serialization.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-add_subdirectory(cbordump)
-add_subdirectory(convert)
-add_subdirectory(savegame)
+qt_internal_add_example(cbordump)
+qt_internal_add_example(convert)
+qt_internal_add_example(savegame)

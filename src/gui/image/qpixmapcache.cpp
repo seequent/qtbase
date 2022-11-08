@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #define Q_TEST_QPIXMAPCACHE
 #include "qpixmapcache.h"
@@ -93,14 +57,14 @@ QT_BEGIN_NAMESPACE
 
 static const int cache_limit_default = 10240; // 10 MB cache limit
 
-static inline int cost(const QPixmap &pixmap)
+static inline qsizetype cost(const QPixmap &pixmap)
 {
-    // make sure to do a 64bit calculation
-    const qint64 costKb = static_cast<qint64>(pixmap.width()) *
-            pixmap.height() * pixmap.depth() / (8 * 1024);
-    const qint64 costMax = std::numeric_limits<int>::max();
+    // make sure to do a 64bit calculation; qsizetype might be smaller
+    const qint64 costKb = static_cast<qint64>(pixmap.width())
+                        * pixmap.height() * pixmap.depth() / (8 * 1024);
+    const qint64 costMax = std::numeric_limits<qsizetype>::max();
     // a small pixmap should have at least a cost of 1(kb)
-    return static_cast<int>(qBound(1LL, costKb, costMax));
+    return static_cast<qsizetype>(qBound(1LL, costKb, costMax));
 }
 
 static inline bool qt_pixmapcache_thread_test()
@@ -255,7 +219,8 @@ QT_END_INCLUDE_NAMESPACE
 
 size_t qHash(const QPixmapCache::Key &k, size_t seed)
 {
-    return qHash(QPMCache::get(k)->key, seed);
+    const auto *keyData = QPMCache::get(k);
+    return qHash(keyData ? keyData->key : 0, seed);
 }
 
 QPMCache::QPMCache()
@@ -286,16 +251,19 @@ QPMCache::~QPMCache()
 */
 bool QPMCache::flushDetachedPixmaps(bool nt)
 {
-    int mc = maxCost();
-    setMaxCost(nt ? totalCost() * 3 / 4 : totalCost() -1);
+    auto mc = maxCost();
+    const qsizetype currentTotal = totalCost();
+    if (currentTotal)
+        setMaxCost(nt ? currentTotal * 3 / 4 : currentTotal - 1);
     setMaxCost(mc);
     ps = totalCost();
 
     bool any = false;
     QHash<QString, QPixmapCache::Key>::iterator it = cacheKeys.begin();
     while (it != cacheKeys.end()) {
-        if (!contains(it.value())) {
-            releaseKey(it.value());
+        const auto value = it.value();
+        if (value.isValid() && !contains(value)) {
+            releaseKey(value);
             it = cacheKeys.erase(it);
             any = true;
         } else {
@@ -337,7 +305,7 @@ QPixmap *QPMCache::object(const QString &key) const
 
 QPixmap *QPMCache::object(const QPixmapCache::Key &key) const
 {
-    Q_ASSERT(key.d->isValid);
+    Q_ASSERT(key.isValid());
     QPixmap *ptr = QCache<QPixmapCache::Key, QPixmapCacheEntry>::object(key);
     //We didn't find the pixmap in the cache, the key is not valid anymore
     if (!ptr)
@@ -383,7 +351,7 @@ QPixmapCache::Key QPMCache::insert(const QPixmap &pixmap, int cost)
 
 bool QPMCache::replace(const QPixmapCache::Key &key, const QPixmap &pixmap, int cost)
 {
-    Q_ASSERT(key.d->isValid);
+    Q_ASSERT(key.isValid());
     //If for the same key we had already an entry so we should delete the pixmap and use the new one
     QCache<QPixmapCache::Key, QPixmapCacheEntry>::remove(key);
 
@@ -420,7 +388,7 @@ void QPMCache::resizeKeyArray(int size)
 {
     if (size <= keyArraySize || size == 0)
         return;
-    keyArray = q_check_ptr(reinterpret_cast<int *>(realloc(keyArray,
+    keyArray = q_check_ptr(static_cast<int *>(realloc(keyArray,
                     size * sizeof(int))));
     for (int i = keyArraySize; i != size; ++i)
         keyArray[i] = i + 1;
@@ -441,13 +409,14 @@ QPixmapCache::Key QPMCache::createKey()
 
 void QPMCache::releaseKey(const QPixmapCache::Key &key)
 {
-    if (key.d->key > keyArraySize || key.d->key <= 0)
+    QPixmapCache::KeyData *keyData = key.d;
+    if (!keyData || keyData->key > keyArraySize || keyData->key <= 0)
         return;
-    key.d->key--;
-    keyArray[key.d->key] = freeKey;
-    freeKey = key.d->key;
-    key.d->isValid = false;
-    key.d->key = 0;
+    keyData->key--;
+    keyArray[keyData->key] = freeKey;
+    freeKey = keyData->key;
+    keyData->isValid = false;
+    keyData->key = 0;
 }
 
 void QPMCache::clear()
@@ -457,10 +426,17 @@ void QPMCache::clear()
     freeKey = 0;
     keyArraySize = 0;
     //Mark all keys as invalid
-    QList<QPixmapCache::Key> keys = QCache<QPixmapCache::Key, QPixmapCacheEntry>::keys();
-    for (int i = 0; i < keys.size(); ++i)
-        keys.at(i).d->isValid = false;
+    const QList<QPixmapCache::Key> keys = QCache<QPixmapCache::Key, QPixmapCacheEntry>::keys();
+    for (const auto &key : keys) {
+        if (key.d)
+            key.d->isValid = false;
+    }
     QCache<QPixmapCache::Key, QPixmapCacheEntry>::clear();
+    // Nothing left to flush; stop the timer
+    if (theid) {
+        killTimer(theid);
+        theid = 0;
+    }
 }
 
 QPixmapCache::KeyData* QPMCache::getKeyData(QPixmapCache::Key *key)
@@ -603,6 +579,8 @@ bool QPixmapCache::replace(const Key &key, const QPixmap &pixmap)
 
 int QPixmapCache::cacheLimit()
 {
+    if (!qt_pixmapcache_thread_test())
+        return 0;
     return pm_cache()->maxCost();
 }
 
@@ -666,11 +644,15 @@ void QPixmapCache::clear()
 
 void QPixmapCache::flushDetachedPixmaps()
 {
+    if (!qt_pixmapcache_thread_test())
+        return;
     pm_cache()->flushDetachedPixmaps(true);
 }
 
 int QPixmapCache::totalUsed()
 {
+    if (!qt_pixmapcache_thread_test())
+        return 0;
     return (pm_cache()->totalCost()+1023) / 1024;
 }
 

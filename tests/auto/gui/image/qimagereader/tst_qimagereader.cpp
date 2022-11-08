@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -93,6 +68,8 @@ private slots:
 
     void setScaledClipRect_data();
     void setScaledClipRect();
+
+    void setFormat();
 
     void imageFormat_data();
     void imageFormat();
@@ -510,7 +487,36 @@ void tst_QImageReader::setScaledClipRect()
     QImageReader originalReader(prefix + fileName);
     originalReader.setScaledSize(QSize(300, 300));
     QImage originalImage = originalReader.read();
+    if (format.contains("svg")) {
+        // rendering of subrect may yield slight rounding differences, truncate them away
+        image.convertTo(QImage::Format_RGB444);
+        originalImage.convertTo(QImage::Format_RGB444);
+    }
     QCOMPARE(originalImage.copy(newRect), image);
+}
+
+void tst_QImageReader::setFormat()
+{
+    QByteArray ppmImage = "P1 2 2\n1 0\n0 1";
+    QBuffer buf(&ppmImage);
+    QImageReader reader(&buf);
+
+    // read image in autodetected format
+    QCOMPARE(reader.size(), QSize(2,2));
+    buf.close();
+
+    // try reading with non-matching format, must not succeed
+    reader.setDecideFormatFromContent(false);
+    reader.setFormat("bmp");
+    reader.setDevice(&buf);
+    QCOMPARE(reader.size(), QSize());
+    buf.close();
+
+    // read with manually set matching format
+    reader.setFormat("ppm");
+    reader.setDevice(&buf);
+    QCOMPARE(reader.size(), QSize(2,2));
+    buf.close();
 }
 
 void tst_QImageReader::imageFormat_data()
@@ -1953,6 +1959,10 @@ void tst_QImageReader::readText_data()
 
 void tst_QImageReader::readText()
 {
+#ifdef QT_NO_IMAGEIO_TEXT_LOADING
+    QSKIP("Reading text from image is configured away");
+#endif
+
     QFETCH(QString, fileName);
     QFETCH(QString, key);
     QFETCH(QString, text);
@@ -1974,19 +1984,31 @@ void tst_QImageReader::preserveTexts_data()
     for (int c = 0xa0; c <= 0xff; c++)
         latin1set.append(QLatin1Char(c));
 
-    QStringList fileNames;
-    fileNames << QLatin1String(":/images/kollada.png")
-              << QLatin1String(":/images/txts.jpg");
-    foreach (const QString &fileName, fileNames) {
-        QTest::newRow("Simple") << fileName << "simpletext";
-        QTest::newRow("Whitespace") << fileName << " A text  with whitespace ";
-        QTest::newRow("Newline") << fileName << "A text\nwith newlines\n";
-        QTest::newRow("Double newlines") << fileName << "A text\n\nwith double newlines\n\n";
-        QTest::newRow("Long") << fileName << QString("A rather long text, at least after many repetitions. ").repeated(100);
-        QTest::newRow("All Latin1 chars") << fileName << latin1set;
+    const QList<QLatin1StringView> fileNames{
+        QLatin1StringView(":/images/kollada.png"),
+        QLatin1StringView(":/images/txts.jpg")
+        // Common prefix of length 9 before file names: ":/images/", skipped below by + 9.
+    };
+    for (const auto &fileName : fileNames) {
+        QTest::addRow("Simple %s", fileName.data() + 9)
+            << QString(fileName) << "simpletext";
+        QTest::addRow("Whitespace %s", fileName.data() + 9)
+            << QString(fileName) << " A text  with whitespace ";
+        QTest::addRow("Newline %s", fileName.data() + 9)
+            << QString(fileName) << "A text\nwith newlines\n";
+        QTest::addRow("Double newlines %s", fileName.data() + 9)
+            << QString(fileName) << "A text\n\nwith double newlines\n\n";
+        QTest::addRow("Long %s", fileName.data() + 9)
+            << QString(fileName)
+            << QString("A rather long text, at least after many repetitions. ").repeated(100);
+        QTest::addRow("All Latin1 chars %s", fileName.data() + 9)
+            << QString(fileName) << latin1set;
 #if 0
         // Depends on iTXt support in libpng
-        QTest::newRow("Multibyte string") << fileName << QString::fromUtf8("\341\233\222\341\233\226\341\232\251\341\232\271\341\232\242\341\233\232\341\232\240");
+        QTest::addRow("Multibyte string %s", fileName.data() + 9)
+            << QString(fileName)
+            << QString::fromUtf8("\341\233\222\341\233\226\341\232\251\341\232"
+                                 "\271\341\232\242\341\233\232\341\232\240");
 #endif
     }
 }
@@ -1994,6 +2016,10 @@ void tst_QImageReader::preserveTexts_data()
 
 void tst_QImageReader::preserveTexts()
 {
+#ifdef QT_NO_IMAGEIO_TEXT_LOADING
+    QSKIP("Reading text from image is configured away");
+#endif
+
     QFETCH(QString, fileName);
     QByteArray format = fileName.right(3).toLatin1();
     QFETCH(QString, text);

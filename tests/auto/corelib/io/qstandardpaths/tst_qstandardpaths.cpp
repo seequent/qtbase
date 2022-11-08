@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Copyright (C) 2020 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// Copyright (C) 2020 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <qstandardpaths.h>
 #include <QTest>
@@ -45,7 +20,7 @@
 #include <pwd.h>
 #endif
 
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC) && !defined(Q_OS_ANDROID)
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS) && !defined(Q_OS_ANDROID)
 #define Q_XDG_PLATFORM
 #endif
 
@@ -89,10 +64,10 @@ private:
         qputenv("XDG_DATA_DIRS", QFile::encodeName(m_globalAppDir));
     }
     void setDefaultLocations() {
-        qputenv("XDG_CONFIG_HOME", QByteArray());
-        qputenv("XDG_CONFIG_DIRS", QByteArray());
-        qputenv("XDG_DATA_HOME", QByteArray());
-        qputenv("XDG_DATA_DIRS", QByteArray());
+        qputenv("XDG_CONFIG_HOME", nullptr);
+        qputenv("XDG_CONFIG_DIRS", nullptr);
+        qputenv("XDG_DATA_HOME", nullptr);
+        qputenv("XDG_DATA_DIRS", nullptr);
     }
 #endif
 
@@ -172,12 +147,12 @@ void tst_qstandardpaths::testDefaultLocations()
     QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation), expectedConfHome);
     QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation), expectedConfHome);
     const QStringList confDirs = QStandardPaths::standardLocations(QStandardPaths::ConfigLocation);
-    QCOMPARE(confDirs.count(), 2);
+    QCOMPARE(confDirs.size(), 2);
     QVERIFY(confDirs.contains(expectedConfHome));
     QCOMPARE(QStandardPaths::standardLocations(QStandardPaths::GenericConfigLocation), confDirs);
 
     const QStringList genericDataDirs = QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation);
-    QCOMPARE(genericDataDirs.count(), 3);
+    QCOMPARE(genericDataDirs.size(), 3);
     const QString expectedDataHome = QDir::homePath() + QString::fromLatin1("/.local/share");
     QCOMPARE(genericDataDirs.at(0), expectedDataHome);
     QCOMPARE(genericDataDirs.at(1), QString::fromLatin1("/usr/local/share"));
@@ -285,7 +260,7 @@ void tst_qstandardpaths::testLocateAll()
 #ifdef Q_XDG_PLATFORM
     setCustomLocations();
     const QStringList appsDirs = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, "applications", QStandardPaths::LocateDirectory);
-    QCOMPARE(appsDirs.count(), 0); // they don't exist yet
+    QCOMPARE(appsDirs.size(), 0); // they don't exist yet
     const QStringList expectedAppsDirs = QStringList() << m_localAppDir + QLatin1String("/applications")
                                                        << m_globalAppDir + QLatin1String("/applications");
     QDir().mkdir(expectedAppsDirs.at(0));
@@ -326,7 +301,7 @@ void tst_qstandardpaths::testDataLocation()
     const QString expectedAppDataDir = QDir::homePath() + QString::fromLatin1("/.local/share/Qt/QtTest");
     QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation), expectedAppDataDir);
     const QStringList appDataDirs = QStandardPaths::standardLocations(QStandardPaths::AppLocalDataLocation);
-    QCOMPARE(appDataDirs.count(), 3);
+    QCOMPARE(appDataDirs.size(), 3);
     QCOMPARE(appDataDirs.at(0), expectedAppDataDir);
     QCOMPARE(appDataDirs.at(1), QString::fromLatin1("/usr/local/share/Qt/QtTest"));
     QCOMPARE(appDataDirs.at(2), QString::fromLatin1("/usr/share/Qt/QtTest"));
@@ -468,7 +443,9 @@ void tst_qstandardpaths::testRuntimeDirectory()
 #endif
 }
 
-#ifdef Q_XDG_PLATFORM
+// INTEGRITY PJF System doesn't support user ID related APIs. getpwuid is not defined.
+// testCustomRuntimeDirectory_data test will always FAIL for INTEGRITY.
+#if defined(Q_XDG_PLATFORM) && !defined(Q_OS_INTEGRITY)
 static QString fallbackXdgRuntimeDir()
 {
     static QString username = [] {
@@ -491,7 +468,7 @@ static QString fallbackXdgRuntimeDir()
 {
     qunsetenv("XDG_RUNTIME_DIR");
 #ifdef Q_XDG_PLATFORM
-#ifndef Q_OS_WASM
+#if !defined(Q_OS_WASM) && !defined(Q_OS_INTEGRITY)
     QTest::ignoreMessage(QtWarningMsg,
                          qPrintable("QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '"
                                     + fallbackXdgRuntimeDir() + '\''));
@@ -501,7 +478,9 @@ static QString fallbackXdgRuntimeDir()
 
 void tst_qstandardpaths::testCustomRuntimeDirectory_data()
 {
-#if defined(Q_XDG_PLATFORM)
+#ifdef Q_OS_INTEGRITY
+    QSKIP("Test requires getgid/getpwuid API that are not available on INTEGRITY");
+#elif defined(Q_XDG_PLATFORM)
     QTest::addColumn<RuntimeDirSetup>("setup");
     auto addRow = [](const char *name, RuntimeDirSetup f) {
         QTest::newRow(name) << f;

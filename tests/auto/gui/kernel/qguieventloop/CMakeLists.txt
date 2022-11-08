@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qguieventloop.pro.
 
 #####################################################################
@@ -7,7 +10,7 @@
 qt_internal_add_test(tst_qguieventloop
     SOURCES
         ../../../corelib/kernel/qeventloop/tst_qeventloop.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Gui
         Qt::Network
@@ -17,7 +20,7 @@ qt_internal_add_test(tst_qguieventloop
 #####################################################################
 
 qt_internal_extend_target(tst_qguieventloop CONDITION WIN32
-    PUBLIC_LIBRARIES
+    LIBRARIES
         user32
 )
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from widgets.pro.
 
 add_subdirectory(qabstractbutton)
@@ -46,17 +49,14 @@ endif()
 if(QT_FEATURE_shortcut)
     add_subdirectory(qkeysequenceedit)
 endif()
+add_subdirectory(qmenu)
+add_subdirectory(qlineedit)
 if(NOT ANDROID)
-    # QTBUG-87417 # special case
-    add_subdirectory(qlineedit)
     # QTBUG-87420 # special case
     add_subdirectory(qmdiarea)
-    # QTBUG-87671 # special case
-    add_subdirectory(qmenu)
     # QTBUG-87421 # special case
     add_subdirectory(qmenubar)
 endif()
-# QTBUG-87671 # special case
-if(QT_FEATURE_opengl AND NOT ANDROID)
+if(QT_FEATURE_opengl)
     add_subdirectory(qopenglwidget)
 endif()

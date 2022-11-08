@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qicon.pro.
 
 #####################################################################
@@ -33,7 +36,7 @@ list(APPEND test_data ${test_data_glob})
 qt_internal_add_test(tst_qicon
     SOURCES
         tst_qicon.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
     TESTDATA ${test_data}
 )
@@ -91,6 +94,6 @@ qt_internal_add_resource(tst_qicon "qmake_immediate"
 #####################################################################
 
 qt_internal_extend_target(tst_qicon CONDITION TARGET Qt::Widgets
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Widgets
 )

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include <QTest>
 #include <qrect.h>
@@ -32,6 +7,7 @@
 #include <limits.h>
 #include <qdebug.h>
 
+#include <array>
 
 class tst_QRect : public QObject
 {
@@ -123,6 +99,9 @@ private slots:
     void newMoveBottomRight();
     void margins();
     void marginsf();
+
+    void toRectF_data();
+    void toRectF();
 
     void translate_data();
     void translate();
@@ -2526,16 +2505,11 @@ void tst_QRect::newMoveLeft_data()
 
     {
         // QTest::newRow( "LargestCoordQRect_MinimumInt" ) -- Not tested as it would cause an overflow
-        QTest::newRow( "LargestCoordQRect_MiddleNegativeInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( MiddleNegativeInt )
-                                                       << QRect( QPoint( INT_MIN/2, INT_MIN ), QPoint(INT_MIN/2-1, INT_MAX ) );
-        QTest::newRow( "LargestCoordQRect_ZeroInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( ZeroInt )
-                                             << QRect( QPoint( 0, INT_MIN ), QPoint(-1, INT_MAX ) );
-        QTest::newRow( "LargestCoordQRect_MiddlePositiveInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( MiddlePositiveInt )
-                                                       << QRect( QPoint( INT_MAX/2, INT_MIN ), QPoint(INT_MAX/2-1, INT_MAX ) );
-        QTest::newRow( "LargestCoordQRect_MaximumInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( MaximumInt )
-                                                << QRect( QPoint( INT_MAX, INT_MIN ), QPoint(INT_MAX-1, INT_MAX ) );
-        QTest::newRow( "LargestCoordQRect_RandomInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( RandomInt )
-                                               << QRect( QPoint( 4953, INT_MIN ), QPoint(4952, INT_MAX ) );
+        // QTest::newRow( "LargestCoordQRect_MiddleNegativeInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_ZeroInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_MiddlePositiveInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_MaximumInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_RandomInt" ) -- Not tested as it would cause an overflow
     }
 
     {
@@ -2695,16 +2669,11 @@ void tst_QRect::newMoveTop_data()
 
     {
         // QTest::newRow( "LargestCoordQRect_MinimumInt" ) -- Not tested as it would cause an overflow
-        QTest::newRow( "LargestCoordQRect_MiddleNegativeInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( MiddleNegativeInt )
-                                                       << QRect( QPoint(INT_MIN,INT_MIN/2), QPoint(INT_MAX,INT_MIN/2-1) );
-        QTest::newRow( "LargestCoordQRect_ZeroInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( ZeroInt )
-                                             << QRect( QPoint(INT_MIN,0), QPoint(INT_MAX,-1) );
-        QTest::newRow( "LargestCoordQRect_MiddlePositiveInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( MiddlePositiveInt )
-                                                       << QRect( QPoint(INT_MIN,INT_MAX/2), QPoint(INT_MAX,INT_MAX/2-1) );
-        QTest::newRow( "LargestCoordQRect_MaximumInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( MaximumInt )
-                                                << QRect( QPoint(INT_MIN,INT_MAX), QPoint(INT_MAX,INT_MAX-1) );
-        QTest::newRow( "LargestCoordQRect_RandomInt" ) << getQRectCase( LargestCoordQRect ) << getIntCase( RandomInt )
-                                               << QRect( QPoint(INT_MIN,4953), QPoint(INT_MAX,4952) );
+        // QTest::newRow( "LargestCoordQRect_MiddleNegativeInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_ZeroInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_MiddlePositiveInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_MaximumInt" ) -- Not tested as it would cause an overflow
+        // QTest::newRow( "LargestCoordQRect_RandomInt" ) -- Not tested as it would cause an overflow
     }
 
     {
@@ -3536,6 +3505,39 @@ void tst_QRect::marginsf()
     QCOMPARE(a, rectangle.marginsRemoved(margins));
 }
 
+void tst_QRect::toRectF_data()
+{
+    QTest::addColumn<QRect>("input");
+    QTest::addColumn<QRectF>("result");
+
+    auto row = [](int x1, int y1, int w, int h) {
+        // QRectF -> QRect conversion tries to maintain size(), not bottomRight(),
+        // so compare in (topLeft(), size()) space
+        QTest::addRow("((%d, %d) (%dx%d))", x1, y1, w, h)
+                << QRect({x1, y1}, QSize{w, h}) << QRectF(QPointF(x1, y1), QSizeF(w, h));
+    };
+    constexpr std::array samples = {-1, 0, 1};
+    for (int x1 : samples) {
+        for (int y1 : samples) {
+            for (int w : samples) {
+                for (int h : samples) {
+                    row(x1, y1, w, h);
+                }
+            }
+        }
+    }
+}
+
+void tst_QRect::toRectF()
+{
+    QFETCH(const QRect, input);
+    QFETCH(const QRectF, result);
+
+    QCOMPARE(result.toRect(), input); // consistency check
+    QCOMPARE(input.toRectF(), result);
+}
+
+
 void tst_QRect::translate_data()
 {
     QTest::addColumn<QRect>("r");
@@ -4312,8 +4314,6 @@ void tst_QRect::containsPointF_data()
     QTest::addColumn<QRectF>("rect");
     QTest::addColumn<QPointF>("point");
     QTest::addColumn<bool>("contains");
-
-    QTest::newRow("test 27") << QRectF() << QPointF() << false;
 
     QTest::newRow("test 01") << QRectF(0, 0, 10, 10) << QPointF( 0,  0) << true;
     QTest::newRow("test 02") << QRectF(0, 0, 10, 10) << QPointF( 0, 10) << true;

@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 #ifndef QWINDOWSYSTEMINTERFACE_P_H
 #define QWINDOWSYSTEMINTERFACE_P_H
 
@@ -283,16 +247,18 @@ public:
 
     class KeyEvent : public InputEvent {
     public:
-        KeyEvent(QWindow *w, ulong time, QEvent::Type t, int k, Qt::KeyboardModifiers mods, const QString & text = QString(),
-                 bool autorep = false, ushort count = 1, const QInputDevice *device = QInputDevice::primaryKeyboard())
-            : InputEvent(w, time, Key, mods, device), key(k), unicode(text), repeat(autorep),
-             repeatCount(count), keyType(t),
+        KeyEvent(QWindow *w, ulong time, QEvent::Type t, int k, Qt::KeyboardModifiers mods,
+                 const QString & text = QString(), bool autorep = false, ushort count = 1,
+                 const QInputDevice *device = QInputDevice::primaryKeyboard())
+            : InputEvent(w, time, Key, mods, device), source(nullptr), key(k), unicode(text),
+             repeat(autorep), repeatCount(count), keyType(t),
              nativeScanCode(0), nativeVirtualKey(0), nativeModifiers(0) { }
         KeyEvent(QWindow *w, ulong time, QEvent::Type t, int k, Qt::KeyboardModifiers mods,
                  quint32 nativeSC, quint32 nativeVK, quint32 nativeMods,
-                 const QString & text = QString(), bool autorep = false, ushort count = 1, const QInputDevice *device = QInputDevice::primaryKeyboard())
-            : InputEvent(w, time, Key, mods, device), key(k), unicode(text), repeat(autorep),
-             repeatCount(count), keyType(t),
+                 const QString & text = QString(), bool autorep = false, ushort count = 1,
+                 const QInputDevice *device = QInputDevice::primaryKeyboard())
+            : InputEvent(w, time, Key, mods, device), source(nullptr), key(k), unicode(text),
+             repeat(autorep), repeatCount(count), keyType(t),
              nativeScanCode(nativeSC), nativeVirtualKey(nativeVK), nativeModifiers(nativeMods) { }
         const QInputDevice *source;
         int key;
@@ -449,12 +415,15 @@ public:
 #ifndef QT_NO_GESTURES
     class GestureEvent : public PointerEvent {
     public:
-        GestureEvent(QWindow *window, ulong time, Qt::NativeGestureType type, const QPointingDevice *dev, QPointF pos, QPointF globalPos)
+        GestureEvent(QWindow *window, ulong time, Qt::NativeGestureType type, const QPointingDevice *dev,
+                     int fingerCount, QPointF pos, QPointF globalPos, qreal realValue, QPointF delta)
             : PointerEvent(window, time, Gesture, Qt::NoModifier, dev), type(type), pos(pos), globalPos(globalPos),
-              realValue(0), sequenceId(0), intValue(0) { }
+              delta(delta), fingerCount(fingerCount), realValue(realValue), sequenceId(0), intValue(0) { }
         Qt::NativeGestureType type;
         QPointF pos;
         QPointF globalPos;
+        QPointF delta;
+        int fingerCount;
         // Mac
         qreal realValue;
         // Windows
@@ -495,7 +464,7 @@ public:
         void append(WindowSystemEvent *e)
         { const QMutexLocker locker(&mutex); impl.append(e); }
         int count() const
-        { const QMutexLocker locker(&mutex); return impl.count(); }
+        { const QMutexLocker locker(&mutex); return impl.size(); }
         WindowSystemEvent *peekAtFirstOfType(EventType t) const
         {
             const QMutexLocker locker(&mutex);
@@ -527,8 +496,6 @@ public:
     static WindowSystemEvent *getNonUserInputWindowSystemEvent();
     static WindowSystemEvent *peekWindowSystemEvent(EventType t);
     static void removeWindowSystemEvent(WindowSystemEvent *event);
-    template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
-    static bool handleWindowSystemEvent(WindowSystemEvent *ev);
 
 public:
     static QElapsedTimer eventTime;

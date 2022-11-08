@@ -1,8 +1,11 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from sqldrivers.pro.
 
 # special case begin
+cmake_minimum_required(VERSION 3.16)
 if (NOT CMAKE_PROJECT_NAME STREQUAL "QtBase" AND NOT CMAKE_PROJECT_NAME STREQUAL "Qt")
-    cmake_minimum_required(VERSION 3.17)
     include(.cmake.conf)
     project(QSQLiteDriverPlugins
         VERSION "${QT_REPO_MODULE_VERSION}"
@@ -16,9 +19,8 @@ if (NOT CMAKE_PROJECT_NAME STREQUAL "QtBase" AND NOT CMAKE_PROJECT_NAME STREQUAL
         Sql
      )
     qt_prepare_standalone_project()
-
-    # needed by qt_internal_add_plugin
-    add_custom_target(qt_plugins)
+else()
+    qt_internal_upgrade_cmake_policies()
 endif()
 
 # Currently handled completely manually.
@@ -37,7 +39,7 @@ include(configure.cmake)
 qt_feature_module_end(NO_MODULE)
 
 
-if(QT_FEATURE_sql_psql)
+if(QT_FEATURE_sql_psql AND QT_FEATURE_regularexpression)
     add_subdirectory(psql)
 endif()
 
@@ -70,7 +72,7 @@ if(QT_FEATURE_sql_sqlite2)
 endif()
 
 if(QT_FEATURE_sql_ibase)
-#     TODO add_subdirectory(ibase)
+    add_subdirectory(ibase)
 endif()
 
 if(NOT CMAKE_PROJECT_NAME STREQUAL "QtBase" AND NOT CMAKE_PROJECT_NAME STREQUAL "Qt")

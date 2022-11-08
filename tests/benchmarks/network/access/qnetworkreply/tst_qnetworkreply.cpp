@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 // This file contains benchmarks for QNetworkReply functions.
 
 #include <QDebug>
@@ -44,9 +19,6 @@
 
 #ifdef QT_BUILD_INTERNAL
 #include <QtNetwork/private/qhostinfo_p.h>
-#ifndef QT_NO_OPENSSL
-#include <QtNetwork/private/qsslsocket_openssl_p.h>
-#endif
 #endif
 
 Q_DECLARE_METATYPE(QSharedPointer<char>)
@@ -81,7 +53,7 @@ private slots:
     }
 
 protected:
-    void run()
+    void run() override
     {
         QTcpServer server;
         server.listen();
@@ -163,7 +135,6 @@ class ThreadedDataReader: public QThread
     // used to make the constructor only return after the tcp server started listening
     QSemaphore ready;
     QTcpSocket *client;
-    int timeout;
     int port;
 public:
     qint64 transferRate;
@@ -177,7 +148,7 @@ public:
     inline int serverPort() const { return port; }
 
 protected:
-    void run()
+    void run() override
     {
         QTcpServer server;
         server.listen();
@@ -209,15 +180,15 @@ public:
     DataGenerator() : state(Idle)
     { open(ReadOnly); }
 
-    virtual bool isSequential() const { return true; }
-    virtual qint64 bytesAvailable() const { return state == Started ? 1024*1024 : 0; }
+    bool isSequential() const override { return true; }
+    qint64 bytesAvailable() const override { return state == Started ? 1024*1024 : 0; }
 
 public slots:
     void start() { state = Started; emit readyRead(); }
     void stop() { state = Stopped; emit readyRead(); }
 
 protected:
-    virtual qint64 readData(char *data, qint64 maxlen)
+    qint64 readData(char *data, qint64 maxlen) override
     {
         if (state == Stopped)
             return -1;          // EOF
@@ -226,8 +197,7 @@ protected:
         memset(data, '@', maxlen);
         return maxlen;
     }
-    virtual qint64 writeData(const char *, qint64)
-    { return -1; }
+    qint64 writeData(const char *, qint64) override { return -1; }
 };
 
 class ThreadedDataReaderHttpServer: public QThread
@@ -249,7 +219,7 @@ public:
     inline int serverPort() const { return port; }
 
 protected:
-    void run()
+    void run() override
     {
         QTcpServer server;
         server.listen();
@@ -304,28 +274,22 @@ public:
       toBeGeneratedTotalCount = toBeGeneratedCount = size;
     }
 
-    virtual qint64 bytesAvailable() const
+    qint64 bytesAvailable() const override
     {
         return state == Started ? toBeGeneratedCount + QIODevice::bytesAvailable() : 0;
     }
 
-    virtual bool isSequential() const{
-        return false;
-    }
+    bool isSequential() const override { return false; }
 
-    virtual bool reset() {
-        return false;
-    }
+    bool reset() override { return false; }
 
-    qint64 size() const {
-        return toBeGeneratedTotalCount;
-    }
+    qint64 size() const override { return toBeGeneratedTotalCount; }
 
 public slots:
     void start() { state = Started; emit readyRead(); }
 
 protected:
-    virtual qint64 readData(char *data, qint64 maxlen)
+    qint64 readData(char *data, qint64 maxlen) override
     {
         memset(data, '@', maxlen);
 
@@ -343,8 +307,7 @@ protected:
 
         return n;
     }
-    virtual qint64 writeData(const char *, qint64)
-    { return -1; }
+    qint64 writeData(const char *, qint64) override { return -1; }
 
     qint64 toBeGeneratedCount;
     qint64 toBeGeneratedTotalCount;
@@ -643,9 +606,11 @@ void tst_qnetworkreply::uploadPerformance()
       QVERIFY(!QTestEventLoop::instance().timeout());
 }
 
+constexpr qint64 MiB = 1024 * 1024;
+
 void tst_qnetworkreply::httpUploadPerformance()
 {
-      enum {UploadSize = 128*1024*1024}; // 128 MB
+      constexpr qint64 UploadSize = 128 * MiB;
 
       ThreadedDataReaderHttpServer reader;
       FixedSizeDataGenerator generator(UploadSize);
@@ -713,7 +678,7 @@ void tst_qnetworkreply::httpDownloadPerformance()
     QFETCH(bool, serverSendsContentLength);
     QFETCH(bool, chunkedEncoding);
 
-    enum {UploadSize = 128*1024*1024}; // 128 MB
+    constexpr qint64 UploadSize = 128 * MiB;
 
     HttpDownloadPerformanceServer server(UploadSize, serverSendsContentLength, chunkedEncoding);
 

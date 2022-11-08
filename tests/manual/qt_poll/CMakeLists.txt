@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qt_poll.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ qt_internal_add_test(tst_qt_poll
         tst_qt_poll.cpp
     INCLUDE_DIRECTORIES
         ../../../src/corelib/kernel
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::CorePrivate
         Qt::Network
 )

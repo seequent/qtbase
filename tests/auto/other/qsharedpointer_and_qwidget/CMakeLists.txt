@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qsharedpointer_and_qwidget.pro.
 
 #####################################################################
@@ -7,9 +10,7 @@
 qt_internal_add_test(tst_qsharedpointer_and_qwidget
     SOURCES
         tst_qsharedpointer_and_qwidget.cpp
-    DEFINES
-        SRCDIR=\\\"${CMAKE_CURRENT_SOURCE_DIR}/\\\"
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

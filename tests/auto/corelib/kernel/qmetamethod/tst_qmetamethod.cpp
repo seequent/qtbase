@@ -1,31 +1,6 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -55,6 +30,11 @@ private slots:
     void parameterMetaType();
 
     void parameterTypeName();
+
+    void isConst();
+
+    void methodIndexes_data();
+    void methodIndexes();
 };
 
 struct CustomType { };
@@ -82,7 +62,7 @@ public:
                                  uchar ucharArg, float floatArg);
     Q_INVOKABLE MethodTestObject(bool, int);
 
-    Q_INVOKABLE void voidInvokable();
+    Q_INVOKABLE void voidInvokable() const;
     Q_INVOKABLE void voidInvokableInt(int voidInvokableIntArg);
     Q_INVOKABLE void voidInvokableQReal(qreal voidInvokableQRealArg);
     Q_INVOKABLE void voidInvokableQString(const QString &voidInvokableQStringArg);
@@ -143,7 +123,7 @@ MethodTestObject::MethodTestObject(bool, int, uint, qlonglong, qulonglong,
                                    uchar, float) {}
 MethodTestObject::MethodTestObject(bool, int) {}
 
-void MethodTestObject::voidInvokable() {}
+void MethodTestObject::voidInvokable() const {}
 void MethodTestObject::voidInvokableInt(int) {}
 void MethodTestObject::voidInvokableQReal(qreal) {}
 void MethodTestObject::voidInvokableQString(const QString &) {}
@@ -866,6 +846,61 @@ void tst_QMetaMethod::parameterTypeName()
     }
 }
 
+void tst_QMetaMethod::isConst()
+{
+    auto mo = MethodTestObject::staticMetaObject;
+    {
+        const auto normalized = QMetaObject::normalizedSignature("qrealInvokable()");
+        const int idx = mo.indexOfSlot(normalized);
+        QMetaMethod mm = mo.method(idx);
+        QVERIFY(mm.isValid());
+        QCOMPARE(mm.isConst(), false);
+    }
+    {
+        const auto normalized = QMetaObject::normalizedSignature("voidInvokable()");
+        const int idx = mo.indexOfSlot(normalized);
+        QMetaMethod mm = mo.method(idx);
+        QVERIFY(mm.isValid());
+        QCOMPARE(mm.isConst(), true);
+    }
+}
+
+void tst_QMetaMethod::methodIndexes_data()
+{
+    QTest::addColumn<QByteArray>("signature");
+    QTest::addColumn<QMetaMethod::MethodType>("methodType");
+
+    QTest::newRow("constructor1") << QByteArray("MethodTestObject()") << QMetaMethod::Constructor;
+    QTest::newRow("constructor5") << QByteArray("MethodTestObject(CustomUnregisteredType)")
+                                  << QMetaMethod::Constructor;
+    QTest::newRow("method0") << QByteArray("voidInvokable()") << QMetaMethod::Method;
+    QTest::newRow("method6") << QByteArray("boolInvokable()") << QMetaMethod::Method;
+}
+
+void tst_QMetaMethod::methodIndexes()
+{
+    QFETCH(QByteArray, signature);
+    QFETCH(QMetaMethod::MethodType, methodType);
+
+    const bool isConstructor = methodType == QMetaMethod::Constructor;
+
+    // roundtrip: index = QMetaObject::indexOfConstructor/Method()
+    //            <-> method = QMetaObject::constructor/method()
+    //            <-> indexThatShouldBeEqualToAboveIndex = QMetaMethod::methodIndex()
+
+    const QMetaObject *mo = &MethodTestObject::staticMetaObject;
+    const int index =
+            isConstructor ? mo->indexOfConstructor(signature) : mo->indexOfMethod(signature);
+    QVERIFY(index != -1);
+
+    QMetaMethod methodFromMetaObject =
+            mo->method(index); // should work on all methods (constructors, signals, ...)
+    const int absoluteMethodIndex =
+            methodFromMetaObject
+                    .methodIndex(); // should work on all methods (constructors, signals, ...)
+
+    QCOMPARE(absoluteMethodIndex, index);
+}
 
 QTEST_MAIN(tst_QMetaMethod)
 #include "tst_qmetamethod.moc"

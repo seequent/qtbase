@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2019 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Qt Gui module
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2021 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #ifndef QSHADERDESCRIPTION_H
 #define QSHADERDESCRIPTION_H
@@ -54,6 +18,7 @@
 #include <QtGui/qtguiglobal.h>
 #include <QtCore/QString>
 #include <QtCore/QList>
+#include <QtCore/private/qglobal_p.h>
 #include <array>
 
 QT_BEGIN_NAMESPACE
@@ -137,6 +102,7 @@ public:
         SamplerRect,
         SamplerBuffer,
         SamplerExternalOES,
+        Sampler,
 
         Image1D,
         Image2D,
@@ -215,6 +181,7 @@ public:
         ImageFormat imageFormat = ImageFormatUnknown;
         ImageFlags imageFlags;
         QList<int> arrayDims;
+        bool perPatch = false;
     };
 
     struct BlockVariable {
@@ -259,9 +226,79 @@ public:
     QList<PushConstantBlock> pushConstantBlocks() const;
     QList<StorageBlock> storageBlocks() const;
     QList<InOutVariable> combinedImageSamplers() const;
+    QList<InOutVariable> separateImages() const;
+    QList<InOutVariable> separateSamplers() const;
     QList<InOutVariable> storageImages() const;
 
+    enum BuiltinType {
+        // must match SpvBuiltIn
+        PositionBuiltin = 0,
+        PointSizeBuiltin = 1,
+        ClipDistanceBuiltin = 3,
+        CullDistanceBuiltin = 4,
+        VertexIdBuiltin = 5,
+        InstanceIdBuiltin = 6,
+        PrimitiveIdBuiltin = 7,
+        InvocationIdBuiltin = 8,
+        LayerBuiltin = 9,
+        ViewportIndexBuiltin = 10,
+        TessLevelOuterBuiltin = 11,
+        TessLevelInnerBuiltin = 12,
+        TessCoordBuiltin = 13,
+        PatchVerticesBuiltin = 14,
+        FragCoordBuiltin = 15,
+        PointCoordBuiltin = 16,
+        FrontFacingBuiltin = 17,
+        SampleIdBuiltin = 18,
+        SamplePositionBuiltin = 19,
+        SampleMaskBuiltin = 20,
+        FragDepthBuiltin = 22,
+        NumWorkGroupsBuiltin = 24,
+        WorkgroupSizeBuiltin = 25,
+        WorkgroupIdBuiltin = 26,
+        LocalInvocationIdBuiltin = 27,
+        GlobalInvocationIdBuiltin = 28,
+        LocalInvocationIndexBuiltin = 29,
+        VertexIndexBuiltin = 42,
+        InstanceIndexBuiltin = 43
+    };
+
+    struct BuiltinVariable {
+        BuiltinType type;
+    };
+
+    QList<BuiltinVariable> inputBuiltinVariables() const;
+    QList<BuiltinVariable> outputBuiltinVariables() const;
+
     std::array<uint, 3> computeShaderLocalSize() const;
+
+    uint tessellationOutputVertexCount() const;
+
+    enum TessellationMode {
+        UnknownTessellationMode,
+        TrianglesTessellationMode,
+        QuadTessellationMode,
+        IsolineTessellationMode
+    };
+
+    TessellationMode tessellationMode() const;
+
+    enum TessellationWindingOrder {
+        UnknownTessellationWindingOrder,
+        CwTessellationWindingOrder,
+        CcwTessellationWindingOrder
+    };
+
+    TessellationWindingOrder tessellationWindingOrder() const;
+
+    enum TessellationPartitioning {
+        UnknownTessellationPartitioning,
+        EqualTessellationPartitioning,
+        FractionalEvenTessellationPartitioning,
+        FractionalOddTessellationPartitioning
+    };
+
+    TessellationPartitioning tessellationPartitioning() const;
 
 private:
     QShaderDescriptionPrivate *d;
@@ -281,6 +318,7 @@ Q_GUI_EXPORT QDebug operator<<(QDebug, const QShaderDescription::BlockVariable &
 Q_GUI_EXPORT QDebug operator<<(QDebug, const QShaderDescription::UniformBlock &);
 Q_GUI_EXPORT QDebug operator<<(QDebug, const QShaderDescription::PushConstantBlock &);
 Q_GUI_EXPORT QDebug operator<<(QDebug, const QShaderDescription::StorageBlock &);
+Q_GUI_EXPORT QDebug operator<<(QDebug, const QShaderDescription::BuiltinVariable &);
 #endif
 
 Q_GUI_EXPORT bool operator==(const QShaderDescription &lhs, const QShaderDescription &rhs) noexcept;
@@ -289,6 +327,7 @@ Q_GUI_EXPORT bool operator==(const QShaderDescription::BlockVariable &lhs, const
 Q_GUI_EXPORT bool operator==(const QShaderDescription::UniformBlock &lhs, const QShaderDescription::UniformBlock &rhs) noexcept;
 Q_GUI_EXPORT bool operator==(const QShaderDescription::PushConstantBlock &lhs, const QShaderDescription::PushConstantBlock &rhs) noexcept;
 Q_GUI_EXPORT bool operator==(const QShaderDescription::StorageBlock &lhs, const QShaderDescription::StorageBlock &rhs) noexcept;
+Q_GUI_EXPORT bool operator==(const QShaderDescription::BuiltinVariable &lhs, const QShaderDescription::BuiltinVariable &rhs) noexcept;
 
 inline bool operator!=(const QShaderDescription &lhs, const QShaderDescription &rhs) noexcept
 {
@@ -316,6 +355,11 @@ inline bool operator!=(const QShaderDescription::PushConstantBlock &lhs, const Q
 }
 
 inline bool operator!=(const QShaderDescription::StorageBlock &lhs, const QShaderDescription::StorageBlock &rhs) noexcept
+{
+    return !(lhs == rhs);
+}
+
+inline bool operator!=(const QShaderDescription::BuiltinVariable &lhs, const QShaderDescription::BuiltinVariable &rhs) noexcept
 {
     return !(lhs == rhs);
 }

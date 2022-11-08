@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qabstractitemmodeltester.pro.
 
 #####################################################################
@@ -10,7 +13,7 @@ qt_internal_add_test(tst_qabstractitemmodeltester
         tst_qabstractitemmodeltester.cpp
     INCLUDE_DIRECTORIES
         ../../other/qabstractitemmodelutils
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::Widgets
 )

@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the test suite of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 
 #include <QTest>
@@ -100,6 +75,7 @@ private slots:
     void inheritAlignment();
     void dontEmitEmptyNodeWhenEmptyTagIsFollowedByCloseTag();
     void toPlainText();
+    void toRawText();
     void copyTableRow();
     void copyTableColumn();
     void copySubTable();
@@ -142,6 +118,7 @@ private slots:
     void html_doNotInheritBackground();
     void html_inheritBackgroundToInlineElements();
     void html_doNotInheritBackgroundFromBlockElements();
+    void html_inheritBackgroundFromBlockElements();
     void html_nobr();
     void fromPlainText();
     void fromPlainText2();
@@ -1093,6 +1070,14 @@ void tst_QTextDocumentFragment::toPlainText()
     QCOMPARE(doc->blockCount(), 3);
 }
 
+void tst_QTextDocumentFragment::toRawText()
+{
+    // Make sure nbsp, line separator, paragraph separator is preserved
+    doc->setPlainText("Hello\u0A00\u2028\u2029World");
+
+    QCOMPARE(QTextDocumentFragment(doc).toRawText(), "Hello\u0A00\u2028\u2029World");
+}
+
 void tst_QTextDocumentFragment::copyTableRow()
 {
     QTextDocumentFragment frag;
@@ -1190,7 +1175,7 @@ void tst_QTextDocumentFragment::copySubTable()
                 table->cellAt(row, col).firstCursorPosition().insertText(rowS + QString::number(col));
         }
 
-        QCOMPARE(table->format().columnWidthConstraints().count(), table->columns());
+        QCOMPARE(table->format().columnWidthConstraints().size(), table->columns());
 
         // select 2x2 subtable
         cursor = table->cellAt(1, 1).firstCursorPosition();
@@ -2070,7 +2055,7 @@ void tst_QTextDocumentFragment::html_inheritBackgroundToInlineElements()
 
 void tst_QTextDocumentFragment::html_doNotInheritBackgroundFromBlockElements()
 {
-    const char html[] = "<p style=\"background: blue\"><span>Foo</span></span>";
+    const char html[] = "<p style=\"background: blue\"><span>Foo</span></p>";
     doc->setHtml(html);
 
     int fragmentCount = 0;
@@ -2088,6 +2073,31 @@ void tst_QTextDocumentFragment::html_doNotInheritBackgroundFromBlockElements()
 
     QCOMPARE(fragmentCount, 1);
 }
+
+void tst_QTextDocumentFragment::html_inheritBackgroundFromBlockElements()
+{
+    const char html[] = "<div style=\"background: blue\"><p>Foo</p><p>Bar</p></div>";
+    doc->setHtml(html);
+
+    int fragmentCount = 0;
+
+    QTextBlock block = doc->begin();
+    for (QTextBlock::Iterator it = block.begin();
+         !it.atEnd(); ++it, ++fragmentCount) {
+
+        const QTextFragment fragment = it.fragment();
+        if (fragmentCount == 0) {
+            QCOMPARE(fragment.text(), QString("Foo"));
+            QVERIFY(fragment.charFormat().hasProperty(QTextFormat::BackgroundBrush));
+        } else {
+            QCOMPARE(fragment.text(), QString("Bar"));
+            QVERIFY(fragment.charFormat().hasProperty(QTextFormat::BackgroundBrush));
+        }
+    }
+
+    QCOMPARE(fragmentCount, 1);
+}
+
 void tst_QTextDocumentFragment::html_nobr()
 {
     const QString input = "Blah Foo    Bar";
@@ -2225,7 +2235,7 @@ void tst_QTextDocumentFragment::html_frameImport()
     cursor.insertFragment(frag);
 
     QList<QTextFrame *> childFrames = doc->rootFrame()->childFrames();
-    QCOMPARE(childFrames.count(), 1);
+    QCOMPARE(childFrames.size(), 1);
     QTextFrame *frame = childFrames.first();
     QCOMPARE(frame->frameFormat().margin(), ffmt.margin());
     QCOMPARE(frame->frameFormat().border(), ffmt.border());
@@ -2253,7 +2263,7 @@ void tst_QTextDocumentFragment::html_frameImport2()
     cursor.insertFragment(frag);
 
     QList<QTextFrame *> childFrames = doc->rootFrame()->childFrames();
-    QCOMPARE(childFrames.count(), 1);
+    QCOMPARE(childFrames.size(), 1);
     QTextFrame *frame = childFrames.first();
     QCOMPARE(frame->frameFormat().topMargin(), ffmt.topMargin());
     QCOMPARE(frame->frameFormat().bottomMargin(), ffmt.bottomMargin());
@@ -2268,7 +2278,7 @@ void tst_QTextDocumentFragment::html_dontAddMarginsAcrossTableCells()
     cursor.insertFragment(QTextDocumentFragment::fromHtml(QString::fromLatin1(html)));
 
     QList<QTextFrame *> childFrames = doc->rootFrame()->childFrames();
-    QCOMPARE(childFrames.count(), 1);
+    QCOMPARE(childFrames.size(), 1);
     QTextFrame *frame = childFrames.first();
     cursor = frame->firstCursorPosition();
     QCOMPARE(cursor.blockFormat().leftMargin(), qreal(50.0));
@@ -2426,12 +2436,12 @@ void tst_QTextDocumentFragment::defaultFont()
     f.setFamily("Courier New");
     f.setBold(true);
     f.setItalic(true);
-    f.setStrikeOut(true); // set here but deliberately ignored for the html export
+    f.setStrikeOut(true);
     f.setPointSize(100);
     doc->setDefaultFont(f);
     doc->setPlainText("Hello World");
     const QString html = doc->toHtml();
-    QLatin1String str("<body style=\" font-family:'Courier New'; font-size:100pt; font-weight:700; font-style:italic;\">");
+    QLatin1String str("<body style=\" font-family:'Courier New'; font-size:100pt; font-weight:700; font-style:italic; text-decoration: line-through;\">");
     QVERIFY(html.contains(str));
 }
 
@@ -2750,7 +2760,7 @@ void tst_QTextDocumentFragment::html_columnWidths()
     QTextTableFormat fmt = table->format();
 
     const QList<QTextLength> columnWidths = fmt.columnWidthConstraints();
-    QCOMPARE(columnWidths.count(), 2);
+    QCOMPARE(columnWidths.size(), 2);
     QCOMPARE(columnWidths.at(0).type(), QTextLength::VariableLength);
     QCOMPARE(columnWidths.at(1).type(), QTextLength::PercentageLength);
     QCOMPARE(columnWidths.at(1).rawValue(), qreal(1));
@@ -3473,6 +3483,12 @@ void tst_QTextDocumentFragment::html_hr()
     doc->setHtml("<hr />");
     QCOMPARE(doc->blockCount(), 1);
     QVERIFY(doc->begin().blockFormat().hasProperty(QTextFormat::BlockTrailingHorizontalRulerWidth));
+    doc->setHtml("<hr style=\"background-color:green;\"/>");
+    QCOMPARE(doc->blockCount(), 1);
+    QVERIFY(doc->begin().blockFormat().hasProperty(QTextFormat::BlockTrailingHorizontalRulerWidth));
+    QVERIFY(doc->begin().blockFormat().hasProperty(QTextFormat::BackgroundBrush));
+    const auto brush = qvariant_cast<QBrush>(doc->begin().blockFormat().property(QTextFormat::BackgroundBrush));
+    QCOMPARE(brush.color(), QColor("green"));
 }
 
 void tst_QTextDocumentFragment::html_hrMargins()
@@ -4152,7 +4168,7 @@ void tst_QTextDocumentFragment::html_entities()
     setHtml(html);
     QCOMPARE(doc->blockCount(), 1);
     QString txt = doc->begin().text();
-    QCOMPARE(txt.length(), 1);
+    QCOMPARE(txt.size(), 1);
     QCOMPARE(txt.at(0).unicode(), code);
 }
 

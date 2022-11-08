@@ -1,18 +1,15 @@
 The following table describes the mapping of configure options to CMake arguments.
-Note that not everything is implemented in configure/configure.bat yet.
-The effort of this is tracked in QTBUG-85373 and QTBUG-85349.
 
 | configure                             | cmake                                             | Notes                                                           |
 |---------------------------------------|---------------------------------------------------|-----------------------------------------------------------------|
 | -prefix /opt/qt6                      | -DCMAKE_INSTALL_PREFIX=/opt/qta6                  |                                                                 |
+| -no-prefix (only available in Qt6)    | -DCMAKE_INSTALL_PREFIX=$PWD (with bash)           | In Qt5 this was done by specifying -prefix $PWD                 |
+|                                         or -DFEATURE_no_prefix=ON                         |                                                                 |
 | -extprefix /opt/qt6                   | -DCMAKE_STAGING_PREFIX=/opt/qt6                   |                                                                 |
-| -hostprefix  /where/ever              | n/a                                               | When cross-building Qt, we do not build for host system anymore |
-| -external-hostbindir /path/to/host/qt | -DQT_HOST_PATH=/path/to/host/qt                   | Can be set with configure -qt-host-path /path/to/host/qt.       |
 | -bindir <dir>                         | -DINSTALL_BINDIR=<dir>                            | similar for -headerdir -libdir and so on                        |
 | -hostdatadir <dir>                    | -DINSTALL_MKSPECSDIR=<dir>                        |                                                                 |
-| -host*dir <dir>                       | n/a                                               |                                                                 |
 | -help                                 | n/a                                               | Handled by configure[.bat].                                     |
-| -verbose                              |                                                   |                                                                 |
+| -verbose                              | --log-level=STATUS                                | Sets the CMake log level to STATUS. The default one is NOTICE.  |
 | -continue                             |                                                   |                                                                 |
 | -redo                                 | n/a                                               | Handled by configure[.bat].                                     |
 | -recheck [test,...]                   |                                                   |                                                                 |
@@ -54,9 +51,9 @@ The effort of this is tracked in QTBUG-85373 and QTBUG-85349.
 | -gcov                                 |                                                   |                                                                 |
 | -trace [backend]                      | -DINPUT_trace=yes or -DINPUT_trace=<backend>      |                                                                 |
 |                                       | or -DFEATURE_<backend>                            |                                                                 |
-| -sanitize address -sanitize undefined | -DECM_ENABLE_SANITIZERS=address;undefined         |                                                                 |
-| -coverage <arg>                       |                                                   |                                                                 |
-| -c++std c++2a                         | -DFEATURE_cxx2a=ON                                |                                                                 |
+| -sanitize address -sanitize undefined | -DFEATURE_sanitize_address=ON                     | Directly setting -DECM_ENABLE_SANITIZERS=foo is not supported   |
+|                                       | -DFEATURE_sanitize_undefined=ON                   |                                                                 |
+| -c++std c++20                         | -DFEATURE_cxx20=ON                                |                                                                 |
 | -sse2/-sse3/-ssse3/-sse4.1            | -DFEATURE_sse4=ON                                 |                                                                 |
 | -mips_dsp/-mips_dspr2                 | -DFEATURE_mips_dsp=ON                             |                                                                 |
 | -qreal <type>                         | -DQT_COORD_TYPE=<type>                            |                                                                 |
@@ -70,7 +67,7 @@ The effort of this is tracked in QTBUG-85373 and QTBUG-85349.
 | -pch                                  | -DBUILD_WITH_PCH=ON                               |                                                                 |
 | -ltcg                                 | -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON or        |                                                                 |
 |                                       | -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_<CONFIG>=ON  |                                                                 |
-| -linker [bfd,gold,lld]                | -DINPUT_linker=<name> or                          |                                                                 |
+| -linker [bfd,gold,lld,mold]           | -DINPUT_linker=<name> or                          |                                                                 |
 |                                       | -DFEATURE_use_<name>_linker=ON                    |                                                                 |
 | -incredibuild-xge                     | n/a                                               | This option enables remote distribution of Visual Studio        |
 |                                       |                                                   | custom build steps for moc, uic, and rcc.                       |
@@ -94,21 +91,21 @@ The effort of this is tracked in QTBUG-85373 and QTBUG-85349.
 |                                       |                                                   | If no value is provided, a simulator_and_device build is        |
 |                                       |                                                   | assumed.                                                        |
 | -android-sdk <path>                   | -DANDROID_SDK_ROOT=<path>                         |                                                                 |
-| -android-ndk <path>                   | -DCMAKE_TOOLCHAIN_PATH=<toolchain file in NDK>    |                                                                 |
-| -android-ndk-platform android-23      | -DCMAKE_ANDROID_NATIVE_API_LEVEL=23               |                                                                 |
-| -android-ndk-host                     | n/a                                               | determined by toolchain file                                    |
+| -android-ndk <path>                   | -DCMAKE_TOOLCHAIN_FILE=<toolchain file in NDK>    |                                                                 |
+| -android-ndk-platform android-23      | -DANDROID_PLATFORM=android-23                     |                                                                 |
 | -android-abis <abi_1>,...,<abi_n>     | -DANDROID_ABI=<abi_1>                             | only one ABI can be specified                                   |
 | -android-style-assets                 | -DFEATURE_android_style_assets=ON                 |                                                                 |
 | -android-javac-source                 | -DQT_ANDROID_JAVAC_SOURCE=7                       | Set the javac build source version.                             |
 | -android-javac-target                 | -DQT_ANDROID_JAVAC_TARGET=7                       | Set the javac build target version.                             |
-| -skip <repo>                          | -DBUILD_<repo>=OFF                                |                                                                 |
+| -skip <repo>,...,<repo_n>             | -DBUILD_<repo>=OFF                                |                                                                 |
+| -submodules <repo>,...,<repo_n>       | -QT_BUILD_SUBMODULES=<repo>;...;<repo>            |                                                                 |
 | -make <part>                          | -DQT_BUILD_TESTS=ON                               | A way to turn on tools explicitly is missing. If tests/examples |
 |                                       | -DQT_BUILD_EXAMPLES=ON                            | are enabled, you can disable their building as part of the      |
 |                                       |                                                   | 'all' target by also passing -DQT_BUILD_TESTS_BY_DEFAULT=OFF or |
 |                                       |                                                   | -DQT_BUILD_EXAMPLES_BY_DEFAULT=OFF. Note that if you entirely   |
 |                                       |                                                   | disable tests/examples at configure time (by using              |
 |                                       |                                                   | -DQT_BUILD_TESTS=OFF or -DQT_BUILD_EXAMPLES=OFF) you can't then |
-|                                       |                                                   | build them separately, after configuration.                     | 
+|                                       |                                                   | build them separately, after configuration.                     |
 | -nomake <part>                        | -DQT_BUILD_TESTS=OFF                              | A way to turn off tools explicitly is missing.                  |
 |                                       | -DQT_BUILD_EXAMPLES=OFF                           |                                                                 |
 | -no-gui                               | -DFEATURE_gui=OFF                                 |                                                                 |
@@ -172,3 +169,4 @@ The effort of this is tracked in QTBUG-85373 and QTBUG-85349.
 | -libjpeg                              | -DFEATURE_libjpeg=ON                              |                                                                 |
 | -sql-<driver>                         | -DFEATURE_sql_<driver>=ON                         |                                                                 |
 | -sqlite [qt/system]                   | -DFEATURE_system_sqlite=OFF/ON                    |                                                                 |
+| -disable-deprecated-up-to <hex_version> | -DQT_DISABLE_DEPRECATED_UP_TO=<hex_version>     |                                                                 |

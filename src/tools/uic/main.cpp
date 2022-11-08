@@ -1,30 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the tools applications of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:GPL-EXCEPT$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
 
 #include "uic.h"
 #include "option.h"
@@ -41,9 +16,11 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 int runUic(int argc, char *argv[])
 {
-    qSetGlobalQHashSeed(0);    // set the hash seed to 0
+    QHashSeed::setDeterministicGlobalSeed();
 
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationVersion(QString::fromLatin1(QT_VERSION_STR));
@@ -112,6 +89,16 @@ int runUic(int argc, char *argv[])
     fromImportsOption.setDescription(QStringLiteral("Python: generate imports relative to '.'"));
     parser.addOption(fromImportsOption);
 
+    // FIXME Qt 7: Flip the default?
+    QCommandLineOption rcPrefixOption(QStringLiteral("rc-prefix"));
+    rcPrefixOption.setDescription(QStringLiteral("Python: Generate \"rc_file\" instead of \"file_rc\" import"));
+    parser.addOption(rcPrefixOption);
+
+    // FIXME Qt 7: Remove?
+    QCommandLineOption useStarImportsOption(QStringLiteral("star-imports"));
+    useStarImportsOption.setDescription(QStringLiteral("Python: Use * imports"));
+    parser.addOption(useStarImportsOption);
+
     parser.addPositionalArgument(QStringLiteral("[uifile]"), QStringLiteral("Input file (*.ui), otherwise stdin."));
 
     parser.process(app);
@@ -123,20 +110,24 @@ int runUic(int argc, char *argv[])
     driver.option().implicitIncludes = !parser.isSet(noImplicitIncludesOption);
     driver.option().idBased = parser.isSet(idBasedOption);
     driver.option().fromImports = parser.isSet(fromImportsOption);
+    driver.option().useStarImports = parser.isSet(useStarImportsOption);
     driver.option().postfix = parser.value(postfixOption);
     driver.option().translateFunction = parser.value(translateOption);
     driver.option().includeFile = parser.value(includeOption);
     if (parser.isSet(connectionsOption)) {
         const auto value = parser.value(connectionsOption);
-        if (value == QLatin1String("pmf"))
+        if (value == "pmf"_L1)
             driver.option().forceMemberFnPtrConnectionSyntax = 1;
-        else if (value == QLatin1String("string"))
+        else if (value == "string"_L1)
             driver.option().forceStringConnectionSyntax = 1;
     }
 
+    if (parser.isSet(rcPrefixOption))
+        driver.option().rcPrefix = 1;
+
     Language language = Language::Cpp;
     if (parser.isSet(generatorOption)) {
-        if (parser.value(generatorOption).compare(QLatin1String("python")) == 0)
+        if (parser.value(generatorOption).compare("python"_L1) == 0)
             language = Language::Python;
     }
     language::setLanguage(language);

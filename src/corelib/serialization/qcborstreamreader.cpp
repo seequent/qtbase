@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 Intel Corporation.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2020 Intel Corporation.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qcborstreamreader.h"
 
@@ -72,13 +36,11 @@ QT_WARNING_POP
 
 static CborError _cbor_value_dup_string(const CborValue *, void **, size_t *, CborValue *)
 {
-    Q_UNREACHABLE();
-    return CborErrorInternalError;
+    Q_UNREACHABLE_RETURN(CborErrorInternalError);
 }
 [[maybe_unused]] static CborError cbor_value_get_half_float_as_float(const CborValue *, float *)
 {
-    Q_UNREACHABLE();
-    return CborErrorInternalError;
+    Q_UNREACHABLE_RETURN(CborErrorInternalError);
 }
 
 // confirm our constants match TinyCBOR's
@@ -109,7 +71,7 @@ static_assert(int(QCborStreamReader::Invalid) == CborInvalidType);
    Representation, a very compact form of binary data encoding that is
    compatible with JSON. It was created by the IETF Constrained RESTful
    Environments (CoRE) WG, which has used it in many new RFCs. It is meant to
-   be used alongside the \l{https://tools.ietf.org/html/rfc7252}{CoAP
+   be used alongside the \l{RFC 7252}{CoAP
    protocol}.
 
    QCborStreamReader provides a StAX-like API, similar to that of
@@ -187,7 +149,8 @@ static_assert(int(QCborStreamReader::Invalid) == CborInvalidType);
    parsing from a QByteArray, or reparse(), if it is instead reading directly
    a the QIDOevice that now has more data available (see setDevice()).
 
-   \sa QCborStreamWriter, QCborValue, QXmlStreamReader
+   \sa QCborStreamWriter, QCborValue, QXmlStreamReader, {Cbordump Example}
+   \sa {Convert Example}, {JSON Save Game Example}
  */
 
 /*!
@@ -565,7 +528,7 @@ public:
     CborValue currentElement;
     QCborError lastError = {};
 
-    QByteArray::size_type bufferStart;
+    QByteArray::size_type bufferStart = 0;
     bool corrupt = false;
 
     QCborStreamReaderPrivate(const QByteArray &data)
@@ -787,7 +750,7 @@ inline void QCborStreamReader::preparse()
    \sa addData(), isValid()
  */
 QCborStreamReader::QCborStreamReader()
-    : QCborStreamReader(QByteArray())
+    : d(new QCborStreamReaderPrivate({})), type_(Invalid)
 {
 }
 
@@ -830,7 +793,7 @@ QCborStreamReader::QCborStreamReader(const QByteArray &data)
 
    Creates a QCborStreamReader object that will parse the CBOR stream found by
    reading from \a device. QCborStreamReader does not take ownership of \a
-   device, so it must remain valid until this oject is destroyed.
+   device, so it must remain valid until this object is destroyed.
  */
 QCborStreamReader::QCborStreamReader(QIODevice *device)
     : d(new QCborStreamReaderPrivate(device))
@@ -1005,7 +968,7 @@ QCborStreamReader::Type QCborStreamReader::parentContainerType() const
 {
     if (d->containerStack.isEmpty())
         return Invalid;
-    return Type(cbor_value_get_type(&qAsConst(d->containerStack).top()));
+    return Type(cbor_value_get_type(&std::as_const(d->containerStack).top()));
 }
 
 /*!
@@ -1344,7 +1307,7 @@ QCborStreamReader::StringResult<QString> QCborStreamReader::_readString_helper()
     if (r.status == Error) {
         result.data.clear();
     } else {
-        Q_ASSERT(r.data == result.data.length());
+        Q_ASSERT(r.data == result.data.size());
         if (r.status == EndOfString && lastError() == QCborError::NoError)
             preparse();
     }
@@ -1376,7 +1339,7 @@ QCborStreamReader::StringResult<QByteArray> QCborStreamReader::_readByteArray_he
     if (r.status == Error) {
         result.data.clear();
     } else {
-        Q_ASSERT(r.data == result.data.length());
+        Q_ASSERT(r.data == result.data.size());
         if (r.status == EndOfString && lastError() == QCborError::NoError)
             preparse();
     }
@@ -1583,9 +1546,9 @@ QCborStreamReaderPrivate::readStringChunk_byte(ReadStringChunk params, qsizetype
             handleError(CborErrorDataTooLarge);
             return -1;
         }
-        try {
+        QT_TRY {
             params.array->resize(newSize);
-        } catch (const std::bad_alloc &) {
+        } QT_CATCH (const std::bad_alloc &) {
             // the distinction between DataTooLarge and OOM is mostly for
             // compatibility with Qt 5; in Qt 6, we could consider everything
             // to be OOM.
@@ -1626,9 +1589,9 @@ QCborStreamReaderPrivate::readStringChunk_unicode(ReadStringChunk params, qsizet
     // conversion uses the same number of words or less.
     QChar *begin = nullptr;
     if (params.isString()) {
-        try {
+        QT_TRY {
             params.string->resize(utf8len);
-        } catch (const std::bad_alloc &) {
+        } QT_CATCH (const std::bad_alloc &) {
             if (utf8len > MaxStringSize)
                 handleError(CborErrorDataTooLarge);
             else

@@ -1,34 +1,62 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # special case skip regeneration
 
 # Need an explicit call at the top level. This is the absolute minimum version
 # needed to configure the project with any combination of enabled features.
 # The call to qt_build_repo_begin() will upgrade policies further.
+#
+# The absolute minimum version for building Qt is 3.16 because for metatype.json generation, we
+# depend on being able to find the location of json files created by AUTOMOC/moc.
 cmake_minimum_required(VERSION 3.16)
 
 # Get the repo version and CMake policy details
 include(.cmake.conf)
 
-# Bail out if parts of the build directory's components are symlinks.
-get_filename_component(build_dir_absolute "${CMAKE_BINARY_DIR}" ABSOLUTE)
-get_filename_component(build_dir_realpath "${CMAKE_BINARY_DIR}" REALPATH)
-if(NOT build_dir_absolute STREQUAL build_dir_realpath)
-    message(FATAL_ERROR "The build path \"${CMAKE_BINARY_DIR}\" contains symlinks. \
-This is not supported. Please use some other - transparent - mechanism to map directories.")
-endif()
-unset(build_dir_absolute)
-unset(build_dir_realpath)
+# Bail out if any part of the build directory's path is symlinked.
+function(qt_internal_check_if_path_has_symlinks path)
+    get_filename_component(dir "${path}" ABSOLUTE)
+    set(is_symlink FALSE)
+    if(CMAKE_HOST_WIN32)
+        # CMake marks Windows mount points as symbolic links, so use simplified REALPATH check
+        # on Windows platforms instead of IS_SYMLINK.
+        get_filename_component(dir_realpath "${dir}" REALPATH)
+        if(NOT dir STREQUAL dir_realpath)
+            set(is_symlink TRUE)
+        endif()
+    else()
+        while(TRUE)
+            if(IS_SYMLINK "${dir}")
+                set(is_symlink TRUE)
+                break()
+            endif()
 
-# Early check to reduce chance of warning being lost in the output
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/QtCMakeVersionHelpers.cmake")
-qt_internal_check_for_suitable_cmake_version()
+            set(prev_dir "${dir}")
+            get_filename_component(dir "${dir}" DIRECTORY)
+            if("${dir}" STREQUAL "${prev_dir}")
+                return()
+            endif()
+        endwhile()
+    endif()
+    if(is_symlink)
+        message(FATAL_ERROR "The path \"${path}\" contains symlinks. \
+            This is not supported. Possible solutions:
+            - map directories using a transparent mechanism such as mount --bind
+            - pass the real path of the build directory to CMake, e.g. using \
+            cd $(realpath <path>) before invoking cmake <source_dir>.")
+    endif()
+endfunction()
+qt_internal_check_if_path_has_symlinks("${CMAKE_BINARY_DIR}")
 
 # Run auto detection routines, but not when doing standalone tests. In that case, the detection
 # results are taken from either QtBuildInternals or the qt.toolchain.cmake file. Also, inhibit
 # auto-detection in a top-level build, because the top-level project file already includes it.
-if(NOT QT_BUILD_STANDALONE_TESTS AND NOT QT_SUPER_BUILD)
+if(NOT QT_BUILD_STANDALONE_TESTS AND NOT QT_SUPERBUILD)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/QtAutoDetect.cmake)
 endif()
 
+# This call will load any provided cmake toolchain file.
 project(QtBase
     VERSION "${QT_REPO_MODULE_VERSION}"
     DESCRIPTION "Qt Base Libraries"
@@ -36,8 +64,22 @@ project(QtBase
     LANGUAGES CXX C ASM
 )
 
-# Make sure we only use latest private CMake API, aka no compatibility wrappers.
-set(QT_NO_INTERNAL_COMPATIBILITY_FUNCTIONS TRUE)
+# Should this Qt be static or dynamically linked?
+option(BUILD_SHARED_LIBS "Build Qt statically or dynamically" ON)
+set(QT_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+
+# This variable is also set in Qt6CoreConfigExtras.cmake, but it's not loaded when building
+# qtbase. Set it here so qt_add_plugin can compute the proper plugin flavor.
+set(QT6_IS_SHARED_LIBS_BUILD ${BUILD_SHARED_LIBS})
+
+# BUILD_SHARED_LIBS influences the minimum required CMake version. The value is set either by:
+#   a cache variable provided on the configure command line
+#   or set by QtAutoDetect.cmake depending on the platform
+#   or specified via a toolchain file that is loaded by the project() call
+#   or set by the option() call above
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/QtCMakeVersionHelpers.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/QtPublicCMakeVersionHelpers.cmake")
+qt_internal_check_and_warn_about_unsuitable_cmake_version()
 
 if(NOT QT_BUILD_STANDALONE_TESTS)
     ## Add some paths to check for cmake modules:
@@ -50,6 +92,9 @@ if(NOT QT_BUILD_STANDALONE_TESTS)
     if(MACOS)
         # Add module directory to pick up custom Info.plist template
         list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/macos")
+    elseif(IOS)
+        # Add module directory to pick up custom Info.plist template
+        list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ios")
     endif()
 
     ## Find the build internals package.
@@ -67,12 +112,11 @@ endif()
 qt_build_repo_begin()
 
 if(NOT QT_BUILD_STANDALONE_TESTS)
-    ## Should this Qt be static or dynamically linked?
-    option(BUILD_SHARED_LIBS "Build Qt statically or dynamically" ON)
-    set(QT_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-
     ## Should this Qt be built with Werror?
     option(WARNINGS_ARE_ERRORS "Build Qt with warnings as errors" ${FEATURE_developer_build})
+
+    ## Should this Qt create versioned hard link for some tools?
+    option(QT_CREATE_VERSIONED_HARD_LINK "Enable the use of versioned hard link" ON)
 
     ## QtBase specific configure tests:
     include(QtBaseConfigureTests)
@@ -92,7 +136,17 @@ if(NOT QT_BUILD_STANDALONE_TESTS)
     include(src/corelib/Qt6CoreMacros.cmake)
 
     # Needed when building qtbase for android.
-    include(src/corelib/Qt6AndroidMacros.cmake)
+    if(ANDROID)
+        include(src/corelib/Qt6AndroidMacros.cmake)
+        _qt_internal_create_global_android_targets()
+    endif()
+
+    if(WASM)
+        # Needed when building for WebAssembly.
+        include(cmake/QtWasmHelpers.cmake)
+        include(src/corelib/Qt6WasmMacros.cmake)
+        qt_internal_setup_wasm_target_properties(Platform)
+    endif()
 
     # Set up optimization flags like in qmake.
     # This function must be called after the global QT_FEATURE_xxx variables have been set up,
@@ -116,7 +170,7 @@ if(QT_BUILD_TESTS)
 endif()
 
 if(NOT QT_BUILD_STANDALONE_TESTS)
-    if(QT_WILL_BUILD_TOOLS)
+    if(QT_WILL_BUILD_TOOLS AND QT_FEATURE_settings)
         add_subdirectory(qmake)
     endif()
     # As long as we use the mkspecs (for qplatformdefs.h), we need to always
@@ -143,7 +197,4 @@ qt_build_repo_end()
 
 if(NOT QT_BUILD_STANDALONE_TESTS AND QT_BUILD_EXAMPLES)
     add_subdirectory(examples)
-    if(NOT QT_BUILD_EXAMPLES_BY_DEFAULT)
-        set_property(DIRECTORY examples PROPERTY EXCLUDE_FROM_ALL TRUE)
-    endif()
 endif()

@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 include(QtFeatureCommon)
 include(CheckCXXCompilerFlag)
 
@@ -227,54 +230,58 @@ function(_qt_internal_dump_expression_values expression_dump expression)
     set(${expression_dump} "${${expression_dump}}" PARENT_SCOPE)
 endfunction()
 
-function(qt_feature_set_cache_value resultVar feature emit_if condition calculated label)
+# Stores the user provided value to FEATURE_${feature} if provided.
+# If not provided, stores ${computed} instead.
+# ${computed} is also stored when reconfiguring and the condition does not align with the user
+# provided value.
+#
+function(qt_feature_check_and_save_user_provided_value resultVar feature condition computed label)
     if (DEFINED "FEATURE_${feature}")
-        # Must set up the cache
-        if (NOT (emit_if))
-            message(FATAL_ERROR "Sanity check failed: FEATURE_${feature} that was not emitted was found in the CMakeCache.")
-        endif()
+        # Revisit new user provided value
+        set(user_value "${FEATURE_${feature}}")
+        string(TOUPPER "${user_value}" result)
 
-        # Revisit value:
-        set(cache "${FEATURE_${feature}}")
-
-        # If the build is marked as dirty and the cache value doesn't meet the new condition,
-        # reset it to the calculated one.
+        # If the build is marked as dirty and the user_value doesn't meet the new condition,
+        # reset it to the computed one.
         get_property(dirty_build GLOBAL PROPERTY _qt_dirty_build)
-        if(NOT condition AND cache AND dirty_build)
-            set(cache "${calculated}")
-            message(WARNING "Reset FEATURE_${feature} value to ${calculated}, because it doesn't \
+        if(NOT condition AND result AND dirty_build)
+            set(result "${computed}")
+            message(WARNING "Reset FEATURE_${feature} value to ${result}, because it doesn't \
 meet its condition after reconfiguration.")
         endif()
 
         set(bool_values OFF NO FALSE N ON YES TRUE Y)
-        if ((cache IN_LIST bool_values) OR (cache GREATER_EQUAL 0))
-            set(result "${cache}")
+        if ((result IN_LIST bool_values) OR (result GREATER_EQUAL 0))
+            # All good!
         else()
-            message(FATAL_ERROR "Sanity check failed: FEATURE_${feature} has invalid value \"${cache}\"!")
+            message(FATAL_ERROR
+                "Sanity check failed: FEATURE_${feature} has invalid value \"${result}\"!")
         endif()
 
         # Fix-up user-provided values
-        set("FEATURE_${feature}" "${cache}" CACHE BOOL "${label}" FORCE)
+        set("FEATURE_${feature}" "${result}" CACHE BOOL "${label}" FORCE)
     else()
         # Initial setup:
-        if (emit_if)
-            set("FEATURE_${feature}" "${calculated}" CACHE BOOL "${label}")
-            set(result "${calculated}")
-        else()
-            set(result OFF)
-        endif()
+        set(result "${computed}")
+        set("FEATURE_${feature}" "${result}" CACHE BOOL "${label}")
     endif()
 
     set("${resultVar}" "${result}" PARENT_SCOPE)
 endfunction()
 
-macro(qt_feature_set_value feature cache condition label conditionExpression)
-    set(result "${cache}")
+# Saves the final user value to QT_FEATURE_${feature}, after checking that the condition is met.
+macro(qt_feature_check_and_save_internal_value
+        feature saved_user_value condition label conditionExpression)
+    if(${saved_user_value})
+        set(result ON)
+    else()
+        set(result OFF)
+    endif()
 
-    if (NOT (condition) AND (cache))
+    if ((NOT condition) AND result)
         _qt_internal_dump_expression_values(conditionDump "${conditionExpression}")
         string(JOIN " " conditionString ${conditionExpression})
-        qt_configure_add_report_error("Feature \"${feature}\": Forcing to \"${cache}\" breaks its \
+        qt_configure_add_report_error("Feature \"${feature}\": Forcing to \"${result}\" breaks its \
 condition:\n    ${conditionString}\nCondition values dump:\n    ${conditionDump}\n" RECORD_ON_FEATURE_EVALUATION)
     endif()
 
@@ -288,6 +295,30 @@ condition:\n    ${conditionString}\nCondition values dump:\n    ${conditionDump}
     set(QT_KNOWN_FEATURES "${QT_KNOWN_FEATURES}" CACHE INTERNAL "" FORCE)
 endmacro()
 
+
+# The build system stores 2 CMake cache variables for each feature, to allow detecting value changes
+# during subsequent reconfigurations.
+#
+#
+# `FEATURE_foo` stores the user provided feature value for the current configuration run.
+# It can be set directly by the user, or derived from INPUT_foo (also set by the user).
+#
+# If a value is not provided on initial configuration, the value will be auto-computed based on the
+# various conditions of the feature.
+# TODO: Document the various conditions and how they relate to each other.
+#
+#
+# `QT_FEATURE_foo` stores the value of the feature from the previous configuration run.
+# Its value is updated once with the newest user provided value after some checks are performed.
+#
+# This variable also serves as the main source of truth throughout the build system code to check
+# if the feature is enabled, e.g. if(QT_FEATURE_foo)
+#
+# It is not meant to be set by the user. It is only modified by the build system.
+#
+# Comparing the values of QT_FEATURE_foo and FEATURE_foo, the build system can detect whether
+# the user changed the value for a feature and thus recompute any dependent features.
+#
 function(qt_evaluate_feature feature)
     # If the feature was already evaluated as dependency nothing to do here.
     if(DEFINED "QT_FEATURE_${feature}")
@@ -325,12 +356,12 @@ function(qt_evaluate_feature feature)
     qt_evaluate_config_expression(enable_result ${arg_ENABLE})
     qt_evaluate_config_expression(auto_detect ${arg_AUTODETECT})
     if(${disable_result})
-        set(result OFF)
+        set(computed OFF)
     elseif((${enable_result}) OR (${auto_detect}))
-        set(result ${condition})
+        set(computed ${condition})
     else()
         # feature not auto-detected and not explicitly enabled
-        set(result OFF)
+        set(computed OFF)
     endif()
 
     if("${arg_EMIT_IF}" STREQUAL "")
@@ -350,10 +381,30 @@ function(qt_evaluate_feature feature)
         endif()
     endif()
 
-    qt_feature_set_cache_value(cache "${feature}" "${emit_if}" "${condition}" "${result}"
-                               "${arg_LABEL}")
-    qt_feature_set_value("${feature}" "${cache}" "${condition}" "${arg_LABEL}"
-                         "${arg_CONDITION}")
+    # Warn about a feature which is not emitted, but the user explicitly provided a value for it.
+    if(NOT emit_if AND DEFINED FEATURE_${feature})
+        set(msg "")
+        string(APPEND msg
+            "Feature ${feature} is insignificant in this configuration, "
+            "ignoring related command line option(s).")
+        qt_configure_add_report_entry(TYPE WARNING MESSAGE "${msg}")
+
+        # Remove the cache entry so that the warning is not persisted and shown on every
+        # reconfiguration.
+        unset(FEATURE_${feature} CACHE)
+    endif()
+
+    # Only save the user provided value if the feature was emitted.
+    if(emit_if)
+        qt_feature_check_and_save_user_provided_value(
+            saved_user_value "${feature}" "${condition}" "${computed}" "${arg_LABEL}")
+    else()
+        # Make sure the feature internal value is OFF if not emitted.
+        set(saved_user_value OFF)
+    endif()
+
+    qt_feature_check_and_save_internal_value(
+        "${feature}" "${saved_user_value}" "${condition}" "${arg_LABEL}" "${arg_CONDITION}")
 
     # Store each feature's label for summary info.
     set(QT_FEATURE_LABEL_${feature} "${arg_LABEL}" CACHE INTERNAL "")
@@ -448,9 +499,14 @@ function(qt_evaluate_feature_definition key)
         set(expected OFF)
     endif()
 
+    set(actual OFF)
+    if(QT_FEATURE_${arg_FEATURE})
+        set(actual ON)
+    endif()
+
     set(msg "")
 
-    if(QT_FEATURE_${arg_FEATURE} STREQUAL expected)
+    if(actual STREQUAL expected)
         set(indent "")
         if(arg_PREREQUISITE)
             string(APPEND msg "#if ${arg_PREREQUISITE}\n")
@@ -522,6 +578,17 @@ function(qt_feature_evaluate_features list_of_paths)
     qt_feature_module_end(ONLY_EVALUATE_FEATURES)
 endfunction()
 
+function(qt_feature_record_summary_entries list_of_paths)
+    # Clean up any stale state just in case.
+    qt_feature_unset_state_vars()
+
+    set(__QtFeature_only_record_summary_entries TRUE)
+    foreach(path ${list_of_paths})
+        include("${path}")
+    endforeach()
+    qt_feature_unset_state_vars()
+endfunction()
+
 function(qt_feature_module_end)
     set(flags ONLY_EVALUATE_FEATURES)
     set(options OUT_VAR_PREFIX)
@@ -544,10 +611,10 @@ function(qt_feature_module_end)
 
     # Evaluate custom cache assignments.
     foreach(cache_var_name ${__QtFeature_custom_enabled_cache_variables})
-        set(${cache_var_name} ON CACHE BOOL "Force enabled by platform." FORCE)
+        set(${cache_var_name} ON CACHE BOOL "Force enabled by platform requirements." FORCE)
     endforeach()
     foreach(cache_var_name ${__QtFeature_custom_disabled_cache_variables})
-        set(${cache_var_name} OFF CACHE BOOL "Force disabled by platform." FORCE)
+        set(${cache_var_name} OFF CACHE BOOL "Force disabled by platform requirements." FORCE)
     endforeach()
 
     set(enabled_public_features "")
@@ -617,7 +684,7 @@ function(qt_feature_module_end)
             set(propertyPrefix "INTERFACE_")
         else()
             set(propertyPrefix "")
-            set_property(TARGET "${target}" APPEND PROPERTY EXPORT_PROPERTIES "QT_ENABLED_PUBLIC_FEATURES;QT_DISABLED_PUBLIC_FEATURES;QT_ENABLED_PRIVATE_FEATURES;QT_DISABLED_PRIVATE_FEATURES;MODULE_PLUGIN_TYPES;QT_PLUGINS;QT_QMAKE_PUBLIC_CONFIG;QT_QMAKE_PRIVATE_CONFIG;QT_QMAKE_PUBLIC_QT_CONFIG")
+            set_property(TARGET "${target}" APPEND PROPERTY EXPORT_PROPERTIES "QT_ENABLED_PUBLIC_FEATURES;QT_DISABLED_PUBLIC_FEATURES;QT_ENABLED_PRIVATE_FEATURES;QT_DISABLED_PRIVATE_FEATURES;QT_QMAKE_PUBLIC_CONFIG;QT_QMAKE_PRIVATE_CONFIG;QT_QMAKE_PUBLIC_QT_CONFIG")
         endif()
         foreach(visibility public private)
             string(TOUPPER "${visibility}" capitalVisibility)
@@ -660,6 +727,10 @@ function(qt_feature_module_end)
         qt_feature_copy_global_config_features_to_core(${target})
     endif()
 
+    qt_feature_unset_state_vars()
+endfunction()
+
+macro(qt_feature_unset_state_vars)
     unset(__QtFeature_library PARENT_SCOPE)
     unset(__QtFeature_public_features PARENT_SCOPE)
     unset(__QtFeature_private_features PARENT_SCOPE)
@@ -675,7 +746,8 @@ function(qt_feature_module_end)
     unset(__QtFeature_custom_enabled_features PARENT_SCOPE)
     unset(__QtFeature_custom_disabled_features PARENT_SCOPE)
     unset(__QtFeature_only_evaluate_features PARENT_SCOPE)
-endfunction()
+    unset(__QtFeature_only_record_summary_entries PARENT_SCOPE)
+endmacro()
 
 function(qt_feature_copy_global_config_features_to_core target)
     # CMake doesn't support setting custom properties on exported INTERFACE libraries
@@ -720,7 +792,7 @@ function(qt_config_compile_test name)
     endif()
 
     cmake_parse_arguments(arg "" "LABEL;PROJECT_PATH;C_STANDARD;CXX_STANDARD"
-        "COMPILE_OPTIONS;LIBRARIES;CODE;PACKAGES" ${ARGN})
+        "COMPILE_OPTIONS;LIBRARIES;CODE;PACKAGES;CMAKE_FLAGS" ${ARGN})
 
     if(arg_PROJECT_PATH)
         message(STATUS "Performing Test ${arg_LABEL}")
@@ -732,7 +804,19 @@ function(qt_config_compile_test name)
         # If the repo has its own cmake modules, include those in the module path, so that various
         # find_package calls work.
         if(EXISTS "${PROJECT_SOURCE_DIR}/cmake")
-            list(APPEND flags "-DCMAKE_MODULE_PATH:STRING=${PROJECT_SOURCE_DIR}/cmake")
+            set(must_append_module_path_flag TRUE)
+            set(flags_copy "${flags}")
+            set(flags)
+            foreach(flag IN LISTS flags_copy)
+                if(flag MATCHES "^-DCMAKE_MODULE_PATH:STRING=")
+                    set(must_append_module_path_flag FALSE)
+                    set(flag "${flag}\\;${PROJECT_SOURCE_DIR}/cmake")
+                endif()
+                list(APPEND flags "${flag}")
+            endforeach()
+            if(must_append_module_path_flag)
+                list(APPEND flags "-DCMAKE_MODULE_PATH:STRING=${PROJECT_SOURCE_DIR}/cmake")
+            endif()
         endif()
 
         # Pass which packages need to be found.
@@ -799,8 +883,33 @@ function(qt_config_compile_test name)
             endif()
         endif()
 
+        # Pass override values for CMAKE_SYSTEM_{PREFIX|FRAMEWORK}_PATH.
+        if(DEFINED QT_CMAKE_SYSTEM_PREFIX_PATH_BACKUP)
+            set(path_list ${CMAKE_SYSTEM_PREFIX_PATH})
+            string(REPLACE ";" "\\;" path_list "${path_list}")
+            list(APPEND flags "-DQT_CONFIG_COMPILE_TEST_CMAKE_SYSTEM_PREFIX_PATH=${path_list}")
+        endif()
+        if(DEFINED QT_CMAKE_SYSTEM_FRAMEWORK_PATH_BACKUP)
+            set(path_list ${CMAKE_SYSTEM_FRAMEWORK_PATH})
+            string(REPLACE ";" "\\;" path_list "${path_list}")
+            list(APPEND flags "-DQT_CONFIG_COMPILE_TEST_CMAKE_SYSTEM_FRAMEWORK_PATH=${path_list}")
+        endif()
+
+        if(NOT arg_CMAKE_FLAGS)
+            set(arg_CMAKE_FLAGS "")
+        endif()
+
+        # CI passes the project dir of the Qt repository as absolute path without drive letter:
+        #   \Users\qt\work\qt\qtbase
+        # Ensure that arg_PROJECT_PATH is an absolute path with drive letter:
+        #   C:/Users/qt/work/qt/qtbase
+        # This works around CMake upstream issue #22534.
+        if(CMAKE_HOST_WIN32)
+            get_filename_component(arg_PROJECT_PATH "${arg_PROJECT_PATH}" REALPATH)
+        endif()
+
         try_compile(HAVE_${name} "${CMAKE_BINARY_DIR}/config.tests/${name}" "${arg_PROJECT_PATH}"
-                    "${name}" CMAKE_FLAGS ${flags})
+                    "${name}" CMAKE_FLAGS ${flags} ${arg_CMAKE_FLAGS})
 
         if(${HAVE_${name}})
             set(status_label "Success")
@@ -823,18 +932,30 @@ function(qt_config_compile_test name)
 
         if(NOT DEFINED HAVE_${name})
             set(_save_CMAKE_C_STANDARD "${CMAKE_C_STANDARD}")
+            set(_save_CMAKE_C_STANDARD_REQUIRED "${CMAKE_C_STANDARD_REQUIRED}")
             set(_save_CMAKE_CXX_STANDARD "${CMAKE_CXX_STANDARD}")
+            set(_save_CMAKE_CXX_STANDARD_REQUIRED "${CMAKE_CXX_STANDARD_REQUIRED}")
             set(_save_CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
+            set(_save_CMAKE_TRY_COMPILE_PLATFORM_VARIABLES "${CMAKE_TRY_COMPILE_PLATFORM_VARIABLES}")
 
             if(arg_C_STANDARD)
                set(CMAKE_C_STANDARD "${arg_C_STANDARD}")
+               set(CMAKE_C_STANDARD_REQUIRED OFF)
             endif()
 
             if(arg_CXX_STANDARD)
-               set(CMAKE_CXX_STANDARD "${arg_CXX_STANDARD}")
+                if(${arg_CXX_STANDARD} LESS 23 OR ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.20")
+                    set(CMAKE_CXX_STANDARD "${arg_CXX_STANDARD}")
+                    set(CMAKE_CXX_STANDARD_REQUIRED OFF)
+                endif()
             endif()
 
             set(CMAKE_REQUIRED_FLAGS ${arg_COMPILE_OPTIONS})
+
+            # Pass -stdlib=libc++ on if necessary
+            if (INPUT_stdlib_libcpp OR QT_FEATURE_stdlib_libcpp)
+                list(APPEND CMAKE_REQUIRED_FLAGS "-stdlib=libc++")
+            endif()
 
             # For MSVC we need to explicitly pass -Zc:__cplusplus to get correct __cplusplus
             # define values. According to common/msvc-version.conf the flag is supported starting
@@ -846,14 +967,22 @@ function(qt_config_compile_test name)
                 list(APPEND CMAKE_REQUIRED_FLAGS "-Zc:__cplusplus")
             endif()
 
+            # Let CMake load our custom platform modules.
+            if(NOT QT_AVOID_CUSTOM_PLATFORM_MODULES)
+                list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_MODULE_PATH)
+            endif()
+
             set(_save_CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}")
             set(CMAKE_REQUIRED_LIBRARIES "${arg_LIBRARIES}")
             check_cxx_source_compiles("${arg_UNPARSED_ARGUMENTS} ${arg_CODE}" HAVE_${name})
             set(CMAKE_REQUIRED_LIBRARIES "${_save_CMAKE_REQUIRED_LIBRARIES}")
 
             set(CMAKE_C_STANDARD "${_save_CMAKE_C_STANDARD}")
+            set(CMAKE_C_STANDARD_REQUIRED "${_save_CMAKE_C_STANDARD_REQUIRED}")
             set(CMAKE_CXX_STANDARD "${_save_CMAKE_CXX_STANDARD}")
+            set(CMAKE_CXX_STANDARD_REQUIRED "${_save_CMAKE_CXX_STANDARD_REQUIRED}")
             set(CMAKE_REQUIRED_FLAGS "${_save_CMAKE_REQUIRED_FLAGS}")
+            set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES "${_save_CMAKE_TRY_COMPILE_PLATFORM_VARIABLES}")
         endif()
     endif()
 
@@ -867,6 +996,17 @@ function(qt_get_platform_try_compile_vars out_var)
     # Use the regular variables that are used for source-based try_compile() calls.
     set(flags "${CMAKE_TRY_COMPILE_PLATFORM_VARIABLES}")
 
+    # Pass custom flags.
+    list(APPEND flags "CMAKE_C_FLAGS")
+    list(APPEND flags "CMAKE_C_FLAGS_DEBUG")
+    list(APPEND flags "CMAKE_C_FLAGS_RELEASE")
+    list(APPEND flags "CMAKE_C_FLAGS_RELWITHDEBINFO")
+    list(APPEND flags "CMAKE_CXX_FLAGS")
+    list(APPEND flags "CMAKE_CXX_FLAGS_DEBUG")
+    list(APPEND flags "CMAKE_CXX_FLAGS_RELEASE")
+    list(APPEND flags "CMAKE_CXX_FLAGS_RELWITHDEBINFO")
+    list(APPEND flags "CMAKE_OBJCOPY")
+
     # Pass toolchain files.
     if(CMAKE_TOOLCHAIN_FILE)
         list(APPEND flags "CMAKE_TOOLCHAIN_FILE")
@@ -877,7 +1017,18 @@ function(qt_get_platform_try_compile_vars out_var)
 
     # Pass language standard flags.
     list(APPEND flags "CMAKE_C_STANDARD")
+    list(APPEND flags "CMAKE_C_STANDARD_REQUIRED")
     list(APPEND flags "CMAKE_CXX_STANDARD")
+    list(APPEND flags "CMAKE_CXX_STANDARD_REQUIRED")
+
+    # Pass -stdlib=libc++ on if necessary
+    if (INPUT_stdlib_libcpp OR QT_FEATURE_stdlib_libcpp)
+        if(CMAKE_CXX_FLAGS)
+            string(APPEND CMAKE_CXX_FLAGS " -stdlib=libc++")
+        else()
+            set(CMAKE_CXX_FLAGS "-stdlib=libc++")
+        endif()
+    endif()
 
     # Assemble the list with regular options.
     set(flags_cmd_line "")
@@ -887,12 +1038,16 @@ function(qt_get_platform_try_compile_vars out_var)
         endif()
     endforeach()
 
+    # Let CMake load our custom platform modules.
+    if(NOT QT_AVOID_CUSTOM_PLATFORM_MODULES)
+        list(APPEND flags_cmd_line "-DCMAKE_MODULE_PATH:STRING=${QT_CMAKE_DIR}/platforms")
+    endif()
+
     # Pass darwin specific options.
     # The architectures need to be passed explicitly to project-based try_compile calls even on
     # macOS, so that arm64 compilation works on Apple silicon.
-    if(CMAKE_OSX_ARCHITECTURES)
-        list(GET CMAKE_OSX_ARCHITECTURES 0 osx_first_arch)
-
+    qt_internal_get_first_osx_arch(osx_first_arch)
+    if(osx_first_arch)
         # Do what qmake does, aka when doing a simulator_and_device build, build the
         # target architecture test only with the first given architecture, which should be the
         # device architecture, aka some variation of "arm" (armv7, arm64).
@@ -905,8 +1060,21 @@ function(qt_get_platform_try_compile_vars out_var)
             list(APPEND flags_cmd_line "-DCMAKE_OSX_SYSROOT:STRING=${QT_UIKIT_SDK}")
         endif()
     endif()
+    if(QT_NO_USE_FIND_PACKAGE_SYSTEM_ENVIRONMENT_PATH)
+        list(APPEND flags_cmd_line "-DCMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH:BOOL=OFF")
+    endif()
 
     set("${out_var}" "${flags_cmd_line}" PARENT_SCOPE)
+endfunction()
+
+# Set out_var to the first value of CMAKE_OSX_ARCHITECTURES.
+# Sets an empty string if no architecture is present.
+function(qt_internal_get_first_osx_arch out_var)
+    set(value "")
+    if(CMAKE_OSX_ARCHITECTURES)
+        list(GET CMAKE_OSX_ARCHITECTURES 0 value)
+    endif()
+    set(${out_var} "${value}" PARENT_SCOPE)
 endfunction()
 
 function(qt_config_compile_test_x86simd extension label)
@@ -919,7 +1087,7 @@ function(qt_config_compile_test_x86simd extension label)
     qt_get_platform_try_compile_vars(platform_try_compile_vars)
     list(APPEND flags ${platform_try_compile_vars})
 
-    message(STATUS "Performing SIMD Test ${label}")
+    message(STATUS "Performing Test ${label} intrinsics")
     try_compile("TEST_X86SIMD_${extension}"
         "${CMAKE_CURRENT_BINARY_DIR}/config.tests/x86_simd_${extension}"
         "${CMAKE_CURRENT_SOURCE_DIR}/config.tests/x86_simd"
@@ -930,12 +1098,12 @@ function(qt_config_compile_test_x86simd extension label)
     else()
         set(status_label "Failed")
     endif()
-    message(STATUS "Performing SIMD Test ${label} - ${status_label}")
+    message(STATUS "Performing Test ${label} intrinsics - ${status_label}")
     set(TEST_subarch_${extension} "${TEST_X86SIMD_${extension}}" CACHE INTERNAL "${label}")
 endfunction()
 
 function(qt_config_compile_test_machine_tuple label)
-    if(DEFINED TEST_MACHINE_TUPLE OR NOT LINUX OR ANDROID)
+    if(DEFINED TEST_MACHINE_TUPLE OR NOT (LINUX OR HURD) OR ANDROID)
         return()
     endif()
 
@@ -963,6 +1131,92 @@ function(qt_config_compiler_supports_flag_test name)
     set(TEST_${name} "${TEST_${name}}" CACHE INTERNAL "${label}")
 endfunction()
 
+# gcc expects -fuse-ld=mold (no absolute path can be given) (gcc >= 12.1)
+#             or an 'ld' symlink to 'mold' in a dir that is passed via -B flag (gcc < 12.1)
+#
+# clang expects     -fuse-ld=mold
+#                or -fuse-ld=<mold-abs-path>
+#                or --ldpath=<mold-abs-path>  (clang >= 12)
+# https://github.com/rui314/mold/#how-to-use
+# TODO: In the gcc < 12.1 case, the qt_internal_check_if_linker_is_available(mold) check will
+#       always return TRUE because gcc will not error out if it is given a -B flag pointing to an
+#       invalid dir, as well as when the the symlink to the linker in the -B dir is not actually
+#       a valid linker.
+#       It would be nice to handle that case in a better way, but it's not that important
+#       given that gcc > 12.1 now supports -fuse-ld=mold
+# NOTE: In comparison to clang, in the gcc < 12.1 case, we pass the full path to where mold is
+#       and that is recorded in PlatformCommonInternal's INTERFACE_LINK_OPTIONS target.
+#       Moving such a Qt to a different machine and trying to build another repo won't
+#       work because the recorded path will be invalid. This is not a problem with
+#       the gcc >= 12.1 case
+function(qt_internal_get_mold_linker_flags out_var)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "ERROR_IF_EMPTY" "" "")
+
+    find_program(QT_INTERNAL_LINKER_MOLD mold)
+
+    set(flag "")
+    if(QT_INTERNAL_LINKER_MOLD)
+        if(GCC)
+            if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "12.1")
+                set(flag "-fuse-ld=mold")
+            else()
+                set(mold_linker_dir "${CMAKE_CURRENT_BINARY_DIR}/.qt_linker")
+                set(mold_linker_path "${mold_linker_dir}/ld")
+                if(NOT EXISTS "${mold_linker_dir}")
+                    file(MAKE_DIRECTORY "${mold_linker_dir}")
+                endif()
+                if(NOT EXISTS "${mold_linker_path}")
+                    file(CREATE_LINK
+                        "${QT_INTERNAL_LINKER_MOLD}"
+                        "${mold_linker_path}"
+                         SYMBOLIC)
+                endif()
+                set(flag "-B${mold_linker_dir}")
+            endif()
+        elseif(CLANG)
+            if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "12")
+                set(flag "--ld-path=mold")
+            else()
+                set(flag "-fuse-ld=mold")
+            endif()
+        endif()
+    endif()
+    if(arg_ERROR_IS_EMPTY AND NOT flag)
+        message(FATAL_ERROR "Could not determine the flags to use the mold linker.")
+    endif()
+    set(${out_var} "${flag}" PARENT_SCOPE)
+endfunction()
+
+function(qt_internal_get_active_linker_flags out_var)
+    set(flags "")
+    if(GCC OR CLANG)
+        if(QT_FEATURE_use_gold_linker)
+            list(APPEND flags "-fuse-ld=gold")
+        elseif(QT_FEATURE_use_bfd_linker)
+            list(APPEND flags "-fuse-ld=bfd")
+        elseif(QT_FEATURE_use_lld_linker)
+            list(APPEND flags "-fuse-ld=lld")
+        elseif(QT_FEATURE_use_mold_linker)
+            qt_internal_get_mold_linker_flags(mold_flags ERROR_IF_EMPTY)
+            list(APPEND flags "${mold_flags}")
+        endif()
+    endif()
+    set(${out_var} "${flags}" PARENT_SCOPE)
+endfunction()
+
+function(qt_internal_check_if_linker_is_available name)
+    if(DEFINED "TEST_${name}")
+        return()
+    endif()
+
+    cmake_parse_arguments(arg "" "LABEL;FLAG" "" ${ARGN})
+    set(flags "${arg_FLAG}")
+
+    set(CMAKE_REQUIRED_LINK_OPTIONS ${flags})
+    check_cxx_source_compiles("int main() { return 0; }" TEST_${name})
+    set(TEST_${name} "${TEST_${name}}" CACHE INTERNAL "${label}")
+endfunction()
+
 function(qt_config_linker_supports_flag_test name)
     if(DEFINED "TEST_${name}")
         return()
@@ -971,19 +1225,10 @@ function(qt_config_linker_supports_flag_test name)
     cmake_parse_arguments(arg "" "LABEL;FLAG" "" ${ARGN})
     set(flags "-Wl,${arg_FLAG}")
 
-    # Select the right linker.
-    if(GCC OR CLANG)
-        # TODO: This works for now but is... suboptimal. Once
-        # QTBUG-86186 is resolved, we should check the *features*
-        # QT_FEATURE_use_gold_linker etc. instead of trying to
-        # replicate the feature conditions.
-        if(QT_FEATURE_use_gold_linker_alias OR INPUT_linker STREQUAL "gold")
-            list(PREPEND flags "-fuse-ld=gold")
-        elseif(INPUT_linker STREQUAL "bfd")
-            list(PREPEND flags "-fuse-ld=bfd")
-        elseif(INPUT_linker STREQUAL "lld")
-            list(PREPEND flags "-fuse-ld=lld")
-        endif()
+    # Pass the linker that the main project uses to the compile test.
+    qt_internal_get_active_linker_flags(linker_flags)
+    if(linker_flags)
+        list(PREPEND flags ${linker_flags})
     endif()
 
     set(CMAKE_REQUIRED_LINK_OPTIONS ${flags})
@@ -1014,7 +1259,15 @@ function(qt_make_features_available target)
             endif()
             foreach(feature IN ITEMS ${features})
                 if (DEFINED "QT_FEATURE_${feature}" AND NOT "${QT_FEATURE_${feature}}" STREQUAL "${value}")
-                    message(FATAL_ERROR "Feature ${feature} is already defined and has a different value when importing features from ${target}.")
+                    message(WARNING
+                        "This project was initially configured with the Qt feature \"${feature}\" "
+                        "set to \"${QT_FEATURE_${feature}}\". While loading the "
+                        "\"${target}\" package, the value of the feature "
+                        "has changed to \"${value}\". That might cause a project rebuild due to "
+                        "updated C++ headers. \n"
+                        "In case of build issues, consider removing the CMakeCache.txt file and "
+                        "reconfiguring the project."
+                    )
                 endif()
                 set(QT_FEATURE_${feature} "${value}" CACHE INTERNAL "Qt feature: ${feature} (from target ${target})")
             endforeach()
@@ -1022,5 +1275,3 @@ function(qt_make_features_available target)
         endforeach()
     endforeach()
 endfunction()
-
-

@@ -1,23 +1,11 @@
-# Generated from qstylesheetstyle.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
-if(NOT QT_FEATURE_private_tests)
-    return()
-endif()
+# Generated from qstylesheetstyle.pro.
 
 #####################################################################
 ## tst_qstylesheetstyle Test:
 #####################################################################
-
-qt_internal_add_test(tst_qstylesheetstyle
-    SOURCES
-        tst_qstylesheetstyle.cpp
-    PUBLIC_LIBRARIES
-        Qt::Gui
-        Qt::GuiPrivate
-        Qt::TestPrivate
-        Qt::Widgets
-        Qt::WidgetsPrivate
-)
 
 # Resources:
 set(resources_resource_files
@@ -25,13 +13,18 @@ set(resources_resource_files
     "images/testimage@2x.png"
 )
 
-qt_internal_add_resource(tst_qstylesheetstyle "resources"
-    PREFIX
-        "/"
-    FILES
-        ${resources_resource_files}
+qt_internal_add_test(tst_qstylesheetstyle
+    SOURCES
+        tst_qstylesheetstyle.cpp
+    LIBRARIES
+        Qt::Gui
+        Qt::GuiPrivate
+        Qt::TestPrivate
+        Qt::Widgets
+        Qt::WidgetsPrivate
+    TESTDATA ${resources_resource_files}
+    BUILTIN_TESTDATA
 )
-
 
 #### Keys ignored in scope 1:.:.:qstylesheetstyle.pro:<TRUE>:
 # _REQUIREMENTS = "qtConfig(private_tests)"

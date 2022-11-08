@@ -1,13 +1,44 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 function(qt_print_feature_summary)
+    if(QT_SUPERBUILD)
+        qt_internal_set_message_log_level(message_log_level)
+        if(message_log_level)
+            # In a top-level build, ensure that the feature_summary is affected by the
+            # selected log-level.
+            set(CMAKE_MESSAGE_LOG_LEVEL "${message_log_level}")
+        endif()
+    endif()
+
     include(FeatureSummary)
     # Show which packages were found.
-    feature_summary(WHAT PACKAGES_FOUND
+    feature_summary(INCLUDE_QUIET_PACKAGES
+                    WHAT PACKAGES_FOUND
                          REQUIRED_PACKAGES_NOT_FOUND
                          RECOMMENDED_PACKAGES_NOT_FOUND
                          OPTIONAL_PACKAGES_NOT_FOUND
                          RUNTIME_PACKAGES_NOT_FOUND
                          FATAL_ON_MISSING_REQUIRED_PACKAGES)
+    qt_internal_run_additional_summary_checks()
     qt_configure_print_summary()
+endfunction()
+
+function(qt_internal_run_additional_summary_checks)
+    get_property(
+        rpath_workaround_enabled
+        GLOBAL PROPERTY _qt_internal_staging_prefix_build_rpath_workaround)
+    if(rpath_workaround_enabled)
+        set(message
+            "Due to CMAKE_STAGING_PREFIX usage and an unfixed CMake bug,
+      to ensure correct build time rpaths, directory-level install
+      rules like ninja src/gui/install will not work.
+      Check QTBUG-102592 for further details.")
+        qt_configure_add_report_entry(
+            TYPE NOTE
+            MESSAGE "${message}"
+        )
+    endif()
 endfunction()
 
 function(qt_print_build_instructions)
@@ -18,8 +49,24 @@ function(qt_print_build_instructions)
         return()
     endif()
 
+    if(QT_SUPERBUILD)
+        qt_internal_set_message_log_level(message_log_level)
+        if(message_log_level)
+            # In a top-level build, ensure that qt_print_build_instructions is affected by the
+            # selected log-level.
+            set(CMAKE_MESSAGE_LOG_LEVEL "${message_log_level}")
+        endif()
+    endif()
+
     set(build_command "cmake --build . --parallel")
     set(install_command "cmake --install .")
+
+    # Suggest "ninja install" for Multi-Config builds
+    # until https://gitlab.kitware.com/cmake/cmake/-/issues/21475 is fixed.
+    if(CMAKE_GENERATOR STREQUAL "Ninja Multi-Config")
+        set(install_command "ninja install")
+    endif()
+
     set(configure_module_command "qt-configure-module")
     if(CMAKE_HOST_WIN32)
         string(APPEND configure_module_command ".bat")
@@ -30,18 +77,46 @@ function(qt_print_build_instructions)
         set(local_install_prefix "${CMAKE_STAGING_PREFIX}")
     endif()
 
-    message("Qt is now configured for building. Just run '${build_command}'\n")
+    set(msg "\n")
+
+    list(APPEND msg "Qt is now configured for building. Just run '${build_command}'\n")
     if(QT_WILL_INSTALL)
-        message("Once everything is built, you must run '${install_command}'")
-        message("Qt will be installed into '${CMAKE_INSTALL_PREFIX}'")
+        list(APPEND msg "Once everything is built, you must run '${install_command}'")
+        list(APPEND msg "Qt will be installed into '${CMAKE_INSTALL_PREFIX}'")
     else()
-        message("Once everything is built, Qt is installed. You should NOT run '${install_command}'")
-        message("Note that this build cannot be deployed to other machines or devices.")
+        list(APPEND msg
+            "Once everything is built, Qt is installed. You should NOT run '${install_command}'")
+        list(APPEND msg
+            "Note that this build cannot be deployed to other machines or devices.")
     endif()
-    message("\nTo configure and build other Qt modules, you can use the following convenience script:
+    list(APPEND msg
+        "\nTo configure and build other Qt modules, you can use the following convenience script:
         ${local_install_prefix}/${INSTALL_BINDIR}/${configure_module_command}")
-    message("\nIf reconfiguration fails for some reason, try to remove 'CMakeCache.txt' \
+    list(APPEND msg "\nIf reconfiguration fails for some reason, try removing 'CMakeCache.txt' \
 from the build directory \n")
+    list(JOIN msg "\n" msg)
+
+    if(NOT QT_INTERNAL_BUILD_INSTRUCTIONS_SHOWN)
+        qt_configure_print_build_instructions_helper("${msg}")
+    endif()
+
+    set(QT_INTERNAL_BUILD_INSTRUCTIONS_SHOWN "TRUE" CACHE STRING "" FORCE)
+endfunction()
+
+function(qt_configure_print_summary_helper summary_reports force_show)
+    # We force show the summary by temporarily (within the scope of the function) resetting the
+    # current log level.
+    if(force_show)
+        set(CMAKE_MESSAGE_LOG_LEVEL "STATUS")
+    endif()
+    message(STATUS "Configure summary:\n${__qt_configure_reports}")
+endfunction()
+
+function(qt_configure_print_build_instructions_helper msg)
+    # We want to ensure build instructions are always shown the first time, regardless of the
+    # current log level.
+    set(CMAKE_MESSAGE_LOG_LEVEL "STATUS")
+    message(STATUS "${msg}")
 endfunction()
 
 function(qt_configure_print_summary)
@@ -50,11 +125,48 @@ function(qt_configure_print_summary)
 
     set(summary_file "${CMAKE_BINARY_DIR}/config.summary")
     file(WRITE "${summary_file}" "")
-    # Show Qt-specific configure summary and any notes, wranings, etc.
+
+    get_property(features_possibly_changed GLOBAL PROPERTY _qt_dirty_build)
+
+    # Show Qt-specific configuration summary.
     if(__qt_configure_reports)
-        message("Configure summary:\n${__qt_configure_reports}")
+        # We want to show the the summary file and log level messages only on first configuration
+        # or when we detect a feature change, to keep most reconfiguration output as quiet as
+        # possible. Currently feature change detection is not entirely reliable.
+        if(NOT QT_INTERNAL_SUMMARY_INSTRUCTIONS_SHOWN OR features_possibly_changed)
+            message("")
+            message(
+                "-- Configuration summary shown below. It has also been written to"
+                " ${CMAKE_BINARY_DIR}/config.summary")
+            message(
+                "-- Configure with --log-level=STATUS or higher to increase "
+                "CMake's message verbosity. "
+                "The log level does not persist across reconfigurations.")
+        endif()
+
+        # Need 2 flushes to ensure no interleaved input is printed due to a mix of message(STATUS)
+        # and message(NOTICE) calls.
+        execute_process(COMMAND ${CMAKE_COMMAND} -E echo " ")
+
+        # We want to show the configuration summary only on first configuration or when we detect
+        # a feature change, to keep most reconfiguration output as quiet as possible.
+        # Currently feature change detection is not entirely reliable.
+        if(NOT QT_INTERNAL_SUMMARY_INSTRUCTIONS_SHOWN OR features_possibly_changed)
+            set(force_show_summary TRUE)
+        else()
+            set(force_show_summary FALSE)
+        endif()
+
+        qt_configure_print_summary_helper(
+            "Configuration summary:\n${__qt_configure_reports}"
+            ${force_show_summary})
+
+        execute_process(COMMAND ${CMAKE_COMMAND} -E echo " ")
+
         file(APPEND "${summary_file}" "${__qt_configure_reports}")
     endif()
+
+    # Show Qt specific notes, warnings, errors.
     if(__qt_configure_notes)
         message("${__qt_configure_notes}")
         file(APPEND "${summary_file}" "${__qt_configure_notes}")
@@ -72,6 +184,7 @@ function(qt_configure_print_summary)
         message(FATAL_ERROR "Check the configuration messages for an error that has occurred.")
     endif()
     file(APPEND "${summary_file}" "\n")
+    set(QT_INTERNAL_SUMMARY_INSTRUCTIONS_SHOWN "TRUE" CACHE STRING "" FORCE)
 endfunction()
 
 # Takes a list of arguments, and saves them to be evaluated at the end of the configuration
@@ -261,6 +374,8 @@ function(qt_configure_process_add_summary_entry)
         endif()
 
         qt_configure_add_report_padded("${label}" "${value}")
+    elseif(arg_TYPE STREQUAL "message")
+        qt_configure_add_report_padded("${arg_ARGS}" "${arg_MESSAGE}")
     endif()
 endfunction()
 
@@ -270,17 +385,22 @@ endfunction()
 
 function(qt_configure_process_add_summary_build_type_and_config)
     get_property(subarch_summary GLOBAL PROPERTY qt_configure_subarch_summary)
-    set(message
-        "Building for: ${QT_QMAKE_TARGET_MKSPEC} (${TEST_architecture_arch}, CPU features: ${subarch_summary})")
+    if(APPLE AND (CMAKE_OSX_ARCHITECTURES MATCHES ";"))
+        set(message
+            "Building for: ${QT_QMAKE_TARGET_MKSPEC} (${CMAKE_OSX_ARCHITECTURES}), ${TEST_architecture_arch} features: ${subarch_summary})")
+    else()
+        set(message
+            "Building for: ${QT_QMAKE_TARGET_MKSPEC} (${TEST_architecture_arch}, CPU features: ${subarch_summary})")
+    endif()
     qt_configure_add_report("${message}")
 
     set(message "Compiler: ")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         string(APPEND message "clang (Apple)")
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+        string(APPEND message "clang (Intel LLVM)")
     elseif(CLANG)
         string(APPEND message "clang")
-    elseif(ICC)
-        string(APPEND message "intel_icc")
     elseif(QCC)
         string(APPEND message "rim_qcc")
     elseif(GCC)

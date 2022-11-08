@@ -1,19 +1,20 @@
-# Generated from sql.pro.
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
 
 if(NOT TARGET Qt::Widgets)
     return()
 endif()
-add_subdirectory(books)
-add_subdirectory(drilldown)
-add_subdirectory(cachedtable)
-add_subdirectory(querymodel)
-add_subdirectory(relationaltablemodel)
-add_subdirectory(sqlwidgetmapper)
-add_subdirectory(tablemodel)
+qt_internal_add_example(books)
+qt_internal_add_example(drilldown)
+qt_internal_add_example(cachedtable)
+qt_internal_add_example(querymodel)
+qt_internal_add_example(relationaltablemodel)
+qt_internal_add_example(sqlwidgetmapper)
+qt_internal_add_example(tablemodel)
 if(TARGET Qt::Xml)
-    add_subdirectory(masterdetail)
+    qt_internal_add_example(masterdetail)
 endif()
 
-if(NOT CMAKE_CROSSCOMPILING) # special case
-    add_subdirectory(sqlbrowser)
+if(NOT CMAKE_CROSSCOMPILING)
+    qt_internal_add_example(sqlbrowser)
 endif()

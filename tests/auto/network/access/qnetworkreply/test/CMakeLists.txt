@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from test.pro.
 
 #####################################################################
@@ -20,23 +23,20 @@ list(APPEND test_data "../smb-file.txt")
 qt_internal_add_test(tst_qnetworkreply
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../" # special case
     SOURCES
-        ../../../../../shared/emulationdetector.h
         ../tst_qnetworkreply.cpp
-    INCLUDE_DIRECTORIES
-        ../../../../../shared
-    PUBLIC_LIBRARIES
+        ../data/gzip.rcc.cpp
+        ../data/zstandard.rcc.cpp
+    LIBRARIES
         Qt::CorePrivate
         Qt::NetworkPrivate
     TESTDATA ${test_data}
     QT_TEST_SERVER_LIST "vsftpd" "apache2" "ftp-proxy" "danted" "squid" # special case
 )
+add_dependencies(tst_qnetworkreply echo)
 
 # Resources:
-set_source_files_properties("../resource"
-    PROPERTIES QT_RESOURCE_ALIAS "resource"
-)
 set(qnetworkreply_resource_files
-    "resource"
+    "../resource"
 )
 
 qt_internal_add_resource(tst_qnetworkreply "qnetworkreply"

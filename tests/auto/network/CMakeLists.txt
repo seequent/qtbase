@@ -1,3 +1,6 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from network.pro.
 # special case begin
 # SSL library include path is not propagated with private tests which results in

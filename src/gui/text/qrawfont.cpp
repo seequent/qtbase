@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtGui module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qglobal.h"
 
@@ -281,12 +245,12 @@ QImage QRawFont::alphaMapForGlyph(quint32 glyphIndex, AntialiasingType antialias
         return QImage();
 
     if (d->fontEngine->glyphFormat == QFontEngine::Format_ARGB)
-        return d->fontEngine->bitmapForGlyph(glyphIndex, QFixed(), transform);
+        return d->fontEngine->bitmapForGlyph(glyphIndex, QFixedPoint(), transform);
 
     if (antialiasingType == SubPixelAntialiasing)
-        return d->fontEngine->alphaRGBMapForGlyph(glyphIndex, QFixed(), transform);
+        return d->fontEngine->alphaRGBMapForGlyph(glyphIndex, QFixedPoint(), transform);
 
-    return d->fontEngine->alphaMapForGlyph(glyphIndex, QFixed(), transform);
+    return d->fontEngine->alphaMapForGlyph(glyphIndex, QFixedPoint(), transform);
 }
 
 /*!
@@ -579,7 +543,12 @@ bool QRawFont::glyphIndexesForChars(const QChar *chars, int numChars, quint32 *g
    to make it appear as if the two glyphs are unspaced. How the advances are calculated is
    controlled by \a layoutFlags.
 
-   \sa QTextLine::horizontalAdvance(), QFontMetricsF::horizontalAdvance()
+   \note When \c KernedAdvances is requested, this function will apply kerning rules from the
+   TrueType table \c{KERN}, if this is available in the font. In many modern fonts, kerning is
+   handled through OpenType rules or AAT rules, which requires a full shaping step to be applied.
+   To get the results of fully shaping the text, use \l{QTextLayout}.
+
+   \sa QTextLine::horizontalAdvance(), QFontMetricsF::horizontalAdvance(), QTextLayout::glyphRuns()
 */
 
 /*!
@@ -604,7 +573,12 @@ bool QRawFont::glyphIndexesForChars(const QChar *chars, int numChars, quint32 *g
    array \a glyphIndexes while the results are returned through \a advances, both of them must
    have \a numGlyphs elements. How the advances are calculated is controlled by \a layoutFlags.
 
-   \sa QTextLine::horizontalAdvance(), QFontMetricsF::horizontalAdvance()
+   \note When \c KernedAdvances is requested, this function will apply kerning rules from the
+   TrueType table \c{KERN}, if this is available in the font. In many modern fonts, kerning is
+   handled through OpenType rules or AAT rules, which requires a full shaping step to be applied.
+   To get the results of fully shaping the text, use \l{QTextLayout}.
+
+   \sa QTextLine::horizontalAdvance(), QFontMetricsF::horizontalAdvance(), QTextLayout::glyphRuns()
 */
 bool QRawFont::advancesForGlyphIndexes(const quint32 *glyphIndexes, QPointF *advances, int numGlyphs, LayoutFlags layoutFlags) const
 {
@@ -760,7 +734,7 @@ QRawFont QRawFont::fromFont(const QFont &font, QFontDatabase::WritingSystem writ
             QFontDef request(multiEngine->fontDef);
             request.styleStrategy |= QFont::NoFontMerging;
 
-            if (QFontEngine *engine = QFontDatabasePrivate::findFont(request, script)) {
+            if (QFontEngine *engine = QFontDatabasePrivate::findFont(request, script, true)) {
                 if (request.weight > QFont::Normal)
                     engine->fontDef.weight = request.weight;
                 if (request.style > QFont::StyleNormal)

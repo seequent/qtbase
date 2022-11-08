@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtCore module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qmetaobjectbuilder_p.h"
 
@@ -224,7 +188,7 @@ public:
     QList<QByteArray> classInfoValues;
     std::vector<QMetaEnumBuilderPrivate> enumerators;
     QList<const QMetaObject *> relatedMetaObjects;
-    int flags;
+    MetaObjectFlags flags;
 };
 
 bool QMetaObjectBuilderPrivate::hasRevisionedMethods() const
@@ -325,7 +289,7 @@ void QMetaObjectBuilder::setSuperClass(const QMetaObject *meta)
 */
 MetaObjectFlags QMetaObjectBuilder::flags() const
 {
-    return MetaObjectFlags(d->flags);
+    return d->flags;
 }
 
 /*!
@@ -558,7 +522,7 @@ QMetaMethodBuilder QMetaObjectBuilder::addConstructor(const QMetaMethod &prototy
 QMetaPropertyBuilder QMetaObjectBuilder::addProperty(const QByteArray &name, const QByteArray &type,
                                                      int notifierId)
 {
-    return addProperty(name, type, QMetaType::fromName(name), notifierId);
+    return addProperty(name, type, QMetaType::fromName(type), notifierId);
 }
 
 /*!
@@ -1119,7 +1083,7 @@ static void writeString(char *out, int i, const QByteArray &str,
     memcpy(out + 2 * i * sizeof(uint), &offsetLen, 2 * sizeof(uint));
 
     memcpy(out + offset, str.constData(), size);
-    out[offsetOfStringdataMember + stringdataOffset + size] = '\0';
+    out[offset + size] = '\0';
 
     stringdataOffset += size + 1;
 }
@@ -1173,7 +1137,7 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
 {
     Q_UNUSED(expectedSize); // Avoid warning in release mode
     Q_UNUSED(buf);
-    int size = 0;
+    qsizetype size = 0;
     int dataIndex;
     int paramsIndex;
     int enumIndex;
@@ -1203,9 +1167,9 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
             - int(d->methods.size())       // return "parameters" don't have names
             - int(d->constructors.size()); // "this" parameters don't have names
     if constexpr (mode == Construct) {
-        static_assert(QMetaObjectPrivate::OutputRevision == 9, "QMetaObjectBuilder should generate the same version as moc");
+        static_assert(QMetaObjectPrivate::OutputRevision == 11, "QMetaObjectBuilder should generate the same version as moc");
         pmeta->revision = QMetaObjectPrivate::OutputRevision;
-        pmeta->flags = d->flags;
+        pmeta->flags = d->flags.toInt();
         pmeta->className = 0;   // Class name is always the first string.
         //pmeta->signalCount is handled in the "output method loop" as an optimization.
 
@@ -1281,7 +1245,8 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
 
     // Output the methods in the class.
     Q_ASSERT(!buf || dataIndex == pmeta->methodData);
-    int parameterMetaTypesIndex = int(d->properties.size());
+    // + 1 for metatype of this metaobject
+    int parameterMetaTypesIndex = int(d->properties.size()) + 1;
     for (const auto &method : d->methods) {
         [[maybe_unused]] int name = strings.enter(method.name());
         int argc = method.parameterCount();
@@ -1438,37 +1403,39 @@ static int buildMetaObject(QMetaObjectBuilderPrivate *d, char *buf,
         size += sizeof(SuperData) * (d->relatedMetaObjects.size() + 1);
     }
 
-    if (d->properties.size() > 0 || d->methods.size() > 0 || d->constructors.size() > 0) {
-        ALIGN(size, QtPrivate::QMetaTypeInterface *);
-        auto types = reinterpret_cast<QtPrivate::QMetaTypeInterface **>(buf + size);
-        if constexpr (mode == Construct) {
-            meta->d.metaTypes = types;
-            for (const auto &prop : d->properties) {
-                QMetaType mt = prop.metaType;
+    ALIGN(size, QtPrivate::QMetaTypeInterface *);
+    auto types = reinterpret_cast<QtPrivate::QMetaTypeInterface **>(buf + size);
+    if constexpr (mode == Construct) {
+        meta->d.metaTypes = types;
+        for (const auto &prop : d->properties) {
+            QMetaType mt = prop.metaType;
+            *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
+            types++;
+        }
+        // add metatype interface for this metaobject - must be null
+        // as we can't know our metatype
+        *types = nullptr;
+        types++;
+        for (const auto &method: d->methods) {
+            QMetaType mt(QMetaType::fromName(method.returnType).id());
+            *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
+            types++;
+            for (const auto &parameterType: method.parameterTypes()) {
+                QMetaType mt = QMetaType::fromName(parameterType);
                 *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
                 types++;
-            }
-            for (const auto &method: d->methods) {
-                QMetaType mt(QMetaType::fromName(method.returnType).id());
-                *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
-                types++;
-                for (const auto &parameterType: method.parameterTypes()) {
-                    QMetaType mt = QMetaType::fromName(parameterType);
-                    *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
-                    types++;
-                }
-            }
-            for (const auto &constructor : d->constructors) {
-                for (const auto &parameterType : constructor.parameterTypes()) {
-                    QMetaType mt = QMetaType::fromName(parameterType);
-                    *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
-                    types++;
-                }
             }
         }
-        // parameterMetaTypesIndex is equal to the total number of metatypes
-        size += static_cast<int>(sizeof(QMetaType) * parameterMetaTypesIndex);
+        for (const auto &constructor : d->constructors) {
+            for (const auto &parameterType : constructor.parameterTypes()) {
+                QMetaType mt = QMetaType::fromName(parameterType);
+                *types = reinterpret_cast<QtPrivate::QMetaTypeInterface *&>(mt);
+                types++;
+            }
+        }
     }
+    // parameterMetaTypesIndex is equal to the total number of metatypes
+    size += sizeof(QMetaType) * parameterMetaTypesIndex;
 
     // Align the final size and return it.
     ALIGN(size, void *);
@@ -1525,274 +1492,6 @@ void QMetaObjectBuilder::setStaticMetacallFunction
 {
     d->staticMetacallFunction = value;
 }
-
-#ifndef QT_NO_DATASTREAM
-
-/*!
-    Serializes the contents of the meta object builder onto \a stream.
-
-    \sa deserialize()
-*/
-void QMetaObjectBuilder::serialize(QDataStream &stream) const
-{
-    int index;
-
-    // Write the class and super class names.
-    stream << d->className;
-    if (d->superClass)
-        stream << QByteArray(d->superClass->className());
-    else
-        stream << QByteArray();
-
-    // Write the counts for each type of class member.
-    stream << int(d->classInfoNames.size());
-    stream << int(d->methods.size());
-    stream << int(d->properties.size());
-    stream << int(d->enumerators.size());
-    stream << int(d->constructors.size());
-    stream << int(d->relatedMetaObjects.size());
-
-    // Write the items of class information.
-    for (index = 0; index < d->classInfoNames.size(); ++index) {
-        stream << d->classInfoNames[index];
-        stream << d->classInfoValues[index];
-    }
-
-    // Write the methods.
-    for (const auto &method : d->methods) {
-        stream << method.signature;
-        stream << method.returnType;
-        stream << method.parameterNames;
-        stream << method.tag;
-        stream << method.attributes;
-        if (method.revision)
-            stream << method.revision;
-    }
-
-    // Write the properties.
-    for (const auto &property : d->properties) {
-        stream << property.name;
-        stream << property.type;
-        stream << property.flags;
-        stream << property.notifySignal;
-        stream << property.revision;
-    }
-
-    // Write the enumerators.
-    for (const auto &enumerator : d->enumerators) {
-        stream << enumerator.name;
-        stream << enumerator.isFlag;
-        stream << enumerator.isScoped;
-        stream << enumerator.keys;
-        stream << enumerator.values;
-    }
-
-    // Write the constructors.
-    for (const auto &ctor : d->constructors) {
-        stream << ctor.signature;
-        stream << ctor.returnType;
-        stream << ctor.parameterNames;
-        stream << ctor.tag;
-        stream << ctor.attributes;
-    }
-
-    // Write the related meta objects.
-    for (index = 0; index < d->relatedMetaObjects.size(); ++index) {
-        const QMetaObject *meta = d->relatedMetaObjects[index];
-        stream << QByteArray(meta->className());
-    }
-
-    // Add an extra empty QByteArray for additional data in future versions.
-    // This should help maintain backwards compatibility, allowing older
-    // versions to read newer data.
-    stream << QByteArray();
-}
-
-// Resolve a class name using the name reference map.
-static const QMetaObject *resolveClassName(const QMap<QByteArray, const QMetaObject *> &references,
-                                           const QByteArray &name)
-{
-    if (name == QByteArray("QObject"))
-        return &QObject::staticMetaObject;
-    else
-        return references.value(name, nullptr);
-}
-
-/*!
-    Deserializes a meta object builder from \a stream into
-    this meta object builder.
-
-    The \a references parameter specifies a mapping from class names
-    to QMetaObject instances for resolving the super class name and
-    related meta objects in the object that is deserialized.
-    The meta object for QObject is implicitly added to \a references
-    and does not need to be supplied.
-
-    The QDataStream::status() value on \a stream will be set to
-    QDataStream::ReadCorruptData if the input data is corrupt.
-    The status will be set to QDataStream::ReadPastEnd if the
-    input was exhausted before the full meta object was read.
-
-    \sa serialize()
-*/
-void QMetaObjectBuilder::deserialize
-        (QDataStream& stream,
-         const QMap<QByteArray, const QMetaObject *>& references)
-{
-    QByteArray name;
-    const QMetaObject *cl;
-    int index;
-
-    // Clear all members in the builder to their default states.
-    d->className.clear();
-    d->superClass = &QObject::staticMetaObject;
-    d->classInfoNames.clear();
-    d->classInfoValues.clear();
-    d->methods.clear();
-    d->properties.clear();
-    d->enumerators.clear();
-    d->constructors.clear();
-    d->relatedMetaObjects.clear();
-    d->staticMetacallFunction = nullptr;
-
-    // Read the class and super class names.
-    stream >> d->className;
-    stream >> name;
-    if (name.isEmpty()) {
-        d->superClass = nullptr;
-    } else if ((cl = resolveClassName(references, name)) != nullptr) {
-        d->superClass = cl;
-    } else {
-        stream.setStatus(QDataStream::ReadCorruptData);
-        return;
-    }
-
-    // Read the counts for each type of class member.
-    int classInfoCount, methodCount, propertyCount;
-    int enumeratorCount, constructorCount, relatedMetaObjectCount;
-    stream >> classInfoCount;
-    stream >> methodCount;
-    stream >> propertyCount;
-    stream >> enumeratorCount;
-    stream >> constructorCount;
-    stream >> relatedMetaObjectCount;
-    if (classInfoCount < 0 || methodCount < 0 ||
-        propertyCount < 0 || enumeratorCount < 0 ||
-        constructorCount < 0 || relatedMetaObjectCount < 0) {
-        stream.setStatus(QDataStream::ReadCorruptData);
-        return;
-    }
-
-    // Read the items of class information.
-    for (index = 0; index < classInfoCount; ++index) {
-        if (stream.status() != QDataStream::Ok)
-            return;
-        QByteArray value;
-        stream >> name;
-        stream >> value;
-        addClassInfo(name, value);
-    }
-
-    // Read the member methods.
-    for (index = 0; index < methodCount; ++index) {
-        if (stream.status() != QDataStream::Ok)
-            return;
-        stream >> name;
-        addMethod(name);
-        QMetaMethodBuilderPrivate &method = d->methods[index];
-        stream >> method.returnType;
-        stream >> method.parameterNames;
-        stream >> method.tag;
-        stream >> method.attributes;
-        if (method.attributes & MethodRevisioned)
-            stream >> method.revision;
-        if (method.methodType() == QMetaMethod::Constructor) {
-            // Cannot add a constructor in this set of methods.
-            stream.setStatus(QDataStream::ReadCorruptData);
-            return;
-        }
-    }
-
-    // Read the properties.
-    for (index = 0; index < propertyCount; ++index) {
-        if (stream.status() != QDataStream::Ok)
-            return;
-        QByteArray type;
-        stream >> name;
-        stream >> type;
-        addProperty(name, type);
-        QMetaPropertyBuilderPrivate &property = d->properties[index];
-        stream >> property.flags;
-        stream >> property.notifySignal;
-        if (property.notifySignal < -1 ||
-            property.notifySignal >= int(d->methods.size())) {
-            // Notify signal method index is out of range.
-            stream.setStatus(QDataStream::ReadCorruptData);
-            return;
-        }
-        if (property.notifySignal >= 0 &&
-            d->methods[property.notifySignal].methodType() != QMetaMethod::Signal) {
-            // Notify signal method index does not refer to a signal.
-            stream.setStatus(QDataStream::ReadCorruptData);
-            return;
-        }
-        stream >> property.revision;
-    }
-
-    // Read the enumerators.
-    for (index = 0; index < enumeratorCount; ++index) {
-        if (stream.status() != QDataStream::Ok)
-            return;
-        stream >> name;
-        addEnumerator(name);
-        QMetaEnumBuilderPrivate &enumerator = d->enumerators[index];
-        stream >> enumerator.isFlag;
-        stream >> enumerator.isScoped;
-        stream >> enumerator.keys;
-        stream >> enumerator.values;
-        if (enumerator.keys.size() != enumerator.values.size()) {
-            // Mismatch between number of keys and number of values.
-            stream.setStatus(QDataStream::ReadCorruptData);
-            return;
-        }
-    }
-
-    // Read the constructor methods.
-    for (index = 0; index < constructorCount; ++index) {
-        if (stream.status() != QDataStream::Ok)
-            return;
-        stream >> name;
-        addConstructor(name);
-        QMetaMethodBuilderPrivate &method = d->constructors[index];
-        stream >> method.returnType;
-        stream >> method.parameterNames;
-        stream >> method.tag;
-        stream >> method.attributes;
-        if (method.methodType() != QMetaMethod::Constructor) {
-            // The type must be Constructor.
-            stream.setStatus(QDataStream::ReadCorruptData);
-            return;
-        }
-    }
-
-    // Read the related meta objects.
-    for (index = 0; index < relatedMetaObjectCount; ++index) {
-        if (stream.status() != QDataStream::Ok)
-            return;
-        stream >> name;
-        cl = resolveClassName(references, name);
-        if (!cl) {
-            stream.setStatus(QDataStream::ReadCorruptData);
-            return;
-        }
-        addRelatedMetaObject(cl);
-    }
-
-    // Read the extra data block, which is reserved for future use.
-    stream >> name;
-}
-
-#endif // !QT_NO_DATASTREAM
 
 /*!
     \class QMetaMethodBuilder
@@ -2003,6 +1702,28 @@ void QMetaMethodBuilder::setAttributes(int value)
     QMetaMethodBuilderPrivate *d = d_func();
     if (d)
         d->attributes = ((d->attributes & 0x0f) | (value << 4));
+}
+
+/*!
+    Returns true if the method is const qualified.
+ */
+int QMetaMethodBuilder::isConst() const
+{
+    QMetaMethodBuilderPrivate *d = d_func();
+    if (!d)
+        return false;
+    return (d->attributes & MethodIsConst);
+}
+
+void QMetaMethodBuilder::setConst(bool methodIsConst)
+{
+    QMetaMethodBuilderPrivate *d = d_func();
+    if (!d)
+        return;
+    if (methodIsConst)
+        d->attributes |= MethodIsConst;
+    else
+        d->attributes &= ~MethodIsConst;
 }
 
 /*!

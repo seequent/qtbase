@@ -1,26 +1,24 @@
+# Copyright (C) 2022 The Qt Company Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Generated from qrhi.pro.
 
 #####################################################################
 ## tst_qrhi Test:
 #####################################################################
 
+# Resources:
+file(GLOB_RECURSE qrhi_resource_files
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    data/*
+)
+
 qt_internal_add_test(tst_qrhi
     SOURCES
         tst_qrhi.cpp
-    PUBLIC_LIBRARIES
+    LIBRARIES
         Qt::Gui
         Qt::GuiPrivate
+    TESTDATA ${qrhi_resource_files}
+    BUILTIN_TESTDATA
 )
-
-# Resources:
-set(qrhi_resource_files
-    "data"
-)
-
-qt_internal_add_resource(tst_qrhi "qrhi"
-    PREFIX
-        "/"
-    FILES
-        ${qrhi_resource_files}
-)
-

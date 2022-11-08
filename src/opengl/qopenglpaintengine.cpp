@@ -1,41 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the QtOpenGL module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPL3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or (at your option) the GNU General
-** Public license version 3 or any later version approved by the KDE Free
-** Qt Foundation. The licenses are as published by the Free Software
-** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-2.0.html and
-** https://www.gnu.org/licenses/gpl-3.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2016 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 /*
     When the active program changes, we need to update it's uniforms.
@@ -112,7 +76,7 @@
 QT_BEGIN_NAMESPACE
 
 
-Q_OPENGL_EXPORT QImage qt_imageForBrush(int brushStyle, bool invert);
+Q_GUI_EXPORT QImage qt_imageForBrush(int brushStyle, bool invert);
 
 ////////////////////////////////// Private Methods //////////////////////////////////////////
 
@@ -187,7 +151,7 @@ void QOpenGL2PaintEngineExPrivate::useSimpleShader()
 
     \note Any code or Qt API that internally activates or binds will
     not affect the cache used by this function, which means they will
-    lead to inconsisent state. QPainter::beginNativePainting() takes
+    lead to inconsistent state. QPainter::beginNativePainting() takes
     care of resetting the cache, so for user–code this is fine, but
     internally in the paint engine care must be taken to not call
     functions that may activate or bind under our feet.
@@ -340,6 +304,7 @@ void QOpenGL2PaintEngineExPrivate::updateBrushUniforms()
         return;
 
     QTransform brushQTransform = currentBrush.transform();
+    bool isCosmetic = false;
 
     if (style == Qt::SolidPattern) {
         QColor col = qt_premultiplyColor(currentBrush.color(), (GLfloat)q->state()->opacity);
@@ -356,6 +321,8 @@ void QOpenGL2PaintEngineExPrivate::updateBrushUniforms()
 
             QVector2D halfViewportSize(width*0.5, height*0.5);
             shaderManager->currentProgram()->setUniformValue(location(QOpenGLEngineShaderManager::HalfViewportSize), halfViewportSize);
+
+            isCosmetic = !q->painter()->testRenderHint(QPainter::NonCosmeticBrushPatterns);
         }
         else if (style == Qt::LinearGradientPattern) {
             const QLinearGradient *g = static_cast<const QLinearGradient *>(currentBrush.gradient());
@@ -430,8 +397,12 @@ void QOpenGL2PaintEngineExPrivate::updateBrushUniforms()
             qWarning("QOpenGL2PaintEngineEx: Unimplemented fill style");
 
         const QPointF &brushOrigin = q->state()->brushOrigin;
-        QTransform matrix = q->state()->matrix;
+        QTransform matrix;
+        if (!isCosmetic)
+            matrix = q->state()->matrix;
         matrix.translate(brushOrigin.x(), brushOrigin.y());
+        if (!isCosmetic)
+            matrix = brushQTransform * matrix;
 
         QTransform translate(1, 0, 0, 1, -translationPoint.x(), -translationPoint.y());
         qreal m22 = -1;
@@ -441,7 +412,7 @@ void QOpenGL2PaintEngineExPrivate::updateBrushUniforms()
             dy = 0;
         }
         QTransform gl_to_qt(1, 0, 0, m22, 0, dy);
-        QTransform inv_matrix = gl_to_qt * (brushQTransform * matrix).inverted() * translate;
+        QTransform inv_matrix = gl_to_qt * matrix.inverted() * translate;
 
         shaderManager->currentProgram()->setUniformValue(location(QOpenGLEngineShaderManager::BrushTransform), inv_matrix);
         shaderManager->currentProgram()->setUniformValue(location(QOpenGLEngineShaderManager::BrushTexture), QT_BRUSH_TEXTURE_UNIT);
@@ -637,7 +608,16 @@ static inline void setCoords(GLfloat *coords, const QOpenGLRect &rect)
 
 void QOpenGL2PaintEngineExPrivate::drawTexture(const QOpenGLRect& dest, const QOpenGLRect& src, const QSize &textureSize, bool opaque, bool pattern)
 {
-    Q_TRACE_SCOPE(QOpenGL2PaintEngineExPrivate_drawTexture, dest, src, textureSize, opaque, pattern);
+    Q_TRACE_SCOPE(QOpenGL2PaintEngineExPrivate_drawTexture,
+            dest.left,
+            dest.top,
+            dest.right,
+            dest.bottom,
+            src.left,
+            src.top,
+            src.right,
+            src.bottom,
+            textureSize, opaque);
 
     // Setup for texture drawing
     currentBrush = noBrush;
@@ -755,11 +735,11 @@ void QOpenGL2PaintEngineExPrivate::resetGLState()
         float color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
         funcs.glVertexAttrib4fv(3, color);
     }
-    if (vao.isCreated()) {
+    if (vao.isCreated())
         vao.release();
-        funcs.glBindBuffer(GL_ARRAY_BUFFER, 0);
-        funcs.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-    }
+
+    funcs.glBindBuffer(GL_ARRAY_BUFFER, 0);
+    funcs.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 void QOpenGL2PaintEngineEx::endNativePainting()
@@ -854,8 +834,11 @@ void QOpenGL2PaintEngineExPrivate::fill(const QVectorPath& path)
     }
 
     // Might need to call updateMatrix to re-calculate inverseScale
-    if (matrixDirty)
+    if (matrixDirty) {
         updateMatrix();
+        if (currentBrush.style() > Qt::SolidPattern)
+            brushUniformsDirty = true;
+    }
 
     const bool supportsElementIndexUint = funcs.hasOpenGLExtension(QOpenGLExtensions::ElementIndexUint);
 
@@ -1124,6 +1107,10 @@ void QOpenGL2PaintEngineExPrivate::fillStencilWithVertexArray(const float *data,
 
     funcs.glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // Disable color writes
     useSimpleShader();
+#ifndef QT_NO_DEBUG
+    if (ctx->format().stencilBufferSize() <= 0)
+        qWarning("OpenGL paint engine: attempted to use stencil test without requesting a stencil buffer.");
+#endif
     funcs.glEnable(GL_STENCIL_TEST); // For some reason, this has to happen _after_ the simple shader is use()'d
 
     if (mode == WindingFillMode) {
@@ -1451,7 +1438,12 @@ void QOpenGL2PaintEngineExPrivate::stroke(const QVectorPath &path, const QPen &p
 
 void QOpenGL2PaintEngineEx::penChanged() { }
 void QOpenGL2PaintEngineEx::brushChanged() { }
-void QOpenGL2PaintEngineEx::brushOriginChanged() { }
+
+void QOpenGL2PaintEngineEx::brushOriginChanged()
+{
+    Q_D(QOpenGL2PaintEngineEx);
+    d->brushUniformsDirty = true;
+}
 
 void QOpenGL2PaintEngineEx::opacityChanged()
 {
@@ -1494,7 +1486,7 @@ void QOpenGL2PaintEngineEx::renderHintsChanged()
     d->lastTextureUsed = GLuint(-1);
 
     d->brushTextureDirty = true;
-//    qDebug("QOpenGL2PaintEngineEx::renderHintsChanged() not implemented!");
+    d->brushUniformsDirty = true;
 }
 
 void QOpenGL2PaintEngineEx::transformChanged()
@@ -1572,6 +1564,8 @@ void QOpenGL2PaintEngineEx::drawImage(const QRectF& dest, const QImage& image, c
     case QImage::Format_RGBA8888:
     case QImage::Format_ARGB32:
     case QImage::Format_RGBA64:
+    case QImage::Format_RGBA16FPx4:
+    case QImage::Format_RGBA32FPx4:
         d->shaderManager->setSrcPixelType(QOpenGLEngineShaderManager::NonPremultipliedImageSrc);
         bindOption = { };
         break;
@@ -1745,6 +1739,14 @@ bool QOpenGL2PaintEngineEx::shouldDrawCachedGlyphs(QFontEngine *fontEngine, cons
     return QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, t);
 }
 
+
+// MSVC 19.28 does show spurious warning "C4723: potential divide by 0" for the code
+// that divides by QOpenGLTextureGlyphCache::height() in release builds.
+// Anyhow, the code path in this method is only executed
+// if height() != 0. Therefore disable the warning.
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_MSVC(4723)
+
 void QOpenGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngine::GlyphFormat glyphFormat,
                                                 QStaticTextItem *staticTextItem)
 {
@@ -1797,11 +1799,13 @@ void QOpenGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngine::GlyphFormat gly
     if (recreateVertexArrays) {
         cache->setPaintEnginePrivate(this);
         if (!cache->populate(fe, staticTextItem->numGlyphs,
-                             staticTextItem->glyphs, staticTextItem->glyphPositions)) {
+                             staticTextItem->glyphs, staticTextItem->glyphPositions,
+                             s->renderHints)) {
             // No space for glyphs in cache. We need to reset it and try again.
             cache->clear();
             cache->populate(fe, staticTextItem->numGlyphs,
-                            staticTextItem->glyphs, staticTextItem->glyphPositions);
+                            staticTextItem->glyphs, staticTextItem->glyphPositions,
+                            s->renderHints);
         }
 
         if (cache->hasPendingGlyphs()) {
@@ -1874,10 +1878,15 @@ void QOpenGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngine::GlyphFormat gly
         textureCoordinates->clear();
 
         bool supportsSubPixelPositions = fe->supportsSubPixelPositions();
+        bool verticalSubPixelPositions = fe->supportsVerticalSubPixelPositions()
+                && (s->renderHints & QPainter::VerticalSubpixelPositioning) != 0;
         for (int i=0; i<staticTextItem->numGlyphs; ++i) {
-            QFixed subPixelPosition;
-            if (supportsSubPixelPositions)
-                subPixelPosition = fe->subPixelPositionForX(staticTextItem->glyphPositions[i].x);
+            QFixedPoint subPixelPosition;
+            if (supportsSubPixelPositions) {
+                subPixelPosition = fe->subPixelPositionFor(staticTextItem->glyphPositions[i]);
+                if (!verticalSubPixelPositions)
+                    subPixelPosition.y = 0;
+            }
 
             QTextureGlyphCache::GlyphAndSubPixelPosition glyph(staticTextItem->glyphs[i], subPixelPosition);
 
@@ -1886,7 +1895,10 @@ void QOpenGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngine::GlyphFormat gly
                 continue;
 
             int x = qFloor(staticTextItem->glyphPositions[i].x.toReal() * cache->transform().m11()) + c.baseLineX - margin;
-            int y = qRound(staticTextItem->glyphPositions[i].y.toReal() * cache->transform().m22()) - c.baseLineY - margin;
+            int y = verticalSubPixelPositions
+                    ? qRound(staticTextItem->glyphPositions[i].y.toReal() * cache->transform().m22())
+                    : qFloor(staticTextItem->glyphPositions[i].y.toReal() * cache->transform().m22());
+            y -= c.baseLineY + margin;
 
             vertexCoordinates->addQuad(QRectF(x, y, c.w, c.h));
             textureCoordinates->addQuad(QRectF(c.x*dx, c.y*dy, c.w * dx, c.h * dy));
@@ -2050,6 +2062,8 @@ void QOpenGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngine::GlyphFormat gly
 #endif
 }
 
+QT_WARNING_POP
+
 void QOpenGL2PaintEngineEx::drawPixmapFragments(const QPainter::PixmapFragment *fragments, int fragmentCount, const QPixmap &pixmap,
                                             QPainter::PixmapFragmentHints hints)
 {
@@ -2193,28 +2207,27 @@ bool QOpenGL2PaintEngineEx::begin(QPaintDevice *pdev)
         bool created = d->vao.create();
 
         // If we managed to create it then we have a profile that supports VAOs
-        if (created) {
+        if (created)
             d->vao.bind();
+    }
 
-            // Generate a new Vertex Buffer Object if we don't have one already
-            if (!d->vertexBuffer.isCreated()) {
-                d->vertexBuffer.create();
-                // Set its usage to StreamDraw, we will use this buffer only a few times before refilling it
-                d->vertexBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
-            }
-            if (!d->texCoordBuffer.isCreated()) {
-                d->texCoordBuffer.create();
-                d->texCoordBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
-            }
-            if (!d->opacityBuffer.isCreated()) {
-                d->opacityBuffer.create();
-                d->opacityBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
-            }
-            if (!d->indexBuffer.isCreated()) {
-                d->indexBuffer.create();
-                d->indexBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
-            }
-        }
+    // Generate a new Vertex Buffer Object if we don't have one already
+    if (!d->vertexBuffer.isCreated()) {
+        d->vertexBuffer.create();
+        // Set its usage to StreamDraw, we will use this buffer only a few times before refilling it
+        d->vertexBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
+    }
+    if (!d->texCoordBuffer.isCreated()) {
+        d->texCoordBuffer.create();
+        d->texCoordBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
+    }
+    if (!d->opacityBuffer.isCreated()) {
+        d->opacityBuffer.create();
+        d->opacityBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
+    }
+    if (!d->indexBuffer.isCreated()) {
+        d->indexBuffer.create();
+        d->indexBuffer.setUsagePattern(QOpenGLBuffer::StreamDraw);
     }
 
     for (int i = 0; i < QT_GL_VERTEX_ARRAY_TRACKED_COUNT; ++i)
@@ -2324,6 +2337,10 @@ void QOpenGL2PaintEngineExPrivate::updateClipScissorTest()
 {
     Q_Q(QOpenGL2PaintEngineEx);
     if (q->state()->clipTestEnabled) {
+#ifndef QT_NO_DEBUG
+        if (ctx->format().stencilBufferSize() <= 0)
+            qWarning("OpenGL paint engine: attempted to use stencil test for clipping without requesting a stencil buffer.");
+#endif
         funcs.glEnable(GL_STENCIL_TEST);
         funcs.glStencilFunc(GL_LEQUAL, q->state()->currentClip, ~GL_STENCIL_HIGH_BIT);
     } else {
@@ -2496,7 +2513,7 @@ void QOpenGL2PaintEngineEx::clip(const QVectorPath &path, Qt::ClipOperation op)
                 && qFuzzyIsNull(state()->matrix.m11())
                 && qFuzzyIsNull(state()->matrix.m22())))
         {
-            state()->rectangleClip = state()->rectangleClip.intersected(state()->matrix.mapRect(rect).toAlignedRect());
+            state()->rectangleClip &= qt_mapFillRect(rect, state()->matrix);
             d->updateClipScissorTest();
             return;
         }
