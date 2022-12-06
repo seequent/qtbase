@@ -130,7 +130,7 @@ private:
 class Q_CORE_EXPORT QMutex : public QBasicMutex
 {
 public:
-    constexpr QMutex() = default;
+    constexpr QMutex() : QBasicMutex{} {}
     ~QMutex()
     {
         QMutexPrivate *d = d_ptr.loadRelaxed();
@@ -199,7 +199,7 @@ class Q_CORE_EXPORT QRecursiveMutex
     QMutex mutex;
 
 public:
-    constexpr QRecursiveMutex() = default;
+    constexpr QRecursiveMutex() : owner{ nullptr }, count{ 0 }, mutex{} {}
     ~QRecursiveMutex();
 
 
