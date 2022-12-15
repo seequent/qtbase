@@ -292,7 +292,7 @@ void QCosmeticStroker::setup()
 
     if (state->renderHints & QPainter::Antialiasing)
         strokeSelection |= AntiAliased;
-    if (state->renderHints & 0x4000)  // Magic Seequent-specific render hint
+    if (state->renderHints & QPainter::FixedDraw)  // Magic Seequent-specific render hint
         strokeSelection |= FixedDraw;
 
     const QList<qreal> &penPattern = state->lastPen.dashPattern();
