@@ -125,6 +125,10 @@ QT_BEGIN_NAMESPACE
 
 using namespace QCss;
 
+static QWindow *qt_getWindow(const QWidget *widget)
+{
+    return widget ? widget->window()->windowHandle() : 0;
+}
 
 class QStyleSheetStylePrivate : public QWindowsStylePrivate
 {
@@ -3560,7 +3564,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
                     if (button->state & State_On)
                         state = QIcon::On;
 
-                    QPixmap pixmap = icon.pixmap(button->iconSize, mode, state);
+                    QPixmap pixmap = icon.pixmap((qt_getWindow(w), button->iconSize, mode, state);
                     int pixmapWidth = pixmap.width() / pixmap.devicePixelRatio();
                     int pixmapHeight = pixmap.height() / pixmap.devicePixelRatio();
                     int labelWidth = pixmapWidth;
