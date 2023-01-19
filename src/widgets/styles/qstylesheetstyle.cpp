@@ -102,6 +102,10 @@ using namespace Qt::StringLiterals;
 
 using namespace QCss;
 
+static qreal qt_getDevicePixelRatio(const QWidget *widget)
+{
+    return widget ? widget->devicePixelRatio() : qApp->devicePixelRatio();
+}
 
 class QStyleSheetStylePrivate : public QWindowsStylePrivate
 {
@@ -3730,7 +3734,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
                     if (button->state & State_On)
                         state = QIcon::On;
 
-                    QPixmap pixmap = icon.pixmap(button->iconSize, mode, state);
+                    QPixmap pixmap = icon.pixmap(button->iconSize, qt_getDevicePixelRatio(w), mode, state);
                     int pixmapWidth = pixmap.width() / pixmap.devicePixelRatio();
                     int pixmapHeight = pixmap.height() / pixmap.devicePixelRatio();
                     int labelWidth = pixmapWidth;
