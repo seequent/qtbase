@@ -653,7 +653,7 @@ void QCommonStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, Q
             if (cg == QPalette::Normal && !(vopt->state & QStyle::State_Active))
                 cg = QPalette::Inactive;
 
-            if ((vopt->state & QStyle::State_Selected) &&  proxy()->styleHint(QStyle::SH_ItemView_ShowDecorationSelected, opt, widget))
+            if ((vopt->state & QStyle::State_Selected) && vopt->showDecorationSelected)
                 p->fillRect(vopt->rect, vopt->palette.brush(cg, QPalette::Highlight));
             else if (vopt->features & QStyleOptionViewItem::Alternate)
                 p->fillRect(vopt->rect, vopt->palette.brush(cg, QPalette::AlternateBase));
@@ -6350,7 +6350,7 @@ QIcon QCommonStyle::standardIcon(StandardPixmap standardIcon, const QStyleOption
                      QIcon::Normal, QIcon::On);
         icon.addFile(iconResourcePrefix() + u"standardbutton-closetab-hover-16.png", QSize(16, 16),
                      QIcon::Active, QIcon::Off);
-        icon.addFile(iconResourcePrefix() + u"standardbutton-closetab-hover-16.png", QSize(32, 32),
+        icon.addFile(iconResourcePrefix() + u"standardbutton-closetab-hover-32.png", QSize(32, 32),
                      QIcon::Active, QIcon::Off);
         break;
     default:

@@ -1938,7 +1938,7 @@ void QPdfEnginePrivate::embedFont(QFontSubset *font)
         addXrefEntry(toUnicode);
         QByteArray touc = font->createToUnicodeMap();
         xprintf("<< /Length %d >>\n"
-                "stream\n", touc.length());
+                "stream\n", touc.size());
         write(touc);
         write("\nendstream\n"
               "endobj\n");
@@ -2280,16 +2280,15 @@ int QPdfEnginePrivate::writeCompressed(const char *src, int len)
 {
 #ifndef QT_NO_COMPRESS
     if (do_compress) {
-        uLongf destLen = len + len/100 + 13; // zlib requirement
-        Bytef* dest = new Bytef[destLen];
-        if (Z_OK == ::compress(dest, &destLen, (const Bytef*) src, (uLongf)len)) {
-            stream->writeRawData((const char*)dest, destLen);
+        const QByteArray data = qCompress(reinterpret_cast<const uchar *>(src), len);
+        constexpr qsizetype HeaderSize = 4;
+        if (!data.isNull()) {
+            stream->writeRawData(data.data() + HeaderSize, data.size() - HeaderSize);
+            len = data.size() - HeaderSize;
         } else {
             qWarning("QPdfStream::writeCompressed: Error in compress()");
-            destLen = 0;
+            len = 0;
         }
-        delete [] dest;
-        len = destLen;
     } else
 #endif
     {
@@ -2335,7 +2334,7 @@ int QPdfEnginePrivate::writeImage(const QByteArray &data, int width, int height,
         //qDebug("DCT");
         xprintf("/Filter /DCTDecode\n>>\nstream\n");
         write(data);
-        len = data.length();
+        len = data.size();
     } else {
         if (do_compress)
             xprintf("/Filter /FlateDecode\n>>\nstream\n");
@@ -2666,7 +2665,7 @@ int QPdfEnginePrivate::gradientBrush(const QBrush &b, const QTransform &matrix, 
                 "/Shading << /Shader" << alphaShaderObject << alphaShaderObject << "0 R >>\n"
                 ">>\n";
 
-            f << "/Length " << content.length() << "\n"
+            f << "/Length " << content.size() << "\n"
                 ">>\n"
                 "stream\n"
               << content
@@ -2784,7 +2783,7 @@ int QPdfEnginePrivate::addBrushPattern(const QTransform &m, bool *specifyColor, 
         s << "/XObject << /Im" << imageObject << ' ' << imageObject << "0 R >> ";
     }
     s << ">>\n"
-        "/Length " << pattern.length() << "\n"
+        "/Length " << pattern.size() << "\n"
         ">>\n"
         "stream\n"
       << pattern

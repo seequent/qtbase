@@ -362,7 +362,7 @@ inline void QLibraryStore::cleanup()
 
     // dump all objects that remain
     if (lcDebugLibrary().isDebugEnabled()) {
-        for (QLibraryPrivate *lib : qAsConst(data->libraryMap)) {
+        for (QLibraryPrivate *lib : std::as_const(data->libraryMap)) {
             if (lib)
                 qDebug(lcDebugLibrary)
                         << "On QtCore unload," << lib->fileName << "was leaked, with"
@@ -911,13 +911,7 @@ QLibrary::~QLibrary()
 
 void QLibrary::setFileName(const QString &fileName)
 {
-    QLibrary::LoadHints lh;
-    if (d) {
-        lh = d->loadHints();
-        d->release();
-        d = {};
-    }
-    d = QLibraryPrivate::findOrCreate(fileName, QString(), lh);
+    setFileNameAndVersion(fileName, QString());
 }
 
 QString QLibrary::fileName() const
@@ -940,13 +934,7 @@ QString QLibrary::fileName() const
 */
 void QLibrary::setFileNameAndVersion(const QString &fileName, int verNum)
 {
-    QLibrary::LoadHints lh;
-    if (d) {
-        lh = d->loadHints();
-        d->release();
-        d = {};
-    }
-    d = QLibraryPrivate::findOrCreate(fileName, verNum >= 0 ? QString::number(verNum) : QString(), lh);
+    setFileNameAndVersion(fileName, verNum >= 0 ? QString::number(verNum) : QString());
 }
 
 /*!
@@ -964,9 +952,10 @@ void QLibrary::setFileNameAndVersion(const QString &fileName, const QString &ver
     if (d) {
         lh = d->loadHints();
         d->release();
-        d = {};
     }
-    d = QLibraryPrivate::findOrCreate(fileName, version, lh);
+    QLibraryPrivate *dd = QLibraryPrivate::findOrCreate(fileName, version, lh);
+    d = dd;
+    d.setTag(isLoaded() ? Loaded : NotLoaded);
 }
 
 /*!

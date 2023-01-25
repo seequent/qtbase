@@ -52,6 +52,12 @@ protected:
     void flipFinished();
     void ensureModeSet(uint32_t fb);
     void cloneDestFlipFinished(QEglFSKmsGbmScreen *cloneDestScreen);
+    void waitForFlipWithEventReader(QEglFSKmsGbmScreen *screen);
+    static void nonThreadedPageFlipHandler(int fd,
+                                           unsigned int sequence,
+                                           unsigned int tv_sec,
+                                           unsigned int tv_usec,
+                                           void *user_data);
 
     gbm_surface *m_gbm_surface;
 
@@ -61,6 +67,7 @@ protected:
 
     QMutex m_flipMutex;
     QWaitCondition m_flipCond;
+    static QMutex m_nonThreadedFlipMutex;
 
     QScopedPointer<QEglFSKmsGbmCursor> m_cursor;
 

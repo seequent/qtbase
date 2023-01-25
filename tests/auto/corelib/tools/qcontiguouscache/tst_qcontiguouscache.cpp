@@ -50,20 +50,24 @@ void tst_QContiguousCache::empty()
 {
     QContiguousCache<int> c(10);
     QCOMPARE(c.capacity(), 10);
+    QCOMPARE(c.size(), 0);
+    // NOLINTNEXTLINE(qt-port-to-std-compatible-api): : We want to test count() and size()
     QCOMPARE(c.count(), 0);
     QVERIFY(c.isEmpty());
     c.append(1);
+    QCOMPARE(c.size(), 1);
+    // NOLINTNEXTLINE(qt-port-to-std-compatible-api): : We want to test count() and size()
     QCOMPARE(c.count(), 1);
     QVERIFY(!c.isEmpty());
     c.clear();
     QCOMPARE(c.capacity(), 10);
-    QCOMPARE(c.count(), 0);
+    QCOMPARE(c.size(), 0);
     QVERIFY(c.isEmpty());
     c.prepend(1);
-    QCOMPARE(c.count(), 1);
+    QCOMPARE(c.size(), 1);
     QVERIFY(!c.isEmpty());
     c.clear();
-    QCOMPARE(c.count(), 0);
+    QCOMPARE(c.size(), 0);
     QVERIFY(c.isEmpty());
     QCOMPARE(c.capacity(), 10);
 }
@@ -74,9 +78,9 @@ void tst_QContiguousCache::swap()
     c1.append(1);
     c1.swap(c2);
     QCOMPARE(c1.capacity(), 100);
-    QCOMPARE(c1.count(),    0  );
+    QCOMPARE(c1.size(),    0  );
     QCOMPARE(c2.capacity(), 10 );
-    QCOMPARE(c2.count(),    1  );
+    QCOMPARE(c2.size(),    1  );
 }
 
 void tst_QContiguousCache::append_data()
@@ -112,7 +116,7 @@ void tst_QContiguousCache::append()
         QCOMPARE(c.available(), qMax(qsizetype(0), cacheSize - i));
         QCOMPARE(c.first(), qMax(qsizetype(1), i-cacheSize+1));
         QCOMPARE(c.last(), i);
-        QCOMPARE(c.count(), qMin(i, cacheSize));
+        QCOMPARE(c.size(), qMin(i, cacheSize));
         QCOMPARE(c.isFull(), i >= cacheSize);
         i++;
     }
@@ -125,7 +129,7 @@ void tst_QContiguousCache::append()
     // test taking from end until empty.
     for (j = 0; j < cacheSize; j++, i--) {
         QCOMPARE(c.takeLast(), i-1);
-        QCOMPARE(c.count(), cacheSize-j-1);
+        QCOMPARE(c.size(), cacheSize-j-1);
         QCOMPARE(c.available(), j+1);
         QVERIFY(!c.isFull());
         QCOMPARE(c.isEmpty(), j==cacheSize-1);
@@ -163,7 +167,7 @@ void tst_QContiguousCache::prepend()
         QCOMPARE(c.available(), qMax(0, cacheSize - i));
         QCOMPARE(c.last(), qMax(1, i-cacheSize+1));
         QCOMPARE(c.first(), i);
-        QCOMPARE(c.count(), qMin(i, cacheSize));
+        QCOMPARE(c.size(), qMin(i, cacheSize));
         QCOMPARE(c.isFull(), i >= cacheSize);
         i++;
     }
@@ -176,7 +180,7 @@ void tst_QContiguousCache::prepend()
     // test taking from start until empty.
     for (j = 0; j < cacheSize; j++, i--) {
         QCOMPARE(c.takeFirst(), i-1);
-        QCOMPARE(c.count(), cacheSize-j-1);
+        QCOMPARE(c.size(), cacheSize-j-1);
         QCOMPARE(c.available(), j+1);
         QVERIFY(!c.isFull());
         QCOMPARE(c.isEmpty(), j==cacheSize-1);
@@ -296,7 +300,7 @@ void tst_QContiguousCache::setCapacity()
     for (i = 280; i < 310; ++i)
         contiguousCache.insert(i, i);
     QCOMPARE(contiguousCache.capacity(), 100);
-    QCOMPARE(contiguousCache.count(), 30);
+    QCOMPARE(contiguousCache.size(), 30);
     QCOMPARE(contiguousCache.firstIndex(), 280);
     QCOMPARE(contiguousCache.lastIndex(), 309);
 
@@ -308,7 +312,7 @@ void tst_QContiguousCache::setCapacity()
     contiguousCache.setCapacity(150);
 
     QCOMPARE(contiguousCache.capacity(), 150);
-    QCOMPARE(contiguousCache.count(), 30);
+    QCOMPARE(contiguousCache.size(), 30);
     QCOMPARE(contiguousCache.firstIndex(), 280);
     QCOMPARE(contiguousCache.lastIndex(), 309);
 
@@ -320,7 +324,7 @@ void tst_QContiguousCache::setCapacity()
     contiguousCache.setCapacity(20);
 
     QCOMPARE(contiguousCache.capacity(), 20);
-    QCOMPARE(contiguousCache.count(), 20);
+    QCOMPARE(contiguousCache.size(), 20);
     QCOMPARE(contiguousCache.firstIndex(), 290);
     QCOMPARE(contiguousCache.lastIndex(), 309);
 

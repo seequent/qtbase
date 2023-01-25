@@ -33,6 +33,7 @@
 #include <private/qguiapplication_p.h>
 #include <private/qhighdpiscaling_p.h>
 #include <qpa/qwindowsysteminterface.h>
+#include <qpa/qplatformtheme.h>
 
 #include <QtCore/qdebug.h>
 #include <QtCore/qlibraryinfo.h>
@@ -850,8 +851,9 @@ static inline bool shouldApplyDarkFrame(const QWindow *w)
 {
     if (!w->isTopLevel() || w->flags().testFlag(Qt::FramelessWindowHint))
         return false;
-    if (QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeStyle))
-        return true;
+    // the application has explicitly opted out of dark frames
+    if (!QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeWindowFrames))
+        return false;
     // if the application supports a dark border, and the palette is dark (window background color
     // is darker than the text), then turn dark-border support on, otherwise use a light border.
     const QPalette defaultPalette;
@@ -926,11 +928,8 @@ QWindowsWindowData
         return result;
     }
 
-    if (QWindowsContext::isDarkMode()
-        && QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeWindowFrames)
-        && shouldApplyDarkFrame(w)) {
-        QWindowsWindow::setDarkBorderToWindow(result.hwnd, true);
-    }
+    QWindowsWindow::setDarkBorderToWindow(result.hwnd, QWindowsContext::isDarkMode()
+                                                    && shouldApplyDarkFrame(w));
 
     if (mirrorParentWidth != 0) {
         context->obtainedPos.setX(mirrorParentWidth - context->obtainedSize.width()
@@ -2303,9 +2302,22 @@ static inline bool isSoftwareGl()
 }
 
 bool QWindowsWindow::handleWmPaint(HWND hwnd, UINT message,
-                                         WPARAM, LPARAM, LRESULT *result)
+                                   WPARAM wParam, LPARAM, LRESULT *result)
 {
     if (message == WM_ERASEBKGND) { // Backing store - ignored.
+        if (!m_firstBgDraw && QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeStyle)) {
+            // Get system background color
+            const QColor bgColor = QGuiApplicationPrivate::platformTheme()->palette()->color(QPalette::Window);
+            HBRUSH bgBrush = CreateSolidBrush(RGB(bgColor.red(), bgColor.green(), bgColor.blue()));
+            // Fill rectangle with system background color
+            RECT rc;
+            auto hdc = reinterpret_cast<HDC>(wParam);
+            GetClientRect(hwnd, &rc);
+            FillRect(hdc, &rc, bgBrush);
+            DeleteObject(bgBrush);
+            // Brush the window with system background color only for first time
+            m_firstBgDraw = true;
+        }
         *result = 1;
         return true;
     }
@@ -2594,6 +2606,9 @@ void QWindowsWindow::setExStyle(unsigned s) const
 bool QWindowsWindow::windowEvent(QEvent *event)
 {
     switch (event->type()) {
+    case QEvent::ApplicationPaletteChange:
+        setDarkBorder(QWindowsContext::isDarkMode());
+        break;
     case QEvent::WindowBlocked: // Blocked by another modal window.
         setEnabled(false);
         setFlag(BlockedByModal);
@@ -3165,8 +3180,12 @@ bool QWindowsWindow::setDarkBorderToWindow(HWND hwnd, bool d)
 
 void QWindowsWindow::setDarkBorder(bool d)
 {
-    if (shouldApplyDarkFrame(window()) && queryDarkBorder(m_data.hwnd) != d)
-        setDarkBorderToWindow(m_data.hwnd, d);
+    // respect explicit opt-out and incompatible palettes or styles
+    d = d && shouldApplyDarkFrame(window());
+    if (queryDarkBorder(m_data.hwnd) == d)
+        return;
+
+    setDarkBorderToWindow(m_data.hwnd, d);
 }
 
 QWindowsMenuBar *QWindowsWindow::menuBar() const

@@ -54,7 +54,7 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(const QByteArray &hea
     while (true) {
         // skip spaces
         pos = nextNonWhitespace(header, pos);
-        if (pos == header.length())
+        if (pos == header.size())
             return result;      // end of parsing
 
         // pos points to a non-whitespace
@@ -68,7 +68,7 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(const QByteArray &hea
         // of the header, whichever comes first
         int end = comma;
         if (end == -1)
-            end = header.length();
+            end = header.size();
         if (equal != -1 && end > equal)
             end = equal;        // equal sign comes before comma/end
         QByteArray key = QByteArray(header.constData() + pos, end - pos).trimmed().toLower();
@@ -78,26 +78,26 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(const QByteArray &hea
             // case: token "=" (token | quoted-string)
             // skip spaces
             pos = nextNonWhitespace(header, pos);
-            if (pos == header.length())
+            if (pos == header.size())
                 // huh? Broken header
                 return result;
 
             QByteArray value;
-            value.reserve(header.length() - pos);
+            value.reserve(header.size() - pos);
             if (header.at(pos) == '"') {
                 // case: quoted-string
                 // quoted-string  = ( <"> *(qdtext | quoted-pair ) <"> )
                 // qdtext         = <any TEXT except <">>
                 // quoted-pair    = "\" CHAR
                 ++pos;
-                while (pos < header.length()) {
+                while (pos < header.size()) {
                     char c = header.at(pos);
                     if (c == '"') {
                         // end of quoted text
                         break;
                     } else if (c == '\\') {
                         ++pos;
-                        if (pos >= header.length())
+                        if (pos >= header.size())
                             // broken header
                             return result;
                         c = header.at(pos);
@@ -108,7 +108,7 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(const QByteArray &hea
                 }
             } else {
                 // case: token
-                while (pos < header.length()) {
+                while (pos < header.size()) {
                     char c = header.at(pos);
                     if (isSeparator(c))
                         break;
@@ -326,6 +326,7 @@ qint64 QNetworkReplyHttpImpl::readData(char* data, qint64 maxlen)
             d->error(QNetworkReplyImpl::NetworkError::UnknownContentError,
                      QCoreApplication::translate("QHttp", "Decompression failed: %1")
                              .arg(d->decompressHelper.errorString()));
+            d->decompressHelper.clear();
             return -1;
         }
         if (d->cacheSaveDevice) {
@@ -746,7 +747,7 @@ void QNetworkReplyHttpImplPrivate::postRequest(const QNetworkRequest &newHttpReq
         }
     }
 
-    for (const QByteArray &header : qAsConst(headers))
+    for (const QByteArray &header : std::as_const(headers))
         httpRequest.setHeaderField(header, newHttpRequest.rawHeader(header));
 
     if (newHttpRequest.attribute(QNetworkRequest::HttpPipeliningAllowedAttribute).toBool())
@@ -1050,6 +1051,7 @@ void QNetworkReplyHttpImplPrivate::replyDownloadData(QByteArray d)
             error(QNetworkReplyImpl::NetworkError::UnknownContentError,
                   QCoreApplication::translate("QHttp", "Decompression failed: %1")
                           .arg(decompressHelper.errorString()));
+            decompressHelper.clear();
             return;
         }
 
@@ -1069,6 +1071,7 @@ void QNetworkReplyHttpImplPrivate::replyDownloadData(QByteArray d)
                     error(QNetworkReplyImpl::NetworkError::UnknownContentError,
                           QCoreApplication::translate("QHttp",
                                                       "Data downloaded is too large to store"));
+                    decompressHelper.clear();
                     return;
                 }
                 d.resize(nextSize);
@@ -1077,6 +1080,7 @@ void QNetworkReplyHttpImplPrivate::replyDownloadData(QByteArray d)
                     error(QNetworkReplyImpl::NetworkError::UnknownContentError,
                           QCoreApplication::translate("QHttp", "Decompression failed: %1")
                                   .arg(decompressHelper.errorString()));
+                    decompressHelper.clear();
                     return;
                 }
             }
@@ -1325,6 +1329,11 @@ void QNetworkReplyHttpImplPrivate::replyDownloadMetaData(const QList<QPair<QByte
     q->setAttribute(QNetworkRequest::HttpPipeliningWasUsedAttribute, pu);
     q->setAttribute(QNetworkRequest::Http2WasUsedAttribute, h2Used);
 
+    // A user having manually defined which encodings they accept is, for
+    // somwehat unknown (presumed legacy compatibility) reasons treated as
+    // disabling our decompression:
+    const bool autoDecompress = request.rawHeader("accept-encoding").isEmpty();
+    const bool shouldDecompress = isCompressed && autoDecompress;
     // reconstruct the HTTP header
     QList<QPair<QByteArray, QByteArray> > headerMap = hm;
     QList<QPair<QByteArray, QByteArray> >::ConstIterator it = headerMap.constBegin(),
@@ -1338,7 +1347,7 @@ void QNetworkReplyHttpImplPrivate::replyDownloadMetaData(const QList<QPair<QByte
         if (it->first.toLower() == "location")
             value.clear();
 
-        if (isCompressed && !decompressHelper.isValid()
+        if (shouldDecompress && !decompressHelper.isValid()
             && it->first.compare("content-encoding", Qt::CaseInsensitive) == 0) {
 
             if (!synchronous) // with synchronous all the data is expected to be handled at once
@@ -1708,7 +1717,7 @@ QNetworkCacheMetaData QNetworkReplyHttpImplPrivate::fetchCacheMetaData(const QNe
         // Don't store Warning 1xx headers
         if (header == "warning") {
             QByteArray v = q->rawHeader(header);
-            if (v.length() == 3
+            if (v.size() == 3
                 && v[0] == '1'
                 && v[1] >= '0' && v[1] <= '9'
                 && v[2] >= '0' && v[2] <= '9')
@@ -2114,9 +2123,6 @@ void QNetworkReplyHttpImplPrivate::error(QNetworkReplyImpl::NetworkError code, c
         qWarning("QNetworkReplyImplPrivate::error: Internal problem, this method must only be called once.");
         return;
     }
-
-    if (decompressHelper.isValid())
-        decompressHelper.clear(); // Just get rid of any data that might be stored
 
     errorCode = code;
     q->setErrorString(errorMessage);

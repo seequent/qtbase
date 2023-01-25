@@ -1707,7 +1707,7 @@ void tst_QStyleSheetStyle::toolTip()
                                  normalToolTip };
 
     QWidgetList topLevels;
-    for (int i = 0; i < widgets.count() ; ++i) {
+    for (int i = 0; i < widgets.size() ; ++i) {
         QWidget *wid = widgets.at(i);
         QColor col = colors.at(i);
 
@@ -1715,7 +1715,7 @@ void tst_QStyleSheetStyle::toolTip()
 
         topLevels = QApplication::topLevelWidgets();
         QWidget *tooltip = nullptr;
-        for (QWidget *widget : qAsConst(topLevels)) {
+        for (QWidget *widget : std::as_const(topLevels)) {
             if (widget->inherits("QTipLabel")) {
                 tooltip = widget;
                 break;
@@ -1731,7 +1731,7 @@ void tst_QStyleSheetStyle::toolTip()
     delete wid3; //should not crash;
     QTest::qWait(10);
     topLevels = QApplication::topLevelWidgets();
-    for (QWidget *widget : qAsConst(topLevels))
+    for (QWidget *widget : std::as_const(topLevels))
         widget->update(); //should not crash either
 }
 
@@ -2339,11 +2339,19 @@ void tst_QStyleSheetStyle::placeholderColor()
     QLineEdit le2;
     le2.setEnabled(false);
     le1.ensurePolished();
-    QCOMPARE(le1.palette().placeholderText(), red);
+    QColor phColor = le1.palette().placeholderText().color();
+    QCOMPARE(phColor.rgb(), red.rgb());
+    QVERIFY(phColor.alpha() < red.alpha());
+
     le2.ensurePolished();
-    QCOMPARE(le2.palette().placeholderText(), red);
+    phColor = le2.palette().placeholderText().color();
+    QCOMPARE(phColor.rgb(), red.rgb());
+    QVERIFY(phColor.alpha() < red.alpha());
+
     le2.setEnabled(true);
-    QCOMPARE(le2.palette().placeholderText(), red);
+    phColor = le2.palette().placeholderText().color();
+    QCOMPARE(phColor.rgb(), red.rgb());
+    QVERIFY(phColor.alpha() < red.alpha());
 }
 
 void tst_QStyleSheetStyle::enumPropertySelector_data()

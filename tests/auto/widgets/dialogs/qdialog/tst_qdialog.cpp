@@ -21,6 +21,7 @@
 #include <private/qguiapplication_p.h>
 #include <qpa/qplatformtheme.h>
 #include <qpa/qplatformtheme_p.h>
+#include <qpa/qplatformintegration.h>
 
 QT_FORWARD_DECLARE_CLASS(QDialog)
 
@@ -284,6 +285,10 @@ void tst_QDialog::showAsTool()
 {
     if (QStringList{"xcb", "offscreen"}.contains(QGuiApplication::platformName()))
         QSKIP("activeWindow() is not respected by all Xcb window managers and the offscreen plugin");
+
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))
+        QSKIP("QWindow::requestActivate() is not supported.");
+
     DummyDialog testWidget;
     testWidget.resize(200, 200);
     testWidget.setWindowTitle(QTest::currentTestFunction());
@@ -689,7 +694,7 @@ void tst_QDialog::virtualsOnClose()
         // Qt doesn't deliver events to QWidgets closed during destruction
         QCOMPARE(filter.closeEventCount, 0);
         // QDialog doesn't emit signals when closed by destruction
-        QCOMPARE(rejectedSpy.count(), 0);
+        QCOMPARE(rejectedSpy.size(), 0);
     }
 }
 
@@ -742,7 +747,7 @@ void tst_QDialog::quitOnDone()
     // also quit with a timer in case the test fails
     QTimer::singleShot(1000, QApplication::instance(), &QApplication::quit);
     QApplication::exec();
-    QCOMPARE(quitSpy.count(), 1);
+    QCOMPARE(quitSpy.size(), 1);
 }
 
 void tst_QDialog::focusWidgetAfterOpen()

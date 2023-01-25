@@ -35,6 +35,10 @@
 #undef explicit
 #include <xcb/xinput.h>
 
+#if QT_CONFIG(xcb_xlib)
+#include "qt_xlib_wrapper.h"
+#endif
+
 QT_BEGIN_NAMESPACE
 
 using namespace Qt::StringLiterals;
@@ -713,7 +717,7 @@ void QXcbConnection::handleXcbEvent(xcb_generic_event_t *event)
 #ifndef QT_NO_CLIPBOARD
         m_clipboard->handleXFixesSelectionRequest(notify_event);
 #endif
-        for (QXcbVirtualDesktop *virtualDesktop : qAsConst(m_virtualDesktops))
+        for (QXcbVirtualDesktop *virtualDesktop : std::as_const(m_virtualDesktops))
             virtualDesktop->handleXFixesSelectionNotify(notify_event);
     } else if (isXRandrType(response_type, XCB_RANDR_NOTIFY)) {
         if (!isAtLeastXRandR15())
@@ -786,7 +790,7 @@ void QXcbConnection::setStartupId(const QByteArray &nextId)
                                 atom(QXcbAtom::_NET_STARTUP_ID),
                                 atom(QXcbAtom::UTF8_STRING),
                                 8,
-                                nextId.length(),
+                                nextId.size(),
                                 nextId.constData());
         else
             xcb_delete_property(xcb_connection(), clientLeader(), atom(QXcbAtom::_NET_STARTUP_ID));
@@ -935,7 +939,7 @@ xcb_window_t QXcbConnection::clientLeader()
                                 atom(QXcbAtom::SM_CLIENT_ID),
                                 XCB_ATOM_STRING,
                                 8,
-                                session.length(),
+                                session.size(),
                                 session.constData());
         }
 #endif
@@ -1089,6 +1093,10 @@ void QXcbConnection::processXcbEvents(QEventLoop::ProcessEventsFlags flags)
         // this flush here after QTBUG-70095
         m_eventQueue->flushBufferedEvents();
     }
+
+#if QT_CONFIG(xcb_xlib)
+    qt_XFlush(static_cast<Display *>(xlib_display()));
+#endif
 
     xcb_flush(xcb_connection());
 }

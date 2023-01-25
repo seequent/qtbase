@@ -5181,7 +5181,7 @@ void tst_QPainter::drawPolyline()
         p.setPen(pen);
         QVERIFY(p.pen().isCosmetic());
         if (r) {
-            for (int i = 0; i < points.count()-1; i++) {
+            for (int i = 0; i < points.size()-1; i++) {
                 p.drawLine(points.at(i), points.at(i+1));
             }
         } else {
@@ -5506,6 +5506,7 @@ void tst_QPainter::hdrColors()
     QCOMPARE(img.pixelColor(4, 4), color);
 
     QImage img2(10, 10, QImage::Format_RGBX32FPx4);
+    img2.fill(Qt::black); // fill to avoid random FP values like Inf which can break SourceOver composition
     {
         QPainter p(&img2);
         p.drawImage(0, 0, img);

@@ -1106,8 +1106,10 @@ void deployPlugins(const ApplicationBundleInfo &appBundleInfo, const QString &pl
     const QString libInfix = getLibInfix(deploymentInfo.deployedFrameworks);
 
     // Network
-    if (deploymentInfo.containsModule("Network", libInfix))
+    if (deploymentInfo.containsModule("Network", libInfix)) {
         addPlugins(QStringLiteral("tls"));
+        addPlugins(QStringLiteral("networkinformation"));
+    }
 
     // All image formats (svg if QtSvg is used)
     const bool usesSvg = deploymentInfo.containsModule("Svg", libInfix);
@@ -1158,7 +1160,7 @@ void deployPlugins(const ApplicationBundleInfo &appBundleInfo, const QString &pl
     }
 
     static const std::map<QString, std::vector<QString>> map {
-        {QStringLiteral("Multimedia"), {QStringLiteral("mediaservice"), QStringLiteral("audio")}},
+        {QStringLiteral("Multimedia"), {QStringLiteral("multimedia")}},
         {QStringLiteral("3DRender"), {QStringLiteral("sceneparsers"), QStringLiteral("geometryloaders"), QStringLiteral("renderers")}},
         {QStringLiteral("3DQuickRender"), {QStringLiteral("renderplugins")}},
         {QStringLiteral("Positioning"), {QStringLiteral("position")}},

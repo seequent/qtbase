@@ -149,8 +149,10 @@ static QSet<QByteArray> keywords()
             << "msvc-2015"
 #  elif _MSC_VER <= 1916
             << "msvc-2017"
-#  else
+#  elif _MSC_VER <= 1929
             << "msvc-2019"
+#  else
+            << "msvc-2022"
 #  endif
 #endif
 
@@ -257,7 +259,7 @@ void parseBlackList()
         if (line.isEmpty())
             continue;
         if (line.startsWith('[')) {
-            function = line.mid(1, line.length() - 2);
+            function = line.mid(1, line.size() - 2);
             continue;
         }
         bool condition = checkCondition(line);

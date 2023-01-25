@@ -36,8 +36,6 @@
 #
 ######################################
 
-include(CMakeParseArguments)
-
 set(__qt_core_macros_module_base_dir "${CMAKE_CURRENT_LIST_DIR}")
 
 # macro used to create the names of output files preserving relative dirs
@@ -1711,13 +1709,20 @@ function(_qt_internal_process_resource target resourceName)
         endif()
         get_source_file_property(
             target_dependency ${file} ${scope_args} _qt_resource_target_dependency)
-        if (NOT target_dependency)
-            list(APPEND resource_dependencies ${file})
-        else()
-            if (NOT TARGET ${target_dependency})
-                message(FATAL_ERROR "Target dependency on resource file ${file} is not a cmake target.")
+
+        # The target dependency code path does not take care of rebuilds when ${file}
+        # is touched. Limit its usage to the Xcode generator to avoid the Xcode common
+        # dependency issue.
+        # TODO: Figure out how to avoid the issue on Xcode, while also enabling proper
+        # dependency tracking when ${file} is touched.
+        if(target_dependency AND CMAKE_GENERATOR STREQUAL "Xcode")
+            if(NOT TARGET ${target_dependency})
+                message(FATAL_ERROR
+                        "Target dependency on resource file ${file} is not a cmake target.")
             endif()
             list(APPEND resource_dependencies ${target_dependency})
+        else()
+            list(APPEND resource_dependencies ${file})
         endif()
         _qt_internal_expose_source_file_to_ide(${target} "${file}")
     endforeach()
@@ -2117,30 +2122,6 @@ function(_qt_internal_apply_strict_cpp target)
                 OBJCXX_EXTENSIONS OFF)
         endif()
     endif()
-endfunction()
-
-# Wraps a tool command with a script that contains the necessary environment for the tool to run
-# correctly.
-# _qt_internal_wrap_tool_command(var <SET|APPEND> <command> [args...])
-# Arguments:
-#    APPEND Selects the 'append' mode for the out_variable argument.
-#    SET Selects the 'set' mode for the out_variable argument.
-function(_qt_internal_wrap_tool_command out_variable action)
-    set(append FALSE)
-    if(action STREQUAL "APPEND")
-        set(append TRUE)
-    elseif(NOT action STREQUAL "SET")
-        message(FATAL_ERROR "Invalid action specified ${action}. Supported actions: SET, APPEND")
-    endif()
-
-    set(cmd COMMAND ${QT_TOOL_COMMAND_WRAPPER_PATH} ${ARGN})
-
-    if(append)
-        list(APPEND ${out_variable} ${cmd})
-    else()
-        set(${out_variable} ${cmd})
-    endif()
-    set(${out_variable} "${${out_variable}}" PARENT_SCOPE)
 endfunction()
 
 # Copies properties of the dependency to the target.

@@ -5,6 +5,7 @@
 
 #include "qmetatype.h"
 #include "qmetatype_p.h"
+#include "qobject.h"
 #include "qobjectdefs.h"
 #include "qdatetime.h"
 #include "qbytearray.h"
@@ -1089,7 +1090,7 @@ static const struct : QMetaTypeModuleHelper
 #endif
         QMETATYPE_CONVERTER(QString, QByteArray, result = QString::fromUtf8(source); return true;);
         QMETATYPE_CONVERTER(QString, QStringList,
-            return (source.count() == 1) ? (result = source.at(0), true) : false;
+            return (source.size() == 1) ? (result = source.at(0), true) : false;
         );
 #ifndef QT_BOOTSTRAPPED
         QMETATYPE_CONVERTER(QString, QUrl, result = source.toString(); return true;);
@@ -2982,6 +2983,13 @@ static const QtPrivate::QMetaTypeInterface *interfaceForType(int typeId)
 
     return iface;
 }
+
+/*!
+     \fn QMetaType::QMetaType()
+     \since 6.0
+
+     Constructs a default, invalid, QMetaType object.
+*/
 
 /*!
      \fn QMetaType::QMetaType(int typeId)

@@ -774,7 +774,7 @@ void QWasmCompositor::frame()
 
     QWasmWindow *someWindow = nullptr;
 
-    for (QWasmWindow *window : qAsConst(m_windowStack)) {
+    for (QWasmWindow *window : std::as_const(m_windowStack)) {
         if (window->window()->surfaceClass() == QSurface::Window
                 && qt_window_private(static_cast<QWindow *>(window->window()))->receivedExpose) {
             someWindow = window;
@@ -808,7 +808,7 @@ void QWasmCompositor::frame()
     m_blitter->bind();
     m_blitter->setRedBlueSwizzle(true);
 
-    for (QWasmWindow *window : qAsConst(m_windowStack)) {
+    for (QWasmWindow *window : std::as_const(m_windowStack)) {
         if (m_windowVisibility[window])
             drawWindow(m_blitter.data(), screen(), window);
     }
@@ -928,6 +928,8 @@ bool QWasmCompositor::processPointer(const PointerEvent& event)
     switch (event.type) {
     case EventType::PointerDown:
     {
+        screen()->canvas().call<void>("setPointerCapture", event.pointerId);
+
         if (targetWindow)
             targetWindow->requestActivate();
 
@@ -940,6 +942,8 @@ bool QWasmCompositor::processPointer(const PointerEvent& event)
     }
     case EventType::PointerUp:
     {
+        screen()->canvas().call<void>("releasePointerCapture", event.pointerId);
+
         m_windowManipulation.onPointerUp(event);
 
         if (m_pressedWindow) {
@@ -1100,8 +1104,6 @@ void QWasmCompositor::WindowManipulation::onPointerDown(
         .window = windowAtPoint,
         .operationSpecific = std::move(*operationSpecific),
     });
-
-    m_screen->canvas().call<void>("setPointerCapture", event.pointerId);
 }
 
 void QWasmCompositor::WindowManipulation::onPointerMove(
@@ -1140,7 +1142,6 @@ void QWasmCompositor::WindowManipulation::onPointerUp(const PointerEvent& event)
         return;
 
     m_state.reset();
-    m_screen->canvas().call<void>("releasePointerCapture", event.pointerId);
 }
 
 bool QWasmCompositor::processKeyboard(int eventType, const EmscriptenKeyboardEvent *emKeyEvent)

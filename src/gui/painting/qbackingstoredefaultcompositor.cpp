@@ -148,7 +148,7 @@ static QRegion scaledRegion(const QRegion &region, qreal factor, const QPoint &o
         rects.append(scaledRect(rect.translated(offset), factor));
 
     QRegion deviceRegion;
-    deviceRegion.setRects(rects.constData(), rects.count());
+    deviceRegion.setRects(rects.constData(), rects.size());
     return deviceRegion;
 }
 
@@ -508,8 +508,7 @@ QPlatformBackingStore::FlushResult QBackingStoreDefaultCompositor::flush(QPlatfo
     if (m_texture) {
         // The backingstore is for the entire tlw.
         // In case of native children offset tells the position relative to the tlw.
-        const QRect textureRect = QRect(QPoint(), m_texture->pixelSize());
-        const QRect srcRect = toBottomLeftRect(textureRect.translated(deviceWindowOffset), m_texture->pixelSize().height());
+        const QRect srcRect = toBottomLeftRect(deviceWindowRect.translated(deviceWindowOffset), m_texture->pixelSize().height());
         const QMatrix3x3 source = sourceTransform(srcRect, m_texture->pixelSize(), origin);
         QMatrix4x4 target; // identity
         if (invertTargetY)
@@ -518,7 +517,7 @@ QPlatformBackingStore::FlushResult QBackingStoreDefaultCompositor::flush(QPlatfo
     }
 
     const int textureWidgetCount = textures->count();
-    const int oldTextureQuadDataCount = m_textureQuadData.count();
+    const int oldTextureQuadDataCount = m_textureQuadData.size();
     if (oldTextureQuadDataCount != textureWidgetCount) {
         for (int i = textureWidgetCount; i < oldTextureQuadDataCount; ++i)
             m_textureQuadData[i].reset();

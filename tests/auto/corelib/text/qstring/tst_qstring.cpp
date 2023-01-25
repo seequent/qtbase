@@ -67,11 +67,11 @@ public:
 
     template <typename MemFun>
     void apply0(QString &s, MemFun mf) const
-    { for (QChar ch : qAsConst(this->pinned)) (s.*mf)(ch); }
+    { for (QChar ch : std::as_const(this->pinned)) (s.*mf)(ch); }
 
     template <typename MemFun, typename A1>
     void apply1(QString &s, MemFun mf, A1 a1) const
-    { for (QChar ch : qAsConst(this->pinned)) (s.*mf)(a1, ch); }
+    { for (QChar ch : std::as_const(this->pinned)) (s.*mf)(a1, ch); }
 };
 
 template <>
@@ -856,6 +856,9 @@ void tst_QString::replace_regexp_data()
     // Columns (all QString): string, regexp, after, result; string.replace(regexp, after) == result
     // Test-cases with empty after (replacement text, third column) go in remove_regexp_data()
 
+    QTest::newRow("empty-in-null") << QString() << "" << "after" << "after";
+    QTest::newRow("empty-in-empty") << "" << "" << "after" << "after";
+
     QTest::newRow( "rep00" ) << QString("A <i>bon mot</i>.") << QString("<i>([^<]*)</i>") << QString("\\emph{\\1}") << QString("A \\emph{bon mot}.");
     QTest::newRow( "rep01" ) << QString("banana") << QString("^.a()") << QString("\\1") << QString("nana");
     QTest::newRow( "rep02" ) << QString("banana") << QString("(ba)") << QString("\\1X\\1") << QString("baXbanana");
@@ -1393,6 +1396,43 @@ void tst_QString::asprintf()
 
     double d = -514.25683;
     QCOMPARE(QString::asprintf("%f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%.f", d), QLatin1String("-514"));
+    QCOMPARE(QString::asprintf("%.0f", d), QLatin1String("-514"));
+    QCOMPARE(QString::asprintf("%1f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%1.f", d), QLatin1String("-514"));
+    QCOMPARE(QString::asprintf("%1.0f", d), QLatin1String("-514"));
+    QCOMPARE(QString::asprintf("%1.6f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%1.10f", d), QLatin1String("-514.2568300000"));
+    QCOMPARE(QString::asprintf("%-1f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%-1.f", d), QLatin1String("-514"));
+    QCOMPARE(QString::asprintf("%-1.0f", d), QLatin1String("-514"));
+    QCOMPARE(QString::asprintf("%-1.6f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%-1.10f", d), QLatin1String("-514.2568300000"));
+    QCOMPARE(QString::asprintf("%10f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%10.f", d), QLatin1String("      -514"));
+    QCOMPARE(QString::asprintf("%10.0f", d), QLatin1String("      -514"));
+    QCOMPARE(QString::asprintf("%-10f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%-10.f", d), QLatin1String("-514      "));
+    QCOMPARE(QString::asprintf("%-10.0f", d), QLatin1String("-514      "));
+    QCOMPARE(QString::asprintf("%010f", d), QLatin1String("-514.256830"));
+    QCOMPARE(QString::asprintf("%010.f", d), QLatin1String("-000000514"));
+    QCOMPARE(QString::asprintf("%010.0f", d), QLatin1String("-000000514"));
+    QCOMPARE(QString::asprintf("%15f", d), QLatin1String("    -514.256830"));
+    QCOMPARE(QString::asprintf("%15.6f", d), QLatin1String("    -514.256830"));
+    QCOMPARE(QString::asprintf("%15.10f", d), QLatin1String("-514.2568300000"));
+    QCOMPARE(QString::asprintf("%-15f", d), QLatin1String("-514.256830    "));
+    QCOMPARE(QString::asprintf("%-15.6f", d), QLatin1String("-514.256830    "));
+    QCOMPARE(QString::asprintf("%-15.10f", d), QLatin1String("-514.2568300000"));
+    QCOMPARE(QString::asprintf("%015f", d), QLatin1String("-0000514.256830"));
+    QCOMPARE(QString::asprintf("%015.6f", d), QLatin1String("-0000514.256830"));
+    QCOMPARE(QString::asprintf("%015.10f", d), QLatin1String("-514.2568300000"));
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_GCC("-Wformat")
+QT_WARNING_DISABLE_CLANG("-Wformat") // Flag '0' ignored when flag '-' is present
+    QCOMPARE(QString::asprintf("%-015f", d), QLatin1String("-514.256830    "));
+    QCOMPARE(QString::asprintf("%-015.6f", d), QLatin1String("-514.256830    "));
+    QCOMPARE(QString::asprintf("%-015.10f", d), QLatin1String("-514.2568300000"));
+QT_WARNING_POP
 
     {
         /* This code crashed. I don't know how to reduce it further. In other words,

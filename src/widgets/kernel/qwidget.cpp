@@ -1083,30 +1083,30 @@ static bool q_evaluateRhiConfigRecursive(const QWidget *w, QPlatformBackingStore
             *outType = QBackingStoreRhiSupport::surfaceTypeForConfig(config);
         return true;
     }
-    QObjectList children = w->children();
-    for (int i = 0; i < children.size(); i++) {
-        if (children.at(i)->isWidgetType()) {
-            const QWidget *childWidget = qobject_cast<const QWidget *>(children.at(i));
-            if (childWidget) {
-                if (q_evaluateRhiConfigRecursive(childWidget, outConfig, outType))
-                    return true;
-            }
+    for (const QObject *child : w->children()) {
+        if (const QWidget *childWidget = qobject_cast<const QWidget *>(child)) {
+            if (q_evaluateRhiConfigRecursive(childWidget, outConfig, outType))
+                return true;
         }
     }
     return false;
 }
 
-// First tries q_evaluateRhiConfigRecursive, then if that did not indicate that rhi is wanted,
-// then checks env.vars or something else to see if we need to force using rhi-based composition.
 bool q_evaluateRhiConfig(const QWidget *w, QPlatformBackingStoreRhiConfig *outConfig, QSurface::SurfaceType *outType)
 {
-    if (q_evaluateRhiConfigRecursive(w, outConfig, outType)) {
-        qCDebug(lcWidgetPainting) << "Tree with root" << w << "evaluates to flushing with QRhi";
+    // First, check env.vars. or other means that force the usage of rhi-based
+    // flushing with a specific graphics API. This takes precedence over what
+    // the widgets themselves declare. This is global, applying to all
+    // top-levels.
+    if (QBackingStoreRhiSupport::checkForceRhi(outConfig, outType)) {
+        qCDebug(lcWidgetPainting) << "Tree with root" << w << "evaluated to forced flushing with QRhi";
         return true;
     }
 
-    if (QBackingStoreRhiSupport::checkForceRhi(outConfig, outType)) {
-        qCDebug(lcWidgetPainting) << "Tree with root" << w << "evaluated to forced flushing with QRhi";
+    // Otherwise, check the widget hierarchy to see if there is a child (or
+    // ourselves) that declare the need for rhi-based composition.
+    if (q_evaluateRhiConfigRecursive(w, outConfig, outType)) {
+        qCDebug(lcWidgetPainting) << "Tree with root" << w << "evaluates to flushing with QRhi";
         return true;
     }
 
@@ -1432,7 +1432,7 @@ QWidget::~QWidget()
 
 #ifndef QT_NO_ACTION
     // remove all actions from this widget
-    for (auto action : qAsConst(d->actions)) {
+    for (auto action : std::as_const(d->actions)) {
         QActionPrivate *apriv = action->d_func();
         apriv->associatedObjects.removeAll(this);
     }
@@ -2201,7 +2201,7 @@ void QWidgetPrivate::updateIsTranslucent()
     if (QWindow *window = q->windowHandle()) {
         QSurfaceFormat format = window->format();
         const int oldAlpha = format.alphaBufferSize();
-        const int newAlpha = q->testAttribute(Qt::WA_TranslucentBackground)? 8 : 0;
+        const int newAlpha = q->testAttribute(Qt::WA_TranslucentBackground) ? 8 : -1;
         if (oldAlpha != newAlpha) {
             // QTBUG-85714: Do this only when the QWindow has not yet been create()'ed yet.
             //
@@ -3133,7 +3133,7 @@ void QWidget::addAction(QAction *action)
 */
 void QWidget::addActions(const QList<QAction *> &actions)
 {
-    for(int i = 0; i < actions.count(); i++)
+    for(int i = 0; i < actions.size(); i++)
         insertAction(nullptr, actions.at(i));
 }
 
@@ -3182,7 +3182,7 @@ void QWidget::insertAction(QAction *before, QAction *action)
 */
 void QWidget::insertActions(QAction *before, const QList<QAction*> &actions)
 {
-    for(int i = 0; i < actions.count(); ++i)
+    for(int i = 0; i < actions.size(); ++i)
         insertAction(before, actions.at(i));
 }
 
@@ -6381,6 +6381,33 @@ void QWidget::setFocusProxy(QWidget * w)
     d->createExtra();
     d->extra->focus_proxy = w;
 
+    if (w && isAncestorOf(w)) {
+        // If the focus proxy is a child of this (so this is a compound widget), then
+        // we need to make sure that this widget is immediately in front of its own children
+        // in the focus chain. Otherwise focusNextPrev_helper might jump over unrelated
+        // widgets that are positioned between this compound widget, and its proxy in
+        // the focus chain.
+        const QWidget *parentOfW = w->parentWidget();
+        Q_ASSERT(parentOfW); // can't be nullptr since we are an ancestor of w
+        QWidget *firstChild = nullptr;
+        const auto childList = children();
+        for (QObject *child : childList) {
+            if ((firstChild = qobject_cast<QWidget *>(child)))
+                break;
+        }
+        Q_ASSERT(firstChild); // can't be nullptr since w is a child
+        QWidget *oldNext = d->focus_next;
+        QWidget *oldPrev = d->focus_prev;
+        oldNext->d_func()->focus_prev = oldPrev;
+        oldPrev->d_func()->focus_next = oldNext;
+
+        oldPrev = firstChild->d_func()->focus_prev;
+        d->focus_next = firstChild;
+        d->focus_prev = oldPrev;
+        oldPrev->d_func()->focus_next = this;
+        firstChild->d_func()->focus_prev = this;
+    }
+
     if (moveFocusToProxy)
         setFocus(Qt::OtherFocusReason);
 }
@@ -6516,15 +6543,11 @@ void QWidget::setFocus(Qt::FocusReason reason)
 
         QApplicationPrivate::setFocusWidget(f, reason);
 #if QT_CONFIG(accessibility)
-        // If the widget gets focus because its window becomes active, then the accessibility
-        // subsystem is already informed about the window opening, and also knows which child
-        // within the window has focus. Don't interrupt it by emitting another focus event.
-        if (reason != Qt::ActiveWindowFocusReason) {
-            // menus update the focus manually and this would create bogus events
-            if (!(f->inherits("QMenuBar") || f->inherits("QMenu") || f->inherits("QMenuItem"))) {
-                QAccessibleEvent event(f, QAccessible::Focus);
-                QAccessible::updateAccessibility(&event);
-            }
+        // menus update the focus manually and this would create bogus events
+        if (!(f->inherits("QMenuBar") || f->inherits("QMenu") || f->inherits("QMenuItem")))
+        {
+            QAccessibleEvent event(f, QAccessible::Focus);
+            QAccessible::updateAccessibility(&event);
         }
 #endif
 #if QT_CONFIG(graphicsview)
@@ -7076,8 +7099,8 @@ void QWidgetPrivate::reparentFocusWidgets(QWidget * oldtlw)
         n->d_func()->focus_next = topLevel;
     } else {
         //repair the new list
-            n->d_func()->focus_next = q;
-            focus_prev = n;
+        n->d_func()->focus_next = q;
+        focus_prev = n;
     }
 
 }
@@ -8339,6 +8362,7 @@ void QWidgetPrivate::showChildren(bool spontaneous)
 
 void QWidgetPrivate::hideChildren(bool spontaneous)
 {
+    Q_Q(QWidget);
     QList<QObject*> childList = children;
     for (int i = 0; i < childList.size(); ++i) {
         QWidget *widget = qobject_cast<QWidget*>(childList.at(i));
@@ -8369,6 +8393,14 @@ void QWidgetPrivate::hideChildren(bool spontaneous)
             QAccessible::updateAccessibility(&event);
         }
 #endif
+    }
+
+    // If the window of this widget is not closed, then the leave event
+    // will eventually handle the widget under mouse use case.
+    // Otherwise, we need to explicitly handle it here.
+    if (QWidget* widgetWindow = q->window();
+        widgetWindow && widgetWindow->data->is_closing) {
+        q->setAttribute(Qt::WA_UnderMouse, false);
     }
 }
 
@@ -9004,7 +9036,7 @@ bool QWidget::event(QEvent *event)
             break;
 #if QT_CONFIG(menu)
         case Qt::ActionsContextMenu:
-            if (d->actions.count()) {
+            if (d->actions.size()) {
                 QMenu::exec(d->actions, static_cast<QContextMenuEvent *>(event)->globalPos(),
                             nullptr, this);
                 break;
@@ -9234,7 +9266,7 @@ bool QWidget::event(QEvent *event)
         break;
     case QEvent::DynamicPropertyChange: {
         const QByteArray &propName = static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName();
-        if (propName.length() == 13 && !qstrncmp(propName, "_q_customDpi", 12)) {
+        if (propName.size() == 13 && !qstrncmp(propName, "_q_customDpi", 12)) {
             uint value = property(propName.constData()).toUInt();
             if (!d->extra)
                 d->createExtra();
@@ -10691,7 +10723,10 @@ void QWidget::setParent(QWidget *parent, Qt::WindowFlags f)
     QWidget *newtlw = window();
     if (oldtlw != newtlw) {
         QSurface::SurfaceType surfaceType = QSurface::RasterSurface;
-        if (q_evaluateRhiConfig(newtlw, nullptr, &surfaceType)) {
+        // Only evaluate the reparented subtree. While it might be tempting to
+        // do it on newtlw instead, the performance implications of that are
+        // problematic when it comes to large widget trees.
+        if (q_evaluateRhiConfig(this, nullptr, &surfaceType)) {
             newtlw->d_func()->usesRhiFlush = true;
             if (QWindow *w = newtlw->windowHandle()) {
                 if (w->surfaceType() != surfaceType) {

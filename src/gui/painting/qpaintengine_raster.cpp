@@ -277,15 +277,6 @@ QRasterPaintEnginePrivate::QRasterPaintEnginePrivate() :
 */
 
 /*!
-    \typedef QSpan
-    \relates QRasterPaintEngine
-
-    A struct equivalent to QT_FT_Span, containing a position (x,
-    y), the span's length in pixels and its color/coverage (a value
-    ranging from 0 to 255).
-*/
-
-/*!
     \since 4.5
 
     Creates a raster based paint engine for operating on the given
@@ -516,6 +507,7 @@ QRasterPaintEngineState::QRasterPaintEngineState()
 
     txscale = 1.;
 
+    flag_bits = 0;
     flags.fast_pen = true;
     flags.non_complex_pen = false;
     flags.antialiased = false;
@@ -4277,7 +4269,7 @@ protected:
 void QGradientCache::generateGradientColorTable(const QGradient& gradient, QRgba64 *colorTable, int size, int opacity) const
 {
     const QGradientStops stops = gradient.stops();
-    int stopCount = stops.count();
+    int stopCount = stops.size();
     Q_ASSERT(stopCount > 0);
 
     bool colorInterpolation = (gradient.interpolationMode() == QGradient::ColorInterpolation);

@@ -3,6 +3,33 @@
 
 // This file is included from qnsview.mm, and only used to organize the code
 
+/*
+    Determines if the text represents one of the "special keys" on macOS
+
+    As a legacy from OpenStep, macOS reserves the range 0xF700-0xF8FF of the
+    Unicode private use area for representing function keys on the keyboard:
+
+      http://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/CORPCHAR.TXT
+
+      https://developer.apple.com/documentation/appkit/nsevent/specialkey
+
+    These code points are not supposed to have any glyphs associated with them,
+    but since we can't guarantee that the system doesn't have a font that does
+    provide glyphs for this range (Arial Unicode MS e.g.) we need to filter
+    the text of our key events up front.
+*/
+static bool isSpecialKey(const QString &text)
+{
+    if (text.length() != 1)
+        return false;
+
+    const char16_t unicode = text.at(0).unicode();
+    if (unicode >= 0xF700 && unicode <= 0xF8FF)
+        return true;
+
+    return false;
+}
+
 @implementation QNSView (Keys)
 
 - (bool)handleKeyEvent:(NSEvent *)nsevent
@@ -15,6 +42,12 @@
 
     // We will send a key event unless the input method handles it
     QBoolBlocker sendKeyEventGuard(m_sendKeyEvent, true);
+
+    // Assume we should send key events with text, unless told
+    // otherwise by doCommandBySelector.
+    m_sendKeyEventWithoutText = false;
+
+    bool didInterpretKeyEvent = false;
 
     if (keyEvent.type == QEvent::KeyPress) {
 
@@ -63,6 +96,7 @@
                     m_currentlyInterpretedKeyEvent = nsevent;
                     [self interpretKeyEvents:@[nsevent]];
                     m_currentlyInterpretedKeyEvent = 0;
+                    didInterpretKeyEvent = true;
 
                     // If the last key we sent was dead, then pass the next
                     // key to the IM as well to complete composition.
@@ -76,6 +110,10 @@
     bool accepted = true;
     if (m_sendKeyEvent && m_composingText.isEmpty()) {
         KeyEvent keyEvent(nsevent);
+        // Trust text input system on whether to send the event with text or not,
+        // or otherwise apply heuristics to filter out private use symbols.
+        if (didInterpretKeyEvent ? m_sendKeyEventWithoutText : isSpecialKey(keyEvent.text))
+            keyEvent.text = {};
         qCDebug(lcQpaKeys) << "Sending as" << keyEvent;
         accepted = keyEvent.sendWindowSystemEvent(window);
     }
@@ -207,9 +245,16 @@ KeyEvent::KeyEvent(NSEvent *nsevent)
     default: break; // Must be manually set
     }
 
-    if (nsevent.type == NSEventTypeKeyDown || nsevent.type == NSEventTypeKeyUp) {
+    switch (nsevent.type) {
+    case NSEventTypeKeyDown:
+    case NSEventTypeKeyUp:
+    case NSEventTypeFlagsChanged:
         nativeVirtualKey = nsevent.keyCode;
+    default:
+        break;
+    }
 
+    if (nsevent.type == NSEventTypeKeyDown || nsevent.type == NSEventTypeKeyUp) {
         NSString *charactersIgnoringModifiers = nsevent.charactersIgnoringModifiers;
         NSString *characters = nsevent.characters;
 
@@ -229,11 +274,7 @@ KeyEvent::KeyEvent(NSEvent *nsevent)
             key = QAppleKeyMapper::fromCocoaKey(character);
         }
 
-        // Ignore text for the U+F700-U+F8FF range. This is used by Cocoa when
-        // delivering function keys (e.g. arrow keys, backspace, F1-F35, etc.)
-        if (!(modifiers & (Qt::ControlModifier | Qt::MetaModifier))
-            && (character.unicode() < 0xf700 || character.unicode() > 0xf8ff))
-            text = QString::fromNSString(characters);
+        text = QString::fromNSString(characters);
 
         isRepeat = nsevent.ARepeat;
     }

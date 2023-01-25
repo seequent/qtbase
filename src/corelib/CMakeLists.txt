@@ -73,7 +73,6 @@ qt_internal_add_module(Core
         global/q20algorithm.h
         global/q20functional.h
         global/q23functional.h
-        global/qxpfunctional.h
         global/q20iterator.h
         global/qxpfunctional.h
         io/qabstractfileengine.cpp io/qabstractfileengine_p.h
@@ -149,7 +148,7 @@ qt_internal_add_module(Core
         kernel/qsystemerror.cpp kernel/qsystemerror_p.h
         kernel/qsystemsemaphore.cpp kernel/qsystemsemaphore.h kernel/qsystemsemaphore_p.h
         kernel/qtestsupport_core.cpp kernel/qtestsupport_core.h
-        kernel/qtimer.cpp kernel/qtimer.h
+        kernel/qtimer.cpp kernel/qtimer.h kernel/qtimer_p.h
         kernel/qtranslator.cpp kernel/qtranslator.h kernel/qtranslator_p.h
         kernel/qvariant.cpp kernel/qvariant.h kernel/qvariant_p.h
         kernel/qvariantmap.h kernel/qvarianthash.h kernel/qvariantlist.h
@@ -494,7 +493,6 @@ qt_internal_extend_target(Core CONDITION QT_FEATURE_animation
 # from the wrong DLL at runtime and crash!
 qt_internal_extend_target(Core CONDITION QT_FEATURE_thread AND WIN32
     SOURCES
-        thread/qmutex_win.cpp
         thread/qwaitcondition_win.cpp
     LIBRARIES
         synchronization
@@ -974,6 +972,12 @@ qt_internal_extend_target(Core CONDITION ANDROID
         platform/android/qandroidnativeinterface.cpp
 )
 
+qt_internal_extend_target(Core CONDITION WIN32
+    SOURCES
+        platform/windows/qfactorycacheregistration_p.h
+        platform/windows/qfactorycacheregistration.cpp
+)
+
 qt_internal_extend_target(Core CONDITION HAIKU AND NOT ANDROID
     SOURCES
         io/qstandardpaths_haiku.cpp
@@ -1044,7 +1048,7 @@ qt_internal_extend_target(Core CONDITION QT_FEATURE_library AND UNIX AND NOT APP
         plugin/qlibrary_unix.cpp
 )
 
-qt_internal_extend_target(Core CONDITION QT_FEATURE_dlopen AND QT_FEATURE_library
+qt_internal_extend_target(Core CONDITION QT_FEATURE_dlopen
     LIBRARIES
         ${CMAKE_DL_LIBS}
 )
@@ -1282,7 +1286,6 @@ qt_internal_extend_target(Core CONDITION WASM
 set_source_files_properties(
     thread/qmutex_mac.cpp
     thread/qmutex_unix.cpp
-    thread/qmutex_win.cpp
     PROPERTIES HEADER_FILE_ONLY ON)  # special case: These files are included by qmutex.cpp!
 
 

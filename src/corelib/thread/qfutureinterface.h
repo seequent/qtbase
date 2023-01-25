@@ -183,9 +183,7 @@ protected:
     void setContinuation(std::function<void(const QFutureInterfaceBase &)> func);
     void setContinuation(std::function<void(const QFutureInterfaceBase &)> func,
                          QFutureInterfaceBasePrivate *continuationFutureData);
-#if QT_CORE_REMOVED_SINCE(6, 4)
     void cleanContinuation();
-#endif
     void runContinuation() const;
 
     void setLaunchAsync(bool value);
@@ -349,7 +347,7 @@ inline bool QFutureInterface<T>::reportResults(const QList<T> &_results, int beg
     if (store.filterMode()) {
         this->reportResultsReady(resultCountBefore, store.count());
     } else {
-        this->reportResultsReady(insertIndex, insertIndex + _results.count());
+        this->reportResultsReady(insertIndex, insertIndex + _results.size());
     }
     return true;
 }

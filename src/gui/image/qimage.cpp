@@ -1487,12 +1487,14 @@ void QImage::setDevicePixelRatio(qreal scaleFactor)
 }
 
 /*!
-    Returns the size of the pixmap in device independent pixels.
+    Returns the size of the image in device independent pixels.
 
-    This value should be used when using the pixmap size in user interface
+    This value should be used when using the image size in user interface
     size calculations.
 
-    The return value is equivalent to pixmap.size() / pixmap.devicePixelRatio(),
+    The return value is equivalent to image.size() / image.devicePixelRatio().
+
+    \since 6.2
 */
 QSizeF QImage::deviceIndependentSize() const
 {
@@ -4672,6 +4674,8 @@ QImage QImage::smoothScaled(int w, int h) const
 static QImage rotated90(const QImage &image)
 {
     QImage out(image.height(), image.width(), image.format());
+    if (out.isNull())
+        return out;
     copyMetadata(&out, image);
     if (image.colorCount() > 0)
         out.setColorTable(image.colorTable());
@@ -4700,6 +4704,8 @@ static QImage rotated180(const QImage &image)
         return image.mirrored(true, true);
 
     QImage out(image.width(), image.height(), image.format());
+    if (out.isNull())
+        return out;
     copyMetadata(&out, image);
     if (image.colorCount() > 0)
         out.setColorTable(image.colorTable());
@@ -4712,6 +4718,8 @@ static QImage rotated180(const QImage &image)
 static QImage rotated270(const QImage &image)
 {
     QImage out(image.height(), image.width(), image.format());
+    if (out.isNull())
+        return out;
     copyMetadata(&out, image);
     if (image.colorCount() > 0)
         out.setColorTable(image.colorTable());

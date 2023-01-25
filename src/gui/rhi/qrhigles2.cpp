@@ -725,8 +725,15 @@ bool QRhiGles2::create(QRhi::Flags flags)
     else
         caps.fixedIndexPrimitiveRestart = caps.ctxMajor > 4 || (caps.ctxMajor == 4 && caps.ctxMinor >= 3); // 4.3
 
-    if (caps.fixedIndexPrimitiveRestart)
+    if (caps.fixedIndexPrimitiveRestart) {
+#ifdef Q_OS_WASM
+        // WebGL 2 behaves as if GL_PRIMITIVE_RESTART_FIXED_INDEX was always
+        // enabled (i.e. matching D3D/Metal), and the value cannot be passed to
+        // glEnable, so skip the call.
+#else
         f->glEnable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+#endif
+    }
 
     caps.bgraExternalFormat = f->hasOpenGLExtension(QOpenGLExtensions::BGRATextureFormat);
     caps.bgraInternalFormat = caps.bgraExternalFormat && caps.gles;
@@ -913,7 +920,7 @@ void QRhiGles2::destroy()
 
 void QRhiGles2::executeDeferredReleases()
 {
-    for (int i = releaseQueue.count() - 1; i >= 0; --i) {
+    for (int i = releaseQueue.size() - 1; i >= 0; --i) {
         const QRhiGles2::DeferredReleaseEntry &e(releaseQueue[i]);
         switch (e.type) {
         case QRhiGles2::DeferredReleaseEntry::Buffer:
@@ -1337,8 +1344,8 @@ QByteArray QRhiGles2::pipelineCacheData()
     memset(&header, 0, sizeof(header));
     header.rhiId = pipelineCacheRhiId();
     header.arch = quint32(sizeof(void*));
-    header.programBinaryCount = m_pipelineCache.count();
-    const size_t driverStrLen = qMin(sizeof(header.driver) - 1, size_t(driverInfoStruct.deviceName.length()));
+    header.programBinaryCount = m_pipelineCache.size();
+    const size_t driverStrLen = qMin(sizeof(header.driver) - 1, size_t(driverInfoStruct.deviceName.size()));
     if (driverStrLen)
         memcpy(header.driver, driverInfoStruct.deviceName.constData(), driverStrLen);
     header.driver[driverStrLen] = '\0';
@@ -1410,7 +1417,7 @@ void QRhiGles2::setPipelineCacheData(const QByteArray &data)
     if (header.programBinaryCount == 0)
         return;
 
-    const size_t driverStrLen = qMin(sizeof(header.driver) - 1, size_t(driverInfoStruct.deviceName.length()));
+    const size_t driverStrLen = qMin(sizeof(header.driver) - 1, size_t(driverInfoStruct.deviceName.size()));
     if (strncmp(header.driver, driverInfoStruct.deviceName.constData(), driverStrLen)) {
         qWarning("setPipelineCacheData: OpenGL vendor/renderer/version does not match");
         return;
@@ -1445,7 +1452,7 @@ void QRhiGles2::setPipelineCacheData(const QByteArray &data)
         m_pipelineCache.insert(key, { format, data });
     }
 
-    qCDebug(QRHI_LOG_INFO, "Seeded pipeline cache with %d program binaries", int(m_pipelineCache.count()));
+    qCDebug(QRHI_LOG_INFO, "Seeded pipeline cache with %d program binaries", int(m_pipelineCache.size()));
 }
 
 QRhiRenderBuffer *QRhiGles2::createRenderBuffer(QRhiRenderBuffer::Type type, const QSize &pixelSize,
@@ -1527,7 +1534,7 @@ void QRhiGles2::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBind
     QGles2ShaderResourceBindings *srbD = QRHI_RES(QGles2ShaderResourceBindings, srb);
     if (cbD->passNeedsResourceTracking) {
         QRhiPassResourceTracker &passResTracker(cbD->passResTrackers[cbD->currentPassResTrackerIndex]);
-        for (int i = 0, ie = srbD->m_bindings.count(); i != ie; ++i) {
+        for (int i = 0, ie = srbD->m_bindings.size(); i != ie; ++i) {
             const QRhiShaderResourceBinding::Data *b = srbD->m_bindings.at(i).data();
             switch (b->type) {
             case QRhiShaderResourceBinding::UniformBuffer:
@@ -2247,9 +2254,9 @@ void QRhiGles2::enqueueResourceUpdates(QRhiCommandBuffer *cb, QRhiResourceUpdate
         const QRhiResourceUpdateBatchPrivate::TextureOp &u(ud->textureOps[opIdx]);
         if (u.type == QRhiResourceUpdateBatchPrivate::TextureOp::Upload) {
             QGles2Texture *texD = QRHI_RES(QGles2Texture, u.dst);
-            for (int layer = 0, maxLayer = u.subresDesc.count(); layer < maxLayer; ++layer) {
+            for (int layer = 0, maxLayer = u.subresDesc.size(); layer < maxLayer; ++layer) {
                 for (int level = 0; level < QRhi::MAX_MIP_LEVELS; ++level) {
-                    for (const QRhiTextureSubresourceUploadDescription &subresDesc : qAsConst(u.subresDesc[layer][level]))
+                    for (const QRhiTextureSubresourceUploadDescription &subresDesc : std::as_const(u.subresDesc[layer][level]))
                         enqueueSubresUpload(texD, cbD, layer, level, subresDesc);
                 }
             }
@@ -3015,8 +3022,10 @@ void QRhiGles2::executeCommandBuffer(QRhiCommandBuffer *cb)
                 f->glDepthMask(GL_TRUE);
                 f->glClearDepthf(cmd.args.clear.d);
             }
-            if (cmd.args.clear.mask & GL_STENCIL_BUFFER_BIT)
+            if (cmd.args.clear.mask & GL_STENCIL_BUFFER_BIT) {
+                f->glStencilMask(0xFF);
                 f->glClearStencil(GLint(cmd.args.clear.s));
+            }
             f->glClear(cmd.args.clear.mask);
             cbD->graphicsPassState.reset(); // altered depth/color write, invalidate in order to avoid confusing the state tracking
             break;
@@ -3577,7 +3586,7 @@ void QRhiGles2::bindShaderResources(QGles2CommandBuffer *cbD,
     };
     QVarLengthArray<SeparateSampler, 4> separateSamplerBindings;
 
-    for (int i = 0, ie = srbD->m_bindings.count(); i != ie; ++i) {
+    for (int i = 0, ie = srbD->m_bindings.size(); i != ie; ++i) {
         const QRhiShaderResourceBinding::Data *b = srbD->m_bindings.at(i).data();
 
         switch (b->type) {
@@ -3592,7 +3601,7 @@ void QRhiGles2::bindShaderResources(QGles2CommandBuffer *cbD,
             }
             QGles2Buffer *bufD = QRHI_RES(QGles2Buffer, b->u.ubuf.buf);
             const char *bufView = bufD->data.constData() + viewOffset;
-            for (const QGles2UniformDescription &uniform : qAsConst(uniforms)) {
+            for (const QGles2UniformDescription &uniform : std::as_const(uniforms)) {
                 if (uniform.binding == b->binding) {
                     // in a uniform buffer everything is at least 4 byte aligned
                     // so this should not cause unaligned reads
@@ -3981,7 +3990,7 @@ QGles2RenderTargetData *QRhiGles2::enqueueBindFramebuffer(QRhiRenderTarget *rt, 
 void QRhiGles2::enqueueBarriersForPass(QGles2CommandBuffer *cbD)
 {
     cbD->passResTrackers.append(QRhiPassResourceTracker());
-    cbD->currentPassResTrackerIndex = cbD->passResTrackers.count() - 1;
+    cbD->currentPassResTrackerIndex = cbD->passResTrackers.size() - 1;
     QGles2CommandBuffer::Command &cmd(cbD->commands.get());
     cmd.cmd = QGles2CommandBuffer::Command::BarriersForPass;
     cmd.args.barriersForPass.trackerIndex = cbD->currentPassResTrackerIndex;
@@ -4159,7 +4168,7 @@ void QRhiGles2::dispatch(QRhiCommandBuffer *cb, int x, int y, int z)
             accessAndIsNewFlag = { 0, false };
 
         QGles2ShaderResourceBindings *srbD = QRHI_RES(QGles2ShaderResourceBindings, cbD->currentComputeSrb);
-        const int bindingCount = srbD->m_bindings.count();
+        const int bindingCount = srbD->m_bindings.size();
         for (int i = 0; i < bindingCount; ++i) {
             const QRhiShaderResourceBinding::Data *b = srbD->m_bindings.at(i).data();
             switch (b->type) {
@@ -4320,7 +4329,7 @@ bool QRhiGles2::compileShader(GLuint program, const QRhiShaderStage &shaderStage
     } else {
         shader = f->glCreateShader(toGlShaderType(shaderStage.type()));
         const char *srcStr = source.constData();
-        const GLint srcLength = source.length();
+        const GLint srcLength = source.size();
         f->glShaderSource(shader, 1, &srcStr, &srcLength);
         f->glCompileShader(shader);
         GLint compiled = 0;
@@ -4337,7 +4346,7 @@ bool QRhiGles2::compileShader(GLuint program, const QRhiShaderStage &shaderStage
             qWarning("Failed to compile shader: %s\nSource was:\n%s", log.constData(), source.constData());
             return false;
         }
-        if (m_shaderCache.count() >= MAX_SHADER_CACHE_ENTRIES) {
+        if (m_shaderCache.size() >= MAX_SHADER_CACHE_ENTRIES) {
             // Use the simplest strategy: too many cached shaders -> drop them all.
             for (uint shader : m_shaderCache)
                 f->glDeleteShader(shader); // does not actually get released yet when attached to a not-yet-released program
@@ -4394,7 +4403,7 @@ void QRhiGles2::registerUniformIfActive(const QShaderDescription::BlockVariable 
     // unnecessary glUniform* calls then.
     uniform.glslLocation = f->glGetUniformLocation(program, name.constData());
     if (uniform.glslLocation >= 0 && !activeUniformLocations->hasSeen(uniform.glslLocation)) {
-        if (var.arrayDims.count() > 1) {
+        if (var.arrayDims.size() > 1) {
             qWarning("Array '%s' has more than one dimension. This is not supported.",
                      var.name.constData());
             return;
@@ -4423,7 +4432,7 @@ void QRhiGles2::gatherUniforms(GLuint program,
                     registerUniformIfActive(structMember, structPrefix + ".", ub.binding,
                                             baseOffset, program, activeUniformLocations, dst);
             } else {
-                if (blockMember.arrayDims.count() > 1) {
+                if (blockMember.arrayDims.size() > 1) {
                     qWarning("Array of struct '%s' has more than one dimension. Only the first "
                              "dimension is used.",
                              blockMember.name.constData());
@@ -5383,7 +5392,7 @@ bool QGles2ShaderResourceBindings::create()
         return false;
 
     hasDynamicOffset = false;
-    for (int i = 0, ie = m_bindings.count(); i != ie; ++i) {
+    for (int i = 0, ie = m_bindings.size(); i != ie; ++i) {
         const QRhiShaderResourceBinding::Data *b = m_bindings.at(i).data();
         if (b->type == QRhiShaderResourceBinding::UniformBuffer) {
             if (b->u.ubuf.hasDynamicOffset) {
@@ -5491,7 +5500,7 @@ bool QGles2GraphicsPipeline::create()
     };
     QShaderDescription desc[LastIdx];
     QShader::SeparateToCombinedImageSamplerMappingList samplerMappingList[LastIdx];
-    for (const QRhiShaderStage &shaderStage : qAsConst(m_shaderStages)) {
+    for (const QRhiShaderStage &shaderStage : std::as_const(m_shaderStages)) {
         if (isGraphicsStage(shaderStage)) {
             const int idx = descIdxForStage(shaderStage);
             QShader shader = shaderStage.shader();
@@ -5506,7 +5515,7 @@ bool QGles2GraphicsPipeline::create()
 
     QByteArray cacheKey;
     QRhiGles2::ProgramCacheResult cacheResult = rhiD->tryLoadFromDiskOrPipelineCache(m_shaderStages.constData(),
-                                                                                     m_shaderStages.count(),
+                                                                                     m_shaderStages.size(),
                                                                                      program,
                                                                                      desc[VtxIdx].inputVariables(),
                                                                                      &cacheKey);
@@ -5514,7 +5523,7 @@ bool QGles2GraphicsPipeline::create()
         return false;
 
     if (cacheResult == QRhiGles2::ProgramCacheMiss) {
-        for (const QRhiShaderStage &shaderStage : qAsConst(m_shaderStages)) {
+        for (const QRhiShaderStage &shaderStage : std::as_const(m_shaderStages)) {
             if (isGraphicsStage(shaderStage)) {
                 if (!rhiD->compileShader(program, shaderStage, nullptr))
                     return false;
@@ -5553,7 +5562,7 @@ bool QGles2GraphicsPipeline::create()
     // present in both shaders.
     QDuplicateTracker<int, 256> activeUniformLocations;
 
-    for (const QRhiShaderStage &shaderStage : qAsConst(m_shaderStages)) {
+    for (const QRhiShaderStage &shaderStage : std::as_const(m_shaderStages)) {
         if (isGraphicsStage(shaderStage)) {
             const int idx = descIdxForStage(shaderStage);
             for (const QShaderDescription::UniformBlock &ub : desc[idx].uniformBlocks())

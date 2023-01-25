@@ -125,7 +125,7 @@ public:
         QTest::addColumn<QString>( "dbName" );
         int count = 0;
 
-        for ( int i = 0; i < dbNames.count(); ++i ) {
+        for ( int i = 0; i < dbNames.size(); ++i ) {
             QSqlDatabase db = QSqlDatabase::database( dbNames.at( i ) );
 
             if ( !db.isValid() )
@@ -146,7 +146,7 @@ public:
         QTest::addColumn<int>("submitpolicy_i");
         int count = 0;
 
-        for ( int i = 0; i < dbNames.count(); ++i ) {
+        for ( int i = 0; i < dbNames.size(); ++i ) {
             QSqlDatabase db = QSqlDatabase::database( dbNames.at( i ) );
 
             if ( !db.isValid() )
@@ -181,6 +181,14 @@ public:
 
         if ( port > 0 )
             cName += QLatin1Char(':') + QString::number( port );
+
+        if (driver == "QSQLITE") {
+            // Since the database for sqlite is generated at runtime it's always
+            // available, but we use QTempDir so it's always in a different
+            // location. Thus, let's ignore the path completely.
+            cName = "SQLite";
+            qInfo("SQLite will use the database located at %ls", qUtf16Printable(dbName));
+        }
 
         db = QSqlDatabase::addDatabase( driver, cName );
 
@@ -250,7 +258,7 @@ public:
         }
         QTemporaryDir *sqLiteDir = dbDir();
         if (sqLiteDir) {
-            addDb(QStringLiteral("QSQLITE"), QDir::toNativeSeparators(sqLiteDir->path() + QStringLiteral("/foo.db")));
+            addDb(QStringLiteral("QSQLITE"), QDir::toNativeSeparators(sqLiteDir->path() + QStringLiteral("/sqlite.db")));
             added = true;
         }
         return added;

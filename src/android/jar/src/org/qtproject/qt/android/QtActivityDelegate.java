@@ -84,8 +84,6 @@ public class QtActivityDelegate
     private static final String ENVIRONMENT_VARIABLES_KEY = "environment.variables";
     private static final String APPLICATION_PARAMETERS_KEY = "application.parameters";
     private static final String STATIC_INIT_CLASSES_KEY = "static.init.classes";
-    private static final String EXTRACT_STYLE_KEY = "extract.android.style";
-    private static final String EXTRACT_STYLE_MINIMAL_KEY = "extract.android.style.option";
 
     public static final int SYSTEM_UI_VISIBILITY_NORMAL = 0;
     public static final int SYSTEM_UI_VISIBILITY_FULLSCREEN = 1;
@@ -707,11 +705,8 @@ public class QtActivityDelegate
             libraries.remove(libraries.size() - 1);
         }
 
-        if (loaderParams.containsKey(EXTRACT_STYLE_KEY)) {
-            String path = loaderParams.getString(EXTRACT_STYLE_KEY);
-            new ExtractStyle(m_activity, path, loaderParams.containsKey(EXTRACT_STYLE_MINIMAL_KEY) &&
-                                               loaderParams.getBoolean(EXTRACT_STYLE_MINIMAL_KEY));
-        }
+        ExtractStyle.setup(loaderParams);
+        ExtractStyle.runIfNeeded(m_activity, isUiModeDark(m_activity.getResources().getConfiguration()));
 
         QtNative.setEnvironmentVariables(loaderParams.getString(ENVIRONMENT_VARIABLES_KEY));
         QtNative.setEnvironmentVariable("QT_ANDROID_FONTS_MONOSPACE",
@@ -849,6 +844,8 @@ public class QtActivityDelegate
         QtNative.handleOrientationChanged(rotation, m_nativeOrientation);
         m_currentRotation = rotation;
 
+        handleUiModeChange(m_activity.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK);
+
         float refreshRate = (Build.VERSION.SDK_INT < Build.VERSION_CODES.R)
                 ? m_activity.getWindowManager().getDefaultDisplay().getRefreshRate()
                 : m_activity.getDisplay().getRefreshRate();
@@ -969,6 +966,25 @@ public class QtActivityDelegate
             updateFullScreen();
     }
 
+    boolean isUiModeDark(Configuration config)
+    {
+        return (config.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private void handleUiModeChange(int uiMode)
+    {
+        switch (uiMode) {
+            case Configuration.UI_MODE_NIGHT_NO:
+                ExtractStyle.runIfNeeded(m_activity, false);
+                QtNative.handleUiDarkModeChanged(0);
+                break;
+            case Configuration.UI_MODE_NIGHT_YES:
+                ExtractStyle.runIfNeeded(m_activity, true);
+                QtNative.handleUiDarkModeChanged(1);
+                break;
+        }
+    }
+
     public void onConfigurationChanged(Configuration configuration)
     {
         try {
@@ -976,6 +992,7 @@ public class QtActivityDelegate
         } catch (Exception e) {
             e.printStackTrace();
         }
+        handleUiModeChange(configuration.uiMode & Configuration.UI_MODE_NIGHT_MASK);
     }
 
     public void onDestroy()

@@ -5,20 +5,35 @@ function(_qt_internal_wasm_add_target_helpers target)
     get_target_property(targetType "${target}" TYPE)
     if("${targetType}" STREQUAL "EXECUTABLE")
 
-        set(APPNAME ${target})
-
         if(QT6_INSTALL_PREFIX)
             set(WASM_BUILD_DIR "${QT6_INSTALL_PREFIX}")
         elseif(QT_BUILD_DIR)
             set(WASM_BUILD_DIR "${QT_BUILD_DIR}")
         endif()
 
+        get_target_property(output_name ${target} OUTPUT_NAME)
+        if(output_name)
+            set(_target_output_name "${output_name}")
+        else()
+            set(_target_output_name "${target}")
+        endif()
+
+        set(APPNAME ${_target_output_name})
+
+        get_target_property(target_output_directory ${target} RUNTIME_OUTPUT_DIRECTORY)
+
+        if(target_output_directory)
+            set(_target_directory "${target_output_directory}")
+        else()
+            set(_target_directory "${CMAKE_CURRENT_BINARY_DIR}")
+        endif()
+
         configure_file("${WASM_BUILD_DIR}/plugins/platforms/wasm_shell.html"
-            "${target}.html")
+            "${_target_directory}/${_target_output_name}.html")
         configure_file("${WASM_BUILD_DIR}/plugins/platforms/qtloader.js"
-            qtloader.js COPYONLY)
+            ${_target_directory}/qtloader.js COPYONLY)
         configure_file("${WASM_BUILD_DIR}/plugins/platforms/qtlogo.svg"
-            qtlogo.svg COPYONLY)
+            ${_target_directory}/qtlogo.svg COPYONLY)
 
         if(QT_FEATURE_thread)
             set(POOL_SIZE 4)

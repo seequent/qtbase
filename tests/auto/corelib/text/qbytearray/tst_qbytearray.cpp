@@ -12,9 +12,6 @@
 
 #include "../shared/test_number_shared.h"
 
-#include <stdexcept>
-#include <string_view>
-
 class tst_QByteArray : public QObject
 {
     Q_OBJECT
@@ -26,13 +23,6 @@ private slots:
     void swap();
     void qChecksum_data();
     void qChecksum();
-#ifndef QT_NO_COMPRESS
-    void qCompress_data();
-    void qCompress();
-    void qUncompressCorruptedData_data();
-    void qUncompressCorruptedData();
-    void qCompressionZeroTermination();
-#endif
     void constByteArray();
     void leftJustified();
     void rightJustified();
@@ -43,7 +33,6 @@ private slots:
     void split();
     void base64_data();
     void base64();
-    void base64_2GiB();
     void fromBase64_data();
     void fromBase64();
     void qvsnprintf();
@@ -235,79 +224,6 @@ void tst_QByteArray::qChecksum()
     QCOMPARE(::qChecksum(QByteArrayView(data.constData(), len), standard), static_cast<quint16>(checksum));
 }
 
-#ifndef QT_NO_COMPRESS
-void tst_QByteArray::qCompress_data()
-{
-    QTest::addColumn<QByteArray>("ba");
-
-    const int size1 = 1024*1024;
-    QByteArray ba1( size1, 0 );
-
-    QTest::newRow( "00" ) << QByteArray();
-
-    int i;
-    for ( i=0; i<size1; i++ )
-        ba1[i] = (char)( i / 1024 );
-    QTest::newRow( "01" ) << ba1;
-
-    for ( i=0; i<size1; i++ )
-        ba1[i] = (char)( i % 256 );
-    QTest::newRow( "02" ) << ba1;
-
-    ba1.fill( 'A' );
-    QTest::newRow( "03" ) << ba1;
-
-    QFile file( QFINDTESTDATA("rfc3252.txt") );
-    QVERIFY( file.open(QIODevice::ReadOnly) );
-    QTest::newRow( "04" ) << file.readAll();
-}
-
-void tst_QByteArray::qCompress()
-{
-    QFETCH( QByteArray, ba );
-    QByteArray compressed = ::qCompress( ba );
-    QTEST( ::qUncompress( compressed ), "ba" );
-}
-
-void tst_QByteArray::qUncompressCorruptedData_data()
-{
-    QTest::addColumn<QByteArray>("in");
-
-    QTest::newRow("0x00000000") << QByteArray("\x00\x00\x00\x00", 4);
-    QTest::newRow("0x000000ff") << QByteArray("\x00\x00\x00\xff", 4);
-    QTest::newRow("0x3f000000") << QByteArray("\x3f\x00\x00\x00", 4);
-    QTest::newRow("0x3fffffff") << QByteArray("\x3f\xff\xff\xff", 4);
-    QTest::newRow("0x7fffff00") << QByteArray("\x7f\xff\xff\x00", 4);
-    QTest::newRow("0x7fffffff") << QByteArray("\x7f\xff\xff\xff", 4);
-    QTest::newRow("0x80000000") << QByteArray("\x80\x00\x00\x00", 4);
-    QTest::newRow("0x800000ff") << QByteArray("\x80\x00\x00\xff", 4);
-    QTest::newRow("0xcf000000") << QByteArray("\xcf\x00\x00\x00", 4);
-    QTest::newRow("0xcfffffff") << QByteArray("\xcf\xff\xff\xff", 4);
-    QTest::newRow("0xffffff00") << QByteArray("\xff\xff\xff\x00", 4);
-    QTest::newRow("0xffffffff") << QByteArray("\xff\xff\xff\xff", 4);
-}
-
-// This test is expected to produce some warning messages in the test output.
-void tst_QByteArray::qUncompressCorruptedData()
-{
-    QFETCH(QByteArray, in);
-
-    QByteArray res;
-    res = ::qUncompress(in);
-    QCOMPARE(res, QByteArray());
-
-    res = ::qUncompress(in + "blah");
-    QCOMPARE(res, QByteArray());
-}
-
-void tst_QByteArray::qCompressionZeroTermination()
-{
-    QByteArray s = "Hello, I'm a string.";
-    QByteArray ba = ::qUncompress(::qCompress(s));
-    QCOMPARE(ba.data()[ba.size()], '\0');
-    QCOMPARE(ba, s);
-}
-#endif
 
 void tst_QByteArray::constByteArray()
 {
@@ -577,45 +493,6 @@ void tst_QByteArray::base64()
     base64urlnoequals.replace('=', "");
     arr64 = rawdata.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
     QCOMPARE(arr64, base64urlnoequals);
-}
-
-void tst_QByteArray::base64_2GiB()
-{
-#ifdef Q_OS_ANDROID
-    QSKIP("Android kills the test when using too much memory");
-#endif
-    if constexpr (sizeof(qsizetype) > sizeof(int)) {
-        try {
-            constexpr qint64 GiB = 1024 * 1024 * 1024;
-            static_assert((2 * GiB + 1) % 3 == 0);
-            const char inputChar = '\0';    // all-NULs encode as
-            const char outputChar = 'A';    // all-'A's
-            const qint64 inputSize = 2 * GiB + 1;
-            const qint64 outputSize = inputSize / 3 * 4;
-            const auto sv = [](const QByteArray &ba) {
-                    return std::string_view{ba.data(), size_t(ba.size())};
-                };
-            QByteArray output;
-            {
-                const QByteArray input(inputSize, inputChar);
-                output = input.toBase64();
-                QCOMPARE(output.size(), outputSize);
-                QCOMPARE(sv(output).find_first_not_of(outputChar),
-                         std::string_view::npos);
-            }
-            {
-                auto r = QByteArray::fromBase64Encoding(output);
-                QCOMPARE_EQ(r.decodingStatus, QByteArray::Base64DecodingStatus::Ok);
-                QCOMPARE(r.decoded.size(), inputSize);
-                QCOMPARE(sv(r.decoded).find_first_not_of(inputChar),
-                         std::string_view::npos);
-            }
-        } catch (const std::bad_alloc &) {
-            QSKIP("Could not allocate enough RAM.");
-        }
-    } else {
-        QSKIP("This is a 64-bit only test");
-    }
 }
 
 //different from the previous test as the input are invalid

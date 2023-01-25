@@ -84,25 +84,7 @@ QT_BEGIN_NAMESPACE
 
     \section1 Iterating Over the Strings
 
-    To iterate over a list, you can either use index positions or
-    QList's Java-style and STL-style iterator types:
-
-    Indexing:
-
-    \snippet qstringlist/main.cpp 1
-
-    Java-style iterator:
-
-    \snippet qstringlist/main.cpp 2
-
-    STL-style iterator:
-
-    \snippet qstringlist/main.cpp 3
-
-    The QStringListIterator class is simply a type definition for
-    QListIterator<QString>. QStringList also provide the
-    QMutableStringListIterator class which is a type definition for
-    QMutableListIterator<QString>.
+    See \l {Iterating over Containers}.
 
     \section1 Manipulating the Strings
 
@@ -387,7 +369,7 @@ void QtPrivate::QStringList_replaceInStrings(QStringList *that, QStringView befo
                                              QStringView after, Qt::CaseSensitivity cs)
 {
     for (qsizetype i = 0; i < that->size(); ++i)
-        (*that)[i].replace(before.data(), before.length(), after.data(), after.length(), cs);
+        (*that)[i].replace(before.data(), before.size(), after.data(), after.size(), cs);
 }
 
 #if QT_CONFIG(regularexpression)
@@ -492,7 +474,7 @@ QString QtPrivate::QStringList_join(const QStringList &list, QLatin1StringView s
 */
 QString QtPrivate::QStringList_join(const QStringList *that, QStringView sep)
 {
-    return QStringList_join(that, sep.data(), sep.length());
+    return QStringList_join(that, sep.data(), sep.size());
 }
 
 /*!

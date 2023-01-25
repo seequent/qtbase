@@ -3,8 +3,13 @@
 
 #include "qnetworklistmanagerevents.h"
 
+#include <QtCore/qpointer.h>
+
+#include <mutex>
+
 #ifdef SUPPORTS_WINRT
 #include <winrt/base.h>
+#include <QtCore/private/qfactorycacheregistration_p.h>
 // Workaround for Windows SDK bug.
 // See https://github.com/microsoft/Windows.UI.Composition-Win32-Samples/issues/47
 namespace winrt::impl
@@ -101,11 +106,16 @@ bool QNetworkListManagerEvents::start()
 
 #ifdef SUPPORTS_WINRT
     using namespace winrt::Windows::Networking::Connectivity;
+    using winrt::Windows::Foundation::IInspectable;
     // Register for changes in the network and store a token to unregister later:
     token = NetworkInformation::NetworkStatusChanged(
-            [this](const winrt::Windows::Foundation::IInspectable sender) {
+            [owner = QPointer(this)](const IInspectable sender) {
                 Q_UNUSED(sender);
-                emitWinRTUpdates();
+                if (owner) {
+                    std::scoped_lock locker(owner->winrtLock);
+                    if (owner->token)
+                        owner->emitWinRTUpdates();
+                }
             });
     // Emit initial state
     emitWinRTUpdates();
@@ -114,24 +124,28 @@ bool QNetworkListManagerEvents::start()
     return true;
 }
 
-bool QNetworkListManagerEvents::stop()
+void QNetworkListManagerEvents::stop()
 {
     Q_ASSERT(connectionPoint);
     auto hr = connectionPoint->Unadvise(cookie);
     if (FAILED(hr)) {
         qCWarning(lcNetInfoNLM) << "Failed to unsubscribe from network connectivity events:"
                                 << errorStringFromHResult(hr);
-        return false;
+    } else {
+        cookie = 0;
     }
-    cookie = 0;
+    // Even if we fail we should still try to unregister from winrt events:
 
 #ifdef SUPPORTS_WINRT
-    using namespace winrt::Windows::Networking::Connectivity;
-    // Pass the token we stored earlier to unregister:
-    NetworkInformation::NetworkStatusChanged(token);
-    token = {};
+    // Try to synchronize unregistering with potentially in-progress callbacks
+    std::scoped_lock locker(winrtLock);
+    if (token) {
+        using namespace winrt::Windows::Networking::Connectivity;
+        // Pass the token we stored earlier to unregister:
+        NetworkInformation::NetworkStatusChanged(token);
+        token = {};
+    }
 #endif
-    return true;
 }
 
 bool QNetworkListManagerEvents::checkBehindCaptivePortal()
@@ -185,7 +199,12 @@ QNetworkInformation::TransportMedium getTransportMedium(const ConnectionProfile 
     if (profile.IsWlanConnectionProfile())
         return QNetworkInformation::TransportMedium::WiFi;
 
-    NetworkAdapter adapter = profile.NetworkAdapter();
+    NetworkAdapter adapter(nullptr);
+    try {
+        adapter = profile.NetworkAdapter();
+    } catch (...) {
+        // pass, we will return Unknown anyway
+    }
     if (adapter == nullptr)
         return QNetworkInformation::TransportMedium::Unknown;
 
@@ -208,7 +227,14 @@ QNetworkInformation::TransportMedium getTransportMedium(const ConnectionProfile 
 
 [[nodiscard]] bool getMetered(const ConnectionProfile &profile)
 {
-    ConnectionCost cost = profile.GetConnectionCost();
+    ConnectionCost cost(nullptr);
+    try {
+        cost = profile.GetConnectionCost();
+    } catch (...) {
+        // pass, we return false if we get an empty object back anyway
+    }
+    if (cost == nullptr)
+        return false;
     NetworkCostType type = cost.NetworkCostType();
     return type == NetworkCostType::Fixed || type == NetworkCostType::Variable;
 }
@@ -217,7 +243,12 @@ QNetworkInformation::TransportMedium getTransportMedium(const ConnectionProfile 
 void QNetworkListManagerEvents::emitWinRTUpdates()
 {
     using namespace winrt::Windows::Networking::Connectivity;
-    ConnectionProfile profile = NetworkInformation::GetInternetConnectionProfile();
+    ConnectionProfile profile = nullptr;
+    try {
+        profile = NetworkInformation::GetInternetConnectionProfile();
+    } catch (...) {
+        // pass, we would just return early if we get an empty object back anyway
+    }
     if (profile == nullptr)
         return;
     emit transportMediumChanged(getTransportMedium(profile));

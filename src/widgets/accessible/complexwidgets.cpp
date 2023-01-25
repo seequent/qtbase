@@ -177,7 +177,7 @@ QAccessibleTabBar::QAccessibleTabBar(QWidget *w)
 
 QAccessibleTabBar::~QAccessibleTabBar()
 {
-    for (QAccessible::Id id : qAsConst(m_childInterfaces))
+    for (QAccessible::Id id : std::as_const(m_childInterfaces))
         QAccessible::deleteAccessibleInterface(id);
 }
 
@@ -320,6 +320,16 @@ int QAccessibleComboBox::indexOfChild(const QAccessibleInterface *child) const
     return -1;
 }
 
+QAccessibleInterface *QAccessibleComboBox::focusChild() const
+{
+    // The editable combobox is the focus proxy of its lineedit, so the
+    // lineedit itself never gets focus. But it is the accessible focus
+    // child of an editable combobox.
+    if (comboBox()->isEditable())
+        return child(1);
+    return nullptr;
+}
+
 /*! \reimp */
 QString QAccessibleComboBox::text(QAccessible::Text t) const
 {
@@ -420,7 +430,7 @@ QAccessibleInterface *QAccessibleAbstractScrollArea::child(int index) const
 
 int QAccessibleAbstractScrollArea::childCount() const
 {
-    return accessibleChildren().count();
+    return accessibleChildren().size();
 }
 
 int QAccessibleAbstractScrollArea::indexOfChild(const QAccessibleInterface *child) const

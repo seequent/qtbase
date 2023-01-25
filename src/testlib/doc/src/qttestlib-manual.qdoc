@@ -671,7 +671,7 @@
         \li result
     \row
         \li 0
-        \li all lower
+        \li all-lower
         \li "hello"
         \li HELLO
     \row
@@ -681,7 +681,7 @@
         \li HELLO
     \row
         \li 2
-        \li all upper
+        \li all-upper
         \li "HELLO"
         \li HELLO
     \endtable
@@ -941,16 +941,6 @@
     The \c{if (useLocaleCompare)} switch is placed outside the QBENCHMARK
     macro to avoid measuring its overhead. Each benchmark test function
     can have one active QBENCHMARK macro.
-
-    \section1 External Tools
-
-    Tools for handling and visualizing test data are available as part of
-    the \l {qtestlib-tools} project.
-    These include a tool for comparing performance data obtained from test
-    runs and a utility to generate Web-based graphs of performance data.
-
-    See the \l{qtestlib-tools Announcement}{qtestlib-tools announcement}
-    for more information on these tools and a simple graphing example.
 
     \section1 Building the Executable
 

@@ -559,7 +559,7 @@ static bool isScript(QStringView tag)
     static const QString allScripts =
         QString::fromLatin1(reinterpret_cast<const char *>(script_code_list),
                             sizeof(script_code_list) - 1);
-    return tag.length() == 4 && allScripts.indexOf(tag) % 4 == 0;
+    return tag.size() == 4 && allScripts.indexOf(tag) % 4 == 0;
 }
 
 bool qt_splitLocaleName(QStringView name, QStringView *lang, QStringView *script, QStringView *land)
@@ -875,29 +875,41 @@ static QLocalePrivate *findLocalePrivate(QLocale::Language language, QLocale::Sc
     return new QLocalePrivate(data, index, numberOptions);
 }
 
-QString QLocaleData::decimalPoint() const
+static std::optional<QString>
+systemLocaleString(const QLocaleData *that, QSystemLocale::QueryType type)
 {
 #ifndef QT_NO_SYSTEMLOCALE
-    if (this == &systemLocaleData) {
-        auto res = systemLocale()->query(QSystemLocale::DecimalPoint).toString();
-        if (!res.isEmpty())
-            return res;
-    }
+    if (that != &systemLocaleData)
+        return std::nullopt;
+
+    QVariant v = systemLocale()->query(type);
+    if (v.metaType() != QMetaType::fromType<QString>())
+        return std::nullopt;
+
+    return v.toString();
+#else
+    Q_UNUSED(that)
+    Q_UNUSED(type)
+    return std::nullopt;
 #endif
-    return decimalSeparator().getData(single_character_data);
+}
+
+static QString localeString(const QLocaleData *that, QSystemLocale::QueryType type,
+                            QLocaleData::DataRange range)
+{
+    if (auto opt = systemLocaleString(that, type))
+        return *opt;
+    return range.getData(single_character_data);
+}
+
+QString QLocaleData::decimalPoint() const
+{
+    return localeString(this, QSystemLocale::DecimalPoint, decimalSeparator());
 }
 
 QString QLocaleData::groupSeparator() const
 {
-    // Empty => don't do grouping
-#ifndef QT_NO_SYSTEMLOCALE
-    if (this == &systemLocaleData) {
-        QVariant res = systemLocale()->query(QSystemLocale::GroupSeparator);
-        if (!res.isNull())
-            return res.toString();
-    }
-#endif
-    return groupDelim().getData(single_character_data);
+    return localeString(this, QSystemLocale::GroupSeparator, groupDelim());
 }
 
 QString QLocaleData::percentSign() const
@@ -912,14 +924,7 @@ QString QLocaleData::listSeparator() const
 
 QString QLocaleData::zeroDigit() const
 {
-#ifndef QT_NO_SYSTEMLOCALE
-    if (this == &systemLocaleData) {
-        auto res = systemLocale()->query(QSystemLocale::ZeroDigit).toString();
-        if (!res.isEmpty())
-            return res;
-    }
-#endif
-    return zero().getData(single_character_data);
+    return localeString(this, QSystemLocale::ZeroDigit, zero());
 }
 
 char32_t QLocaleData::zeroUcs() const
@@ -940,26 +945,12 @@ char32_t QLocaleData::zeroUcs() const
 
 QString QLocaleData::negativeSign() const
 {
-#ifndef QT_NO_SYSTEMLOCALE
-    if (this == &systemLocaleData) {
-        auto res = systemLocale()->query(QSystemLocale::NegativeSign).toString();
-        if (!res.isEmpty())
-            return res;
-    }
-#endif
-    return minus().getData(single_character_data);
+    return localeString(this, QSystemLocale::NegativeSign, minus());
 }
 
 QString QLocaleData::positiveSign() const
 {
-#ifndef QT_NO_SYSTEMLOCALE
-    if (this == &systemLocaleData) {
-        auto res = systemLocale()->query(QSystemLocale::PositiveSign).toString();
-        if (!res.isEmpty())
-            return res;
-    }
-#endif
-    return plus().getData(single_character_data);
+    return localeString(this, QSystemLocale::PositiveSign, plus());
 }
 
 QString QLocaleData::exponentSeparator() const
@@ -3707,11 +3698,11 @@ QString QLocaleData::decimalForm(QString &&digits, int decpt, int precision,
             digits.append(zero);
         break;
     case PMChopTrailingZeros:
-        Q_ASSERT(digits.length() / digitWidth <= qMax(decpt, 1) || !digits.endsWith(zero));
+        Q_ASSERT(digits.size() / digitWidth <= qMax(decpt, 1) || !digits.endsWith(zero));
         break;
     }
 
-    if (mustMarkDecimal || decpt < digits.length() / digitWidth)
+    if (mustMarkDecimal || decpt < digits.size() / digitWidth)
         digits.insert(decpt * digitWidth, decimalPoint());
 
     if (groupDigits) {
@@ -3749,11 +3740,11 @@ QString QLocaleData::exponentForm(QString &&digits, int decpt, int precision,
             digits.append(zero);
         break;
     case PMChopTrailingZeros:
-        Q_ASSERT(digits.length() / digitWidth <= 1 || !digits.endsWith(zero));
+        Q_ASSERT(digits.size() / digitWidth <= 1 || !digits.endsWith(zero));
         break;
     }
 
-    if (mustMarkDecimal || digits.length() > digitWidth)
+    if (mustMarkDecimal || digits.size() > digitWidth)
         digits.insert(digitWidth, decimalPoint());
 
     digits.append(exponentSeparator());
@@ -3802,7 +3793,7 @@ QString QLocaleData::applyIntegerFormatting(QString &&numStr, bool negative, int
 {
     const QString zero = base == 10 ? zeroDigit() : QStringLiteral("0");
     const auto digitWidth = zero.size();
-    const auto digitCount = numStr.length() / digitWidth;
+    const auto digitCount = numStr.size() / digitWidth;
 
     const auto basePrefix = [&] () -> QStringView {
         if (flags & ShowBase) {
@@ -3995,7 +3986,7 @@ bool QLocaleData::validateChars(QStringView str, NumberMode numMode, QByteArray 
                                 int decDigits, QLocale::NumberOptions number_options) const
 {
     buff->clear();
-    buff->reserve(str.length());
+    buff->reserve(str.size());
 
     enum { Whole, Fractional, Exponent } state = Whole;
     const bool scientific = numMode == DoubleScientificMode;
@@ -4091,7 +4082,7 @@ double QLocaleData::stringToDouble(QStringView str, bool *ok,
     }
     int processed = 0;
     bool nonNullOk = false;
-    double d = qt_asciiToDouble(buff.constData(), buff.length() - 1, nonNullOk, processed);
+    double d = qt_asciiToDouble(buff.constData(), buff.size() - 1, nonNullOk, processed);
     if (ok != nullptr)
         *ok = nonNullOk;
     return d;
@@ -4125,17 +4116,8 @@ qulonglong QLocaleData::stringToUnsLongLong(QStringView str, int base, bool *ok,
 
 qlonglong QLocaleData::bytearrayToLongLong(QByteArrayView num, int base, bool *ok)
 {
-    if (num.isEmpty() || num.at(0) == '\0') {
-        if (ok != nullptr)
-            *ok = false;
-        return 0;
-    }
-
-    bool _ok;
-    const char *endptr;
-    const qlonglong l = qstrntoll(num.data(), num.size(), &endptr, base, &_ok);
-
-    if (!_ok || endptr == num.data()) {
+    auto [l, endptr] = qstrntoll(num.data(), num.size(), base);
+    if (!endptr) {
         if (ok != nullptr)
             *ok = false;
         return 0;
@@ -4161,17 +4143,8 @@ qlonglong QLocaleData::bytearrayToLongLong(QByteArrayView num, int base, bool *o
 
 qulonglong QLocaleData::bytearrayToUnsLongLong(QByteArrayView num, int base, bool *ok)
 {
-    if (num.isEmpty() || num.at(0) == '\0') {
-        if (ok != nullptr)
-            *ok = false;
-        return 0;
-    }
-
-    bool _ok;
-    const char *endptr;
-    const qulonglong l = qstrntoull(num.data(), num.size(), &endptr, base, &_ok);
-
-    if (!_ok || endptr == num.data()) {
+    auto [l, endptr] = qstrntoull(num.data(), num.size(), base);
+    if (!endptr) {
         if (ok != nullptr)
             *ok = false;
         return 0;

@@ -621,24 +621,27 @@ static void setDisplayMetrics(JNIEnv * /*env*/, jclass /*clazz*/, jint screenWid
                               jint availableHeightPixels, jdouble xdpi, jdouble ydpi,
                               jdouble scaledDensity, jdouble density, jfloat refreshRate)
 {
+    Q_UNUSED(availableLeftPixels)
+    Q_UNUSED(availableTopPixels)
+
     m_availableWidthPixels = availableWidthPixels;
     m_availableHeightPixels = availableHeightPixels;
     m_scaledDensity = scaledDensity;
     m_density = density;
 
+    const QSize screenSize(screenWidthPixels, screenHeightPixels);
+    // available geometry always starts from top left
+    const QRect availableGeometry(0, 0, availableWidthPixels, availableHeightPixels);
+    const QSize physicalSize(qRound(double(screenWidthPixels) / xdpi * 25.4),
+                             qRound(double(screenHeightPixels) / ydpi * 25.4));
+
     QMutexLocker lock(&m_platformMutex);
     if (!m_androidPlatformIntegration) {
         QAndroidPlatformIntegration::setDefaultDisplayMetrics(
-                availableLeftPixels, availableTopPixels, availableWidthPixels,
-                availableHeightPixels, qRound(double(screenWidthPixels) / xdpi * 25.4),
-                qRound(double(screenHeightPixels) / ydpi * 25.4), screenWidthPixels,
-                screenHeightPixels);
+                availableGeometry.left(), availableGeometry.top(), availableGeometry.width(),
+                availableGeometry.height(), physicalSize.width(), physicalSize.height(),
+                screenSize.width(), screenSize.height());
     } else {
-        const QSize physicalSize(qRound(double(screenWidthPixels) / xdpi * 25.4),
-                                 qRound(double(screenHeightPixels) / ydpi * 25.4));
-        const QSize screenSize(screenWidthPixels, screenHeightPixels);
-        const QRect availableGeometry(availableLeftPixels, availableTopPixels,
-                                      availableWidthPixels, availableHeightPixels);
         m_androidPlatformIntegration->setScreenSizeParameters(physicalSize, screenSize,
                                                               availableGeometry);
         m_androidPlatformIntegration->setRefreshRate(refreshRate);
@@ -752,6 +755,12 @@ static void handleRefreshRateChanged(JNIEnv */*env*/, jclass /*cls*/, jfloat ref
         m_androidPlatformIntegration->setRefreshRate(refreshRate);
 }
 
+static void handleUiDarkModeChanged(JNIEnv */*env*/, jobject /*thiz*/, jint newUiMode)
+{
+    QAndroidPlatformIntegration::setAppearance(
+        (newUiMode == 1 ) ? QPlatformTheme::Appearance::Dark : QPlatformTheme::Appearance::Light);
+}
+
 static void onActivityResult(JNIEnv */*env*/, jclass /*cls*/,
                              jint requestCode,
                              jint resultCode,
@@ -781,6 +790,7 @@ static JNINativeMethod methods[] = {
     { "setSurface", "(ILjava/lang/Object;II)V", (void *)setSurface },
     { "updateWindow", "()V", (void *)updateWindow },
     { "updateApplicationState", "(I)V", (void *)updateApplicationState },
+    { "handleUiDarkModeChanged", "(I)V", (void *)handleUiDarkModeChanged },
     { "handleOrientationChanged", "(II)V", (void *)handleOrientationChanged },
     { "onActivityResult", "(IILandroid/content/Intent;)V", (void *)onActivityResult },
     { "onNewIntent", "(Landroid/content/Intent;)V", (void *)onNewIntent },

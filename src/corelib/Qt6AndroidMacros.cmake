@@ -254,6 +254,9 @@ function(qt6_android_generate_deployment_settings target)
 
     if(COMMAND _qt_internal_generate_android_qml_deployment_settings)
         _qt_internal_generate_android_qml_deployment_settings(file_contents ${target})
+    else()
+        string(APPEND file_contents
+            "   \"qml-skip-import-scanning\": true,\n")
     endif()
 
     # Override rcc binary path
@@ -584,8 +587,8 @@ function(_qt_internal_collect_apk_dependencies_defer)
     endif()
 endfunction()
 
-# The function collects shared libraries from the build system tree, that might be dependencies for
-# the main apk targets.
+# The function collects project-built shared libraries that might be dependencies for
+# the main apk targets. It stores their locations in a global custom target property.
 function(_qt_internal_collect_apk_dependencies)
     # User opted-out the functionality
     if(QT_NO_COLLECT_BUILD_TREE_APK_DEPS)
@@ -628,8 +631,8 @@ function(_qt_internal_collect_apk_dependencies)
     )
 endfunction()
 
-# The function recursively goes through the project subfolders and collects targets that supposed to
-# be shared libraries of any kind.
+# This function recursively walks the current directory and its subdirectories to collect shared
+# library targets built in those directories.
 function(_qt_internal_collect_buildsystem_shared_libraries out_var subdir)
     set(result "")
     get_directory_property(buildsystem_targets DIRECTORY ${subdir} BUILDSYSTEM_TARGETS)
@@ -967,6 +970,14 @@ function(_qt_internal_configure_android_multiabi_target target)
         list(APPEND extra_cmake_args "-DANDROID_NDK_ROOT=${ANDROID_NDK}")
     endif()
 
+    if(DEFINED QT_NO_PACKAGE_VERSION_CHECK)
+        list(APPEND extra_cmake_args "-DQT_NO_PACKAGE_VERSION_CHECK=${QT_NO_PACKAGE_VERSION_CHECK}")
+    endif()
+
+    if(DEFINED QT_HOST_PATH_CMAKE_DIR)
+        list(APPEND extra_cmake_args "-DQT_HOST_PATH_CMAKE_DIR=${QT_HOST_PATH_CMAKE_DIR}")
+    endif()
+
     if(CMAKE_MAKE_PROGRAM)
         list(APPEND extra_cmake_args "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
     endif()
@@ -1008,13 +1019,17 @@ function(_qt_internal_configure_android_multiabi_target target)
             ExternalProject_Add("qt_internal_android_${abi}"
                 SOURCE_DIR "${CMAKE_SOURCE_DIR}"
                 BINARY_DIR "${android_abi_build_dir}"
-                CMAKE_ARGS
+                CONFIGURE_COMMAND
+                    "${CMAKE_COMMAND}"
+                    "-G${CMAKE_GENERATOR}"
                     "-DCMAKE_TOOLCHAIN_FILE=${qt_abi_toolchain_path}"
                     "-DQT_HOST_PATH=${QT_HOST_PATH}"
                     "-DQT_IS_ANDROID_MULTI_ABI_EXTERNAL_PROJECT=ON"
                     "-DQT_INTERNAL_ANDROID_MULTI_ABI_BINARY_DIR=${CMAKE_BINARY_DIR}"
                     "${config_arg}"
                     "${extra_cmake_args}"
+                    "-B" "${android_abi_build_dir}"
+                    "-S" "${CMAKE_SOURCE_DIR}"
                 EXCLUDE_FROM_ALL TRUE
                 BUILD_COMMAND "" # avoid top-level build of external project
             )

@@ -10,6 +10,8 @@
 #include <QTimer>
 #include <QFutureSynchronizer>
 
+#include <QtTest/private/qemulationdetector_p.h>
+
 using namespace QtConcurrent;
 
 class tst_QtConcurrentRun: public QObject
@@ -699,6 +701,9 @@ static void runFunction()
 
 void tst_QtConcurrentRun::pollForIsFinished()
 {
+    // proxy check for QEMU; catches slightyl more though
+    if (QTestPrivate::isRunningArmOnX86())
+        QSKIP("Runs into spurious crashes on QEMU -- QTBUG-106906");
     const int numThreads = std::max(4, 2 * QThread::idealThreadCount());
     QThreadPool::globalInstance()->setMaxThreadCount(numThreads);
 
@@ -1383,7 +1388,7 @@ void tst_QtConcurrentRun::withPromiseAndThen()
         setFlag(syncEnd);
 
         future.waitForFinished();
-        QCOMPARE(future.results().count(), 0);
+        QCOMPARE(future.results().size(), 0);
         QVERIFY(runExecuted);
         QVERIFY(!cancelReceivedBeforeSync);
         QVERIFY(cancelReceivedAfterSync);
@@ -1403,7 +1408,7 @@ void tst_QtConcurrentRun::withPromiseAndThen()
         setFlag(syncEnd);
 
         resultFuture.waitForFinished();
-        QCOMPARE(future.results().count(), 1);
+        QCOMPARE(future.results().size(), 1);
         QCOMPARE(future.result(), 1);
         QVERIFY(runExecuted);
         QVERIFY(thenExecuted);
@@ -1426,7 +1431,7 @@ void tst_QtConcurrentRun::withPromiseAndThen()
         setFlag(syncEnd);
 
         resultFuture.waitForFinished();
-        QCOMPARE(future.results().count(), 0);
+        QCOMPARE(future.results().size(), 0);
         QVERIFY(runExecuted);
         QVERIFY(!thenExecuted);
         QVERIFY(cancelExecuted);

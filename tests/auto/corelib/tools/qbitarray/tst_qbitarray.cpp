@@ -13,10 +13,10 @@
 static QBitArray QStringToQBitArray(const QString &str)
 {
     QBitArray ba;
-    ba.resize(str.length());
+    ba.resize(str.size());
     int i;
     QChar tru('1');
-    for (i = 0; i < str.length(); i++)
+    for (i = 0; i < str.size(); i++)
     {
         if (str.at(i) == tru)
         {
@@ -143,6 +143,8 @@ void tst_QBitArray::countBits()
             bits.setBit(i);
     }
 
+    QCOMPARE(bits.size(), numBits);
+    // NOLINTNEXTLINE(qt-port-to-std-compatible-api): : We want to test count() and size()
     QCOMPARE(bits.count(), numBits);
     QCOMPARE(bits.count(true), onBits);
     QCOMPARE(bits.count(false), numBits - onBits);
@@ -494,7 +496,7 @@ void tst_QBitArray::datastream()
             bits.setBit(i);
     }
 
-    QCOMPARE(bits.count(), numBits);
+    QCOMPARE(bits.size(), numBits);
     QCOMPARE(bits.count(true), onBits);
     QCOMPARE(bits.count(false), numBits - onBits);
 
@@ -509,7 +511,7 @@ void tst_QBitArray::datastream()
     QBitArray array1, array2, array3;
     stream2 >> array1 >> array2 >> array3;
 
-    QCOMPARE(array1.count(), numBits);
+    QCOMPARE(array1.size(), numBits);
     QCOMPARE(array1.count(true), onBits);
     QCOMPARE(array1.count(false), numBits - onBits);
 
