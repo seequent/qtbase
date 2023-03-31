@@ -207,8 +207,14 @@ public:
     bool isSectionDragTarget:1;
     int unused:29;
 
+    // Used where an unknown V1 or V2 instance needs to be copied for modification without risking object slicing
+    static QStyleOptionHeaderV2 copyFromV1OrV2(const QStyleOptionHeader *other);
+
 protected:
     QStyleOptionHeaderV2(int version);
+
+private:
+    QStyleOptionHeaderV2(const QStyleOptionHeader &other);
 };
 
 class Q_WIDGETS_EXPORT QStyleOptionButton : public QStyleOption

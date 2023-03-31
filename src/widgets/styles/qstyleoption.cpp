@@ -879,6 +879,18 @@ QStyleOptionHeaderV2::QStyleOptionHeaderV2(int version)
 : QStyleOptionHeader(version), textElideMode(Qt::ElideNone), isSectionDragTarget(false), unused(0)
 {}
 
+QStyleOptionHeaderV2::QStyleOptionHeaderV2(const QStyleOptionHeader &other)
+: QStyleOptionHeader(other), textElideMode(Qt::ElideNone), isSectionDragTarget(false), unused(0)
+{}
+
+QStyleOptionHeaderV2 QStyleOptionHeaderV2::copyFromV1OrV2(const QStyleOptionHeader *other) {
+    if (other->version >= Version) {
+        return *static_cast<const QStyleOptionHeaderV2 *>(other);
+    } else {
+        return *other;
+    }
+}
+
 /*!
     \variable QStyleOptionHeaderV2::textElideMode
     \brief where ellipsis should be added for text that is too long to fit

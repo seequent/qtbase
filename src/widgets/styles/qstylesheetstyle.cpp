@@ -4079,7 +4079,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
         if (const QStyleOptionHeader *header = qstyleoption_cast<const QStyleOptionHeader *>(opt)) {
             QRenderRule subRule = renderRule(w, opt, PseudoElement_HeaderViewSection);
             if (subRule.hasNativeBorder()) {
-                QStyleOptionHeader hdr(*header);
+                auto hdr = QStyleOptionHeaderV2::copyFromV1OrV2(header);
                 subRule.configurePalette(&hdr.palette, QPalette::ButtonText, QPalette::Button);
 
                 if (subRule.baseStyleCanDraw()) {
@@ -4096,7 +4096,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
 
     case CE_HeaderLabel:
         if (const QStyleOptionHeader *header = qstyleoption_cast<const QStyleOptionHeader *>(opt)) {
-            QStyleOptionHeader hdr(*header);
+            auto hdr = QStyleOptionHeaderV2::copyFromV1OrV2(header);
             QRenderRule subRule = renderRule(w, opt, PseudoElement_HeaderViewSection);
             if (hasStyleRule(w, PseudoElement_HeaderViewUpArrow)
              || hasStyleRule(w, PseudoElement_HeaderViewDownArrow)) {
