@@ -2666,7 +2666,7 @@ PainterFunc clipped_path[] = {
 
     \warning QPainter does not store the combined clip explicitly as
     this is handled by the underlying QPaintEngine, so the path is
-    recreated on demandand transformed to the current logical
+    recreated on demand and transformed to the current logical
     coordinate system.This is potentially an expensive operation.
 
     \sa setClipPath(), clipRegion(), setClipping()
