@@ -928,8 +928,8 @@ QWindowsWindowData
         return result;
     }
 
-    QWindowsWindow::setDarkBorderToWindow(result.hwnd, QWindowsContext::isDarkMode()
-                                                    && shouldApplyDarkFrame(w));
+    if (QWindowsContext::isDarkMode() && shouldApplyDarkFrame(w))
+        QWindowsWindow::setDarkBorderToWindow(result.hwnd, true);
 
     if (mirrorParentWidth != 0) {
         context->obtainedPos.setX(mirrorParentWidth - context->obtainedSize.width()
@@ -3163,7 +3163,7 @@ static bool queryDarkBorder(HWND hwnd)
         SUCCEEDED(DwmGetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, &result, sizeof(result)))
         || SUCCEEDED(DwmGetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20h1, &result, sizeof(result)));
     if (!ok)
-        qWarning("%s: Unable to retrieve dark window border setting.", __FUNCTION__);
+        qCWarning(lcQpaWindows, "%s: Unable to retrieve dark window border setting.", __FUNCTION__);
     return result == TRUE;
 }
 
@@ -3174,7 +3174,7 @@ bool QWindowsWindow::setDarkBorderToWindow(HWND hwnd, bool d)
         SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, &darkBorder, sizeof(darkBorder)))
         || SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20h1, &darkBorder, sizeof(darkBorder)));
     if (!ok)
-        qWarning("%s: Unable to set dark window border.", __FUNCTION__);
+        qCWarning(lcQpaWindows, "%s: Unable to set %s window border.", __FUNCTION__, d ? "dark" : "light");
     return ok;
 }
 

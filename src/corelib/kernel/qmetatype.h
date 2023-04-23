@@ -407,7 +407,7 @@ public:
 
     explicit QMetaType(int type);
     explicit constexpr QMetaType(const QtPrivate::QMetaTypeInterface *d) : d_ptr(d) {}
-    constexpr QMetaType() = default;
+    constexpr QMetaType() : d_ptr{ nullptr } {}
 
     bool isValid() const;
     bool isRegistered() const;
@@ -2171,6 +2171,8 @@ constexpr auto typenameHelper()
 #endif
 #if defined(Q_CC_MSVC) && defined(Q_CC_CLANG)
             "auto __cdecl QtPrivate::typenameHelper(void) [T = "
+#elif defined(Q_CC_INTEL)
+            "auto QtPrivate::typenameHelper<"
 #elif defined(Q_CC_MSVC)
             "auto __cdecl QtPrivate::typenameHelper<"
 #elif defined(Q_CC_CLANG)
@@ -2181,7 +2183,9 @@ constexpr auto typenameHelper()
             "constexpr auto QtPrivate::typenameHelper() [with T = "
 #endif
             ) - 1;
-#if defined(Q_CC_MSVC) && !defined(Q_CC_CLANG)
+#if defined(Q_CC_INTEL)
+        constexpr int suffix = sizeof(">()");
+#elif defined(Q_CC_MSVC) && !defined(Q_CC_CLANG)
         constexpr int suffix = sizeof(">(void)");
 #else
         constexpr int suffix = sizeof("]");

@@ -883,8 +883,8 @@ class QMetaAssociationForContainer : public QMetaContainerForContainer<C>
 class Q_CORE_EXPORT QMetaContainer
 {
 public:
-    QMetaContainer() = default;
-    explicit QMetaContainer(const QtMetaContainerPrivate::QMetaContainerInterface *d) : d_ptr(d) {}
+    constexpr QMetaContainer() : d_ptr{ nullptr } {}
+    explicit constexpr QMetaContainer(const QtMetaContainerPrivate::QMetaContainerInterface *d) : d_ptr(d) {}
 
     bool hasInputIterator() const;
     bool hasForwardIterator() const;
@@ -922,8 +922,8 @@ protected:
 class Q_CORE_EXPORT QMetaSequence : public QMetaContainer
 {
 public:
-    QMetaSequence() = default;
-    explicit QMetaSequence(const QtMetaContainerPrivate::QMetaSequenceInterface *d) : QMetaContainer(d) {}
+    constexpr QMetaSequence() : QMetaContainer{} {}
+    explicit constexpr QMetaSequence(const QtMetaContainerPrivate::QMetaSequenceInterface *d) : QMetaContainer(d) {}
 
     template<typename T>
     static constexpr QMetaSequence fromContainer()
@@ -1000,8 +1000,8 @@ private:
 class Q_CORE_EXPORT QMetaAssociation : public QMetaContainer
 {
 public:
-    QMetaAssociation() = default;
-    explicit QMetaAssociation(const QtMetaContainerPrivate::QMetaAssociationInterface *d) : QMetaContainer(d) {}
+    constexpr QMetaAssociation() : QMetaContainer{} {}
+    explicit constexpr QMetaAssociation(const QtMetaContainerPrivate::QMetaAssociationInterface *d) : QMetaContainer(d) {}
 
     template<typename T>
     static constexpr QMetaAssociation fromContainer()

@@ -2134,13 +2134,13 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
             QRegion clipRegion = p->clipRegion();
             p->setClipRect(opt->rect);
             proxy()->drawControl(CE_HeaderSection, header, p, widget);
-            QStyleOptionHeader subopt = *header;
-            subopt.rect = subElementRect(SE_HeaderLabel, header, widget);
-            if (subopt.rect.isValid())
-                proxy()->drawControl(CE_HeaderLabel, &subopt, p, widget);
+            auto suboptV2 = QStyleOptionHeaderV2::copyFromV1OrV2(header);
+            suboptV2.rect = subElementRect(SE_HeaderLabel, header, widget);
+            if (suboptV2.rect.isValid())
+                proxy()->drawControl(CE_HeaderLabel, &suboptV2, p, widget);
             if (header->sortIndicator != QStyleOptionHeader::None) {
-                subopt.rect = subElementRect(SE_HeaderArrow, opt, widget);
-                proxy()->drawPrimitive(PE_IndicatorHeaderArrow, &subopt, p, widget);
+                suboptV2.rect = subElementRect(SE_HeaderArrow, opt, widget);
+                proxy()->drawPrimitive(PE_IndicatorHeaderArrow, &suboptV2, p, widget);
             }
             p->setClipRegion(clipRegion);
         }

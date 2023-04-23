@@ -17,7 +17,7 @@ class Q_CORE_EXPORT QRunnable
 public:
     virtual void run() = 0;
 
-    constexpr QRunnable() noexcept = default;
+    constexpr QRunnable() noexcept : m_autoDelete{ true } {}
     virtual ~QRunnable();
     static QRunnable *create(std::function<void()> functionToRun);
 

@@ -383,7 +383,9 @@ struct Q_CORE_EXPORT QMetaObject
         constexpr operator const QMetaObject *() const
         { return indirect ? indirect() : direct; }
         template <const QMetaObject &MO> static constexpr SuperData link()
-        { return SuperData(QMetaObject::staticMetaObject<MO>); }
+        {
+            return SuperData([] { return &MO; });
+        }
 #else
         constexpr SuperData(Getter g) : direct(g()) {}
         constexpr operator const QMetaObject *() const

@@ -3685,8 +3685,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
 
             if (btn->features & QStyleOptionButton::HasMenu) {
                 QRenderRule subRule = renderRule(w, opt, PseudoElement_PushButtonMenuIndicator);
-                QRect ir = positionRect(w, rule, subRule, PseudoElement_PushButtonMenuIndicator,
-                                        baseStyle()->subElementRect(SE_PushButtonBevel, btn, w), opt->direction);
+                QRect ir = positionRect(w, rule, subRule, PseudoElement_PushButtonMenuIndicator, opt->rect, opt->direction);
                 if (subRule.hasDrawable()) {
                     subRule.drawRule(p, ir);
                 } else {
@@ -4080,7 +4079,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
         if (const QStyleOptionHeader *header = qstyleoption_cast<const QStyleOptionHeader *>(opt)) {
             QRenderRule subRule = renderRule(w, opt, PseudoElement_HeaderViewSection);
             if (subRule.hasNativeBorder()) {
-                QStyleOptionHeader hdr(*header);
+                auto hdr = QStyleOptionHeaderV2::copyFromV1OrV2(header);
                 subRule.configurePalette(&hdr.palette, QPalette::ButtonText, QPalette::Button);
 
                 if (subRule.baseStyleCanDraw()) {
@@ -4097,10 +4096,11 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
 
     case CE_HeaderLabel:
         if (const QStyleOptionHeader *header = qstyleoption_cast<const QStyleOptionHeader *>(opt)) {
-            QStyleOptionHeader hdr(*header);
+            auto hdr = QStyleOptionHeaderV2::copyFromV1OrV2(header);
             QRenderRule subRule = renderRule(w, opt, PseudoElement_HeaderViewSection);
-            if (hasStyleRule(w, PseudoElement_HeaderViewUpArrow)
-             || hasStyleRule(w, PseudoElement_HeaderViewDownArrow)) {
+            if ((hasStyleRule(w, PseudoElement_HeaderViewUpArrow)
+             || hasStyleRule(w, PseudoElement_HeaderViewDownArrow))
+             && hdr.sortIndicator != QStyleOptionHeader::None) {
                 const QRect arrowRect = subElementRect(SE_HeaderArrow, opt, w);
                 if (hdr.orientation == Qt::Horizontal)
                     hdr.rect.setWidth(hdr.rect.width() - arrowRect.width());
@@ -6086,13 +6086,6 @@ QRect QStyleSheetStyle::subElementRect(SubElement se, const QStyleOption *opt, c
     case SE_PushButtonBevel:
     case SE_PushButtonFocusRect:
         if (const QStyleOptionButton *btn = qstyleoption_cast<const QStyleOptionButton *>(opt)) {
-            if (btn->features & QStyleOptionButton::HasMenu
-                && hasStyleRule(w, PseudoElement_PushButtonMenuIndicator)) {
-                QStyleOptionButton btnOpt(*btn);
-                btnOpt.features &= ~QStyleOptionButton::HasMenu;
-                return rule.baseStyleCanDraw() ? baseStyle()->subElementRect(se, &btnOpt, w)
-                                               : QWindowsStyle::subElementRect(se, &btnOpt, w);
-            }
             if (rule.hasBox() || !rule.hasNativeBorder()) {
                 return visualRect(opt->direction, opt->rect, se == SE_PushButtonBevel
                                                                 ? rule.borderRect(opt->rect)

@@ -63,6 +63,9 @@
 #  define Q_OUTOFLINE_TEMPLATE inline
 #  define Q_COMPILER_MANGLES_RETURN_TYPE
 #  define Q_FUNC_INFO __FUNCSIG__
+#  ifdef __INTEL_COMPILER
+#    define Q_CC_INTEL __INTEL_COMPILER
+#  endif
 #  define Q_ASSUME_IMPL(expr) __assume(expr)
 #  define Q_UNREACHABLE_IMPL() __assume(0)
 #  define Q_DECL_EXPORT __declspec(dllexport)

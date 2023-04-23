@@ -245,7 +245,7 @@ private:
 class Q_CORE_EXPORT QPropertyObserver : public QPropertyObserverBase
 {
 public:
-    constexpr QPropertyObserver() = default;
+    constexpr QPropertyObserver() : QPropertyObserverBase{} {}
     QPropertyObserver(QPropertyObserver &&other) noexcept;
     QPropertyObserver &operator=(QPropertyObserver &&other) noexcept;
     ~QPropertyObserver();
