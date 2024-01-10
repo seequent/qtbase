@@ -4104,8 +4104,9 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
                 v1Copy = *header;
 
             QRenderRule subRule = renderRule(w, opt, PseudoElement_HeaderViewSection);
-            if (hasStyleRule(w, PseudoElement_HeaderViewUpArrow)
-             || hasStyleRule(w, PseudoElement_HeaderViewDownArrow)) {
+            if ((hasStyleRule(w, PseudoElement_HeaderViewUpArrow)
+             || hasStyleRule(w, PseudoElement_HeaderViewDownArrow))
+             && hdr.sortIndicator != QStyleOptionHeader::None) {
                 if (hdr.sortIndicator != QStyleOptionHeader::None) {
                     QRegion newClipRegion = QRegion(hdr.rect);
                     const QRect arrowRect = subElementRect(SE_HeaderArrow, opt, w);
