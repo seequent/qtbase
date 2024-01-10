@@ -3669,8 +3669,7 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
 
             if (btn->features & QStyleOptionButton::HasMenu) {
                 QRenderRule subRule = renderRule(w, opt, PseudoElement_PushButtonMenuIndicator);
-                QRect ir = positionRect(w, rule, subRule, PseudoElement_PushButtonMenuIndicator,
-                                        baseStyle()->subElementRect(SE_PushButtonBevel, btn, w), opt->direction);
+                QRect ir = positionRect(w, rule, subRule, PseudoElement_PushButtonMenuIndicator, opt->rect, opt->direction);
 
                 // Move to the left to align with the other styles
                 const int mbi = pixelMetric(PM_MenuButtonIndicator, &btnOpt, w);
