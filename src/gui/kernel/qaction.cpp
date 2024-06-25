@@ -9,7 +9,6 @@
 #include "qevent.h"
 #include "qlist.h"
 #include "qstylehints.h"
-
 #if QT_CONFIG(shortcut)
 #  include <private/qshortcutmap_p.h>
 #endif
