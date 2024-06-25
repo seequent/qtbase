@@ -11604,7 +11604,20 @@ void QWidgetPrivate::setWindowModified_helper()
 void QWidget::setToolTip(const QString &s)
 {
     Q_D(QWidget);
-    d->toolTip = s;
+    
+    // Plain text must be converted to rich text for the tooltip to wrap correctly
+    QString result = s;
+    if (!Qt::mightBeRichText(result))
+    {
+        // Escape the current message as HTML and replace \n with <br>
+        // Envelop the string with <qt></qt> so it is detected as richtext
+        result = "<qt>" + result.toHtmlEscaped() + "</qt>";
+    }
+
+    if (d->toolTip == result)
+        return;
+
+    d->toolTip = result;
 
     QEvent event(QEvent::ToolTipChange);
     QCoreApplication::sendEvent(this, &event);
