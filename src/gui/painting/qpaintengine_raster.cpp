@@ -653,7 +653,8 @@ void QRasterPaintEngine::updatePen(const QPen &pen)
 
     ensureRasterState(); // needed because of tx_noshear...
     bool cosmetic = pen.isCosmetic();
-    s->flags.fast_pen = pen_style > Qt::NoPen
+    bool fast_dash = !s->renderHints.testFlag(QPainter::FixedDraw);
+    s->flags.fast_pen = (pen_style == Qt::SolidLine || (pen_style > Qt::SolidLine && fast_dash))
             && s->penData.blend
             && ((cosmetic && penWidth <= 1)
                 || (!cosmetic && (s->flags.tx_noshear || !s->flags.antialiased) && penWidth * s->txscale <= 1));
