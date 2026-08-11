@@ -21,6 +21,7 @@
 #include <qpa/qplatformwindow_p.h>
 
 #include <QtWidgets/private/qlabel_p.h>
+#include <QtWidgets/qsizepolicy.h>
 #include <QtGui/private/qhighdpiscaling_p.h>
 #include <qtooltip.h>
 #include <QtWidgets/private/qtooltip_p.h>
@@ -28,6 +29,38 @@
 QT_BEGIN_NAMESPACE
 
 using namespace Qt::StringLiterals;
+
+static void deleteLayout(QLayout* layout)
+{
+    if (!layout)
+    {
+        return;
+    }
+
+    QLayoutItem* item;
+    QLayout* sublayout;
+    QWidget* widget;
+    while ((item = layout->takeAt(0)))
+    {
+        sublayout = item->layout();
+        widget = item->widget();
+        if (sublayout)
+        {
+            deleteLayout(sublayout);
+        }
+        else if (widget)
+        {
+            widget->hide();
+            widget->deleteLater();
+        }
+        else
+        {
+            // Correctly handle the deletion of spacer items
+            delete item;
+        }
+    }
+    layout->deleteLater();
+}
 
 /*!
     \class QToolTip
@@ -114,6 +147,30 @@ QTipLabel::QTipLabel(const QString &text, const QPoint &pos, QWidget *w, int mse
     reuseTip(text, msecDisplayTime, pos);
 }
 
+QTipLabel::QTipLabel(QLayout* layout, const QPoint& pos, QWidget* w, int msecDisplayTime)
+    : QLabel(w, Qt::ToolTip | Qt::BypassGraphicsProxyWidget)
+#ifndef QT_NO_STYLE_STYLESHEET
+    , styleSheetParent(nullptr)
+#endif
+    , widget(nullptr)
+{
+    delete instance;
+    instance = this;
+    setForegroundRole(QPalette::ToolTipText);
+    setBackgroundRole(QPalette::ToolTipBase);
+    setPalette(QToolTip::palette());
+    ensurePolished();
+    setMargin(1 + style()->pixelMetric(QStyle::PM_ToolTipLabelFrameWidth, nullptr, this));
+    setFrameStyle(QFrame::NoFrame);
+    setAlignment(Qt::AlignLeft);
+    setIndent(1);
+    qApp->installEventFilter(this);
+    setWindowOpacity(style()->styleHint(QStyle::SH_ToolTipLabel_Opacity, nullptr, this) / 255.0);
+    setMouseTracking(true);
+    fadingOut = false;
+    reuseTip(layout, msecDisplayTime, pos);
+}
+
 void QTipLabel::restartExpireTimer(int msecDisplayTime)
 {
     Q_D(const QLabel);
@@ -136,6 +193,23 @@ void QTipLabel::reuseTip(const QString &text, int msecDisplayTime, const QPoint 
 #endif
 
     setText(text);
+    updateSize(pos);
+    restartExpireTimer(msecDisplayTime);
+}
+
+void QTipLabel::reuseTip(QLayout* layout, int msecDisplayTime, const QPoint& pos)
+{
+#ifndef QT_NO_STYLE_STYLESHEET
+    if (styleSheetParent) {
+        disconnect(styleSheetParent, SIGNAL(destroyed()),
+            QTipLabel::instance, SLOT(styleSheetParentDestroyed()));
+        styleSheetParent = nullptr;
+    }
+#endif
+
+    clear();
+    setLayout(layout);
+    setSizePolicy(QSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed));
     updateSize(pos);
     restartExpireTimer(msecDisplayTime);
 }
@@ -206,6 +280,7 @@ void QTipLabel::hideTip()
 
 void QTipLabel::hideTipImmediately()
 {
+    deleteLayout(this->layout());
     close(); // to trigger QEvent::Close which stops the animation
     deleteLater();
 }
@@ -377,6 +452,21 @@ bool QTipLabel::tipChanged(const QPoint &pos, const QString &text, QObject *o)
        return false;
 }
 
+bool QTipLabel::tipChanged(const QPoint& pos, QLayout* layout, QObject* o)
+{
+    //It is hard to compare layouts, so if it is not empty, consider it changed
+    if (layout && layout->count() > 0)
+        return true;
+
+    if (o != widget)
+        return true;
+
+    if (!rect.isNull())
+        return !rect.contains(pos);
+    else
+        return false;
+}
+
 /** \internal
   Cleanup the _q_stylesheet_parent property.
  */
@@ -422,6 +512,7 @@ void QToolTip::showText(const QPoint &pos, const QString &text, QWidget *w, cons
             if (w)
                 localPos = w->mapFromGlobal(pos);
             if (QTipLabel::instance->tipChanged(localPos, text, w)){
+                deleteLayout(QTipLabel::instance->layout());
                 QTipLabel::instance->reuseTip(text, msecDisplayTime, pos);
                 QTipLabel::instance->setTipRect(w, rect);
                 QTipLabel::instance->placeTip(pos, w);
@@ -442,6 +533,81 @@ void QToolTip::showText(const QPoint &pos, const QString &text, QWidget *w, cons
 #endif
         }();
         new QTipLabel(text, pos, tipLabelParent, msecDisplayTime); // sets QTipLabel::instance to itself
+        QWidgetPrivate::get(QTipLabel::instance)->setScreen(QTipLabel::getTipScreen(pos, w));
+        QTipLabel::instance->setTipRect(w, rect);
+        QTipLabel::instance->placeTip(pos, w);
+        QTipLabel::instance->setObjectName("qtooltip_label"_L1);
+
+#if QT_CONFIG(effects)
+        if (QApplication::isEffectEnabled(Qt::UI_FadeTooltip))
+            qFadeEffect(QTipLabel::instance);
+        else if (QApplication::isEffectEnabled(Qt::UI_AnimateTooltip))
+            qScrollEffect(QTipLabel::instance);
+        else
+            QTipLabel::instance->showNormal();
+#else
+        QTipLabel::instance->showNormal();
+#endif
+    }
+}
+
+/*!
+    Shows \a layout as a tool tip, with the global position \a pos as
+    the point of interest. The tool tip will be shown with a platform
+    specific offset from this point of interest.
+
+    If you specify a non-empty rect the tip will be hidden as soon
+    as you move your cursor out of this area.
+
+    The \a rect is in the coordinates of the widget you specify with
+    \a w. If the \a rect is not empty you must specify a widget.
+    Otherwise this argument can be \nullptr but it is used to
+    determine the appropriate screen on multi-head systems.
+
+    The \a msecDisplayTime parameter specifies for how long the tool tip
+    will be displayed, in milliseconds. With the default value of -1, the
+    time is based on the count of the layout.
+
+    If \a layout is empty the tool tip is hidden. If the layout is the
+    same as the currently shown tooltip, the tip will \e not move.
+    You can force moving by first hiding the tip with an empty layout,
+    and then showing the new tip at the new position.
+*/
+
+void QToolTip::showLayout(const QPoint& pos, QLayout* layout, QWidget* w, const QRect& rect, int msecDisplayTime)
+{
+    if (QTipLabel::instance && QTipLabel::instance->isVisible()) { // a tip does already exist
+        if (!layout || !layout->count()){ // empty layout means hide current tip
+            QTipLabel::instance->hideTip();
+            return;
+        } else if (!QTipLabel::instance->fadingOut) {
+            // If the tip has changed, reuse the one
+            // that is showing (removes flickering)
+            QPoint localPos = pos;
+            if (w)
+                localPos = w->mapFromGlobal(pos);
+            if (QTipLabel::instance->tipChanged(localPos, layout, w)){
+                deleteLayout(QTipLabel::instance->layout());
+                QTipLabel::instance->reuseTip(layout, msecDisplayTime, pos);
+                QTipLabel::instance->setTipRect(w, rect);
+                QTipLabel::instance->placeTip(pos, w);
+            }
+            return;
+        }
+    }
+
+    if (layout && layout->count()) { // no tip can be reused, create new tip:
+        QWidget *tipLabelParent = [w]() -> QWidget* {
+#ifdef Q_OS_WIN32
+            // On windows, we can't use the widget as parent otherwise the window will be
+            // raised when the tooltip will be shown
+            Q_UNUSED(w);
+            return nullptr;
+#else
+            return w;
+#endif
+        }();
+        new QTipLabel(layout, pos, tipLabelParent, msecDisplayTime); // sets QTipLabel::instance to itself
         QWidgetPrivate::get(QTipLabel::instance)->setScreen(QTipLabel::getTipScreen(pos, w));
         QTipLabel::instance->setTipRect(w, rect);
         QTipLabel::instance->placeTip(pos, w);

@@ -7,6 +7,7 @@
 
 #include <QtWidgets/qtwidgetsglobal.h>
 #include <QtWidgets/qwidget.h>
+#include <QtWidgets/qlayout.h>
 
 QT_REQUIRE_CONFIG(tooltip);
 QT_BEGIN_NAMESPACE
@@ -17,7 +18,10 @@ class Q_WIDGETS_EXPORT QToolTip
 public:
     static void showText(const QPoint &pos, const QString &text,
                          QWidget *w = nullptr, const QRect &rect = {}, int msecShowTime = -1);
+    static void showLayout(const QPoint& pos, QLayout* layout,
+        QWidget* w = nullptr, const QRect& rect = {}, int msecShowTime = -1);
     static inline void hideText() { showText(QPoint(), QString()); }
+    static inline void hideLayout() { showLayout(QPoint(), nullptr); }
 
     static bool isVisible();
     static QString text();
